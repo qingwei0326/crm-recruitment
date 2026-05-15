@@ -1,6 +1,6 @@
 /**
  * Tests for the Axios API service instance.
- * Historical bug patterns: token storage, 401 redirect, encoding.
+ * Historical bug patterns: auth cookie mode, 401 redirect, encoding.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -65,51 +65,28 @@ describe('API Service', () => {
     expect(api.default).toBeDefined();
   });
 
-  it('has request interceptor that attaches token', () => {
-    // Simulate what the interceptor does
-    const token = 'test-jwt-token';
-    localStorageMock.setItem('crm_token', token);
-
-    // Read the api module's logic directly
-    // Adding token to headers
-    const config = { headers: {} };
-    const tokenFromStorage = localStorageMock.getItem('crm_token');
-    if (tokenFromStorage) {
-      config.headers.Authorization = `Bearer ${tokenFromStorage}`;
-    }
-
-    expect(config.headers.Authorization).toBe('Bearer test-jwt-token');
+  it('uses cookies for authentication instead of localStorage token headers', () => {
+    expect(api.default).toBeDefined();
+    expect(localStorageMock.getItem('crm_token')).toBeNull();
   });
 
-  it('request interceptor does not attach header when no token', () => {
-    const config = { headers: {} };
-    const tokenFromStorage = localStorageMock.getItem('crm_token');
-    if (tokenFromStorage) {
-      config.headers.Authorization = `Bearer ${tokenFromStorage}`;
-    }
-
-    expect(config.headers.Authorization).toBeUndefined();
-  });
-
-  it('response interceptor handles 401 by clearing storage and redirecting', () => {
+  it('response interceptor handles 401 by clearing cached user and redirecting', () => {
     const errorResponse = {
       response: { status: 401 },
     };
 
-    localStorageMock.setItem('crm_token', 'expired-token');
     localStorageMock.setItem('crm_user', 'testuser');
 
     // Simulate error interceptor
     const err = errorResponse;
     if (err.response?.status === 401) {
-      localStorageMock.removeItem('crm_token');
       localStorageMock.removeItem('crm_user');
       if (global.window.location.pathname !== '/login') {
         global.window.location.href = '/login';
       }
     }
 
-    expect(localStorageMock.getItem('crm_token')).toBeNull();
+    expect(localStorageMock.getItem('crm_user')).toBeNull();
     expect(global.window.location.href).toBe('/login');
   });
 
@@ -118,16 +95,16 @@ describe('API Service', () => {
       response: { status: 500, data: 'Server Error' },
     };
 
-    localStorageMock.setItem('crm_token', 'some-token');
+    localStorageMock.setItem('crm_user', 'some-user');
     global.window.location.href = '';
 
     const err = errorResponse;
     if (err.response?.status === 401) {
-      localStorageMock.removeItem('crm_token');
+      localStorageMock.removeItem('crm_user');
       global.window.location.href = '/login';
     }
 
-    expect(localStorageMock.getItem('crm_token')).toBe('some-token');
+    expect(localStorageMock.getItem('crm_user')).toBe('some-user');
     expect(global.window.location.href).toBe('');
   });
 
@@ -137,20 +114,19 @@ describe('API Service', () => {
       response: { status: 401 },
     };
 
-    localStorageMock.setItem('crm_token', 'expired');
+    localStorageMock.setItem('crm_user', 'expired');
     global.window.location.href = '';
 
     const err = errorResponse;
     if (err.response?.status === 401) {
-      localStorageMock.removeItem('crm_token');
       localStorageMock.removeItem('crm_user');
       if (global.window.location.pathname !== '/login') {
         global.window.location.href = '/login';
       }
     }
 
-    // Token cleared but no redirect since already on /login
-    expect(localStorageMock.getItem('crm_token')).toBeNull();
+    // Cached user cleared but no redirect since already on /login
+    expect(localStorageMock.getItem('crm_user')).toBeNull();
     expect(global.window.location.href).toBe('');
   });
 });

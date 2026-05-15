@@ -1,7 +1,6 @@
-"""Test configuration: in-memory SQLite, test client, auth fixtures.
+"""Test configuration: in-memory SQLite, test client, auth fixtures."""
 
-Must set env vars BEFORE importing app modules.
-"""
+# ruff: noqa: E402
 
 import os
 import sys
@@ -15,11 +14,12 @@ os.environ.setdefault("FRONTEND_DIR", "/tmp/nonexistent-frontend")
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import asyncio
+
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.database import engine, Base, async_session
+from app.database import Base, async_session, engine
 from app.main import app
 
 
@@ -58,8 +58,8 @@ async def client():
 # ---------------------------------------------------------------------------
 # Auth fixtures
 # ---------------------------------------------------------------------------
-from app.auth import hash_password, create_access_token
-from app.models import User, Student, StudentStage, StudentStatus, IntentLevel
+from app.auth import create_access_token, hash_password
+from app.models import IntentLevel, Student, StudentStage, StudentStatus, User
 
 
 @pytest_asyncio.fixture

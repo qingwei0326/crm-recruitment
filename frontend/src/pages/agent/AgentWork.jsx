@@ -83,7 +83,6 @@ export default function AgentWork() {
   const [detailNotes, setDetailNotes] = useState([]);
   const [noteIdx, setNoteIdx] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
-  const [editingField, setEditingField] = useState(null);
 
   // Action states
   const [noteText, setNoteText] = useState('');
@@ -226,7 +225,7 @@ export default function AgentWork() {
   const handleDial = async (phone, id) => {
     const ok = await checkDup(id, phone);
     if (ok) {
-      window.location.href = `tel:${phone?.replace(/\*+/g, '')}`;
+      window.location.href = `tel:${phone || ''}`;
       setLockedStudentId(id);
     }
   };
@@ -255,7 +254,6 @@ export default function AgentWork() {
     setStudents((prev) =>
       prev.map((t) => (t.id === detailStudent.id ? { ...t, [field]: value } : t)),
     );
-    setEditingField(null);
   };
 
   const openAiPanel = (s) => {
@@ -467,7 +465,7 @@ export default function AgentWork() {
                       </div>
                       <div className="flex gap-2 mb-3">
                         <button
-                          onClick={() => handleDial(current.phone, current.id)}
+                          onClick={() => handleDial(current.phone_raw, current.id)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium"
                         >
                           <Phone className="w-4 h-4" /> 拨号
@@ -649,33 +647,18 @@ export default function AgentWork() {
                 </span>
               </div>
               {[
-                ['score', '成绩', 'number'],
-                ['guardian_name', '监护人', 'text'],
-                ['guardian_phone', '监护人电话', 'text'],
-                ['school_name', '学校', 'text'],
-                ['school_address', '学校地址', 'text'],
-              ].map(([k, label, type]) => (
+                ['score', '成绩'],
+                ['guardian_name', '监护人'],
+                ['guardian_phone', '监护人电话'],
+                ['school_name', '学校'],
+                ['school_address', '学校地址'],
+              ].map(([k, label]) => (
                 <div
                   key={k}
                   className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3"
-                  onClick={() => setEditingField(k)}
                 >
                   <div className="text-xs text-gray-500">{label}</div>
-                  {editingField === k ? (
-                    <input
-                      type={type}
-                      value={detailStudent[k] || ''}
-                      onChange={(e) => {
-                        const v = type === 'number' ? parseFloat(e.target.value) : e.target.value;
-                        updateDetailField(k, v);
-                      }}
-                      onBlur={() => setEditingField(null)}
-                      autoFocus
-                      className="w-full mt-1 bg-white dark:bg-gray-700 border rounded px-2 py-1 text-sm"
-                    />
-                  ) : (
-                    <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
-                  )}
+                  <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
                 </div>
               ))}
               <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>
@@ -901,7 +884,7 @@ export default function AgentWork() {
                         </div>
                         <div className="flex gap-2 mb-3">
                           <button
-                            onClick={() => handleDial(current.phone, current.id)}
+                            onClick={() => handleDial(current.phone_raw, current.id)}
                             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm"
                           >
                             拨号
@@ -1083,33 +1066,18 @@ export default function AgentWork() {
                   </span>
                 </div>
                 {[
-                  ['score', '成绩', 'number'],
-                  ['guardian_name', '监护人', 'text'],
-                  ['guardian_phone', '监护人电话', 'text'],
-                  ['school_name', '学校', 'text'],
-                  ['school_address', '学校地址', 'text'],
-                ].map(([k, label, type]) => (
+                  ['score', '成绩'],
+                  ['guardian_name', '监护人'],
+                  ['guardian_phone', '监护人电话'],
+                  ['school_name', '学校'],
+                  ['school_address', '学校地址'],
+                ].map(([k, label]) => (
                   <div
                     key={k}
-                    className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 cursor-pointer"
-                    onClick={() => setEditingField(k)}
+                    className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3"
                   >
                     <div className="text-xs text-gray-500">{label}</div>
-                    {editingField === k ? (
-                      <input
-                        type={type}
-                        value={detailStudent[k] || ''}
-                        onChange={(e) => {
-                          const v = type === 'number' ? parseFloat(e.target.value) : e.target.value;
-                          updateDetailField(k, v);
-                        }}
-                        onBlur={() => setEditingField(null)}
-                        autoFocus
-                        className="w-full mt-1 bg-white dark:bg-gray-700 border rounded px-2 py-1 text-sm"
-                      />
-                    ) : (
-                      <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
-                    )}
+                    <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
                   </div>
                 ))}
                 <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>

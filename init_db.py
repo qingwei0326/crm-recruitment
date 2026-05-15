@@ -1,14 +1,38 @@
 """数据库初始化脚本 — 建表 + 预置账号 + 迁移"""
 import asyncio
-from sqlalchemy import select, text, inspect
-from app.database import async_session, init_db, sync_engine, Base
-from app.models import User, UserRole
-from app.auth import hash_password
+import os
 
-PRESET_USERS = [
-    {"username": "admin", "password": "admin123", "role": UserRole.admin, "name": "系统管理员"},
-    {"username": "test01", "password": "test123", "role": UserRole.agent, "name": "测试坐席"},
-]
+from sqlalchemy import inspect, select, text
+
+from app.auth import hash_password
+from app.database import async_session, init_db, sync_engine
+from app.models import User, UserRole
+
+
+def get_preset_users():
+    users = []
+    admin_password = os.getenv("INIT_ADMIN_PASSWORD")
+    if admin_password:
+        users.append(
+            {
+                "username": os.getenv("INIT_ADMIN_USERNAME", "admin"),
+                "password": admin_password,
+                "role": UserRole.admin,
+                "name": os.getenv("INIT_ADMIN_NAME", "系统管理员"),
+            }
+        )
+
+    agent_password = os.getenv("INIT_AGENT_PASSWORD")
+    if agent_password:
+        users.append(
+            {
+                "username": os.getenv("INIT_AGENT_USERNAME", "agent"),
+                "password": agent_password,
+                "role": UserRole.agent,
+                "name": os.getenv("INIT_AGENT_NAME", "话务员"),
+            }
+        )
+    return users
 
 
 async def seed():
@@ -69,9 +93,15 @@ async def seed():
         ]
         # Generate case_no for existing rows without one
         import uuid
-        for row in conn.execute(text(f"SELECT id FROM {students_table} WHERE case_no IS NULL")).fetchall():
-            conn.execute(text(f"UPDATE {students_table} SET case_no = :cn WHERE id = :id"),
-                         {"cn": str(uuid.uuid4()), "id": row[0]})
+
+        rows_without_case_no = conn.execute(
+            text(f"SELECT id FROM {students_table} WHERE case_no IS NULL")
+        ).fetchall()
+        for row in rows_without_case_no:
+            conn.execute(
+                text(f"UPDATE {students_table} SET case_no = :cn WHERE id = :id"),
+                {"cn": str(uuid.uuid4()), "id": row[0]},
+            )
         conn.commit()
         for col, dtype in student_migrations:
             migrations.append((students_table, col, dtype))
@@ -98,7 +128,16 @@ async def seed():
                 print(f"[SKIP] {table}.{col}: {e}")
 
     async with async_session() as session:
-        for u in PRESET_USERS:
+        if os.getenv("SEED_PRESET_USERS", "0").lower() not in {"1", "true", "yes", "on"}:
+            print("[SKIP] 未启用预置账号初始化。如需本地测试，设置 SEED_PRESET_USERS=1")
+            return
+
+        preset_users = get_preset_users()
+        if not preset_users:
+            print("[SKIP] 未配置 INIT_ADMIN_PASSWORD，跳过预置账号创建")
+            return
+
+        for u in preset_users:
             result = await session.execute(
                 select(User).where(User.username == u["username"])
             )
@@ -115,7 +154,7 @@ async def seed():
             )
             session.add(user)
             await session.commit()
-            print(f"[OK] 预置账号完成 ({u['username']} / {u['password']})")
+            print(f"[OK] 预置账号完成 ({u['username']})")
 
 
 if __name__ == "__main__":

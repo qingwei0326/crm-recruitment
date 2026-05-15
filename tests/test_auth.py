@@ -4,9 +4,10 @@ Note: API uses custom Response wrapper: HTTP 200 always, code=0 success, code=1 
 """
 
 import pytest
-from app.auth import hash_password, verify_password, create_access_token
 from jose import jwt
-from app.config import SECRET_KEY, ALGORITHM
+
+from app.auth import create_access_token, hash_password, verify_password
+from app.config import ALGORITHM, SECRET_KEY
 
 
 class TestPasswordHashing:
@@ -59,6 +60,32 @@ class TestLoginEndpoint:
         assert body["data"]["token_type"] == "bearer"
         assert body["data"]["user"]["role"] == "admin"
 
+    async def test_login_cookie_authenticates_business_routes(self, client, admin_user):
+        resp = await client.post("/api/auth/login", json={
+            "username": "testadmin",
+            "password": "admin123",
+        })
+        assert resp.json()["code"] == 0
+        assert resp.cookies.get("access_token")
+
+        students_resp = await client.get("/api/students")
+        assert students_resp.status_code == 200
+        assert students_resp.json()["code"] == 0
+
+    async def test_logout_clears_auth_cookie(self, client, admin_user):
+        login_resp = await client.post("/api/auth/login", json={
+            "username": "testadmin",
+            "password": "admin123",
+        })
+        assert login_resp.cookies.get("access_token")
+
+        logout_resp = await client.post("/api/auth/logout")
+        assert logout_resp.json()["code"] == 0
+        assert logout_resp.cookies.get("access_token") is None
+
+        me_resp = await client.get("/api/auth/me")
+        assert me_resp.status_code == 403
+
     async def test_login_wrong_password(self, client, admin_user):
         resp = await client.post("/api/auth/login", json={
             "username": "testadmin",
@@ -85,7 +112,11 @@ class TestLoginEndpoint:
         assert resp.status_code == 422
 
     async def test_login_invalid_json(self, client):
-        resp = await client.post("/api/auth/login", data=b"not-json", headers={"content-type": "application/json"})
+        resp = await client.post(
+            "/api/auth/login",
+            data=b"not-json",
+            headers={"content-type": "application/json"},
+        )
         assert resp.status_code == 422
 
     async def test_login_rate_limiting(self, client, admin_user):

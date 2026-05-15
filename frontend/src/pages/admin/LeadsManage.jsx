@@ -610,11 +610,11 @@ export default function LeadsManage() {
                     setEditStudent({
                       id: s.id,
                       name: s.name,
-                      phone: s.phone,
+                      phone: s.phone_raw || s.phone,
                       region: s.region || '',
                       score: s.score || '',
                       guardian_name: s.guardian_name || '',
-                      guardian_phone: s.guardian_phone || '',
+                      guardian_phone: s.guardian_phone_raw || s.guardian_phone || '',
                       school_name: s.school_name || '',
                       school_address: s.school_address || '',
                     });
@@ -1144,12 +1144,12 @@ export default function LeadsManage() {
             </div>
             <div className="space-y-4">
               <div className="text-sm bg-blue-50 dark:bg-blue-900/30 px-3 py-2 rounded-lg">
-                Excel需包含列：<b>姓名</b>、<b>电话</b>、成绩、监护人姓名、监护人电话、学校名称、学校地址、地域（可选）
+                Excel需包含列：<b>姓名</b>、<b>电话</b>、成绩、监护人姓名、监护人电话、学校名称、学校地址、地域（可选），仅支持 .xlsx
               </div>
               <a href="/api/students/template/download" className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline">
                 <Download className="w-3.5 h-3.5" />下载Excel模板
               </a>
-              <input type="file" accept=".xlsx,.xls" onChange={(e) => setImportFile(e.target.files[0])} className="w-full text-sm" />
+              <input type="file" accept=".xlsx" onChange={(e) => setImportFile(e.target.files[0])} className="w-full text-sm" />
               {importFile && <div className="text-sm">已选择: <b>{importFile.name}</b></div>}
               <button
                 onClick={handleImport} disabled={!importFile || importing}

@@ -10,8 +10,15 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_PATH=/app/data/crm.db
-      - SECRET_KEY=${SECRET_KEY:-crm-prod-secret-change-me}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env before starting}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-0}
+      - TRUST_PROXY_HEADERS=${TRUST_PROXY_HEADERS:-0}
+      - SEED_PRESET_USERS=${SEED_PRESET_USERS:-0}
+      - INIT_ADMIN_USERNAME=${INIT_ADMIN_USERNAME:-admin}
+      - INIT_ADMIN_PASSWORD=${INIT_ADMIN_PASSWORD:-}
+      - INIT_AGENT_USERNAME=${INIT_AGENT_USERNAME:-agent}
+      - INIT_AGENT_PASSWORD=${INIT_AGENT_PASSWORD:-}
     volumes:
       - crm_data:/app/data
     networks:

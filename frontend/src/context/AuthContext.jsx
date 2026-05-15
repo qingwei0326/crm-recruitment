@@ -8,17 +8,29 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('crm_token');
     const saved = localStorage.getItem('crm_user');
-    if (token && saved) {
+    if (saved) {
       try {
         setUser(JSON.parse(saved));
       } catch {
-        localStorage.removeItem('crm_token');
         localStorage.removeItem('crm_user');
       }
     }
-    setLoading(false);
+
+    api
+      .get('/auth/me')
+      .then((res) => {
+        if (res.data.code === 0) {
+          const u = res.data.data;
+          localStorage.setItem('crm_user', JSON.stringify(u));
+          setUser(u);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('crm_user');
+        setUser(null);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const login = async (username, password) => {
@@ -26,8 +38,6 @@ export function AuthProvider({ children }) {
     const data = res.data;
     if (data.code === 0) {
       const u = data.data.user;
-      const token = data.data.access_token;
-      localStorage.setItem('crm_token', token);
       localStorage.setItem('crm_user', JSON.stringify(u));
       setUser(u);
       return u;
@@ -35,8 +45,12 @@ export function AuthProvider({ children }) {
     throw new Error(data.msg || '登录失败');
   };
 
-  const logout = () => {
-    localStorage.removeItem('crm_token');
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Local logout should still complete if the network request fails.
+    }
     localStorage.removeItem('crm_user');
     setUser(null);
   };

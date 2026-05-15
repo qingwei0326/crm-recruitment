@@ -21,7 +21,11 @@ class TestCreateStudent:
         assert resp.status_code == 200
 
     async def test_create_missing_name(self, client, admin_headers):
-        resp = await client.post("/api/students", json={"phone": "13600136000"}, headers=admin_headers)
+        resp = await client.post(
+            "/api/students",
+            json={"phone": "13600136000"},
+            headers=admin_headers,
+        )
         assert resp.status_code == 422
 
     async def test_create_missing_phone(self, client, admin_headers):
@@ -126,7 +130,9 @@ class TestUpdateStudent:
         }, headers=admin_headers)
         assert resp.json()["code"] == 0
 
-    async def test_manual_intent_writes_operation_log(self, client, admin_headers, sample_student, db):
+    async def test_manual_intent_writes_operation_log(
+        self, client, admin_headers, sample_student, db
+    ):
         from sqlalchemy import select
 
         from app.models import OperationLog
@@ -172,7 +178,11 @@ class TestUpdateStudent:
         assert "无效" in resp.json()["msg"]
 
     async def test_update_not_found(self, client, admin_headers):
-        resp = await client.put("/api/students/99999", json={"name": "新名字"}, headers=admin_headers)
+        resp = await client.put(
+            "/api/students/99999",
+            json={"name": "新名字"},
+            headers=admin_headers,
+        )
         assert resp.status_code == 404
         assert resp.json()["detail"] == "学生不存在"
 
