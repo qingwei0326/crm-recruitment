@@ -10,7 +10,7 @@ from app.auth import (
     get_current_user,
     verify_password,
 )
-from app.config import ACCESS_TOKEN_EXPIRE_MINUTES
+from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
 from app.database import get_db
 from app.models import User
 from app.schemas import LoginReq, Response
@@ -42,7 +42,7 @@ def _check_ip_rate_limit(ip: str) -> bool:
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
+    forwarded = request.headers.get("X-Forwarded-For") if TRUST_PROXY_HEADERS else None
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
@@ -102,11 +102,19 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
     response.set_cookie(
         key="access_token",
         value=token,
+        path="/",
         httponly=True,
-        secure=False,  # Set True in production with HTTPS
+        secure=COOKIE_SECURE,
         samesite="lax",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
+    return response
+
+
+@router.post("/logout")
+async def logout():
+    response = JSONResponse(content=Response.ok(msg="已退出"))
+    response.delete_cookie(key="access_token", path="/")
     return response
 
 

@@ -127,7 +127,7 @@ export default function AgentManage() {
     if (selectedAgent?.id === agent.id) setSelectedAgent(null);
   };
   const handleResetPassword = async (agent) => {
-    if (!confirm(`确定重置「${agent.name}」的密码为 123456 吗？`)) return;
+    if (!confirm(`确定重置「${agent.name}」的密码吗？系统将生成一个随机临时密码。`)) return;
     try {
       const res = await api.post(`/admin/users/${agent.id}/reset-password`);
       alert(res.data.msg || '密码已重置');

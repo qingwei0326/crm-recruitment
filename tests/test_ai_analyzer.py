@@ -4,6 +4,7 @@ Note: `predict_conversion` accepts `days_since_assign` but does not use it.
 """
 
 import pytest
+
 from app.ai_analyzer import _keyword_analyze, normalize_ai_intent, predict_conversion
 
 
@@ -98,8 +99,10 @@ class TestKeywordAnalyze:
         result = _keyword_analyze("孩子去别的学校了，不需要了。")
         # "别的学校" matches ABANDON_KEYWORDS "别的学校"
         # "不需要了" doesn't match "不需要" ... wait: "不需要了" contains "不需要"?
-        # No, "不需要了" does not match "不需要" because "不需要" is 3 chars and "不需要了" starts with it
-        # Wait: `"不需要了" in text` - text is "孩子去别的学校了，不需要了。", so "不需要" IS in this text
+        # No, "不需要了" does not match "不需要" because "不需要" is 3 chars
+        # and "不需要了" starts with it.
+        # Wait: `"不需要了" in text` - text is "孩子去别的学校了，不需要了。",
+        # so "不需要" IS in this text.
         # Actually "不需要" is indeed in C_KEYWORDS
         # But abandon: "别的学校" is in text? "孩子去别的学校了" contains "别的学校" - Yes!
         # So abandon_matches has 1 match → a_score=0, c_score += 4
@@ -182,7 +185,8 @@ class TestPredictConversion:
 
     def test_extreme_inputs(self):
         prob = predict_conversion("", "", -1, None, None, -5)
-        # Unknown intent → 0.05, unknown stage → 0.15, notes_bonus = min(-1,5)*0.02 = -0.02, clamped to... no, min(-1,5) = -1
+        # Unknown intent -> 0.05, unknown stage -> 0.15.
+        # notes_bonus = min(-1, 5) * 0.02 = -0.02.
         # notes_bonus = -1 * 0.02 = -0.02
         # has_follow_up = True (None is falsy), has_visit = True (None is falsy)
         # Wait, None is falsy in Python. So has_follow_up=None → 0.0, has_visit=None → 0.0

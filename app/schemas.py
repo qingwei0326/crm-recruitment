@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,8 @@ class StudentCreate(BaseModel):
 
 
 class StudentUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    phone: str | None = Field(default=None, min_length=1, max_length=20)
     status: str | None = None
     intent_level: str | None = None
     assigned_to: int | None = None
@@ -104,15 +107,15 @@ class FollowUpUpdate(BaseModel):
 
 class VisitCreate(BaseModel):
     student_id: int
-    visit_type: str = Field(..., pattern="^(来校参观|家访)$")
+    visit_type: Literal["来校参观", "家访"]
     scheduled_date: datetime
     notes: str = Field(default="")
 
 
 class VisitUpdate(BaseModel):
-    visit_type: str | None = None
+    visit_type: Literal["来校参观", "家访"] | None = None
     scheduled_date: datetime | None = None
-    status: str | None = None
+    status: Literal["待确认", "已确认", "已完成", "已取消"] | None = None
     notes: str | None = None
 
 

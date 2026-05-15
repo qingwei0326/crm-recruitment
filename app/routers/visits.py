@@ -187,4 +187,6 @@ async def update_visit(
         visit.notes = body.notes
     await db.commit()
     await db.refresh(visit)
-    return Response.ok({"id": visit.id, "status": visit.status, "updated_at": str(visit.updated_at)})
+    return Response.ok(
+        {"id": visit.id, "status": visit.status, "updated_at": str(visit.updated_at)}
+    )

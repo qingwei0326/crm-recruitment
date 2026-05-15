@@ -1,13 +1,12 @@
 """AI intent analysis - DeepSeek API engine + keyword fallback (UTF-8)"""
 
-import asyncio
 import json
 import logging
 import os
 import re
 import time
-from urllib.request import Request, urlopen
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from app.config import DEEPSEEK_API_KEY, DEEPSEEK_BASE
 
@@ -16,7 +15,7 @@ logger = logging.getLogger("ai_analyzer")
 # Load keywords from external JSON config  [optimization: external config]
 _keyword_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keywords.json")
 try:
-    with open(_keyword_dir, "r", encoding="utf-8") as _f:
+    with open(_keyword_dir, encoding="utf-8") as _f:
         _KW = json.load(_f)
 except FileNotFoundError as e:
     raise RuntimeError(
@@ -183,14 +182,18 @@ def _deepseek_analyze(transcript: str) -> dict | None:
     truncated = transcript[:MAX_TRANSCRIPT_LENGTH]
 
     prompt = (
-        "You are an admissions call analysis assistant. Analyze the following agent-parent conversation transcript "
-        "and determine the student/parent enrollment intent level.\n\n"
+        "You are an admissions call analysis assistant. Analyze the following "
+        "agent-parent conversation transcript and determine the student/parent "
+        "enrollment intent level.\n\n"
         "Levels:\n"
-        "- A (High intent): clear enrollment intent, asks about registration process, requests reservation, confirms visit\n"
-        "- B (Medium intent): some interest but still considering, needs family discussion, comparing schools\n"
+        "- A (High intent): clear enrollment intent, asks about registration process, "
+        "requests reservation, confirms visit\n"
+        "- B (Medium intent): some interest but still considering, needs family "
+        "discussion, comparing schools\n"
         "- C (Low intent): clear rejection, already enrolled elsewhere, not interested\n\n"
         "Return ONLY valid JSON in this format (no extra text):\n"
-        '{"intent":"A/B/C/无","confidence":0.0-1.0,"summary":"one-line summary","reasons":"reasoning"}\n\n'
+        '{"intent":"A/B/C/无","confidence":0.0-1.0,'
+        '"summary":"one-line summary","reasons":"reasoning"}\n\n'
         f"Transcript:\n{truncated}"
     )
 
@@ -202,7 +205,7 @@ def _deepseek_analyze(transcript: str) -> dict | None:
             if attempt < API_RETRIES:
                 time.sleep(1 * (attempt + 1))  # linear backoff
             else:
-                logger.error(f"DeepSeek API all retries exhausted, falling back to keyword")
+                logger.error("DeepSeek API all retries exhausted, falling back to keyword")
         except Exception as e:
             logger.warning(f"DeepSeek API error, falling back to keyword: {e}")
             return None

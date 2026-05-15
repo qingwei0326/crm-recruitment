@@ -21,7 +21,12 @@ from app.models import (
     User,
     UserRole,
 )
-from app.permissions import apply_student_scope, get_accessible_student, get_student_or_404, is_admin
+from app.permissions import (
+    apply_student_scope,
+    get_accessible_student,
+    get_student_or_404,
+    is_admin,
+)
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
 from app.utils import make_operation_log, mask_phone
 
@@ -36,6 +41,27 @@ STAGE_ORDER = ["初次联系", "有意向", "已送资料", "预约参观", "已
 # Excel import: limit memory DoS from huge uploads
 MAX_STUDENT_IMPORT_BYTES = 10 * 1024 * 1024
 
+ADMIN_STUDENT_UPDATE_FIELDS = {
+    "name",
+    "phone",
+    "status",
+    "intent_level",
+    "assigned_to",
+    "join_reasons",
+    "region",
+    "stage",
+    "enrolled_at",
+    "program",
+    "deposit",
+    "score",
+    "guardian_name",
+    "guardian_phone",
+    "school_name",
+    "school_address",
+    "need_help",
+}
+AGENT_STUDENT_UPDATE_FIELDS = {"status", "intent_level", "join_reasons", "stage", "need_help"}
+
 
 def next_stage(current: str) -> str | None:
     try:
@@ -45,19 +71,59 @@ def next_stage(current: str) -> str | None:
         return None
 
 
+def _enum_or_error(enum_cls, value: str, label: str):
+    try:
+        return enum_cls(value)
+    except ValueError:
+        raise ValueError(f"无效的{label}: {value}")
+
+
+def _student_payload(student: Student, full_phone: bool = False) -> dict:
+    payload = {
+        "id": student.id,
+        "name": student.name,
+        "phone": mask_phone(student.phone),
+        "region": student.region,
+        "assigned_to": student.assigned_to,
+        "status": student.status,
+        "intent_level": student.intent_level,
+        "stage": student.stage,
+        "join_reasons": student.join_reasons,
+        "case_no": student.case_no,
+        "need_help": student.need_help,
+        "score": student.score,
+        "guardian_name": student.guardian_name,
+        "guardian_phone": mask_phone(student.guardian_phone),
+        "school_name": student.school_name,
+        "school_address": student.school_address,
+        "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
+        "program": student.program,
+        "deposit": student.deposit,
+        "expired_at": str(student.expired_at) if student.expired_at else None,
+        "created_at": str(student.created_at),
+        "updated_at": str(student.updated_at),
+    }
+    if full_phone:
+        payload["phone_raw"] = student.phone
+        payload["guardian_phone_raw"] = student.guardian_phone
+    return payload
+
+
 @router.post("/import")
 async def import_students(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    if not file.filename.endswith((".xlsx", ".xls")):
-        return Response.error(code=1, msg="仅支持 .xlsx / .xls 文件")
+    filename = file.filename or ""
+    if not filename.lower().endswith(".xlsx"):
+        return Response.error(code=1, msg="仅支持 .xlsx 文件")
 
     try:
         contents = await file.read()
         if len(contents) > MAX_STUDENT_IMPORT_BYTES:
-            return Response.error(code=1, msg=f"文件过大，请小于 {MAX_STUDENT_IMPORT_BYTES // (1024 * 1024)}MB")
+            max_mb = MAX_STUDENT_IMPORT_BYTES // (1024 * 1024)
+            return Response.error(code=1, msg=f"文件过大，请小于 {max_mb}MB")
 
         wb = load_workbook(filename=BytesIO(contents), read_only=False)
         ws = wb.active
@@ -98,8 +164,9 @@ async def import_students(
         success = 0
         skipped = 0
         duplicates = []
+        errors = []
 
-        for row in ws.iter_rows(min_row=2, values_only=True):
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             name_val = row[name_col - 1] if len(row) >= name_col else None
             phone_val = row[phone_col - 1] if len(row) >= phone_col else None
             region_val = row[region_col - 1] if region_col and len(row) >= region_col else ""
@@ -137,11 +204,20 @@ async def import_students(
                 duplicates.append(phone)
                 continue
 
+            score = None
+            if score_val not in (None, ""):
+                try:
+                    score = float(score_val)
+                except (TypeError, ValueError):
+                    skipped += 1
+                    errors.append({"row": row_idx, "reason": f"成绩格式无效: {score_val}"})
+                    continue
+
             student = Student(
                 name=name,
                 phone=phone,
                 region=str(region_val).strip() if region_val else "",
-                score=float(score_val) if score_val not in (None, "") else None,
+                score=score,
                 guardian_name=str(guardian_name_val).strip() if guardian_name_val else "",
                 guardian_phone=re.sub(r"\s+", "", str(guardian_phone_val)).strip()
                 if guardian_phone_val
@@ -165,6 +241,7 @@ async def import_students(
                 "success": success,
                 "skipped": skipped,
                 "duplicates": duplicates,
+                "errors": errors,
             }
         )
     except Exception as e:
@@ -182,7 +259,18 @@ async def download_import_template():
     ws.append(headers)
 
     # Example data
-    ws.append(["张三", "13800138000", "580", "张先生", "13900139000", "第一中学", "XX市XX区XX路1号", "福州"])
+    ws.append(
+        [
+            "张三",
+            "13800138000",
+            "580",
+            "张先生",
+            "13900139000",
+            "第一中学",
+            "XX市XX区XX路1号",
+            "福州",
+        ]
+    )
 
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[chr(64 + col)].width = 16
@@ -285,33 +373,7 @@ async def list_students(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "list": [
-                {
-                    "id": s.id,
-                    "name": s.name,
-                    "phone": mask_phone(s.phone),
-                    "region": s.region,
-                    "assigned_to": s.assigned_to,
-                    "status": s.status,
-                    "intent_level": s.intent_level,
-                    "stage": s.stage,
-                    "join_reasons": s.join_reasons,
-                    "case_no": s.case_no,
-                    "need_help": s.need_help,
-                    "score": s.score,
-                    "guardian_name": s.guardian_name,
-                    "guardian_phone": s.guardian_phone,
-                    "school_name": s.school_name,
-                    "school_address": s.school_address,
-                    "enrolled_at": str(s.enrolled_at) if s.enrolled_at else None,
-                    "program": s.program,
-                    "deposit": s.deposit,
-                    "expired_at": str(s.expired_at) if s.expired_at else None,
-                    "created_at": str(s.created_at),
-                    "updated_at": str(s.updated_at),
-                }
-                for s in students
-            ],
+            "list": [_student_payload(s, full_phone=is_admin(current_user)) for s in students],
         }
     )
 
@@ -389,32 +451,7 @@ async def get_student(
     db.add(log)
     await db.commit()
 
-    return Response.ok(
-        {
-            "id": student.id,
-            "name": student.name,
-            "phone": mask_phone(student.phone),
-            "region": student.region,
-            "assigned_to": student.assigned_to,
-            "status": student.status,
-            "intent_level": student.intent_level,
-            "stage": student.stage,
-            "join_reasons": student.join_reasons,
-            "case_no": student.case_no,
-            "need_help": student.need_help,
-            "score": student.score,
-            "guardian_name": student.guardian_name,
-            "guardian_phone": mask_phone(student.guardian_phone),
-            "school_name": student.school_name,
-            "school_address": student.school_address,
-            "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
-            "program": student.program,
-            "deposit": student.deposit,
-            "expired_at": str(student.expired_at) if student.expired_at else None,
-            "created_at": str(student.created_at),
-            "updated_at": str(student.updated_at),
-        }
-    )
+    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
 
 @router.put("/{student_id}")
@@ -427,36 +464,48 @@ async def update_student(
     student = await get_accessible_student(db, student_id, current_user)
     raw = body.model_dump(exclude_unset=True)
     if not raw:
-        return Response.ok(
-            {
-                "id": student.id,
-                "status": student.status,
-                "stage": student.stage,
-                "intent_level": student.intent_level,
-                "assigned_to": student.assigned_to,
-                "region": student.region,
-                "join_reasons": student.join_reasons,
-                "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
-                "program": student.program,
-                "deposit": student.deposit,
-                "updated_at": str(student.updated_at),
-            }
-        )
+        return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
-    admin_only_fields = {"assigned_to", "enrolled_at", "program", "deposit"}
-    if not is_admin(current_user):
-        forbidden = sorted(admin_only_fields.intersection(raw))
-        if forbidden:
-            raise HTTPException(status_code=403, detail=f"无权修改字段: {', '.join(forbidden)}")
+    allowed_fields = (
+        ADMIN_STUDENT_UPDATE_FIELDS if is_admin(current_user) else AGENT_STUDENT_UPDATE_FIELDS
+    )
+    forbidden = sorted(set(raw) - allowed_fields)
+    if forbidden:
+        raise HTTPException(status_code=403, detail=f"无权修改字段: {', '.join(forbidden)}")
 
     old_intent = student.intent_level
     for k, v in raw.items():
-        if k == "intent_level" and v is not None:
+        if k == "phone" and v is not None:
+            phone = re.sub(r"\s+", "", v)
+            existing = await db.execute(
+                select(Student.id).where(Student.phone == phone, Student.id != student.id)
+            )
+            if existing.scalar_one_or_none():
+                return Response.error(code=1, msg=f"电话 {phone} 已存在")
+            v = phone
+        elif k == "status" and v is not None:
             try:
-                v = IntentLevel(v)
-            except ValueError:
-                return Response.error(code=1, msg=f"无效的意向等级: {v}")
+                v = _enum_or_error(StudentStatus, v, "状态")
+            except ValueError as e:
+                return Response.error(code=1, msg=str(e))
+        elif k == "stage" and v is not None:
+            try:
+                v = _enum_or_error(StudentStage, v, "阶段")
+            except ValueError as e:
+                return Response.error(code=1, msg=str(e))
+        elif k == "intent_level" and v is not None:
+            try:
+                v = _enum_or_error(IntentLevel, v, "意向等级")
+            except ValueError as e:
+                return Response.error(code=1, msg=str(e))
+        elif k == "guardian_phone" and v is not None:
+            v = re.sub(r"\s+", "", v)
         setattr(student, k, v)
+
+    if student.stage == StudentStage.enrolled:
+        student.status = StudentStatus.enrolled
+        if not student.enrolled_at:
+            student.enrolled_at = date.today()
 
     if "intent_level" in raw and old_intent != student.intent_level:
         db.add(
@@ -474,21 +523,7 @@ async def update_student(
 
     await db.commit()
     await db.refresh(student)
-    return Response.ok(
-        {
-            "id": student.id,
-            "status": student.status,
-            "stage": student.stage,
-            "intent_level": student.intent_level,
-            "assigned_to": student.assigned_to,
-            "region": student.region,
-            "join_reasons": student.join_reasons,
-            "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
-            "program": student.program,
-            "deposit": student.deposit,
-            "updated_at": str(student.updated_at),
-        }
-    )
+    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
 
 @router.put("/{student_id}/stage")
@@ -501,9 +536,9 @@ async def update_stage(
     student = await get_accessible_student(db, student_id, current_user)
 
     try:
-        student.stage = StudentStage(body.stage)
-    except ValueError:
-        return Response.error(msg=f"无效的阶段值: {body.stage}")
+        student.stage = _enum_or_error(StudentStage, body.stage, "阶段")
+    except ValueError as e:
+        return Response.error(msg=str(e))
 
     # Auto-update status when stage is "已报名"
     if body.stage == "已报名":

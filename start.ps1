@@ -1,18 +1,44 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Python = if ($env:CRM_PYTHON) { $env:CRM_PYTHON } else { Join-Path $Root ".venv-win\Scripts\python.exe" }
+$DefaultPython = Join-Path $Root ".venv-win\Scripts\python.exe"
+if ($env:CRM_PYTHON) {
+    $Python = $env:CRM_PYTHON
+} elseif (Test-Path $DefaultPython) {
+    $Python = $DefaultPython
+} else {
+    $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $PythonCommand) {
+        throw "Python interpreter not found. Create .venv-win or set CRM_PYTHON to your Python path."
+    }
+    $Python = $PythonCommand.Source
+}
+
+$PythonCommand = Get-Command $Python -ErrorAction SilentlyContinue
+if (-not $PythonCommand) {
+    throw "Python interpreter not found: $Python. Create .venv-win or set CRM_PYTHON to your Python path."
+}
+$Python = $PythonCommand.Source
+
+$PyDeps = Join-Path $Root ".pydeps"
+if (Test-Path $PyDeps) {
+    $env:PYTHONNOUSERSITE = "1"
+    $env:PYTHONPATH = if ($env:PYTHONPATH) { "$PyDeps;$env:PYTHONPATH" } else { $PyDeps }
+}
+
 $NpmGlobal = Join-Path $env:APPDATA "npm"
 if ((Test-Path $NpmGlobal) -and ($env:PATH -notlike "*$NpmGlobal*")) {
     $env:PATH = "$NpmGlobal;$env:PATH"
 }
 
-if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
-    throw "pm2 not found in PATH. Install PM2 or run this from a shell where pm2 is available."
-}
-
-if (-not (Test-Path $Python)) {
-    throw "Python interpreter not found: $Python. Create .venv-win or set CRM_PYTHON to your Python path."
+$Pm2Command = Get-Command pm2 -ErrorAction SilentlyContinue
+$LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
+if ($Pm2Command) {
+    $Pm2 = $Pm2Command.Source
+} elseif (Test-Path $LocalPm2) {
+    $Pm2 = $LocalPm2
+} else {
+    throw "pm2 not found. Run npm install in the project root or install PM2 globally."
 }
 
 if (-not $env:SECRET_KEY) {
@@ -35,8 +61,8 @@ npm run build
 Pop-Location
 
 Write-Host "Starting crm-backend with PM2..."
-pm2 start ecosystem.config.js --update-env
-pm2 save
+& $Pm2 start ecosystem.config.js --update-env
+& $Pm2 save
 
 Write-Host "Ready: http://127.0.0.1:8000"
 Write-Host "LAN:   http://192.168.8.2:8000"

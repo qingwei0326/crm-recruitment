@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,28 @@ from app.permissions import get_accessible_student
 from app.schemas import Response
 
 router = APIRouter(prefix="/api/operation-logs", tags=["操作日志"])
+
+
+def _parse_iso_date(value: str | None, default: date, label: str) -> date:
+    if not value:
+        return default
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"{label} 日期格式应为 YYYY-MM-DD")
+
+
+def _parse_agent_ids(value: str) -> list[int]:
+    ids = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="agent_ids 必须是逗号分隔的数字")
+    return ids
 
 
 @router.get("/call-volume")
@@ -25,8 +47,10 @@ async def call_volume_query(
 ):
     """通电量查询：按日期+话务员筛选操作日志"""
     today = date.today()
-    s_date = date.fromisoformat(start_date) if start_date else today
-    e_date = date.fromisoformat(end_date) if end_date else today
+    s_date = _parse_iso_date(start_date, today, "start_date")
+    e_date = _parse_iso_date(end_date, today, "end_date")
+    if s_date > e_date:
+        raise HTTPException(status_code=422, detail="start_date 不能晚于 end_date")
     day_start = datetime(s_date.year, s_date.month, s_date.day)
     day_end = datetime(e_date.year, e_date.month, e_date.day) + timedelta(days=1)
 
@@ -37,7 +61,7 @@ async def call_volume_query(
     )
 
     if agent_ids:
-        ids = [int(x) for x in agent_ids.split(",") if x.strip()]
+        ids = _parse_agent_ids(agent_ids)
         if ids:
             query = query.where(OperationLog.operator_id.in_(ids))
 

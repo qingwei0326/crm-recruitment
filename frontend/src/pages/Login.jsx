@@ -96,9 +96,6 @@ export default function Login() {
             {loading ? '登录中...' : '登 录'}
           </button>
 
-          <div className="text-xs text-gray-400 dark:text-gray-500 text-center pt-2 border-t dark:border-gray-700">
-            预置账号: admin / admin123 &nbsp;|&nbsp; test01 / test123
-          </div>
         </form>
       </div>
     </div>

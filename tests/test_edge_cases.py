@@ -1,7 +1,10 @@
 """Tests for edge cases, error handling, and historical bug patterns."""
 
-import pytest
 from datetime import datetime
+
+import pytest
+
+from app.auth import create_access_token
 
 
 @pytest.mark.asyncio
@@ -128,10 +131,6 @@ class TestAuthEdgeCases:
         })
         assert resp.status_code == 401
 
-
-from app.auth import create_access_token
-
-
 @pytest.mark.asyncio
 class TestCallEndpoints:
     async def test_create_call(self, client, admin_headers, sample_student):
@@ -158,14 +157,19 @@ class TestCallEndpoints:
         assert resp.json()["detail"] == "学生不存在"
 
     async def test_check_today_call(self, client, admin_headers, sample_student):
-        resp = await client.get(f"/api/calls/check?student_id={sample_student.id}", headers=admin_headers)
+        resp = await client.get(
+            f"/api/calls/check?student_id={sample_student.id}",
+            headers=admin_headers,
+        )
         assert resp.json()["code"] == 0
 
     async def test_check_today_call_unknown_student(self, client, admin_headers):
         resp = await client.get("/api/calls/check?student_id=99999", headers=admin_headers)
         assert resp.status_code == 404
 
-    async def test_agent_analyze_unassigned_student_forbidden(self, client, agent_headers, sample_student):
+    async def test_agent_analyze_unassigned_student_forbidden(
+        self, client, agent_headers, sample_student
+    ):
         assert sample_student.assigned_to is None
         resp = await client.post("/api/calls/analyze", json={
             "student_id": sample_student.id,
@@ -177,7 +181,7 @@ class TestCallEndpoints:
     async def test_agent_analyze_assigned_to_other_forbidden(
         self, client, agent_headers, admin_user, db,
     ):
-        from app.models import Student, StudentStage, StudentStatus, IntentLevel
+        from app.models import IntentLevel, Student, StudentStage, StudentStatus
         s = Student(
             name="独占学员",
             phone="18800001111",
@@ -245,8 +249,7 @@ class TestVisitEndpoints:
         assert resp.status_code == 422
 
     async def test_visits_summary(self, client, admin_headers, db, admin_user):
-        from app.models import Visit, VisitType, VisitStatus, Student
-        from datetime import datetime
+        from app.models import Student, Visit, VisitStatus, VisitType
         s = Student(name="vtest", phone="1", region="r")
         db.add(s)
         await db.commit()
@@ -259,6 +262,36 @@ class TestVisitEndpoints:
         await db.commit()
         resp = await client.get("/api/visits/summary", headers=admin_headers)
         assert resp.json()["code"] == 0
+
+    async def test_update_visit_invalid_type_returns_422(
+        self, client, admin_headers, sample_student
+    ):
+        create_resp = await client.post("/api/visits", json={
+            "student_id": sample_student.id,
+            "visit_type": "来校参观",
+            "scheduled_date": "2026-06-01T10:00:00",
+        }, headers=admin_headers)
+        visit_id = create_resp.json()["data"]["id"]
+
+        resp = await client.put(f"/api/visits/{visit_id}", json={
+            "visit_type": "无效类型",
+        }, headers=admin_headers)
+        assert resp.status_code == 422
+
+    async def test_update_visit_invalid_status_returns_422(
+        self, client, admin_headers, sample_student
+    ):
+        create_resp = await client.post("/api/visits", json={
+            "student_id": sample_student.id,
+            "visit_type": "来校参观",
+            "scheduled_date": "2026-06-01T10:00:00",
+        }, headers=admin_headers)
+        visit_id = create_resp.json()["data"]["id"]
+
+        resp = await client.put(f"/api/visits/{visit_id}", json={
+            "status": "未知状态",
+        }, headers=admin_headers)
+        assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -290,7 +323,10 @@ class TestFollowUpEndpoints:
         assert resp.json()["code"] == 0
 
     async def test_list_follow_ups(self, client, admin_headers, sample_student):
-        resp = await client.get(f"/api/follow-ups?student_id={sample_student.id}", headers=admin_headers)
+        resp = await client.get(
+            f"/api/follow-ups?student_id={sample_student.id}",
+            headers=admin_headers,
+        )
         assert resp.json()["code"] == 0
 
 

@@ -3,8 +3,9 @@
 Note: API uses custom Response: HTTP 200 always, code=0 success, code=1 error.
 """
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -49,6 +50,15 @@ class TestAdminCreateUser:
         body = resp.json()
         assert body["code"] == 1  # conflict, code=1 not HTTP 400
 
+    async def test_create_invalid_role_returns_422(self, client, admin_headers):
+        resp = await client.post("/api/admin/users", json={
+            "username": "badrole",
+            "password": "x",
+            "name": "bad",
+            "role": "manager",
+        }, headers=admin_headers)
+        assert resp.status_code == 422
+
     async def test_create_empty_username(self, client, admin_headers):
         """Pydantic accepts empty string; server should not crash."""
         resp = await client.post("/api/admin/users", json={
@@ -79,6 +89,12 @@ class TestAdminUpdateUser:
             "is_active": False,
         }, headers=admin_headers)
         assert resp.json()["code"] == 0
+
+    async def test_update_invalid_role_returns_422(self, client, admin_headers, agent_user):
+        resp = await client.put(f"/api/admin/users/{agent_user.id}", json={
+            "role": "manager",
+        }, headers=admin_headers)
+        assert resp.status_code == 422
 
     async def test_update_not_found(self, client, admin_headers):
         resp = await client.put("/api/admin/users/99999", json={"name": "x"}, headers=admin_headers)
@@ -135,7 +151,11 @@ class TestAdminResetPassword:
         assert "new_password" in resp.json()["data"]
 
     async def test_reset_not_found(self, client, admin_headers):
-        resp = await client.post("/api/admin/users/99999/reset-password", json={}, headers=admin_headers)
+        resp = await client.post(
+            "/api/admin/users/99999/reset-password",
+            json={},
+            headers=admin_headers,
+        )
         assert resp.json()["code"] == 1
 
     async def test_reset_requires_admin(self, client, agent_headers, agent_user):

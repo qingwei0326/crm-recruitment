@@ -1,5 +1,6 @@
 import secrets
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -18,13 +19,13 @@ class UserCreateReq(BaseModel):
     username: str
     password: str
     name: str
-    role: str = "agent"
+    role: Literal["admin", "agent"] = "agent"
     service_regions: str = ""
 
 
 class UserUpdateReq(BaseModel):
     name: str | None = None
-    role: str | None = None
+    role: Literal["admin", "agent"] | None = None
     is_active: bool | None = None
     password: str | None = None
     service_regions: str | None = None
