@@ -25,3 +25,21 @@ body {
 .dark .scroll-thin::-webkit-scrollbar-thumb {
   background: #4b5563;
 }
+
+/* Keep native table layers from showing light backgrounds in dark mode. */
+.dark table {
+  color: #d1d5db;
+}
+
+.dark thead,
+.dark thead tr,
+.dark thead th {
+  background-color: #1f2937;
+  color: #d1d5db;
+}
+
+.dark tbody,
+.dark tbody tr,
+.dark tbody td {
+  background-color: transparent;
+}
