@@ -4,7 +4,13 @@ const fs = require('fs');
 const log = m => fs.appendFileSync(__dirname + '/forward.log', new Date().toISOString() + ' ' + m + '\n');
 
 const targets = [
-  { listen: '0.0.0.0', port: 8000, target: '127.0.0.1', targetPort: 8000, name: '招生系统' },
+  {
+    listen: process.env.CRM_LAN_HOST || '192.168.8.2',
+    port: 8000,
+    target: '127.0.0.1',
+    targetPort: 8000,
+    name: '招生系统',
+  },
 ];
 
 targets.forEach(t => {

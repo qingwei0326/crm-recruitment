@@ -39,3 +39,4 @@ pm2 start ecosystem.config.js --update-env
 pm2 save
 
 Write-Host "Ready: http://127.0.0.1:8000"
+Write-Host "LAN:   http://192.168.8.2:8000"
