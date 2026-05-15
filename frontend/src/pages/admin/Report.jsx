@@ -1,0 +1,422 @@
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import useIsMobile from '../../hooks/useIsMobile';
+import api from '../../api';
+import {
+  ArrowLeft,
+  Trophy,
+  Medal,
+  Phone,
+  TrendingUp,
+  Target,
+  CheckCircle2,
+  MapPin,
+  Home,
+  Calendar,
+  Clock,
+  UserCheck,
+  LogOut,
+  Menu,
+  X,
+  Users,
+  ListFilter,
+  BarChart3,
+  Sun,
+  Moon,
+  LayoutDashboard,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+
+const rankColors = [
+  'bg-amber-400 text-amber-900',
+  'bg-gray-300 text-gray-700',
+  'bg-amber-600 text-amber-100',
+];
+const maskPhone = (p) => (p ? p.slice(0, 3) + '****' + p.slice(-4) : '');
+
+export default function Report() {
+  const { user, logout } = useAuth();
+  const { dark, toggle } = useTheme();
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [ranking, setRanking] = useState([]);
+  const [visits, setVisits] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([api.get('/stats/agent-ranking'), api.get('/visits?page_size=100')])
+      .then(([rRes, vRes]) => {
+        setRanking(rRes.data.data?.ranking || []);
+        setVisits(vRes.data.data?.list || []);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Split visits by type
+  const campusVisits = (visits || []).filter((v) => v.visit_type === '来校参观');
+  const homeVisits = (visits || []).filter((v) => v.visit_type === '家访');
+
+  const closeSidebar = () => setSidebarOpen(false);
+
+  const SidebarNav = () => (
+    <>
+      <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+            <Trophy className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">CRM 管理后台</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
+          </div>
+        </div>
+        {isMobile && (
+          <button
+            onClick={closeSidebar}
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        )}
+      </div>
+      <nav className="p-3 space-y-1">
+        <Link
+          to="/admin"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <LayoutDashboard className="w-4 h-4" /> 仪表盘
+        </Link>
+        <Link
+          to="/admin/leads"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <ListFilter className="w-4 h-4" /> 线索池管理
+        </Link>
+        <Link
+          to="/admin/agents"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <Users className="w-4 h-4" /> 话务员管理
+        </Link>
+        <Link
+          to="/admin/trend"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <TrendingUp className="w-4 h-4" /> 趋势报表
+        </Link>
+        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
+          <BarChart3 className="w-4 h-4" /> 汇总报表
+        </div>
+      </nav>
+      <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
+        <button
+          onClick={toggle}
+          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+        >
+          {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}{' '}
+          {dark ? '亮色模式' : '暗色模式'}
+        </button>
+        <button
+          onClick={logout}
+          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+        >
+          <LogOut className="w-4 h-4" /> 退出登录
+        </button>
+      </div>
+    </>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
+      {isMobile && sidebarOpen && (
+        <div className="fixed inset-0 bg-black/40 z-20" onClick={closeSidebar} />
+      )}
+      <aside
+        className={`${isMobile ? 'fixed inset-y-0 left-0 z-30 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
+      >
+        <SidebarNav />
+      </aside>
+
+      <main className="flex-1 min-w-0">
+        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {isMobile && (
+              <button
+                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            )}
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">汇总报表</h2>
+          </div>
+          {isMobile && (
+            <button
+              onClick={toggle}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              {dark ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+          )}
+        </header>
+
+        <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-6">
+          {/* ── Section 1: Agent ranking ── */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+            <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              <h3 className="font-semibold text-gray-800 dark:text-gray-100">话务员业绩排行</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-left text-gray-600 dark:text-gray-400">
+                    <th className="px-3 py-3 w-10 text-center">#</th>
+                    <th className="px-3 py-3 font-medium">话务员</th>
+                    <th className="px-2 py-3 font-medium text-center">总线索</th>
+                    <th className="px-2 py-3 font-medium text-center">已联系</th>
+                    <th className="px-2 py-3 font-medium text-center">A级</th>
+                    <th className="px-2 py-3 font-medium text-center">已报名</th>
+                    <th className="px-2 py-3 font-medium text-center">转化率</th>
+                    <th className="px-2 py-3 font-medium text-center">到访</th>
+                    <th className="px-2 py-3 font-medium text-center">参观</th>
+                    <th className="px-2 py-3 font-medium text-center">家访</th>
+                    <th className="px-2 py-3 font-medium text-center">本月呼出</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y dark:divide-gray-700">
+                  {ranking.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="text-center py-10 text-gray-400">
+                        暂无数据
+                      </td>
+                    </tr>
+                  ) : (
+                    ranking.map((a, i) => (
+                      <tr
+                        key={a.id}
+                        className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${!a.is_active ? 'opacity-50' : ''}`}
+                      >
+                        <td className="px-3 py-3 text-center">
+                          <span
+                            className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${i < 3 ? rankColors[i] : 'text-gray-500'}`}
+                          >
+                            {i < 3 ? <Medal className="w-3.5 h-3.5" /> : i + 1}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-medium text-gray-900 dark:text-gray-100">
+                          {a.name}
+                          {!a.is_active && (
+                            <span className="text-xs text-red-400 ml-1">(已禁用)</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-3 text-center text-gray-700 dark:text-gray-300">
+                          {a.total_leads}
+                        </td>
+                        <td className="px-2 py-3 text-center text-gray-700 dark:text-gray-300">
+                          {a.contacted}
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span
+                            className={`font-bold ${a.a_count > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}
+                          >
+                            {a.a_count}
+                          </span>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span
+                            className={`font-bold ${a.enrolled > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}
+                          >
+                            {a.enrolled}
+                          </span>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span
+                            className={`font-semibold ${a.conversion_rate >= 50 ? 'text-green-600' : a.conversion_rate >= 20 ? 'text-amber-600' : 'text-gray-500'}`}
+                          >
+                            {a.conversion_rate}%
+                          </span>
+                        </td>
+                        <td className="px-2 py-3 text-center text-gray-700 dark:text-gray-300">
+                          {a.total_visits}
+                        </td>
+                        <td className="px-2 py-3 text-center text-green-600 dark:text-green-400">
+                          {a.campus_visits}
+                        </td>
+                        <td className="px-2 py-3 text-center text-amber-600 dark:text-amber-400">
+                          {a.home_visits}
+                        </td>
+                        <td className="px-2 py-3 text-center text-gray-700 dark:text-gray-300">
+                          {a.month_calls}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Section 2: Visit schedules ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Campus visits */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+                  <Home className="w-4 h-4 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">来校参观</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {campusVisits.length} 条记录
+                  </p>
+                </div>
+              </div>
+              <div className="divide-y dark:divide-gray-700 max-h-96 overflow-y-auto">
+                {campusVisits.length === 0 ? (
+                  <div className="py-10 text-center text-gray-400 text-sm">暂无来校参观安排</div>
+                ) : (
+                  campusVisits.map((v) => (
+                    <div
+                      key={v.id}
+                      className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      <div className="w-1.5 h-10 rounded-full bg-green-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                            {v.student_name}
+                          </span>
+                          <a
+                            href={`tel:${v.student_phone}`}
+                            className="text-gray-400 hover:text-green-600"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {v.scheduled_date?.split('T')[0]}
+                          </span>
+                          {v.student_region && <span>{v.student_region}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {v.agent_name}
+                        </div>
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded-full mt-0.5 inline-block ${
+                            v.status === '已确认'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                              : v.status === '已完成'
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                : v.status === '已取消'
+                                  ? 'bg-red-100 text-red-500 dark:bg-red-900/40 dark:text-red-300'
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                          }`}
+                        >
+                          {v.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Home visits */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                  <MapPin className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">家访</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {homeVisits.length} 条记录
+                  </p>
+                </div>
+              </div>
+              <div className="divide-y dark:divide-gray-700 max-h-96 overflow-y-auto">
+                {homeVisits.length === 0 ? (
+                  <div className="py-10 text-center text-gray-400 text-sm">暂无家访安排</div>
+                ) : (
+                  homeVisits.map((v) => (
+                    <div
+                      key={v.id}
+                      className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      <div className="w-1.5 h-10 rounded-full bg-amber-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                            {v.student_name}
+                          </span>
+                          <a
+                            href={`tel:${v.student_phone}`}
+                            className="text-gray-400 hover:text-amber-600"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {v.scheduled_date?.split('T')[0]}
+                          </span>
+                          {v.student_region && <span>{v.student_region}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {v.agent_name}
+                        </div>
+                        <span
+                          className={`text-xs px-1.5 py-0.5 rounded-full mt-0.5 inline-block ${
+                            v.status === '已确认'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                              : v.status === '已完成'
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                : v.status === '已取消'
+                                  ? 'bg-red-100 text-red-500 dark:bg-red-900/40 dark:text-red-300'
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                          }`}
+                        >
+                          {v.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

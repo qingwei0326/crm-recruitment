@@ -1,0 +1,59 @@
+import asyncio
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
+from app.config import DATABASE_URL, DATABASE_URL_SYNC
+
+engine = create_async_engine(DATABASE_URL, echo=False)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+sync_engine = create_engine(DATABASE_URL_SYNC, echo=False)
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
+if DATABASE_URL.startswith("sqlite"):
+    event.listen(engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
+    event.listen(sync_engine, "connect", _enable_sqlite_foreign_keys)
+
+RETRY_MAX = 3
+RETRY_BASE_DELAY = 0.1
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+async def get_db():
+    async with async_session() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
+
+
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def run_with_retry(db_session_factory, operation, *args, **kwargs):
+    """Execute a DB operation with retry on deadlock/OperationalError."""
+    last_error = None
+    for attempt in range(RETRY_MAX):
+        try:
+            async with db_session_factory() as session:
+                return await operation(session, *args, **kwargs)
+        except OperationalError as e:
+            if "deadlock" in str(e).lower() and attempt < RETRY_MAX - 1:
+                await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
+                last_error = e
+                continue
+            raise
+    raise last_error
