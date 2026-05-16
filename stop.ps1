@@ -1,17 +1,29 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
-if (Test-Path $LocalPm2) {
-    $Pm2 = $LocalPm2
-} else {
-    $Pm2Command = Get-Command pm2 -ErrorAction SilentlyContinue
-    if ($Pm2Command) {
-        $Pm2 = $Pm2Command.Source
+$PidFiles = @(
+    (Join-Path $Root "backend.pid"),
+    (Join-Path $Root "forward.pid")
+)
+
+foreach ($PidFile in $PidFiles) {
+    if (Test-Path $PidFile) {
+        $PidValue = (Get-Content -Raw $PidFile).Trim()
+        if ($PidValue) {
+            Stop-Process -Id ([int]$PidValue) -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
     }
 }
-if (-not $Pm2) {
-    throw "pm2 not found. Run npm install in the project root or install PM2 globally."
+
+$LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
+if (Test-Path $LocalPm2) {
+    & $LocalPm2 stop crm-backend crm-lan-forward *> $null
 }
 
-& $Pm2 stop crm-backend
+$UvicornProcesses = Get-CimInstance Win32_Process | Where-Object {
+    $_.CommandLine -like "*uvicorn app.main:app*" -and $_.ProcessId -ne $PID
+}
+foreach ($Process in $UvicornProcesses) {
+    Stop-Process -Id $Process.ProcessId -Force -ErrorAction SilentlyContinue
+}
