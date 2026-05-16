@@ -60,6 +60,10 @@ const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '�
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 
+function getApiErrorMessage(error) {
+  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
+}
+
 export default function AgentWork() {
   const { user, logout } = useAuth();
   const { dark, toggle: toggleTheme } = useTheme();
@@ -83,6 +87,9 @@ export default function AgentWork() {
   const [detailNotes, setDetailNotes] = useState([]);
   const [noteIdx, setNoteIdx] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [detailNotesError, setDetailNotesError] = useState('');
 
   // Action states
   const [noteText, setNoteText] = useState('');
@@ -231,20 +238,45 @@ export default function AgentWork() {
   };
 
   const loadDetail = async (id) => {
+    const fallbackStudent = students.find((s) => s.id === id);
+    if (fallbackStudent) setDetailStudent((prev) => (prev?.id === id ? prev : fallbackStudent));
+    setShowDetail(true);
+    setShowAi(false);
+    setDetailLoading(true);
+    setDetailError('');
+    setDetailNotesError('');
     try {
-      const [lR, nR, cR] = await Promise.all([
+      const [studentResult, notesResult, callsResult] = await Promise.allSettled([
         api.get(`/students/${id}`),
         api.get(`/notes?student_id=${id}`),
         api.get(`/calls?student_id=${id}&page_size=5`),
       ]);
-      setDetailStudent(lR.data.data);
-      setDetailNotes(nR.data.data || []);
+
+      if (studentResult.status === 'fulfilled') {
+        setDetailStudent(studentResult.value.data.data);
+      } else {
+        setDetailError(getApiErrorMessage(studentResult.reason));
+      }
+
+      if (notesResult.status === 'fulfilled') {
+        setDetailNotes(notesResult.value.data.data || []);
+      } else {
+        setDetailNotes([]);
+        setDetailNotesError(getApiErrorMessage(notesResult.reason));
+      }
+
       setNoteIdx(0);
-      setShowDetail(true);
+
       // Check if any call record has analyzed_at
-      const calls = cR.data.data?.list || [];
-      setHasAnalysis(calls.some((c) => c.analyzed_at));
-    } catch {}
+      if (callsResult.status === 'fulfilled') {
+        const calls = callsResult.value.data.data?.list || [];
+        setHasAnalysis(calls.some((c) => c.analyzed_at));
+      } else {
+        setHasAnalysis(false);
+      }
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const updateDetailField = async (field, value) => {
@@ -608,6 +640,21 @@ export default function AgentWork() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {detailLoading && (
+                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  加载学生详情...
+                </div>
+              )}
+              {detailError && (
+                <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="flex-1">{detailError}</span>
+                  <button onClick={() => loadDetail(detailStudent.id)} className="font-medium">
+                    重试
+                  </button>
+                </div>
+              )}
               {/* Intent level rating */}
               <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                 <div className="text-xs text-gray-500 mb-1.5">意向等级（手动评级）</div>
@@ -665,6 +712,11 @@ export default function AgentWork() {
               {/* Timeline notes */}
               <div className="pt-2 border-t dark:border-gray-700">
                 <div className="text-sm font-semibold mb-2">联系记录</div>
+                {detailNotesError && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
+                    联系记录加载失败：{detailNotesError}
+                  </div>
+                )}
                 {detailNotes.length === 0 ? (
                   <div className="text-xs text-gray-400 py-4 text-center">暂无联系记录</div>
                 ) : (
@@ -1027,6 +1079,21 @@ export default function AgentWork() {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {detailLoading && (
+                  <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    加载学生详情...
+                  </div>
+                )}
+                {detailError && (
+                  <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span className="flex-1">{detailError}</span>
+                    <button onClick={() => loadDetail(detailStudent.id)} className="font-medium">
+                      重试
+                    </button>
+                  </div>
+                )}
                 {/* Intent level rating */}
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                   <div className="text-xs text-gray-500 mb-1.5">意向等级（手动评级）</div>
@@ -1083,6 +1150,11 @@ export default function AgentWork() {
                 <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>
                 <div className="pt-2 border-t dark:border-gray-700">
                   <div className="text-sm font-semibold mb-2">联系记录</div>
+                  {detailNotesError && (
+                    <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
+                      联系记录加载失败：{detailNotesError}
+                    </div>
+                  )}
                   {detailNotes.length === 0 ? (
                     <div className="text-xs text-gray-400 py-4 text-center">暂无</div>
                   ) : (
@@ -1144,6 +1216,102 @@ export default function AgentWork() {
             </div>
           )}
         </div>
+        {showDetail && detailStudent && (
+          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col lg:hidden">
+            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
+              <h3 className="font-semibold">{detailStudent.name || '学生详情'}</h3>
+              <button onClick={() => setShowDetail(false)}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {detailLoading && (
+                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  加载学生详情...
+                </div>
+              )}
+              {detailError && (
+                <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span className="flex-1">{detailError}</span>
+                  <button onClick={() => loadDetail(detailStudent.id)} className="font-medium">
+                    重试
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['phone', '电话'],
+                  ['region', '地域'],
+                  ['status', '状态'],
+                  ['intent_level', '意向'],
+                  ['stage', '阶段'],
+                  ['score', '成绩'],
+                  ['guardian_name', '监护人'],
+                  ['guardian_phone', '监护人电话'],
+                  ['school_name', '学校'],
+                  ['school_address', '学校地址'],
+                ].map(([k, label]) => (
+                  <div key={k} className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-3 min-w-0">
+                    <div className="text-xs text-gray-500">{label}</div>
+                    <div className="font-medium mt-0.5 break-words">{detailStudent[k] || '-'}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>
+              <div className="pt-2 border-t dark:border-gray-700">
+                <div className="text-sm font-semibold mb-2">联系记录</div>
+                {detailNotesError && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
+                    联系记录加载失败：{detailNotesError}
+                  </div>
+                )}
+                {detailNotes.length === 0 ? (
+                  <div className="text-xs text-gray-400 py-4 text-center">暂无联系记录</div>
+                ) : (
+                  <>
+                    <div className="flex gap-3 py-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium">{detailNotes[noteIdx].agent_name}</span>
+                          <span className="text-xs text-gray-400">{detailNotes[noteIdx].created_at}</span>
+                        </div>
+                        <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                          {detailNotes[noteIdx].content}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <button
+                        onClick={() => setNoteIdx(noteIdx - 1)}
+                        disabled={noteIdx === 0}
+                        className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        上一条
+                      </button>
+                      <span className="text-xs text-gray-400">
+                        {noteIdx + 1}/{detailNotes.length}
+                      </span>
+                      <button
+                        onClick={() => setNoteIdx(noteIdx + 1)}
+                        disabled={noteIdx >= detailNotes.length - 1}
+                        className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
+                      >
+                        下一条
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

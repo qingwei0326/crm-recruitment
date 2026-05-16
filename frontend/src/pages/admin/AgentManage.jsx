@@ -23,10 +23,17 @@ import {
   Moon,
   BarChart3,
   TrendingUp,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 
 const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
+
+function getApiErrorMessage(error) {
+  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
+}
 
 export default function AgentManage() {
   const { user, logout } = useAuth();
@@ -38,6 +45,8 @@ export default function AgentManage() {
   const [agentTasks, setAgentTasks] = useState(null);
   const [loading, setLoading] = useState(true);
   const [taskLoading, setTaskLoading] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState(null);
+  const [taskDetailCache, setTaskDetailCache] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
@@ -67,6 +76,8 @@ export default function AgentManage() {
     setSelectedAgent(agent);
     setTaskLoading(true);
     setAgentTasks(null);
+    setExpandedTaskId(null);
+    setTaskDetailCache({});
     try {
       const res = await api.get(`/admin/agents/${agent.id}/tasks`);
       setAgentTasks(res.data.data);
@@ -76,6 +87,71 @@ export default function AgentManage() {
       setTaskLoading(false);
     }
     if (isMobile) setSidebarOpen(false); // auto-close list on mobile
+  };
+
+  const loadTaskDetail = async (task) => {
+    setTaskDetailCache((prev) => ({
+      ...prev,
+      [task.id]: {
+        loading: true,
+        student: task,
+        notes: [],
+      },
+    }));
+    try {
+      const [studentResult, notesResult] = await Promise.allSettled([
+        api.get(`/students/${task.id}`),
+        api.get(`/notes?student_id=${task.id}`),
+      ]);
+
+      if (studentResult.status === 'rejected') {
+        setTaskDetailCache((prev) => ({
+          ...prev,
+          [task.id]: {
+            loading: false,
+            student: task,
+            notes: [],
+            error: getApiErrorMessage(studentResult.reason),
+          },
+        }));
+        return;
+      }
+
+      setTaskDetailCache((prev) => ({
+        ...prev,
+        [task.id]: {
+          loading: false,
+          student: studentResult.value.data.data,
+          notes:
+            notesResult.status === 'fulfilled'
+              ? (notesResult.value.data.data || []).slice(0, 3)
+              : [],
+          notesError:
+            notesResult.status === 'rejected' ? getApiErrorMessage(notesResult.reason) : '',
+        },
+      }));
+    } catch (error) {
+      setTaskDetailCache((prev) => ({
+        ...prev,
+        [task.id]: {
+          loading: false,
+          student: task,
+          notes: [],
+          error: getApiErrorMessage(error),
+        },
+      }));
+    }
+  };
+
+  const toggleTaskDetail = (task) => {
+    if (expandedTaskId === task.id) {
+      setExpandedTaskId(null);
+      return;
+    }
+    setExpandedTaskId(task.id);
+    if (!taskDetailCache[task.id] || taskDetailCache[task.id].error) {
+      loadTaskDetail(task);
+    }
   };
 
   const openCreateModal = () => {
@@ -453,8 +529,15 @@ export default function AgentManage() {
                         agentTasks.list.map((l) => (
                           <div
                             key={l.id}
-                            className="px-4 py-2.5 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            onClick={() => toggleTaskDetail(l)}
+                            className="px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                           >
+                            <div className="flex items-center gap-3">
+                            {expandedTaskId === l.id ? (
+                              <ChevronDown className="w-4 h-4 text-blue-500 shrink-0" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                                 {l.name}
@@ -488,6 +571,95 @@ export default function AgentManage() {
                                 {l.updated_at?.split(' ')[0]}
                               </span>
                             )}
+                            </div>
+                            {expandedTaskId === l.id &&
+                              (() => {
+                                const detail = taskDetailCache[l.id];
+                                const student = detail?.student || l;
+                                const notes = detail?.notes || [];
+                                return (
+                                  <div className="mt-3 pl-7">
+                                    {detail?.loading ? (
+                                      <div className="py-4 flex justify-center">
+                                        <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                                      </div>
+                                    ) : detail?.error ? (
+                                      <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                        <span className="flex-1">{detail.error}</span>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            loadTaskDetail(l);
+                                          }}
+                                          className="font-medium"
+                                        >
+                                          重试
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="border-l-4 border-blue-500 pl-3 space-y-3">
+                                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                                          {[
+                                            ['phone', '电话'],
+                                            ['region', '地域'],
+                                            ['status', '状态'],
+                                            ['intent_level', '意向'],
+                                            ['stage', '阶段'],
+                                            ['score', '成绩'],
+                                            ['guardian_name', '监护人'],
+                                            ['guardian_phone', '监护人电话'],
+                                            ['school_name', '学校'],
+                                            ['school_address', '学校地址'],
+                                          ].map(([key, label]) => (
+                                            <div
+                                              key={key}
+                                              className="bg-gray-50 dark:bg-gray-900/40 rounded-lg px-3 py-2 min-w-0"
+                                            >
+                                              <div className="text-xs text-gray-500">{label}</div>
+                                              <div className="text-sm font-medium break-words mt-0.5">
+                                                {student[key] || '-'}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <div>
+                                          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
+                                            最近联系记录
+                                          </div>
+                                          {detail?.notesError && (
+                                            <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
+                                              联系记录加载失败：{detail.notesError}
+                                            </div>
+                                          )}
+                                          {notes.length === 0 ? (
+                                            <div className="text-xs text-gray-400 py-2">暂无联系记录</div>
+                                          ) : (
+                                            <div className="space-y-2">
+                                              {notes.map((note) => (
+                                                <div
+                                                  key={note.id}
+                                                  className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700 px-3 py-2"
+                                                >
+                                                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                                                    <span className="font-medium text-gray-600 dark:text-gray-300">
+                                                      {note.agent_name || '-'}
+                                                    </span>
+                                                    <span>{note.created_at}</span>
+                                                  </div>
+                                                  <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                                    {note.content}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                           </div>
                         ))
                       )}

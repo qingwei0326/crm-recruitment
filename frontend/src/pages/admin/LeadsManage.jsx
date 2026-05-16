@@ -48,6 +48,10 @@ function maskPhone(p) {
   return p.slice(0, 3) + '****' + p.slice(-4);
 }
 
+function getApiErrorMessage(error) {
+  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
+}
+
 export default function LeadsManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -79,7 +83,6 @@ export default function LeadsManage() {
   // Expand
   const [expandedId, setExpandedId] = useState(null);
   const [expandCache, setExpandCache] = useState({});
-  const [expandLoading, setExpandLoading] = useState(false);
 
   // Agents & stats
   const [agents, setAgents] = useState([]);
@@ -153,23 +156,39 @@ export default function LeadsManage() {
   };
 
   const loadExpandData = async (id) => {
-    setExpandLoading(true);
+    setExpandCache((prev) => {
+      const current = prev[id];
+      if (current && !current.error) return prev;
+      return { ...prev, [id]: { loading: true } };
+    });
     try {
-      const [lR, nR] = await Promise.all([
+      const [studentResult, notesResult] = await Promise.allSettled([
         api.get(`/students/${id}`),
         api.get(`/notes?student_id=${id}`),
       ]);
+      if (studentResult.status === 'rejected') {
+        throw studentResult.reason;
+      }
+
       setExpandCache((prev) => ({
         ...prev,
         [id]: {
-          student: lR.data.data,
-          notes: (nR.data.data || []).slice(0, 3),
+          student: studentResult.value.data.data,
+          notes:
+            notesResult.status === 'fulfilled'
+              ? (notesResult.value.data.data || []).slice(0, 3)
+              : [],
+          notesError:
+            notesResult.status === 'rejected' ? getApiErrorMessage(notesResult.reason) : '',
         },
       }));
-    } catch {
-      // ignore
-    } finally {
-      setExpandLoading(false);
+    } catch (error) {
+      setExpandCache((prev) => ({
+        ...prev,
+        [id]: {
+          error: getApiErrorMessage(error),
+        },
+      }));
     }
   };
 
@@ -370,11 +389,29 @@ export default function LeadsManage() {
   const renderExpandContent = (l) => {
     if (expandedId !== l.id) return null;
     const data = expandCache[l.id];
-    if (!data) {
+    if (!data || data.loading) {
       return (
         <tr className="bg-slate-50 dark:bg-gray-800">
           <td colSpan={9} className="px-4 py-8 text-center">
             <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+          </td>
+        </tr>
+      );
+    }
+    if (data.error) {
+      return (
+        <tr className="bg-slate-50 dark:bg-gray-800">
+          <td colSpan={9} className="px-4 py-6">
+            <div className="flex items-center justify-center gap-3 text-sm text-red-600 dark:text-red-400">
+              <AlertTriangle className="w-4 h-4" />
+              <span>{data.error}</span>
+              <button
+                onClick={() => loadExpandData(l.id)}
+                className="px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50"
+              >
+                重新加载
+              </button>
+            </div>
           </td>
         </tr>
       );
@@ -412,6 +449,11 @@ export default function LeadsManage() {
                 <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                   最近联系记录
                 </div>
+                {data.notesError && (
+                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
+                    联系记录加载失败：{data.notesError}
+                  </div>
+                )}
                 {notes.length === 0 ? (
                   <div className="text-xs text-gray-400 py-2">暂无联系记录</div>
                 ) : (

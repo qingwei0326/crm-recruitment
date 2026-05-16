@@ -1,17 +1,22 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DefaultPython = Join-Path $Root ".venv-win\Scripts\python.exe"
 if ($env:CRM_PYTHON) {
     $Python = $env:CRM_PYTHON
-} elseif (Test-Path $DefaultPython) {
-    $Python = $DefaultPython
 } else {
-    $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $PythonCommand) {
-        throw "Python interpreter not found. Create .venv-win or set CRM_PYTHON to your Python path."
+    $PythonCandidates = @(
+        (Join-Path $Root ".venv-win\Scripts\python.exe"),
+        (Join-Path $Root "venv\Scripts\python.exe")
+    )
+
+    $Python = $PythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $Python) {
+        $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
+        if (-not $PythonCommand) {
+            throw "Python interpreter not found. Create .venv-win/venv or set CRM_PYTHON to your Python path."
+        }
+        $Python = $PythonCommand.Source
     }
-    $Python = $PythonCommand.Source
 }
 
 $PythonCommand = Get-Command $Python -ErrorAction SilentlyContinue
@@ -19,6 +24,15 @@ if (-not $PythonCommand) {
     throw "Python interpreter not found: $Python. Create .venv-win or set CRM_PYTHON to your Python path."
 }
 $Python = $PythonCommand.Source
+$PythonW = Join-Path (Split-Path -Parent $Python) "pythonw.exe"
+if (Test-Path $PythonW) {
+    $Python = $PythonW
+} else {
+    $LibreOfficePythonW = Get-ChildItem -Path (Join-Path (Split-Path -Parent $Python) "python-core-*\bin\pythonw.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($LibreOfficePythonW) {
+        $Python = $LibreOfficePythonW.FullName
+    }
+}
 
 $PyDeps = Join-Path $Root ".pydeps"
 if (Test-Path $PyDeps) {
@@ -31,13 +45,16 @@ if ((Test-Path $NpmGlobal) -and ($env:PATH -notlike "*$NpmGlobal*")) {
     $env:PATH = "$NpmGlobal;$env:PATH"
 }
 
-$Pm2Command = Get-Command pm2 -ErrorAction SilentlyContinue
 $LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
-if ($Pm2Command) {
-    $Pm2 = $Pm2Command.Source
-} elseif (Test-Path $LocalPm2) {
+if (Test-Path $LocalPm2) {
     $Pm2 = $LocalPm2
 } else {
+    $Pm2Command = Get-Command pm2 -ErrorAction SilentlyContinue
+    if ($Pm2Command) {
+        $Pm2 = $Pm2Command.Source
+    }
+}
+if (-not $Pm2) {
     throw "pm2 not found. Run npm install in the project root or install PM2 globally."
 }
 
