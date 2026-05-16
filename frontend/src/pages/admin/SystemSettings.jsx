@@ -1,0 +1,226 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Eye, EyeOff, Save, Settings2 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import useIsMobile from '../../hooks/useIsMobile';
+import api from '../../api';
+
+function SettingRow({ label, children }) {
+  return (
+    <div className="grid gap-2 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start py-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{label}</div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function RowMessage({ state }) {
+  if (!state?.text) return null;
+  return (
+    <div className={`mt-2 text-sm ${state.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+      {state.text}
+    </div>
+  );
+}
+
+const inputCls =
+  'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100';
+
+export default function SystemSettings() {
+  const { user } = useAuth();
+  const { dark, toggle } = useTheme();
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [showToken, setShowToken] = useState(false);
+  const [token, setToken] = useState('');
+  const [staleDays, setStaleDays] = useState('3');
+  const [tokenMessage, setTokenMessage] = useState(null);
+  const [daysMessage, setDaysMessage] = useState(null);
+  const [savingToken, setSavingToken] = useState(false);
+  const [savingDays, setSavingDays] = useState(false);
+
+  const closeSidebar = () => setSidebarOpen(false);
+
+  const loadConfig = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/admin/config');
+      const cfg = res.data.data || {};
+      setToken(cfg.pushplus_token || '');
+      setStaleDays(cfg.stale_days || '3');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig().catch(() => setLoading(false));
+  }, []);
+
+  const saveToken = async () => {
+    setTokenMessage(null);
+    if (token.includes('****')) {
+      setTokenMessage({ type: 'success', text: '已保存' });
+      return;
+    }
+    setSavingToken(true);
+    try {
+      const res = await api.put('/admin/config', { key: 'pushplus_token', value: token });
+      setToken(res.data.data?.value ?? token);
+      setTokenMessage({ type: 'success', text: '已保存' });
+    } catch (err) {
+      setTokenMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
+  const saveDays = async () => {
+    setDaysMessage(null);
+    setSavingDays(true);
+    try {
+      const res = await api.put('/admin/config', { key: 'stale_days', value: String(staleDays) });
+      setStaleDays(res.data.data?.value ?? String(staleDays));
+      setDaysMessage({ type: 'success', text: '已保存' });
+    } catch (err) {
+      setDaysMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
+    } finally {
+      setSavingDays(false);
+    }
+  };
+
+  const SidebarNav = () => (
+    <>
+      <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+            <Settings2 className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">系统设置</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
+          </div>
+        </div>
+      </div>
+      <nav className="p-3 space-y-1">
+        <Link
+          to="/admin"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <Settings2 className="w-4 h-4" /> 返回仪表盘
+        </Link>
+      </nav>
+      <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
+        <button
+          onClick={toggle}
+          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+        >
+          {dark ? <span className="w-4 h-4">☀</span> : <span className="w-4 h-4">☾</span>}
+          {dark ? '浅色模式' : '深色模式'}
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
+      {isMobile && sidebarOpen && (
+        <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSidebar} />
+      )}
+      <aside
+        className={`${isMobile ? 'fixed inset-y-0 left-0 z-50 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
+      >
+        <SidebarNav />
+      </aside>
+      <main className="flex-1 min-w-0">
+        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
+          <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">系统设置</div>
+          <button
+            onClick={toggle}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            {dark ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </header>
+        <div className="p-4 lg:p-6 max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm">
+            <div className="px-4 py-4 border-b dark:border-gray-700">
+              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">推送配置</h1>
+            </div>
+            <div className="p-4 lg:p-6">
+              <SettingRow label="PushPlus Token">
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type={showToken ? 'text' : 'password'}
+                      className={inputCls}
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      placeholder="输入 Token 后每晚 20:00 自动推送"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken((v) => !v)}
+                      className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveToken}
+                      disabled={savingToken || loading}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      <Save className="w-4 h-4" />
+                      保存
+                    </button>
+                  </div>
+                  <a
+                    href="https://www.pushplus.plus"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    获取 Token →
+                  </a>
+                  <RowMessage state={tokenMessage} />
+                </div>
+              </SettingRow>
+
+              <SettingRow label="未跟进预警天数">
+                <div className="space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      className={inputCls}
+                      value={staleDays}
+                      onChange={(e) => setStaleDays(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={saveDays}
+                      disabled={savingDays || loading}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      <Save className="w-4 h-4" />
+                      保存
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    A 级学员超过 X 天无跟进记录时推送预警.
+                  </div>
+                  <RowMessage state={daysMessage} />
+                </div>
+              </SettingRow>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

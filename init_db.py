@@ -40,6 +40,14 @@ async def seed():
     print("[OK] 数据库表创建完成")
 
     with sync_engine.connect() as conn:
+        conn.execute(
+            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('pushplus_token', '')")
+        )
+        conn.execute(
+            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('stale_days', '3')")
+        )
+        conn.commit()
+
         insp = inspect(sync_engine)
 
         # 1. Rename leads → students if old table exists

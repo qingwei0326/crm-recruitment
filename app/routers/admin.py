@@ -1,15 +1,26 @@
+import os
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, require_admin
 from app.database import get_db
-from app.models import Call, LeadViewLog, Student, StudentStatus, User, UserRole
+from app.models import (
+    Call,
+    IntentLevel,
+    LeadViewLog,
+    Note,
+    Student,
+    StudentStatus,
+    SystemConfig,
+    User,
+    UserRole,
+)
 from app.schemas import Response
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
@@ -29,6 +40,152 @@ class UserUpdateReq(BaseModel):
     is_active: bool | None = None
     password: str | None = None
     service_regions: str | None = None
+
+
+class ConfigUpdateReq(BaseModel):
+    key: str
+    value: str
+
+
+ALLOWED_CONFIG_KEYS = {"pushplus_token", "stale_days"}
+
+
+def mask_phone(phone: str | None) -> str | None:
+    if phone and len(phone) > 7:
+        return phone[:3] + "****" + phone[-4:]
+    return phone
+
+
+def to_datetime(value):
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return value
+
+
+def mask_config_value(key: str, value: str) -> str:
+    if key == "pushplus_token" and len(value) > 4:
+        return "****" + value[-4:]
+    return value
+
+
+async def get_config_value(db: AsyncSession, key: str, fallback: str = "") -> str:
+    """Read a single SystemConfig value, fall back to env var of same name uppercased, then to fallback."""
+    result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+    item = result.scalar_one_or_none()
+    if item and item.value:
+        return item.value
+    return os.getenv(key.upper(), fallback)
+
+
+@router.get("/config")
+async def get_system_config(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    result = await db.execute(select(SystemConfig).order_by(SystemConfig.key))
+    data = {item.key: mask_config_value(item.key, item.value) for item in result.scalars().all()}
+    return Response.ok(data)
+
+
+@router.put("/config")
+async def update_system_config(
+    body: ConfigUpdateReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    key = body.key.strip()
+    value = body.value.strip()
+    if key not in ALLOWED_CONFIG_KEYS:
+        return Response.error(code=1, msg="Unsupported config key")
+
+    if key == "stale_days":
+        try:
+            stale_days = int(value)
+        except ValueError:
+            return Response.error(code=1, msg="stale_days must be an integer between 1 and 30")
+        if stale_days < 1 or stale_days > 30:
+            return Response.error(code=1, msg="stale_days must be an integer between 1 and 30")
+        value = str(stale_days)
+
+    result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
+    item = result.scalar_one_or_none()
+    if item:
+        item.value = value
+    else:
+        item = SystemConfig(key=key, value=value)
+        db.add(item)
+    await db.commit()
+
+    return Response.ok({"key": key, "value": mask_config_value(key, value)})
+
+
+@router.get("/stale-a")
+async def stale_a_students(
+    days: int = Query(3, ge=1, le=30),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    activity_events = union_all(
+        select(Call.student_id.label("student_id"), Call.created_at.label("created_at")),
+        select(Note.student_id.label("student_id"), Note.created_at.label("created_at")),
+    ).subquery()
+    last_activity = (
+        select(
+            activity_events.c.student_id,
+            func.max(activity_events.c.created_at).label("last_activity_at"),
+        )
+        .group_by(activity_events.c.student_id)
+        .subquery()
+    )
+
+    latest_activity_at = func.coalesce(
+        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
+    ).label("latest_activity_at")
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    result = await db.execute(
+        select(Student, User.name.label("agent_name"), latest_activity_at)
+        .outerjoin(User, User.id == Student.assigned_to)
+        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+        .where(
+            Student.intent_level == IntentLevel.A,
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.invalid,
+                    StudentStatus.rejected,
+                    StudentStatus.expired,
+                ]
+            ),
+            latest_activity_at < cutoff,
+        )
+        .order_by(latest_activity_at.asc(), Student.id.asc())
+    )
+
+    now = datetime.utcnow()
+    data = []
+    for student, agent_name, raw_last_activity_at in result.all():
+        last_activity_at = to_datetime(raw_last_activity_at)
+        data.append(
+            {
+                "id": student.id,
+                "name": student.name,
+                "phone": mask_phone(student.phone),
+                "phone_raw": student.phone,
+                "region": student.region,
+                "status": student.status,
+                "stage": student.stage,
+                "intent_level": student.intent_level,
+                "assigned_to": student.assigned_to,
+                "agent_name": agent_name,
+                "last_activity_at": last_activity_at.isoformat() if last_activity_at else None,
+                "days_since": (now - last_activity_at).days if last_activity_at else 0,
+            }
+        )
+
+    return Response.ok(data)
 
 
 @router.get("/agents")
@@ -121,7 +278,7 @@ async def agent_tasks(
     done = sum(1 for s in students if s.status in (StudentStatus.completed, StudentStatus.enrolled))
     pending = sum(1 for s in students if s.status == StudentStatus.not_contacted)
     follow_up = sum(1 for s in students if s.status == StudentStatus.pending_visit)
-    a_level = sum(1 for s in students if s.intent_level == "A")
+    a_level = sum(1 for s in students if s.intent_level == IntentLevel.A)
 
     student_ids = [s.id for s in students]
     view_count = 0

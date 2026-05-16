@@ -24,6 +24,7 @@ async def today_tasks(
             Student.status.in_(
                 [StudentStatus.not_contacted, StudentStatus.contacted, StudentStatus.pending_visit]
             ),
+            Student.status != StudentStatus.expired,
         )
         .order_by(Student.updated_at.desc())
     )

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -74,6 +75,7 @@ async def do_backup_async():
 
 async def backup_scheduler():
     """Run backup every 6 hours."""
+    await asyncio.sleep(random.uniform(0, 600))
     while True:
         await asyncio.sleep(6 * 3600)
         try:
