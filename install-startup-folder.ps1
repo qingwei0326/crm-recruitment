@@ -1,17 +1,18 @@
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Launcher = Join-Path $Root "startup-launch.cmd"
+$Launcher = Join-Path $Root "startup-launch.vbs"
 $Startup = [Environment]::GetFolderPath("Startup")
 $ShortcutPath = Join-Path $Startup "AdmissionsCRM.lnk"
 
 if (-not (Test-Path $Launcher)) {
-    throw "startup-launch.cmd not found: $Launcher"
+    throw "startup-launch.vbs not found: $Launcher"
 }
 
 $Shell = New-Object -ComObject WScript.Shell
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = $Launcher
+$Shortcut.TargetPath = "wscript.exe"
+$Shortcut.Arguments = "`"$Launcher`""
 $Shortcut.WorkingDirectory = $Root
 $Shortcut.WindowStyle = 7
 $Shortcut.Description = "Start Admissions CRM via PM2"
