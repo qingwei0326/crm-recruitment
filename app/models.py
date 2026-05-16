@@ -222,3 +222,11 @@ class OperationLog(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     operator = relationship("User", backref="operation_logs")
+
+
+class SystemConfig(Base):
+    __tablename__ = "system_configs"
+
+    key = Column(String(64), primary_key=True, nullable=False)
+    value = Column(Text, default="", nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)

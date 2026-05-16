@@ -10,6 +10,7 @@ const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
 const Report = lazy(() => import('./pages/admin/Report'));
 const TrendReport = lazy(() => import('./pages/admin/TrendReport'));
 const CallVolumeQuery = lazy(() => import('./pages/admin/CallVolumeQuery'));
+const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 
 function LoadingScreen() {
   return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>;
@@ -90,6 +91,14 @@ export default function App() {
           element={
             <Protected role="admin">
               <CallVolumeQuery />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <Protected role="admin">
+              <SystemSettings />
             </Protected>
           }
         />

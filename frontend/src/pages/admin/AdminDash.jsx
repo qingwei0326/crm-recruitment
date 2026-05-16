@@ -22,6 +22,7 @@ import {
   Calendar,
   GraduationCap,
   HelpCircle,
+  Settings,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
 
@@ -131,6 +132,13 @@ export default function AdminDash() {
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
         >
           <Search className="w-4 h-4" /> 通电量查询
+        </Link>
+        <Link
+          to="/admin/settings"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <Settings className="w-4 h-4" /> 系统设置
         </Link>
       </nav>
       <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
