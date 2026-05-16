@@ -40,11 +40,6 @@ if (Test-Path $PyDeps) {
     $env:PYTHONPATH = if ($env:PYTHONPATH) { "$PyDeps;$env:PYTHONPATH" } else { $PyDeps }
 }
 
-$NpmGlobal = Join-Path $env:APPDATA "npm"
-if ((Test-Path $NpmGlobal) -and ($env:PATH -notlike "*$NpmGlobal*")) {
-    $env:PATH = "$NpmGlobal;$env:PATH"
-}
-
 $LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
 if (Test-Path $LocalPm2) {
     $Pm2 = $LocalPm2
@@ -69,7 +64,11 @@ if (-not $env:SECRET_KEY) {
     throw "SECRET_KEY is not set and .secret_key was not found."
 }
 
-$env:CRM_PYTHON = $Python
+$env:DATABASE_PATH = Join-Path $Root "crm.db"
+$env:FRONTEND_DIR = Join-Path $Root "frontend\dist"
+$env:PYTHONNOUSERSITE = "1"
+$env:CORS_ORIGINS = if ($env:CORS_ORIGINS) { $env:CORS_ORIGINS } else { "http://127.0.0.1:8000,http://localhost:8000,http://192.168.8.2:8000" }
+
 Set-Location $Root
 
 Write-Host "Building frontend..."
@@ -77,9 +76,46 @@ Push-Location (Join-Path $Root "frontend")
 npm run build
 Pop-Location
 
-Write-Host "Starting crm-backend with PM2..."
-& $Pm2 start ecosystem.config.js --update-env
-& $Pm2 save
+if ($Pm2) {
+    & $Pm2 stop crm-backend crm-lan-forward *> $null
+}
+
+$BackendPidFile = Join-Path $Root "backend.pid"
+$ForwardPidFile = Join-Path $Root "forward.pid"
+foreach ($PidFile in @($BackendPidFile, $ForwardPidFile)) {
+    if (Test-Path $PidFile) {
+        $OldPid = (Get-Content -Raw $PidFile).Trim()
+        if ($OldPid) {
+            Stop-Process -Id ([int]$OldPid) -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "Starting crm-backend hidden..."
+$Backend = Start-Process `
+    -FilePath $Python `
+    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000") `
+    -WorkingDirectory $Root `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput (Join-Path $Root "backend_out.log") `
+    -RedirectStandardError (Join-Path $Root "backend_err.log") `
+    -PassThru
+Set-Content -Path $BackendPidFile -Value $Backend.Id -Encoding ASCII
+
+$NodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if ($NodeCommand) {
+    Write-Host "Starting LAN forward hidden..."
+    $Forward = Start-Process `
+        -FilePath $NodeCommand.Source `
+        -ArgumentList @((Join-Path $Root "forward.js")) `
+        -WorkingDirectory $Root `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $Root "forward_out.log") `
+        -RedirectStandardError (Join-Path $Root "forward_err.log") `
+        -PassThru
+    Set-Content -Path $ForwardPidFile -Value $Forward.Id -Encoding ASCII
+}
 
 Write-Host "Ready: http://127.0.0.1:8000"
 Write-Host "LAN:   http://192.168.8.2:8000"
