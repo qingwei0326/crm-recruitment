@@ -18,7 +18,11 @@ foreach ($PidFile in $PidFiles) {
 
 $LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
 if (Test-Path $LocalPm2) {
-    & $LocalPm2 stop crm-backend crm-lan-forward *> $null
+    try {
+        & $LocalPm2 stop crm-backend crm-lan-forward *> $null
+    } catch {
+        Write-Warning "PM2 stop skipped: $($_.Exception.Message)"
+    }
 }
 
 $UvicornProcesses = Get-CimInstance Win32_Process | Where-Object {

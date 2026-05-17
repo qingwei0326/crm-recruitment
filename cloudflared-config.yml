@@ -5,20 +5,20 @@
 #   1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
 #   2. Authenticate: cloudflared tunnel login
 #   3. Create tunnel:  cloudflared tunnel create crm-tunnel
-#   4. DNS:           cloudflared tunnel route dns crm-tunnel crm.yourdomain.com
+#   4. DNS:           cloudflared tunnel route dns crm-tunnel crm.qing-wei.com
 #   5. Run:           cloudflared tunnel run crm-tunnel
 #
 # Or one-shot quick tunnel (no config needed):
-#   cloudflared tunnel --url http://localhost:80
+#   cloudflared tunnel --url http://127.0.0.1:8000
 # ============================================================
 
 tunnel: <TUNNEL_ID>          # Replace with: cloudflared tunnel list
-credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
+credentials-file: C:\Users\Administrator\.cloudflared\<TUNNEL_ID>.json
 
 ingress:
-  # Map your domain to the local Nginx container
-  - hostname: crm.yourdomain.com
-    service: http://localhost:80
+  # Map the public CRM domain to the local J1900 CRM service
+  - hostname: crm.qing-wei.com
+    service: http://127.0.0.1:8000
 
   # Default: 404 for unmatched hostnames
   - service: http_status:404
