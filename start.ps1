@@ -24,15 +24,6 @@ if (-not $PythonCommand) {
     throw "Python interpreter not found: $Python. Create .venv-win or set CRM_PYTHON to your Python path."
 }
 $Python = $PythonCommand.Source
-$PythonW = Join-Path (Split-Path -Parent $Python) "pythonw.exe"
-if (Test-Path $PythonW) {
-    $Python = $PythonW
-} else {
-    $LibreOfficePythonW = Get-ChildItem -Path (Join-Path (Split-Path -Parent $Python) "python-core-*\bin\pythonw.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($LibreOfficePythonW) {
-        $Python = $LibreOfficePythonW.FullName
-    }
-}
 
 $PyDeps = Join-Path $Root ".pydeps"
 if (Test-Path $PyDeps) {
@@ -48,9 +39,6 @@ if (Test-Path $LocalPm2) {
     if ($Pm2Command) {
         $Pm2 = $Pm2Command.Source
     }
-}
-if (-not $Pm2) {
-    throw "pm2 not found. Run npm install in the project root or install PM2 globally."
 }
 
 if (-not $env:SECRET_KEY) {
@@ -71,13 +59,44 @@ $env:CORS_ORIGINS = if ($env:CORS_ORIGINS) { $env:CORS_ORIGINS } else { "http://
 
 Set-Location $Root
 
+$NodeCommand = Get-Command node -ErrorAction SilentlyContinue
+$NpmCandidates = @()
+if ($NodeCommand) {
+    $NodeRoot = Split-Path -Parent $NodeCommand.Source
+    $NpmCandidates += @(Join-Path $NodeRoot "npm.cmd", (Join-Path $NodeRoot "npm"))
+}
+$NpmCandidates += @(
+    (Join-Path $env:ProgramFiles "nodejs\npm.cmd"),
+    (Join-Path ${env:ProgramFiles(x86)} "nodejs\npm.cmd"),
+    (Join-Path $env:APPDATA "npm\npm.cmd")
+)
+$NpmCommand = $NpmCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $NpmCommand) {
+    $NpmCommand = (Get-Command npm -ErrorAction SilentlyContinue).Source
+}
+
 Write-Host "Building frontend..."
-Push-Location (Join-Path $Root "frontend")
-npm run build
-Pop-Location
+$FrontendRoot = Join-Path $Root "frontend"
+Push-Location $FrontendRoot
+try {
+    $LocalVite = Join-Path $FrontendRoot "node_modules\.bin\vite.cmd"
+    if (Test-Path $LocalVite) {
+        & $LocalVite build
+    } elseif ($NpmCommand) {
+        & $NpmCommand run build
+    } else {
+        throw "Neither frontend\node_modules\.bin\vite.cmd nor npm was found. Install the official Node.js LTS Windows installer so node and npm are both available."
+    }
+} finally {
+    Pop-Location
+}
 
 if ($Pm2) {
-    & $Pm2 stop crm-backend crm-lan-forward *> $null
+    try {
+        & $Pm2 stop crm-backend crm-lan-forward *> $null
+    } catch {
+        Write-Warning "PM2 stop skipped: $($_.Exception.Message)"
+    }
 }
 
 $BackendPidFile = Join-Path $Root "backend.pid"

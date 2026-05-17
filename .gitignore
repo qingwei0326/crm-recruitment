@@ -29,6 +29,8 @@ Thumbs.db
 # Project review / merge
 project_all.txt
 project_review.txt
+project_review_bundle.txt
+releases/
 
 # Secret key
 .secret_key
