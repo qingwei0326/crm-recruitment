@@ -1,4 +1,4 @@
-"""Tests for student CRUD, stage management, assignment, and import."""
+﻿"""Tests for student CRUD, stage management, assignment, and import."""
 
 from io import BytesIO
 
@@ -156,6 +156,42 @@ class TestImportStudents:
             files={"file": ("students.csv", b"name\nAlice\n", "text/csv")},
         )
         assert resp.json()["code"] == 1
+
+    async def test_import_infers_unlabeled_guardians_and_school(self, client, admin_headers, db):
+        from sqlalchemy import select
+
+        from app.models import Student
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["张三", "张父", "李母", "第一中学"])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        resp = await client.post(
+            "/api/students/import",
+            headers=admin_headers,
+            files={
+                "file": (
+                    "students.xlsx",
+                    buf.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["imported"] == 1
+
+        result = await db.execute(select(Student).where(Student.name == "张三"))
+        student = result.scalar_one()
+        assert student.guardian_name == "张父"
+        assert student.guardian2_name == "李母"
+        assert student.guardian_phone == ""
+        assert student.guardian2_phone == ""
+        assert student.school_name == "第一中学"
 
 
 @pytest.mark.asyncio

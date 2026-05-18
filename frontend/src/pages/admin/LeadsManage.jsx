@@ -828,9 +828,9 @@ export default function LeadsManage() {
             </div>
           </td>
           <td className="px-2 py-2.5 hidden md:table-cell">
-            {l.region ? (
+            {l.school_name ? (
               <span className="text-xs px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-700">
-                {l.region}
+                {l.school_name}
               </span>
             ) : (
               '-'
@@ -1161,7 +1161,7 @@ export default function LeadsManage() {
                       </button>
                     </th>
                     <th className="px-2 py-3 font-medium">姓名</th>
-                    <th className="px-2 py-3 font-medium hidden md:table-cell">地域</th>
+                    <th className="px-2 py-3 font-medium hidden md:table-cell">学校</th>
                     <th className="px-2 py-3 font-medium hidden lg:table-cell">阶段</th>
                     <th className="px-2 py-3 font-medium">状态</th>
                     <th className="px-2 py-3 font-medium hidden sm:table-cell">意向</th>
