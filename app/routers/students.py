@@ -2,12 +2,15 @@ import re
 import uuid
 from datetime import date, datetime, timedelta
 from io import BytesIO
+from zipfile import BadZipFile
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_admin
@@ -40,6 +43,57 @@ STAGE_ORDER = ["初次联系", "有意向", "已送资料", "预约参观", "已
 
 # Excel import: limit memory DoS from huge uploads
 MAX_STUDENT_IMPORT_BYTES = 10 * 1024 * 1024
+IMPORT_COLUMN_ALIASES = {
+    "name": {"name", "student", "student_name", "\u59d3\u540d", "\u5b66\u751f\u59d3\u540d"},
+    "region": {"region", "area", "\u5730\u533a", "\u533a\u57df", "\u5730\u57df"},
+    "score": {"score", "grade", "\u5206\u6570", "\u6210\u7ee9"},
+    "guardian_name": {
+        "guardian_name",
+        "parent_name",
+        "\u5bb6\u957f\u59d3\u540d",
+        "\u76d1\u62a4\u4eba\u59d3\u540d",
+    },
+    "guardian_phone": {
+        "phone",
+        "mobile",
+        "tel",
+        "telephone",
+        "guardian_phone",
+        "parent_phone",
+        "\u7535\u8bdd",
+        "\u624b\u673a\u53f7",
+        "\u8054\u7cfb\u7535\u8bdd",
+        "\u5bb6\u957f\u7535\u8bdd",
+        "\u76d1\u62a4\u4eba\u7535\u8bdd",
+    },
+    "guardian2_name": {
+        "guardian2_name",
+        "parent2_name",
+        "\u7b2c\u4e8c\u76d1\u62a4\u4eba\u59d3\u540d",
+        "\u76d1\u62a4\u4eba2\u59d3\u540d",
+    },
+    "guardian2_phone": {
+        "guardian2_phone",
+        "parent2_phone",
+        "\u7b2c\u4e8c\u76d1\u62a4\u4eba\u7535\u8bdd",
+        "\u76d1\u62a4\u4eba2\u7535\u8bdd",
+    },
+    "school_name": {
+        "school",
+        "school_name",
+        "\u6bd5\u4e1a\u5b66\u6821",
+        "\u5b66\u6821",
+        "\u5b66\u6821\u540d\u79f0",
+    },
+    "school_address": {"school_address", "\u5b66\u6821\u5730\u5740"},
+    "program": {"program", "\u4e13\u4e1a", "\u610f\u5411\u4e13\u4e1a", "\u8bfe\u7a0b"},
+    "join_reasons": {
+        "join_reasons",
+        "reason",
+        "\u62a5\u540d\u539f\u56e0",
+        "\u54a8\u8be2\u539f\u56e0",
+    },
+}
 
 ADMIN_STUDENT_UPDATE_FIELDS = {
     "name",
@@ -111,9 +165,62 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
     return payload
 
 
+def _normalize_import_header(value) -> str:
+    return re.sub(r"[\s_\-]+", "", str(value or "").strip().lower())
+
+
+def _build_import_header_map(header_row) -> dict[str, int]:
+    normalized_aliases = {
+        field: {_normalize_import_header(alias) for alias in aliases}
+        for field, aliases in IMPORT_COLUMN_ALIASES.items()
+    }
+    header_map = {}
+    for idx, value in enumerate(header_row):
+        normalized = _normalize_import_header(value)
+        if not normalized:
+            continue
+        for field, aliases in normalized_aliases.items():
+            if normalized in aliases and field not in header_map:
+                header_map[field] = idx
+                break
+    return header_map
+
+
+def _row_value(row, header_map: dict[str, int], field: str):
+    idx = header_map.get(field)
+    if idx is None or idx >= len(row):
+        return None
+    return row[idx]
+
+
+def _clean_import_text(value) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _clean_import_phone(value) -> str:
+    return re.sub(r"\s+", "", _clean_import_text(value))
+
+
+def _parse_import_float(value, field_label: str) -> float | None:
+    text = _clean_import_text(value)
+    if text == "":
+        return None
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_label}格式无效: {value}")
+
+
+def _is_empty_import_row(row) -> bool:
+    return all(_clean_import_text(value) == "" for value in row)
+
+
 @router.post("/import")
-async def import_students(
+async def import_students_excel(
     file: UploadFile = File(...),
+    default_agent_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -121,136 +228,118 @@ async def import_students(
     if not filename.lower().endswith(".xlsx"):
         return Response.error(code=1, msg="仅支持 .xlsx 文件")
 
+    workbook = None
     try:
         contents = await file.read()
         if len(contents) > MAX_STUDENT_IMPORT_BYTES:
             max_mb = MAX_STUDENT_IMPORT_BYTES // (1024 * 1024)
             return Response.error(code=1, msg=f"文件过大，请小于 {max_mb}MB")
+        if not contents:
+            return Response.error(code=1, msg="上传文件为空")
 
-        wb = load_workbook(filename=BytesIO(contents), read_only=False)
-        ws = wb.active
-
-        headers = {}
-        supported_headers = {
-            "姓名",
-            "电话",
-            "成绩",
-            "监护人姓名",
-            "监护人电话",
-            "监护人2姓名",
-            "监护人2电话",
-            "学校名称",
-            "学校地址",
-            "地域",
-        }
-        for col_idx, cell in enumerate(ws[1], start=1):
-            val = str(cell.value).strip() if cell.value else ""
-            if val in supported_headers:
-                headers[val] = col_idx
-
-        if "姓名" not in headers:
-            return Response.error(code=1, msg="Excel必须包含「姓名」列")
-
-        name_col = headers["姓名"]
-        region_col = headers.get("地域")
-        score_col = headers.get("成绩")
-        guardian_name_col = headers.get("监护人姓名")
-        guardian_phone_col = headers.get("监护人电话")
-        guardian2_name_col = headers.get("监护人2姓名")
-        guardian2_phone_col = headers.get("监护人2电话")
-        school_name_col = headers.get("学校名称")
-        school_address_col = headers.get("学校地址")
-
-        today = date.today()
-        default_expire = today + timedelta(days=30)
-        success = 0
-        skipped = 0
-        errors = []
-
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            name_val = row[name_col - 1] if len(row) >= name_col else None
-            region_val = row[region_col - 1] if region_col and len(row) >= region_col else ""
-            score_val = row[score_col - 1] if score_col and len(row) >= score_col else None
-            guardian_name_val = (
-                row[guardian_name_col - 1]
-                if guardian_name_col and len(row) >= guardian_name_col
-                else ""
+        if default_agent_id is not None:
+            agent_result = await db.execute(
+                select(User.id).where(User.id == default_agent_id, User.is_active)
             )
-            guardian_phone_val = (
-                row[guardian_phone_col - 1]
-                if guardian_phone_col and len(row) >= guardian_phone_col
-                else ""
-            )
-            guardian2_name_val = (
-                row[guardian2_name_col - 1]
-                if guardian2_name_col and len(row) >= guardian2_name_col
-                else ""
-            )
-            guardian2_phone_val = (
-                row[guardian2_phone_col - 1]
-                if guardian2_phone_col and len(row) >= guardian2_phone_col
-                else ""
-            )
-            school_name_val = (
-                row[school_name_col - 1] if school_name_col and len(row) >= school_name_col else ""
-            )
-            school_address_val = (
-                row[school_address_col - 1]
-                if school_address_col and len(row) >= school_address_col
-                else ""
-            )
+            if not agent_result.scalar_one_or_none():
+                return Response.error(code=1, msg="默认话务员不存在或已禁用")
 
-            if not name_val:
+        workbook = load_workbook(filename=BytesIO(contents), read_only=True, data_only=True)
+        ws = workbook.active
+        rows = ws.iter_rows(values_only=True)
+        header_row = next(rows, None)
+        if not header_row:
+            return Response.error(code=1, msg="Excel 文件没有表头")
+
+        header_map = _build_import_header_map(header_row)
+        if "name" not in header_map:
+            return Response.error(code=1, msg="Excel 必须包含姓名列")
+
+        imported_count = 0
+        skipped_rows = []
+        default_expire = Student.default_expired_at()
+        assigned_at = datetime.utcnow() if default_agent_id is not None else None
+
+        for row_idx, row in enumerate(rows, start=2):
+            if _is_empty_import_row(row):
                 continue
 
-            name = str(name_val).strip()
-
+            name = _clean_import_text(_row_value(row, header_map, "name"))
             if not name:
+                skipped_rows.append({"row": row_idx, "reason": "缺少姓名"})
                 continue
 
-            score = None
-            if score_val not in (None, ""):
-                try:
-                    score = float(score_val)
-                except (TypeError, ValueError):
-                    skipped += 1
-                    errors.append({"row": row_idx, "reason": f"成绩格式无效: {score_val}"})
-                    continue
+            try:
+                score = _parse_import_float(_row_value(row, header_map, "score"), "score")
+            except ValueError as exc:
+                skipped_rows.append({"row": row_idx, "reason": str(exc)})
+                continue
 
-            student = Student(
-                name=name,
-                region=str(region_val).strip() if region_val else "",
-                score=score,
-                guardian_name=str(guardian_name_val).strip() if guardian_name_val else "",
-                guardian_phone=re.sub(r"\s+", "", str(guardian_phone_val)).strip()
-                if guardian_phone_val
-                else "",
-                guardian2_name=str(guardian2_name_val).strip() if guardian2_name_val else "",
-                guardian2_phone=re.sub(r"\s+", "", str(guardian2_phone_val)).strip()
-                if guardian2_phone_val
-                else "",
-                school_name=str(school_name_val).strip() if school_name_val else "",
-                school_address=str(school_address_val).strip() if school_address_val else "",
-                status=StudentStatus.not_contacted,
-                intent_level=IntentLevel.none,
-                stage=StudentStage.initial_contact,
-                expired_at=default_expire,
-                case_no=str(uuid.uuid4()),
+            db.add(
+                Student(
+                    name=name,
+                    region=_clean_import_text(_row_value(row, header_map, "region")),
+                    assigned_to=default_agent_id,
+                    assigned_at=assigned_at,
+                    score=score,
+                    guardian_name=_clean_import_text(
+                        _row_value(row, header_map, "guardian_name")
+                    ),
+                    guardian_phone=_clean_import_phone(
+                        _row_value(row, header_map, "guardian_phone")
+                    ),
+                    guardian2_name=_clean_import_text(
+                        _row_value(row, header_map, "guardian2_name")
+                    ),
+                    guardian2_phone=_clean_import_phone(
+                        _row_value(row, header_map, "guardian2_phone")
+                    ),
+                    school_name=_clean_import_text(_row_value(row, header_map, "school_name")),
+                    school_address=_clean_import_text(
+                        _row_value(row, header_map, "school_address")
+                    ),
+                    program=_clean_import_text(_row_value(row, header_map, "program")),
+                    join_reasons=_clean_import_text(_row_value(row, header_map, "join_reasons")),
+                    status=StudentStatus.not_contacted,
+                    intent_level=IntentLevel.none,
+                    stage=StudentStage.initial_contact,
+                    expired_at=default_expire,
+                    case_no=str(uuid.uuid4()),
+                )
             )
-            db.add(student)
-            success += 1
+            imported_count += 1
 
+        db.add(
+            make_operation_log(
+                current_user,
+                target_student_id=None,
+                case_no="",
+                action="Excel导入",
+                content=f"导入 {imported_count} 条，跳过 {len(skipped_rows)} 条",
+            )
+        )
         await db.commit()
-        wb.close()
         return Response.ok(
             {
-                "success": success,
-                "skipped": skipped,
-                "errors": errors,
+                "imported": imported_count,
+                "success": imported_count,
+                "skipped": len(skipped_rows),
+                "skipped_rows": skipped_rows,
+                "errors": skipped_rows,
             }
         )
-    except Exception as e:
-        return Response.error(code=1, msg=f"导入失败: {str(e)}")
+    except (InvalidFileException, BadZipFile, OSError) as exc:
+        await db.rollback()
+        return Response.error(code=1, msg=f"文件解析失败: {exc}")
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        return Response.error(code=1, msg=f"数据库写入失败: {exc}")
+    except Exception as exc:
+        await db.rollback()
+        return Response.error(code=1, msg=f"导入失败: {exc}")
+    finally:
+        if workbook is not None:
+            workbook.close()
 
 
 @router.get("/template/download")

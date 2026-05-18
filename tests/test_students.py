@@ -1,6 +1,9 @@
 """Tests for student CRUD, stage management, assignment, and import."""
 
+from io import BytesIO
+
 import pytest
+from openpyxl import Workbook
 
 
 @pytest.mark.asyncio
@@ -102,6 +105,57 @@ class TestListStudents:
         """Page has ge=1 validation, so -1 returns 422."""
         resp = await client.get("/api/students?page=-1", headers=admin_headers)
         assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+class TestImportStudents:
+    async def test_import_xlsx_skips_invalid_rows(self, client, admin_headers, db):
+        from sqlalchemy import select
+
+        from app.models import Student
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["name", "phone", "score", "guardian_name", "school_name"])
+        ws.append(["Alice", "", "", "Parent A", "School A"])
+        ws.append(["", "13900139000", "600", "Parent B", "School B"])
+        ws.append(["Bob", "13800138000", "not-a-score", "Parent C", "School C"])
+        ws.append(["Carol", "13700137000", 610, "", "School D"])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        resp = await client.post(
+            "/api/students/import",
+            headers=admin_headers,
+            files={
+                "file": (
+                    "students.xlsx",
+                    buf.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["imported"] == 2
+        assert body["data"]["skipped"] == 2
+
+        result = await db.execute(select(Student).order_by(Student.name))
+        students = result.scalars().all()
+        assert [student.name for student in students] == ["Alice", "Carol"]
+        assert students[0].guardian_phone == ""
+        assert students[0].score is None
+        assert students[1].score == 610
+
+    async def test_import_requires_xlsx(self, client, admin_headers):
+        resp = await client.post(
+            "/api/students/import",
+            headers=admin_headers,
+            files={"file": ("students.csv", b"name\nAlice\n", "text/csv")},
+        )
+        assert resp.json()["code"] == 1
 
 
 @pytest.mark.asyncio
