@@ -57,13 +57,25 @@ $env:FRONTEND_DIR = Join-Path $Root "frontend\dist"
 $env:PYTHONNOUSERSITE = "1"
 $env:CORS_ORIGINS = if ($env:CORS_ORIGINS) { $env:CORS_ORIGINS } else { "http://127.0.0.1:8000,http://localhost:8000,http://192.168.8.2:8000" }
 
+# Load .env if exists
+$EnvFile = Join-Path $Root ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        if ($_ -match '^\s*([^#=]+)=(.+)\s*$') {
+            $k = $matches[1].Trim()
+            $v = $matches[2].Trim()
+            if (-not $env:$k) { Set-Item -Path "env:$k" -Value $v }
+        }
+    }
+}
+
 Set-Location $Root
 
 $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
 $NpmCandidates = @()
 if ($NodeCommand) {
     $NodeRoot = Split-Path -Parent $NodeCommand.Source
-    $NpmCandidates += @(Join-Path $NodeRoot "npm.cmd", (Join-Path $NodeRoot "npm"))
+    $NpmCandidates += @((Join-Path $NodeRoot "npm.cmd"), (Join-Path $NodeRoot "npm"))
 }
 $NpmCandidates += @(
     (Join-Path $env:ProgramFiles "nodejs\npm.cmd"),
