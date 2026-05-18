@@ -59,8 +59,16 @@ async def stage_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    result = await db.execute(select(Student.stage, func.count(Student.id)).group_by(Student.stage))
+    result = await db.execute(
+        select(Student.stage, func.count(Student.id))
+        .where(Student.assigned_to.is_not(None))
+        .group_by(Student.stage)
+    )
     by_stage = {row[0]: row[1] for row in result.all()}
+    unassigned = (
+        await db.execute(select(func.count(Student.id)).where(Student.assigned_to.is_(None)))
+    ).scalar() or 0
+    by_stage["未分配"] = unassigned
     return Response.ok(by_stage)
 
 

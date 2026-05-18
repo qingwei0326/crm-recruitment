@@ -110,6 +110,24 @@ function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
 }
 
+function getContactOptions(student) {
+  if (!student) return [];
+  return [
+    {
+      key: 'guardian1',
+      label: '联系人1',
+      name: student.guardian_name || '联系人1',
+      phone: student.guardian_phone_raw || student.guardian_phone || '',
+    },
+    {
+      key: 'guardian2',
+      label: '联系人2',
+      name: student.guardian2_name || '联系人2',
+      phone: student.guardian2_phone_raw || student.guardian2_phone || '',
+    },
+  ].filter((item) => item.phone);
+}
+
 export default function AgentWork() {
   const { user, logout } = useAuth();
   const { dark, toggle: toggleTheme } = useTheme();
@@ -588,7 +606,7 @@ export default function AgentWork() {
                       {lockedStudentId === current.id && (
                         <div className="mb-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-lg text-center">
                           <div className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-1">
-                            ⚠ 请选择本次跟进结果
+                            ⚠ 可继续拨联系人2，确认结果后再更新状态
                           </div>
                           <div className="text-xs text-orange-500">
                             已联系 / 待回访 / 无效 / 已报名
@@ -607,13 +625,25 @@ export default function AgentWork() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex gap-2 mb-3">
-                        <button
-                          onClick={() => handleDial('', current.id)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium"
-                        >
-                          <Phone className="w-4 h-4" /> 拨号
-                        </button>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                        {getContactOptions(current).map((contact) => (
+                          <button
+                            key={contact.key}
+                            onClick={() => handleDial(contact.phone, current.id)}
+                            className="flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium"
+                            title={contact.phone}
+                          >
+                            <Phone className="w-4 h-4" /> {contact.label} {contact.name}
+                          </button>
+                        ))}
+                        {getContactOptions(current).length === 0 && (
+                          <button
+                            disabled
+                            className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm font-medium"
+                          >
+                            <Phone className="w-4 h-4" /> 无联系人电话
+                          </button>
+                        )}
                         <button
                           onClick={() => openAiPanel(current)}
                           disabled={lockedStudentId === current.id}
@@ -1046,7 +1076,7 @@ export default function AgentWork() {
                         {lockedStudentId === current.id && (
                           <div className="mb-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-lg text-center">
                             <div className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-1">
-                              ⚠ 请选择本次跟进结果
+                              ⚠ 可继续拨联系人2，确认结果后再更新状态
                             </div>
                             <div className="text-xs text-orange-500">
                               已联系 / 待回访 / 无效 / 已报名
@@ -1065,13 +1095,25 @@ export default function AgentWork() {
                             </button>
                           ))}
                         </div>
-                        <div className="flex gap-2 mb-3">
-                          <button
-                            onClick={() => handleDial('', current.id)}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm"
-                          >
-                            拨号
-                          </button>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                          {getContactOptions(current).map((contact) => (
+                            <button
+                              key={contact.key}
+                              onClick={() => handleDial(contact.phone, current.id)}
+                              className="flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm"
+                              title={contact.phone}
+                            >
+                              <Phone className="w-4 h-4" /> {contact.label} {contact.name}
+                            </button>
+                          ))}
+                          {getContactOptions(current).length === 0 && (
+                            <button
+                              disabled
+                              className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm"
+                            >
+                              <Phone className="w-4 h-4" /> 无联系人电话
+                            </button>
+                          )}
                           <button
                             onClick={() => openAiPanel(current)}
                             disabled={lockedStudentId === current.id}

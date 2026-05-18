@@ -10,20 +10,24 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel
-from sqlalchemy import func, insert, or_, select, update
+from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
+    Call,
+    FollowUp,
     IntentLevel,
     LeadViewLog,
+    Note,
     Student,
     StudentStage,
     StudentStatus,
     User,
     UserRole,
+    Visit,
 )
 from app.permissions import (
     apply_student_scope,
@@ -652,7 +656,7 @@ async def list_students(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "list": [_student_payload(s, full_phone=is_admin(current_user)) for s in students],
+            "list": [_student_payload(s, full_phone=True) for s in students],
         }
     )
 
@@ -715,6 +719,22 @@ async def enrolled_students(
             "list": data,
         }
     )
+
+
+@router.get("/schools")
+async def list_schools(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """获取有未分配学生的学校列表及其未分配数量"""
+    result = await db.execute(
+        select(Student.school_name, func.count(Student.id))
+        .where(Student.school_name != "", Student.assigned_to.is_(None))
+        .group_by(Student.school_name)
+        .order_by(func.count(Student.id).desc())
+    )
+    schools = [{"name": row[0], "count": row[1]} for row in result.all()]
+    return Response.ok(schools)
 
 
 @router.get("/{student_id}")
@@ -795,7 +815,7 @@ async def update_student(
     await db.refresh(student)
     if "intent_level" in raw and old_intent != student.intent_level and student.intent_level == IntentLevel.A:
         await notify_a_level_change(db, student, current_user, "manual")
-    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
+    return Response.ok(_student_payload(student, full_phone=True))
 
 
 @router.put("/{student_id}/stage")
@@ -1016,22 +1036,6 @@ async def region_assign(
     )
 
 
-@router.get("/schools")
-async def list_schools(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
-):
-    """获取所有学校列表及其学生数量"""
-    result = await db.execute(
-        select(Student.school_name, func.count(Student.id))
-        .where(Student.school_name != "")
-        .group_by(Student.school_name)
-        .order_by(func.count(Student.id).desc())
-    )
-    schools = [{"name": row[0], "count": row[1]} for row in result.all()]
-    return Response.ok(schools)
-
-
 @router.post("/school-assign")
 async def school_assign(
     body: dict,
@@ -1119,6 +1123,8 @@ async def delete_student(
     current_user: User = Depends(require_admin),
 ):
     student = await get_student_or_404(db, student_id)
+    for model in (Call, Note, FollowUp, LeadViewLog, Visit):
+        await db.execute(delete(model).where(model.student_id == student_id))
     await db.delete(student)
     await db.commit()
     return Response.ok(msg="删除成功")
