@@ -116,7 +116,6 @@ async def agent_headers(agent_token):
 async def sample_student(db):
     student = Student(
         name="张三",
-        phone="13800138000",
         region="思明区",
         stage=StudentStage.initial_contact,
         status=StudentStatus.not_contacted,

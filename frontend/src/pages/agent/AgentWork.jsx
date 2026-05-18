@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertTriangle,
+  Plus,
   User,
   BookOpen,
   PhoneCall as PhoneIcon,
@@ -59,6 +60,51 @@ const QUICK_STATUSES = [
 const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
+const emptyStudentForm = {
+  name: '',
+  region: '',
+  score: '',
+  guardian_name: '',
+  guardian_phone: '',
+  guardian2_name: '',
+  guardian2_phone: '',
+  school_name: '',
+  school_address: '',
+  join_reasons: '',
+};
+const createStudentFields = [
+  { key: 'name', label: '姓名', required: true },
+  { key: 'region', label: '地域' },
+  { key: 'score', label: '成绩', type: 'number' },
+  { key: 'guardian_name', label: '监护人姓名' },
+  { key: 'guardian_phone', label: '监护人电话' },
+  { key: 'guardian2_name', label: '监护人2姓名' },
+  { key: 'guardian2_phone', label: '监护人2电话' },
+  { key: 'school_name', label: '学校名称' },
+  { key: 'school_address', label: '学校地址' },
+  { key: 'join_reasons', label: '报名原因/备注', type: 'textarea' },
+];
+
+function buildStudentPayload(form) {
+  const payload = {
+    name: form.name.trim(),
+  };
+  [
+    'region',
+    'guardian_name',
+    'guardian_phone',
+    'guardian2_name',
+    'guardian2_phone',
+    'school_name',
+    'school_address',
+    'join_reasons',
+  ].forEach((key) => {
+    const value = form[key]?.trim();
+    if (value) payload[key] = value;
+  });
+  if (form.score !== '' && form.score != null) payload.score = Number(form.score);
+  return payload;
+}
 
 function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
@@ -81,6 +127,9 @@ export default function AgentWork() {
   const [viewTab, setViewTab] = useState('today');
   const [showMenu, setShowMenu] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newStudent, setNewStudent] = useState(emptyStudentForm);
+  const [createErr, setCreateErr] = useState('');
 
   // Detail & edit
   const [detailStudent, setDetailStudent] = useState(null);
@@ -130,6 +179,19 @@ export default function AgentWork() {
       .catch(console.error);
   }, []);
 
+  const fetchToday = () => {
+    api
+      .get('/tasks/today')
+      .then((res) => {
+        if (res.data.code === 0) {
+          setStudents(res.data.data.list || []);
+          setStats(res.data.data.stats || {});
+          setCurrentIdx((idx) => Math.min(idx, Math.max((res.data.data.list || []).length - 1, 0)));
+        }
+      })
+      .catch(console.error);
+  };
+
   useEffect(() => {
     const c = students[currentIdx];
     if (c) {
@@ -150,6 +212,27 @@ export default function AgentWork() {
   }, []);
 
   const current = students[currentIdx];
+
+  const handleCreate = async () => {
+    if (!newStudent.name) {
+      setCreateErr('姓名和电话必填');
+      return;
+    }
+    try {
+      const res = await api.post('/students', buildStudentPayload(newStudent));
+      if (res.data.code === 0) {
+        setShowCreate(false);
+        setNewStudent(emptyStudentForm);
+        setCreateErr('');
+        fetchToday();
+        flashMsg('学生已添加');
+      } else {
+        setCreateErr(res.data.msg || '创建失败');
+      }
+    } catch (e) {
+      setCreateErr(getApiErrorMessage(e));
+    }
+  };
 
   const fetchYesterday = () => {
     setYesterdayLoading(true);
@@ -326,6 +409,16 @@ export default function AgentWork() {
         <button
           onClick={() => {
             setShowMenu(false);
+            setShowCreate(true);
+            setCreateErr('');
+          }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
+          <Plus className="w-4 h-4" /> 手动添加学生
+        </button>
+        <button
+          onClick={() => {
+            setShowMenu(false);
             setViewTab('yesterday');
             fetchYesterday();
           }}
@@ -375,6 +468,16 @@ export default function AgentWork() {
               <Moon className="w-5 h-5 text-gray-500" />
             )}
           </button>
+          <button
+            onClick={() => {
+              setShowCreate(true);
+              setCreateErr('');
+            }}
+            className="p-2 rounded-lg text-gray-500"
+            title="手动添加学生"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
         </header>
         {showMenu && (
           <div className="fixed inset-0 z-30">
@@ -383,6 +486,15 @@ export default function AgentWork() {
               <Sidebar />
             </div>
           </div>
+        )}
+        {showCreate && (
+          <StudentCreateModal
+            student={newStudent}
+            setStudent={setNewStudent}
+            error={createErr}
+            onClose={() => setShowCreate(false)}
+            onSubmit={handleCreate}
+          />
         )}
 
         {viewTab === 'today' ? (
@@ -434,7 +546,7 @@ export default function AgentWork() {
                             )}
                           </div>
                           <div className="text-sm text-gray-500 font-mono mt-0.5">
-                            {current.phone} · {current.region || '未知地域'}
+                            {current.region || '未知地域'}
                           </div>
                           {prediction && (
                             <div className="flex items-center gap-1.5 mt-1.5">
@@ -497,7 +609,7 @@ export default function AgentWork() {
                       </div>
                       <div className="flex gap-2 mb-3">
                         <button
-                          onClick={() => handleDial(current.phone_raw, current.id)}
+                          onClick={() => handleDial('', current.id)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium"
                         >
                           <Phone className="w-4 h-4" /> 拨号
@@ -697,8 +809,9 @@ export default function AgentWork() {
                 ['score', '成绩'],
                 ['guardian_name', '监护人'],
                 ['guardian_phone', '监护人电话'],
+                ['guardian2_name', '监护人2'],
+                ['guardian2_phone', '监护人2电话'],
                 ['school_name', '学校'],
-                ['school_address', '学校地址'],
               ].map(([k, label]) => (
                 <div
                   key={k}
@@ -708,7 +821,6 @@ export default function AgentWork() {
                   <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
                 </div>
               ))}
-              <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>
               {/* Timeline notes */}
               <div className="pt-2 border-t dark:border-gray-700">
                 <div className="text-sm font-semibold mb-2">联系记录</div>
@@ -816,6 +928,15 @@ export default function AgentWork() {
         <Sidebar />
       </aside>
       <div className="flex-1 flex min-w-0">
+        {showCreate && (
+          <StudentCreateModal
+            student={newStudent}
+            setStudent={setNewStudent}
+            error={createErr}
+            onClose={() => setShowCreate(false)}
+            onSubmit={handleCreate}
+          />
+        )}
         <div className="flex-1 flex flex-col min-w-0 max-w-xl border-r dark:border-gray-700">
           <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between shrink-0">
             <h2 className="text-sm font-semibold">
@@ -828,6 +949,16 @@ export default function AgentWork() {
                 title="使用说明"
               >
                 <HelpCircle className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreate(true);
+                  setCreateErr('');
+                }}
+                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+                title="手动添加学生"
+              >
+                <Plus className="w-4 h-4" />
               </button>
             {viewTab === 'today' && (
               <span className="text-xs text-gray-500">
@@ -879,7 +1010,7 @@ export default function AgentWork() {
                               )}
                             </div>
                             <div className="text-sm text-gray-500 font-mono mt-0.5">
-                              {current.phone} · {current.region}
+                              {current.region || '未知地域'}
                             </div>
                             {prediction && (
                               <div className="flex items-center gap-1.5 mt-1.5">
@@ -936,7 +1067,7 @@ export default function AgentWork() {
                         </div>
                         <div className="flex gap-2 mb-3">
                           <button
-                            onClick={() => handleDial(current.phone_raw, current.id)}
+                            onClick={() => handleDial('', current.id)}
                             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm"
                           >
                             拨号
@@ -1136,8 +1267,9 @@ export default function AgentWork() {
                   ['score', '成绩'],
                   ['guardian_name', '监护人'],
                   ['guardian_phone', '监护人电话'],
+                  ['guardian2_name', '监护人2'],
+                  ['guardian2_phone', '监护人2电话'],
                   ['school_name', '学校'],
-                  ['school_address', '学校地址'],
                 ].map(([k, label]) => (
                   <div
                     key={k}
@@ -1147,7 +1279,6 @@ export default function AgentWork() {
                     <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
                   </div>
                 ))}
-                <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>
                 <div className="pt-2 border-t dark:border-gray-700">
                   <div className="text-sm font-semibold mb-2">联系记录</div>
                   {detailNotesError && (
@@ -1242,7 +1373,6 @@ export default function AgentWork() {
               )}
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['phone', '电话'],
                   ['region', '地域'],
                   ['status', '状态'],
                   ['intent_level', '意向'],
@@ -1250,8 +1380,9 @@ export default function AgentWork() {
                   ['score', '成绩'],
                   ['guardian_name', '监护人'],
                   ['guardian_phone', '监护人电话'],
+                  ['guardian2_name', '监护人2'],
+                  ['guardian2_phone', '监护人2电话'],
                   ['school_name', '学校'],
-                  ['school_address', '学校地址'],
                 ].map(([k, label]) => (
                   <div key={k} className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-3 min-w-0">
                     <div className="text-xs text-gray-500">{label}</div>
@@ -1259,7 +1390,6 @@ export default function AgentWork() {
                   </div>
                 ))}
               </div>
-              <div className="text-xs text-gray-500">档案号：{detailStudent.case_no || '-'}</div>
               <div className="pt-2 border-t dark:border-gray-700">
                 <div className="text-sm font-semibold mb-2">联系记录</div>
                 {detailNotesError && (
@@ -1312,6 +1442,59 @@ export default function AgentWork() {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function StudentCreateModal({ student, setStudent, error, onClose, onSubmit }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4 sticky top-0 bg-white dark:bg-gray-800 z-10 pb-2">
+          <h3 className="text-lg font-semibold">手动添加学生</h3>
+          <button onClick={onClose}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {createStudentFields.map((field) => (
+            <div key={field.key} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
+              <label className="block text-sm mb-1">
+                {field.label} {field.required && '*'}
+              </label>
+              {field.type === 'textarea' ? (
+                <textarea
+                  value={student[field.key] || ''}
+                  onChange={(e) => setStudent({ ...student, [field.key]: e.target.value })}
+                  className={`${inputCls} h-20 resize-none`}
+                  rows={3}
+                />
+              ) : (
+                <input
+                  value={student[field.key] || ''}
+                  onChange={(e) => setStudent({ ...student, [field.key]: e.target.value })}
+                  className={inputCls}
+                  type={field.type || 'text'}
+                />
+              )}
+            </div>
+          ))}
+          <div className="sm:col-span-2 text-xs text-gray-500 dark:text-gray-400">
+            添加后会自动分配到当前话务员，话务员不能删除学生。
+          </div>
+          {error && (
+            <div className="sm:col-span-2 text-sm text-red-500 bg-red-50 dark:bg-red-900/30 px-3 py-2 rounded-lg">
+              {error}
+            </div>
+          )}
+          <button onClick={onSubmit} className="sm:col-span-2 w-full py-2.5 bg-green-600 text-white rounded-lg text-sm">
+            创建
+          </button>
+        </div>
       </div>
     </div>
   );

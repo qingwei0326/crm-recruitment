@@ -43,7 +43,6 @@ MAX_STUDENT_IMPORT_BYTES = 10 * 1024 * 1024
 
 ADMIN_STUDENT_UPDATE_FIELDS = {
     "name",
-    "phone",
     "status",
     "intent_level",
     "assigned_to",
@@ -56,6 +55,8 @@ ADMIN_STUDENT_UPDATE_FIELDS = {
     "score",
     "guardian_name",
     "guardian_phone",
+    "guardian2_name",
+    "guardian2_phone",
     "school_name",
     "school_address",
     "need_help",
@@ -82,7 +83,6 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
     payload = {
         "id": student.id,
         "name": student.name,
-        "phone": mask_phone(student.phone),
         "region": student.region,
         "assigned_to": student.assigned_to,
         "status": student.status,
@@ -94,6 +94,8 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
         "score": student.score,
         "guardian_name": student.guardian_name,
         "guardian_phone": mask_phone(student.guardian_phone),
+        "guardian2_name": student.guardian2_name,
+        "guardian2_phone": mask_phone(student.guardian2_phone),
         "school_name": student.school_name,
         "school_address": student.school_address,
         "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
@@ -104,8 +106,8 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
         "updated_at": str(student.updated_at),
     }
     if full_phone:
-        payload["phone_raw"] = student.phone
         payload["guardian_phone_raw"] = student.guardian_phone
+        payload["guardian2_phone_raw"] = student.guardian2_phone
     return payload
 
 
@@ -135,6 +137,8 @@ async def import_students(
             "成绩",
             "监护人姓名",
             "监护人电话",
+            "监护人2姓名",
+            "监护人2电话",
             "学校名称",
             "学校地址",
             "地域",
@@ -144,31 +148,27 @@ async def import_students(
             if val in supported_headers:
                 headers[val] = col_idx
 
-        if "姓名" not in headers or "电话" not in headers:
-            return Response.error(code=1, msg="Excel必须包含「姓名」「电话」列")
+        if "姓名" not in headers:
+            return Response.error(code=1, msg="Excel必须包含「姓名」列")
 
         name_col = headers["姓名"]
-        phone_col = headers["电话"]
         region_col = headers.get("地域")
         score_col = headers.get("成绩")
         guardian_name_col = headers.get("监护人姓名")
         guardian_phone_col = headers.get("监护人电话")
+        guardian2_name_col = headers.get("监护人2姓名")
+        guardian2_phone_col = headers.get("监护人2电话")
         school_name_col = headers.get("学校名称")
         school_address_col = headers.get("学校地址")
-
-        existing_result = await db.execute(select(Student.phone))
-        existing_phones = set(row[0] for row in existing_result.all())
 
         today = date.today()
         default_expire = today + timedelta(days=30)
         success = 0
         skipped = 0
-        duplicates = []
         errors = []
 
         for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             name_val = row[name_col - 1] if len(row) >= name_col else None
-            phone_val = row[phone_col - 1] if len(row) >= phone_col else None
             region_val = row[region_col - 1] if region_col and len(row) >= region_col else ""
             score_val = row[score_col - 1] if score_col and len(row) >= score_col else None
             guardian_name_val = (
@@ -181,6 +181,16 @@ async def import_students(
                 if guardian_phone_col and len(row) >= guardian_phone_col
                 else ""
             )
+            guardian2_name_val = (
+                row[guardian2_name_col - 1]
+                if guardian2_name_col and len(row) >= guardian2_name_col
+                else ""
+            )
+            guardian2_phone_val = (
+                row[guardian2_phone_col - 1]
+                if guardian2_phone_col and len(row) >= guardian2_phone_col
+                else ""
+            )
             school_name_val = (
                 row[school_name_col - 1] if school_name_col and len(row) >= school_name_col else ""
             )
@@ -190,18 +200,12 @@ async def import_students(
                 else ""
             )
 
-            if not name_val or not phone_val:
+            if not name_val:
                 continue
 
             name = str(name_val).strip()
-            phone = re.sub(r"\s+", "", str(phone_val)).strip()
 
-            if not name or not phone:
-                continue
-
-            if phone in existing_phones:
-                skipped += 1
-                duplicates.append(phone)
+            if not name:
                 continue
 
             score = None
@@ -215,12 +219,15 @@ async def import_students(
 
             student = Student(
                 name=name,
-                phone=phone,
                 region=str(region_val).strip() if region_val else "",
                 score=score,
                 guardian_name=str(guardian_name_val).strip() if guardian_name_val else "",
                 guardian_phone=re.sub(r"\s+", "", str(guardian_phone_val)).strip()
                 if guardian_phone_val
+                else "",
+                guardian2_name=str(guardian2_name_val).strip() if guardian2_name_val else "",
+                guardian2_phone=re.sub(r"\s+", "", str(guardian2_phone_val)).strip()
+                if guardian2_phone_val
                 else "",
                 school_name=str(school_name_val).strip() if school_name_val else "",
                 school_address=str(school_address_val).strip() if school_address_val else "",
@@ -231,7 +238,6 @@ async def import_students(
                 case_no=str(uuid.uuid4()),
             )
             db.add(student)
-            existing_phones.add(phone)
             success += 1
 
         await db.commit()
@@ -240,7 +246,6 @@ async def import_students(
             {
                 "success": success,
                 "skipped": skipped,
-                "duplicates": duplicates,
                 "errors": errors,
             }
         )
@@ -255,17 +260,18 @@ async def download_import_template():
     ws = wb.active
     ws.title = "导入模板"
 
-    headers = ["姓名", "电话", "成绩", "监护人姓名", "监护人电话", "学校名称", "学校地址", "地域"]
+    headers = ["姓名", "成绩", "监护人姓名", "监护人电话", "监护人2姓名", "监护人2电话", "学校名称", "学校地址", "地域"]
     ws.append(headers)
 
     # Example data
     ws.append(
         [
             "张三",
-            "13800138000",
             "580",
             "张先生",
             "13900139000",
+            "李女士",
+            "13700137000",
             "第一中学",
             "XX市XX区XX路1号",
             "福州",
@@ -289,37 +295,84 @@ async def download_import_template():
 async def create_student(
     body: StudentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
-    phone = re.sub(r"\s+", "", body.phone)
-    result = await db.execute(select(Student).where(Student.phone == phone))
-    if result.scalar_one_or_none():
-        return Response.error(code=1, msg=f"电话 {phone} 已存在")
+    raw = body.model_dump(exclude_unset=True)
+    if not is_admin(current_user):
+        agent_create_fields = {
+            "name",
+            "region",
+            "score",
+            "guardian_name",
+            "guardian_phone",
+            "guardian2_name",
+            "guardian2_phone",
+            "school_name",
+            "school_address",
+            "join_reasons",
+        }
+        forbidden = sorted(set(raw) - agent_create_fields)
+        if forbidden:
+            raise HTTPException(status_code=403, detail=f"无权设置字段: {', '.join(forbidden)}")
+
+    status = StudentStatus.not_contacted
+    intent_level = IntentLevel.none
+    stage = StudentStage.initial_contact
+    if is_admin(current_user):
+        if body.status:
+            try:
+                status = _enum_or_error(StudentStatus, body.status, "状态")
+            except ValueError as e:
+                return Response.error(code=1, msg=str(e))
+        if body.intent_level:
+            try:
+                intent_level = _enum_or_error(IntentLevel, body.intent_level, "意向等级")
+            except ValueError as e:
+                return Response.error(code=1, msg=str(e))
+        if body.stage:
+            try:
+                stage = _enum_or_error(StudentStage, body.stage, "阶段")
+            except ValueError as e:
+                return Response.error(code=1, msg=str(e))
+
+    assigned_to = body.assigned_to if is_admin(current_user) else current_user.id
+    if assigned_to:
+        agent_result = await db.execute(select(User.id).where(User.id == assigned_to, User.is_active))
+        if not agent_result.scalar_one_or_none():
+            return Response.error(code=1, msg="话务员不存在或已禁用")
 
     student = Student(
         name=body.name,
-        phone=phone,
         region=body.region,
-        status=StudentStatus.not_contacted,
-        intent_level=IntentLevel.none,
-        stage=StudentStage.initial_contact,
+        assigned_to=assigned_to,
+        assigned_at=datetime.utcnow() if assigned_to else None,
+        status=status,
+        intent_level=intent_level,
+        stage=stage,
+        join_reasons=body.join_reasons or "",
+        enrolled_at=body.enrolled_at,
+        program=body.program or "",
+        deposit=body.deposit,
+        score=body.score,
+        guardian_name=body.guardian_name or "",
+        guardian_phone=re.sub(r"\s+", "", body.guardian_phone or ""),
+        guardian2_name=body.guardian2_name or "",
+        guardian2_phone=re.sub(r"\s+", "", body.guardian2_phone or ""),
+        school_name=body.school_name or "",
+        school_address=body.school_address or "",
+        need_help=body.need_help or False,
         expired_at=Student.default_expired_at(),
         case_no=str(uuid.uuid4()),
     )
+    if student.stage == StudentStage.enrolled:
+        student.status = StudentStatus.enrolled
+        if not student.enrolled_at:
+            student.enrolled_at = date.today()
+
     db.add(student)
     await db.commit()
     await db.refresh(student)
-    return Response.ok(
-        {
-            "id": student.id,
-            "name": student.name,
-            "phone": student.phone,
-            "region": student.region,
-            "status": student.status,
-            "stage": student.stage,
-            "created_at": str(student.created_at),
-        }
-    )
+    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
 
 @router.get("")
@@ -339,7 +392,14 @@ async def list_students(
 ):
     query = apply_student_scope(select(Student), current_user)
     if q:
-        query = query.where(or_(Student.name.contains(q), Student.phone.contains(q)))
+        query = query.where(
+            or_(
+                Student.name.contains(q),
+                Student.region.contains(q),
+                Student.school_name.contains(q),
+                Student.guardian_name.contains(q),
+            )
+        )
     if status:
         query = query.where(Student.status == status)
     if intent_level:
@@ -411,7 +471,6 @@ async def enrolled_students(
         {
             "id": s.id,
             "name": s.name,
-            "phone": mask_phone(s.phone),
             "region": s.region,
             "program": s.program,
             "deposit": s.deposit,
@@ -475,15 +534,7 @@ async def update_student(
 
     old_intent = student.intent_level
     for k, v in raw.items():
-        if k == "phone" and v is not None:
-            phone = re.sub(r"\s+", "", v)
-            existing = await db.execute(
-                select(Student.id).where(Student.phone == phone, Student.id != student.id)
-            )
-            if existing.scalar_one_or_none():
-                return Response.error(code=1, msg=f"电话 {phone} 已存在")
-            v = phone
-        elif k == "status" and v is not None:
+        if k == "status" and v is not None:
             try:
                 v = _enum_or_error(StudentStatus, v, "状态")
             except ValueError as e:
@@ -739,10 +790,84 @@ async def region_assign(
     return Response.ok(
         {
             "total_assigned": total_assigned,
-            "region_map_used": {k: v.name for k, v in region_map.items()},
             "distribution": distribution,
         }
     )
+
+
+@router.get("/schools")
+async def list_schools(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """获取所有学校列表及其学生数量"""
+    result = await db.execute(
+        select(Student.school_name, func.count(Student.id))
+        .where(Student.school_name != "")
+        .group_by(Student.school_name)
+        .order_by(func.count(Student.id).desc())
+    )
+    schools = [{"name": row[0], "count": row[1]} for row in result.all()]
+    return Response.ok(schools)
+
+
+@router.post("/school-assign")
+async def school_assign(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校分发：选学校、选多个话务员ID、轮询分配"""
+    school = body.get("school_name", "").strip()
+    agent_ids = body.get("agent_ids", [])
+    if not school:
+        return Response.error(code=1, msg="请选择学校")
+    if not agent_ids or not isinstance(agent_ids, list):
+        return Response.error(code=1, msg="请选择至少一个话务员")
+
+    # 验证话务员存在
+    agents_result = await db.execute(
+        select(User).where(User.id.in_(agent_ids), User.is_active, User.role == UserRole.agent)
+    )
+    agents = agents_result.scalars().all()
+    if not agents:
+        return Response.error(code=1, msg="没有可用的话务员")
+
+    # 查出该学校未分配的学生
+    students_result = await db.execute(
+        select(Student).where(
+            Student.school_name == school,
+            Student.assigned_to.is_(None),
+        ).order_by(Student.created_at.asc())
+    )
+    students = students_result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg="该学校没有未分配的学生")
+
+    now = datetime.utcnow()
+    by_agent: dict[int, list[int]] = {}
+    agent_id_list = [a.id for a in agents]
+    counts = {a_id: 0 for a_id in agent_id_list}
+
+    for student in students:
+        # 轮询：选当前分配数量最少的话务员
+        min_agent_id = min(counts, key=counts.get)
+        by_agent.setdefault(min_agent_id, []).append(student.id)
+        counts[min_agent_id] += 1
+
+    for agent_id, ids in by_agent.items():
+        await db.execute(
+            update(Student)
+            .where(Student.id.in_(ids))
+            .values(assigned_to=agent_id, assigned_at=now)
+        )
+
+    await db.commit()
+    return Response.ok({
+        "total_assigned": len(students),
+        "distribution": {f"agent_{a_id}": len(ids) for a_id, ids in by_agent.items()},
+    })
+
 
 
 @router.post("/{student_id}/need-help")

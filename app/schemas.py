@@ -28,13 +28,27 @@ class LoginReq(BaseModel):
 
 class StudentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
-    phone: str = Field(..., min_length=1, max_length=20)
     region: str = Field(default="")
+    status: str | None = None
+    intent_level: str | None = None
+    assigned_to: int | None = None
+    join_reasons: str | None = None
+    stage: str | None = None
+    enrolled_at: date | None = None
+    program: str | None = None
+    deposit: float | None = None
+    score: float | None = None
+    guardian_name: str | None = None
+    guardian_phone: str | None = None
+    guardian2_name: str | None = None
+    guardian2_phone: str | None = None
+    school_name: str | None = None
+    school_address: str | None = None
+    need_help: bool | None = None
 
 
 class StudentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
-    phone: str | None = Field(default=None, min_length=1, max_length=20)
     status: str | None = None
     intent_level: str | None = None
     assigned_to: int | None = None
@@ -47,6 +61,8 @@ class StudentUpdate(BaseModel):
     score: float | None = None
     guardian_name: str | None = None
     guardian_phone: str | None = None
+    guardian2_name: str | None = None
+    guardian2_phone: str | None = None
     school_name: str | None = None
     school_address: str | None = None
     need_help: bool | None = None

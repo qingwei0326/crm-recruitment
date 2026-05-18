@@ -42,6 +42,68 @@ const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
+const emptyStudentForm = {
+  name: '',
+  region: '',
+  score: '',
+  guardian_name: '',
+  guardian_phone: '',
+  guardian2_name: '',
+  guardian2_phone: '',
+  school_name: '',
+  school_address: '',
+  status: '',
+  intent_level: '',
+  stage: '',
+  join_reasons: '',
+  program: '',
+  deposit: '',
+  enrolled_at: '',
+  assigned_to: '',
+  need_help: false,
+};
+const createStudentFields = [
+  { key: 'name', label: '姓名', required: true },
+  { key: 'region', label: '地域' },
+  { key: 'score', label: '成绩', type: 'number' },
+  { key: 'guardian_name', label: '监护人姓名' },
+  { key: 'guardian_phone', label: '监护人电话' },
+  { key: 'guardian2_name', label: '监护人2姓名' },
+  { key: 'guardian2_phone', label: '监护人2电话' },
+  { key: 'school_name', label: '学校名称' },
+  { key: 'join_reasons', label: '报名原因/备注', type: 'textarea' },
+  { key: 'program', label: '报名专业' },
+  { key: 'deposit', label: '定金', type: 'number' },
+  { key: 'enrolled_at', label: '报名日期', type: 'date' },
+];
+
+function buildStudentPayload(form) {
+  const payload = {
+    name: form.name.trim(),
+  };
+  [
+    'region',
+    'guardian_name',
+    'guardian_phone',
+    'guardian2_name',
+    'guardian2_phone',
+    'school_name',
+    'join_reasons',
+    'program',
+  ].forEach((key) => {
+    const value = form[key]?.trim();
+    if (value) payload[key] = value;
+  });
+  ['status', 'intent_level', 'stage', 'enrolled_at'].forEach((key) => {
+    if (form[key]) payload[key] = form[key];
+  });
+  ['score', 'deposit'].forEach((key) => {
+    if (form[key] !== '' && form[key] != null) payload[key] = Number(form[key]);
+  });
+  if (form.assigned_to) payload.assigned_to = Number(form.assigned_to);
+  if (form.need_help) payload.need_help = true;
+  return payload;
+}
 
 function maskPhone(p) {
   if (!p || p.length < 7) return p;
@@ -94,13 +156,19 @@ export default function LeadsManage() {
   const [importing, setImporting] = useState(false);
 
   // Create
-  const [newStudent, setNewStudent] = useState({ name: '', phone: '', region: '' });
+  const [newStudent, setNewStudent] = useState(emptyStudentForm);
   const [createErr, setCreateErr] = useState('');
 
   // Assign
   const [assignAgentId, setAssignAgentId] = useState('');
   const [quickAssignCount, setQuickAssignCount] = useState(0);
   const [quickAssignAgentId, setQuickAssignAgentId] = useState('');
+
+  // School assign
+  const [showSchoolAssign, setShowSchoolAssign] = useState(false);
+  const [schools, setSchools] = useState([]);
+  const [schoolAssignSchool, setSchoolAssignSchool] = useState('');
+  const [schoolAssignAgents, setSchoolAssignAgents] = useState([]);
 
   // Inline note
   const [noteText, setNoteText] = useState({});
@@ -239,16 +307,16 @@ export default function LeadsManage() {
   };
 
   const handleCreate = async () => {
-    if (!newStudent.name || !newStudent.phone) return setCreateErr('姓名和电话必填');
+    if (!newStudent.name) return setCreateErr('????');
     try {
-      const res = await api.post('/students', newStudent);
+      const res = await api.post('/students', buildStudentPayload(newStudent));
       if (res.data.code === 0) {
         setShowCreate(false);
-        setNewStudent({ name: '', phone: '', region: '' });
+        setNewStudent(emptyStudentForm);
         fetchStudents(page);
       } else setCreateErr(res.data.msg);
-    } catch {
-      setCreateErr('创建失败');
+    } catch (e) {
+      setCreateErr(getApiErrorMessage(e) || '创建失败');
     }
   };
 
@@ -272,10 +340,26 @@ export default function LeadsManage() {
   };
 
   const handleRegionAssign = async () => {
-    if (!confirm('将未分配学生按地域匹配分发？')) return;
-    const res = await api.post('/students/region-assign');
+    // Open school assign modal — fetch schools list
+    const res = await api.get('/students/schools');
     if (res.data.code === 0) {
-      alert(`分发完成：${res.data.data.total_assigned} 条`);
+      setSchools(res.data.data || []);
+    }
+    setSchoolAssignSchool('');
+    setSchoolAssignAgents([]);
+    setShowSchoolAssign(true);
+  };
+
+  const handleSchoolAssign = async () => {
+    if (!schoolAssignSchool) return alert('请选择学校');
+    if (schoolAssignAgents.length === 0) return alert('请选择至少一个话务员');
+    const res = await api.post('/students/school-assign', {
+      school_name: schoolAssignSchool,
+      agent_ids: schoolAssignAgents,
+    });
+    if (res.data.code === 0) {
+      alert(`分发完成：${res.data.data.total_assigned} 名学生`);
+      setShowSchoolAssign(false);
       fetchStudents(page);
       refreshExpand();
     } else alert(res.data.msg);
@@ -362,8 +446,8 @@ export default function LeadsManage() {
 
   const handleEditSave = async () => {
     if (!editStudent) return;
-    const { id, name, phone, region, score, guardian_name, guardian_phone, school_name, school_address } = editStudent;
-    await api.put(`/students/${id}`, { name, phone, region, score, guardian_name, guardian_phone, school_name, school_address });
+    const { id, name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name, school_address } = editStudent;
+    await api.put(`/students/${id}`, { name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name, school_address });
     setShowEdit(false);
     setEditStudent(null);
     fetchStudents(page);
@@ -433,9 +517,9 @@ export default function LeadsManage() {
                   ['成绩', s.score != null ? s.score : '-'],
                   ['监护人', s.guardian_name || '-'],
                   ['监护人电话', s.guardian_phone ? maskPhone(s.guardian_phone) : '-'],
+                  ['监护人2', s.guardian2_name || '-'],
+                  ['监护人2电话', s.guardian2_phone ? maskPhone(s.guardian2_phone) : '-'],
                   ['学校', s.school_name || '-'],
-                  ['学校地址', s.school_address || '-'],
-                  ['档案号', s.case_no || '-'],
                 ].map(([k, v]) => (
                   <div key={k} className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
                     <div className="text-xs text-gray-400">{k}</div>
@@ -652,13 +736,13 @@ export default function LeadsManage() {
                     setEditStudent({
                       id: s.id,
                       name: s.name,
-                      phone: s.phone_raw || s.phone,
                       region: s.region || '',
                       score: s.score || '',
                       guardian_name: s.guardian_name || '',
                       guardian_phone: s.guardian_phone_raw || s.guardian_phone || '',
+                      guardian2_name: s.guardian2_name || '',
+                      guardian2_phone: s.guardian2_phone_raw || s.guardian2_phone || '',
                       school_name: s.school_name || '',
-                      school_address: s.school_address || '',
                     });
                     setShowEdit(true);
                   }}
@@ -743,7 +827,6 @@ export default function LeadsManage() {
               {l.need_help && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
             </div>
           </td>
-          <td className="px-2 py-2.5 text-gray-500 font-mono text-xs">{l.phone}</td>
           <td className="px-2 py-2.5 hidden md:table-cell">
             {l.region ? (
               <span className="text-xs px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-900/30 text-teal-700">
@@ -975,7 +1058,7 @@ export default function LeadsManage() {
               className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm"
             >
               <MapPin className="w-4 h-4" />
-              {!isMobile && '地域分发'}
+              {!isMobile && '学校分发'}
             </button>
             {isMobile && (
               <button onClick={toggle} className="p-2 rounded-lg">
@@ -994,7 +1077,7 @@ export default function LeadsManage() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="搜索姓名/电话..."
+                  placeholder="????/??/??..."
                   className={`pl-9 ${inputCls}`}
                 />
               </div>
@@ -1078,7 +1161,6 @@ export default function LeadsManage() {
                       </button>
                     </th>
                     <th className="px-2 py-3 font-medium">姓名</th>
-                    <th className="px-2 py-3 font-medium">电话</th>
                     <th className="px-2 py-3 font-medium hidden md:table-cell">地域</th>
                     <th className="px-2 py-3 font-medium hidden lg:table-cell">阶段</th>
                     <th className="px-2 py-3 font-medium">状态</th>
@@ -1089,13 +1171,13 @@ export default function LeadsManage() {
                 <tbody className="divide-y dark:divide-gray-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-12">
+                      <td colSpan={8} className="text-center py-12">
                         <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                       </td>
                     </tr>
                   ) : students.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-12 text-gray-400">
+                      <td colSpan={8} className="text-center py-12 text-gray-400">
                         暂无数据
                       </td>
                     </tr>
@@ -1213,17 +1295,75 @@ export default function LeadsManage() {
       {/* Create */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowCreate(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 sticky top-0 bg-white dark:bg-gray-800 z-10 pb-2">
               <h3 className="text-lg font-semibold">新建学生</h3>
               <button onClick={() => setShowCreate(false)}><X className="w-5 h-5" /></button>
             </div>
-            <div className="space-y-3">
-              <div><label className="block text-sm mb-1">姓名 *</label><input value={newStudent.name} onChange={(e) => setNewStudent({ ...newStudent, name: e.target.value })} className={inputCls} /></div>
-              <div><label className="block text-sm mb-1">电话 *</label><input value={newStudent.phone} onChange={(e) => setNewStudent({ ...newStudent, phone: e.target.value })} className={inputCls} /></div>
-              <div><label className="block text-sm mb-1">地域</label><input value={newStudent.region} onChange={(e) => setNewStudent({ ...newStudent, region: e.target.value })} className={inputCls} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {createStudentFields.map((field) => (
+                <div key={field.key} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
+                  <label className="block text-sm mb-1">
+                    {field.label} {field.required && '*'}
+                  </label>
+                  {field.type === 'textarea' ? (
+                    <textarea
+                      value={newStudent[field.key] || ''}
+                      onChange={(e) => setNewStudent({ ...newStudent, [field.key]: e.target.value })}
+                      className={`${inputCls} h-20 resize-none`}
+                      rows={3}
+                    />
+                  ) : (
+                    <input
+                      value={newStudent[field.key] || ''}
+                      onChange={(e) => setNewStudent({ ...newStudent, [field.key]: e.target.value })}
+                      className={inputCls}
+                      type={field.type || 'text'}
+                    />
+                  )}
+                </div>
+              ))}
+              <div>
+                <label className="block text-sm mb-1">状态</label>
+                <select value={newStudent.status} onChange={(e) => setNewStudent({ ...newStudent, status: e.target.value })} className={inputCls}>
+                  {STATUS_OPTS.map((o) => <option key={o} value={o}>{o || '默认'}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm mb-1">意向等级</label>
+                <select value={newStudent.intent_level} onChange={(e) => setNewStudent({ ...newStudent, intent_level: e.target.value })} className={inputCls}>
+                  {INTENT_OPTS.map((o) => <option key={o} value={o}>{o || '默认'}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm mb-1">跟进阶段</label>
+                <select value={newStudent.stage} onChange={(e) => setNewStudent({ ...newStudent, stage: e.target.value })} className={inputCls}>
+                  <option value="">默认</option>
+                  {STAGES.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm mb-1">分配话务员</label>
+                <select value={newStudent.assigned_to} onChange={(e) => setNewStudent({ ...newStudent, assigned_to: e.target.value })} className={inputCls}>
+                  <option value="">不分配</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+              <label className="sm:col-span-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={newStudent.need_help}
+                  onChange={(e) => setNewStudent({ ...newStudent, need_help: e.target.checked })}
+                  className="rounded border-gray-300"
+                />
+                标记为需要协助
+              </label>
+              <div className="sm:col-span-2">
               {createErr && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/30 px-3 py-2 rounded-lg">{createErr}</div>}
+              </div>
+              <div className="sm:col-span-2">
               <button onClick={handleCreate} className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm">创建</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1304,13 +1444,13 @@ export default function LeadsManage() {
             <div className="space-y-3">
               {[
                 ['name', '姓名'],
-                ['phone', '电话'],
                 ['region', '地域'],
                 ['score', '成绩'],
                 ['guardian_name', '监护人姓名'],
                 ['guardian_phone', '监护人电话'],
+                ['guardian2_name', '监护人2姓名'],
+                ['guardian2_phone', '监护人2电话'],
                 ['school_name', '学校名称'],
-                ['school_address', '学校地址'],
               ].map(([key, label]) => (
                 <div key={key}>
                   <label className="block text-sm mb-1">{label}</label>
@@ -1344,6 +1484,75 @@ export default function LeadsManage() {
           </div>
         </div>
       )}
+
+      {/* School Assign Modal */}
+      {showSchoolAssign && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowSchoolAssign(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">按学校分发学生</h3>
+              <button onClick={() => setShowSchoolAssign(false)}><X className="w-5 h-5" /></button>
+            </div>
+            <div className="space-y-3">
+              {/* Select school */}
+              <div>
+                <label className="block text-sm mb-1 font-medium">选择学校</label>
+                <select
+                  value={schoolAssignSchool}
+                  onChange={(e) => setSchoolAssignSchool(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">-- 请选择 --</option>
+                  {schools.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.name} ({s.count}人)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Select agents */}
+              <div>
+                <label className="block text-sm mb-1 font-medium">选择话务员（多选）</label>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto border dark:border-gray-600 rounded-lg p-2">
+                  {agents
+                    .filter((a) => a.role === 'agent')
+                    .map((a) => (
+                      <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 rounded">
+                        <input
+                          type="checkbox"
+                          checked={schoolAssignAgents.includes(a.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSchoolAssignAgents([...schoolAssignAgents, a.id]);
+                            } else {
+                              setSchoolAssignAgents(schoolAssignAgents.filter((id) => id !== a.id));
+                            }
+                          }}
+                          className="accent-blue-500"
+                        />
+                        {a.name}
+                      </label>
+                    ))}
+                </div>
+                {schoolAssignAgents.length > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    已选 {schoolAssignAgents.length} 人
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={handleSchoolAssign}
+                className="w-full py-2.5 bg-teal-600 text-white rounded-lg text-sm"
+              >
+                开始分发
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import asyncio
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -41,6 +41,21 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_drop_legacy_student_phone_column)
+
+
+def _drop_legacy_student_phone_column(sync_connection):
+    inspector = inspect(sync_connection)
+    if "students" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("students")}
+    if "phone" not in columns:
+        return
+    for index in inspector.get_indexes("students"):
+        if "phone" in index.get("column_names", []):
+            index_name = index["name"].replace('"', '""')
+            sync_connection.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+    sync_connection.execute(text("ALTER TABLE students DROP COLUMN phone"))
 
 
 async def run_with_retry(db_session_factory, operation, *args, **kwargs):

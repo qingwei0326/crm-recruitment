@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import Note, Student, User
 from app.permissions import get_accessible_student
 from app.schemas import NoteCreate, Response
-from app.utils import make_operation_log, mask_phone
+from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/notes", tags=["备注"])
 
@@ -74,7 +74,6 @@ async def list_notes(
                 "id": n.id,
                 "content": n.content,
                 "agent_name": agent.name if agent else "",
-                "student_phone": mask_phone(student.phone) if student else "",
                 "created_at": str(n.created_at),
             }
         )

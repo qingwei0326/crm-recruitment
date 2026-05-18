@@ -10,7 +10,6 @@ from app.database import get_db
 from app.models import Student, User, Visit, VisitStatus, VisitType
 from app.permissions import get_accessible_student, is_admin
 from app.schemas import Response, VisitCreate, VisitUpdate
-from app.utils import mask_phone
 
 router = APIRouter(prefix="/api/visits", tags=["到访"])
 
@@ -99,7 +98,6 @@ async def list_visits(
                 "id": v.id,
                 "student_id": v.student_id,
                 "student_name": st.name if st else "",
-                "student_phone": mask_phone(st.phone) if st else "",
                 "student_region": st.region if st else "",
                 "agent_name": ag.name if ag else "",
                 "visit_type": v.visit_type,
@@ -152,7 +150,6 @@ async def visits_summary(
             {
                 "id": v.id,
                 "student_name": student.name if student else "",
-                "student_phone": mask_phone(student.phone) if student else "",
                 "student_region": student.region if student else "",
                 "visit_type": v.visit_type,
                 "scheduled_date": str(v.scheduled_date),

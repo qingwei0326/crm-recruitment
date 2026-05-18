@@ -59,10 +59,6 @@ async def today_tasks(
                 {
                     "id": s.id,
                     "name": s.name,
-                    "phone": s.phone[:3] + "****" + s.phone[-4:]
-                    if s.phone and len(s.phone) > 7
-                    else s.phone,
-                    "phone_raw": s.phone,
                     "region": s.region,
                     "status": s.status,
                     "stage": s.stage,

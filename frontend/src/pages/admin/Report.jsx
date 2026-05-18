@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   Trophy,
   Medal,
-  Phone,
   TrendingUp,
   Target,
   CheckCircle2,
@@ -36,8 +35,6 @@ const rankColors = [
   'bg-gray-300 text-gray-700',
   'bg-amber-600 text-amber-100',
 ];
-const maskPhone = (p) => (p ? p.slice(0, 3) + '****' + p.slice(-4) : '');
-
 export default function Report() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -309,12 +306,6 @@ export default function Report() {
                           <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
                             {v.student_name}
                           </span>
-                          <a
-                            href={`tel:${v.student_phone}`}
-                            className="text-gray-400 hover:text-green-600"
-                          >
-                            <Phone className="w-3.5 h-3.5" />
-                          </a>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                           <span className="flex items-center gap-1">
@@ -376,12 +367,6 @@ export default function Report() {
                           <span className="font-medium text-sm text-gray-900 dark:text-gray-100">
                             {v.student_name}
                           </span>
-                          <a
-                            href={`tel:${v.student_phone}`}
-                            className="text-gray-400 hover:text-amber-600"
-                          >
-                            <Phone className="w-3.5 h-3.5" />
-                          </a>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                           <span className="flex items-center gap-1">
