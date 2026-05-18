@@ -247,6 +247,12 @@ async def list_agents(
         for a in agents
     ]
 
+    for item in data:
+        item["total_tasks"] = int(item["total_tasks"] or 0)
+        item["done_tasks"] = int(item["done_tasks"] or 0)
+        item["pending_tasks"] = int(item["pending_tasks"] or 0)
+        item["today_calls"] = int(item["today_calls"] or 0)
+
     return Response.ok(data)
 
 

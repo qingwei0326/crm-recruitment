@@ -546,7 +546,7 @@ export default function AgentWork() {
                             )}
                           </div>
                           <div className="text-sm text-gray-500 font-mono mt-0.5">
-                            {current.region || '未知地域'}
+                            {current.school_name || '未知学校'}
                           </div>
                           {prediction && (
                             <div className="flex items-center gap-1.5 mt-1.5">
@@ -1010,7 +1010,7 @@ export default function AgentWork() {
                               )}
                             </div>
                             <div className="text-sm text-gray-500 font-mono mt-0.5">
-                              {current.region || '未知地域'}
+                              {current.school_name || '未知学校'}
                             </div>
                             {prediction && (
                               <div className="flex items-center gap-1.5 mt-1.5">

@@ -2,6 +2,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta
 from io import BytesIO
+from itertools import chain
 from zipfile import BadZipFile
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -9,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,7 @@ from app.permissions import (
     get_student_or_404,
     is_admin,
 )
+from app.pushplus import notify_a_level_change
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
 from app.utils import make_operation_log, mask_phone
 
@@ -134,14 +136,19 @@ def _enum_or_error(enum_cls, value: str, label: str):
 
 
 def _student_payload(student: Student, full_phone: bool = False) -> dict:
+    status = student.status.value if hasattr(student.status, "value") else student.status
+    intent_level = (
+        student.intent_level.value if hasattr(student.intent_level, "value") else student.intent_level
+    )
+    stage = student.stage.value if hasattr(student.stage, "value") else student.stage
     payload = {
         "id": student.id,
         "name": student.name,
         "region": student.region,
         "assigned_to": student.assigned_to,
-        "status": student.status,
-        "intent_level": student.intent_level,
-        "stage": student.stage,
+        "status": status,
+        "intent_level": intent_level,
+        "stage": stage,
         "join_reasons": student.join_reasons,
         "case_no": student.case_no,
         "need_help": student.need_help,
@@ -217,6 +224,137 @@ def _is_empty_import_row(row) -> bool:
     return all(_clean_import_text(value) == "" for value in row)
 
 
+def _looks_like_phone(value: str) -> bool:
+    digits = re.sub(r"\D+", "", value)
+    return len(digits) >= 7 and len(digits) <= 20
+
+
+def _looks_like_score(value: str) -> bool:
+    try:
+        score = float(value)
+    except ValueError:
+        return False
+    return 0 <= score <= 1000 and not _looks_like_phone(value)
+
+
+def _looks_like_school(value: str) -> bool:
+    return any(
+        marker in value
+        for marker in (
+            "学校",
+            "中学",
+            "学院",
+            "小学",
+            "职校",
+            "技校",
+            "高中",
+            "初中",
+            "职专",
+            "一中",
+            "二中",
+            "三中",
+            "四中",
+            "五中",
+            "六中",
+            "七中",
+            "八中",
+            "九中",
+            "十中",
+        )
+    )
+
+
+def _looks_like_region(value: str) -> bool:
+    return any(marker in value for marker in ("区", "县", "市", "镇", "乡"))
+
+
+def _looks_like_person_name(value: str) -> bool:
+    return len(value) <= 16 and not _looks_like_school(value) and not _looks_like_region(value)
+
+
+def _infer_import_row(row) -> dict:
+    values = [_clean_import_text(value) for value in row]
+    non_empty = [value for value in values if value]
+    if not non_empty:
+        return {}
+
+    inferred = {
+        "name": "",
+        "region": "",
+        "score": None,
+        "guardian_name": "",
+        "guardian_phone": "",
+        "guardian2_name": "",
+        "guardian2_phone": "",
+        "school_name": "",
+        "school_address": "",
+        "program": "",
+        "join_reasons": "",
+    }
+
+    text_values = []
+    for value in non_empty:
+        if not inferred["guardian_phone"] and _looks_like_phone(value):
+            inferred["guardian_phone"] = _clean_import_phone(value)
+        elif inferred["score"] is None and _looks_like_score(value):
+            inferred["score"] = float(value)
+        else:
+            text_values.append(value)
+
+    if text_values:
+        inferred["name"] = text_values[0]
+    for value in text_values[1:]:
+        if not inferred["school_name"] and _looks_like_school(value):
+            inferred["school_name"] = value
+        elif not inferred["region"] and _looks_like_region(value):
+            inferred["region"] = value
+        elif not inferred["guardian_name"] and _looks_like_person_name(value):
+            inferred["guardian_name"] = value
+        elif not inferred["guardian2_name"] and _looks_like_person_name(value):
+            inferred["guardian2_name"] = value
+        elif not inferred["school_name"]:
+            inferred["school_name"] = value
+        elif not inferred["school_address"]:
+            inferred["school_address"] = value
+        else:
+            inferred["join_reasons"] = (
+                f"{inferred['join_reasons']} {value}".strip()
+                if inferred["join_reasons"]
+                else value
+            )
+
+    return inferred
+
+
+def _parse_import_row(row, header_map: dict[str, int]) -> tuple[dict | None, str | None]:
+    if header_map:
+        name = _clean_import_text(_row_value(row, header_map, "name"))
+        if not name:
+            return None, "缺少姓名"
+        try:
+            score = _parse_import_float(_row_value(row, header_map, "score"), "score")
+        except ValueError as exc:
+            return None, str(exc)
+        return {
+            "name": name,
+            "region": _clean_import_text(_row_value(row, header_map, "region")),
+            "score": score,
+            "guardian_name": _clean_import_text(_row_value(row, header_map, "guardian_name")),
+            "guardian_phone": _clean_import_phone(_row_value(row, header_map, "guardian_phone")),
+            "guardian2_name": _clean_import_text(_row_value(row, header_map, "guardian2_name")),
+            "guardian2_phone": _clean_import_phone(_row_value(row, header_map, "guardian2_phone")),
+            "school_name": _clean_import_text(_row_value(row, header_map, "school_name")),
+            "school_address": _clean_import_text(_row_value(row, header_map, "school_address")),
+            "program": _clean_import_text(_row_value(row, header_map, "program")),
+            "join_reasons": _clean_import_text(_row_value(row, header_map, "join_reasons")),
+        }, None
+
+    inferred = _infer_import_row(row)
+    if not inferred.get("name"):
+        return None, "无法识别姓名"
+    return inferred, None
+
+
 @router.post("/import")
 async def import_students_excel(
     file: UploadFile = File(...),
@@ -252,62 +390,52 @@ async def import_students_excel(
             return Response.error(code=1, msg="Excel 文件没有表头")
 
         header_map = _build_import_header_map(header_row)
+        data_start_row = 2
         if "name" not in header_map:
-            return Response.error(code=1, msg="Excel 必须包含姓名列")
+            rows = chain([header_row], rows)
+            header_map = {}
+            data_start_row = 1
 
-        imported_count = 0
+        student_rows = []
         skipped_rows = []
         default_expire = Student.default_expired_at()
         assigned_at = datetime.utcnow() if default_agent_id is not None else None
 
-        for row_idx, row in enumerate(rows, start=2):
+        for row_idx, row in enumerate(rows, start=data_start_row):
             if _is_empty_import_row(row):
                 continue
 
-            name = _clean_import_text(_row_value(row, header_map, "name"))
-            if not name:
-                skipped_rows.append({"row": row_idx, "reason": "缺少姓名"})
+            parsed, error = _parse_import_row(row, header_map)
+            if error:
+                skipped_rows.append({"row": row_idx, "reason": error})
                 continue
 
-            try:
-                score = _parse_import_float(_row_value(row, header_map, "score"), "score")
-            except ValueError as exc:
-                skipped_rows.append({"row": row_idx, "reason": str(exc)})
-                continue
-
-            db.add(
-                Student(
-                    name=name,
-                    region=_clean_import_text(_row_value(row, header_map, "region")),
-                    assigned_to=default_agent_id,
-                    assigned_at=assigned_at,
-                    score=score,
-                    guardian_name=_clean_import_text(
-                        _row_value(row, header_map, "guardian_name")
-                    ),
-                    guardian_phone=_clean_import_phone(
-                        _row_value(row, header_map, "guardian_phone")
-                    ),
-                    guardian2_name=_clean_import_text(
-                        _row_value(row, header_map, "guardian2_name")
-                    ),
-                    guardian2_phone=_clean_import_phone(
-                        _row_value(row, header_map, "guardian2_phone")
-                    ),
-                    school_name=_clean_import_text(_row_value(row, header_map, "school_name")),
-                    school_address=_clean_import_text(
-                        _row_value(row, header_map, "school_address")
-                    ),
-                    program=_clean_import_text(_row_value(row, header_map, "program")),
-                    join_reasons=_clean_import_text(_row_value(row, header_map, "join_reasons")),
-                    status=StudentStatus.not_contacted,
-                    intent_level=IntentLevel.none,
-                    stage=StudentStage.initial_contact,
-                    expired_at=default_expire,
-                    case_no=str(uuid.uuid4()),
-                )
+            student_rows.append(
+                {
+                    "name": parsed["name"],
+                    "region": parsed["region"],
+                    "assigned_to": default_agent_id,
+                    "assigned_at": assigned_at,
+                    "score": parsed["score"],
+                    "guardian_name": parsed["guardian_name"],
+                    "guardian_phone": parsed["guardian_phone"],
+                    "guardian2_name": parsed["guardian2_name"],
+                    "guardian2_phone": parsed["guardian2_phone"],
+                    "school_name": parsed["school_name"],
+                    "school_address": parsed["school_address"],
+                    "program": parsed["program"],
+                    "join_reasons": parsed["join_reasons"],
+                    "status": StudentStatus.not_contacted,
+                    "intent_level": IntentLevel.none,
+                    "stage": StudentStage.initial_contact,
+                    "expired_at": default_expire,
+                    "case_no": str(uuid.uuid4()),
+                }
             )
-            imported_count += 1
+
+        imported_count = len(student_rows)
+        if student_rows:
+            await db.execute(insert(Student), student_rows)
 
         db.add(
             make_operation_log(
@@ -461,6 +589,8 @@ async def create_student(
     db.add(student)
     await db.commit()
     await db.refresh(student)
+    if student.intent_level == IntentLevel.A:
+        await notify_a_level_change(db, student, current_user, "create")
     return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
 
@@ -663,6 +793,8 @@ async def update_student(
 
     await db.commit()
     await db.refresh(student)
+    if "intent_level" in raw and old_intent != student.intent_level and student.intent_level == IntentLevel.A:
+        await notify_a_level_change(db, student, current_user, "manual")
     return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
 

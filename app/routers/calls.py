@@ -10,6 +10,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import Call, IntentLevel, Student, User, UserRole
 from app.permissions import can_access_student
+from app.pushplus import notify_a_level_change
 from app.schemas import CallCreate, Response
 from app.utils import make_operation_log
 
@@ -103,6 +104,8 @@ async def create_call(
 
     await db.commit()
     await db.refresh(call)
+    if old_intent != student.intent_level and student.intent_level == IntentLevel.A:
+        await notify_a_level_change(db, student, current_user, "ai")
 
     return Response.ok(
         {

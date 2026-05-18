@@ -64,7 +64,9 @@ if (Test-Path $EnvFile) {
         if ($_ -match '^\s*([^#=]+)=(.+)\s*$') {
             $k = $matches[1].Trim()
             $v = $matches[2].Trim()
-            if (-not $env:$k) { Set-Item -Path "env:$k" -Value $v }
+            if ([string]::IsNullOrEmpty([System.Environment]::GetEnvironmentVariable($k))) {
+                [System.Environment]::SetEnvironmentVariable($k, $v, 'Process')
+            }
         }
     }
 }
