@@ -64,27 +64,26 @@ class TestEncodingEdgeCases:
 
     async def test_chinese_chars(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "中文测试姓名", "phone": "13100131000", "region": "中文区域",
+            "name": "中文测试姓名", "region": "中文区域",
         }, headers=admin_headers)
         assert resp.json()["code"] == 0
         assert resp.json()["data"]["name"] == "中文测试姓名"
 
     async def test_special_chars_in_region(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "Special", "phone": "13000130000",
-            "region": "区/县-街道·村#号&室",
+            "name": "Special", "region": "区/县-街道·村#号&室",
         }, headers=admin_headers)
         assert resp.json()["code"] == 0
 
     async def test_emoji_in_name(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "测试🌟✨", "phone": "12900129000",
+            "name": "测试🌟✨",
         }, headers=admin_headers)
         assert resp.json()["code"] == 0
 
-    async def test_chinese_phone(self, client, admin_headers):
+    async def test_chinese_name_without_phone(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "Phone测试", "phone": "一二三四五",
+            "name": "Phone测试",
         }, headers=admin_headers)
         assert resp.json()["code"] == 0
 
@@ -184,7 +183,6 @@ class TestCallEndpoints:
         from app.models import IntentLevel, Student, StudentStage, StudentStatus
         s = Student(
             name="独占学员",
-            phone="18800001111",
             region="r",
             assigned_to=admin_user.id,
             stage=StudentStage.initial_contact,
@@ -250,7 +248,7 @@ class TestVisitEndpoints:
 
     async def test_visits_summary(self, client, admin_headers, db, admin_user):
         from app.models import Student, Visit, VisitStatus, VisitType
-        s = Student(name="vtest", phone="1", region="r")
+        s = Student(name="vtest", region="r")
         db.add(s)
         await db.commit()
         db.add(Visit(

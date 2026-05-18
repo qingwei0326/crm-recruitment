@@ -88,7 +88,6 @@ class Student(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), nullable=False)
-    phone = Column(String(20), nullable=False)
     region = Column(String(64), default="", nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(SAEnum(StudentStatus), nullable=False, default=StudentStatus.not_contacted)
@@ -101,6 +100,8 @@ class Student(Base):
     score = Column(Float, nullable=True)
     guardian_name = Column(String(64), default="", nullable=False)
     guardian_phone = Column(String(20), default="", nullable=False)
+    guardian2_name = Column(String(64), default="", nullable=False)
+    guardian2_phone = Column(String(20), default="", nullable=False)
     school_name = Column(String(128), default="", nullable=False)
     school_address = Column(String(256), default="", nullable=False)
     case_no = Column(String(36), unique=True, nullable=True)

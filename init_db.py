@@ -74,6 +74,7 @@ async def seed():
                 conn.execute(text("ALTER TABLE leads RENAME TO students"))
                 conn.commit()
                 print("[MIG] leads → students 表重命名成功")
+                existing_tables = insp.get_table_names()
             except Exception as e:
                 print(f"[WARN] 表重命名失败: {e}")
 
@@ -94,6 +95,8 @@ async def seed():
             ("score", "FLOAT"),
             ("guardian_name", "VARCHAR(64) NOT NULL DEFAULT ''"),
             ("guardian_phone", "VARCHAR(20) NOT NULL DEFAULT ''"),
+            ("guardian2_name", "VARCHAR(64) NOT NULL DEFAULT ''"),
+            ("guardian2_phone", "VARCHAR(20) NOT NULL DEFAULT ''"),
             ("school_name", "VARCHAR(128) NOT NULL DEFAULT ''"),
             ("school_address", "VARCHAR(256) NOT NULL DEFAULT ''"),
             ("case_no", "VARCHAR(36)"),
@@ -113,6 +116,19 @@ async def seed():
         conn.commit()
         for col, dtype in student_migrations:
             migrations.append((students_table, col, dtype))
+
+        try:
+            cols = [c["name"] for c in insp.get_columns(students_table)]
+            if "phone" in cols:
+                for index in insp.get_indexes(students_table):
+                    if "phone" in index.get("column_names", []):
+                        index_name = index["name"].replace('"', '""')
+                        conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+                conn.execute(text(f"ALTER TABLE {students_table} DROP COLUMN phone"))
+                conn.commit()
+                print(f"[MIG] {students_table}.phone 已删除")
+        except Exception as e:
+            print(f"[WARN] {students_table}.phone drop failed: {e}")
 
         # Also handle visits table if it has lead_id
         if "visits" in insp.get_table_names():

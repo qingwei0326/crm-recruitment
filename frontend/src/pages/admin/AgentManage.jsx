@@ -543,7 +543,7 @@ export default function AgentManage() {
                                 {l.name}
                               </div>
                               <div className="text-xs text-gray-500 dark:text-gray-400">
-                                {l.phone} · {l.source || '-'}
+                                {l.source || '-'}
                               </div>
                             </div>
                             <span
@@ -601,7 +601,6 @@ export default function AgentManage() {
                                       <div className="border-l-4 border-blue-500 pl-3 space-y-3">
                                         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                                           {[
-                                            ['phone', '电话'],
                                             ['region', '地域'],
                                             ['status', '状态'],
                                             ['intent_level', '意向'],

@@ -50,12 +50,6 @@ class ConfigUpdateReq(BaseModel):
 ALLOWED_CONFIG_KEYS = {"pushplus_token", "stale_days"}
 
 
-def mask_phone(phone: str | None) -> str | None:
-    if phone and len(phone) > 7:
-        return phone[:3] + "****" + phone[-4:]
-    return phone
-
-
 def to_datetime(value):
     if value is None or isinstance(value, datetime):
         return value
@@ -172,8 +166,6 @@ async def stale_a_students(
             {
                 "id": student.id,
                 "name": student.name,
-                "phone": mask_phone(student.phone),
-                "phone_raw": student.phone,
                 "region": student.region,
                 "status": student.status,
                 "stage": student.stage,
@@ -304,9 +296,6 @@ async def agent_tasks(
                 {
                     "id": s.id,
                     "name": s.name,
-                    "phone": s.phone[:3] + "****" + s.phone[-4:]
-                    if s.phone and len(s.phone) > 7
-                    else s.phone,
                     "region": s.region,
                     "status": s.status,
                     "stage": s.stage,

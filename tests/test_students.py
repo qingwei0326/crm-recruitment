@@ -7,7 +7,7 @@ import pytest
 class TestCreateStudent:
     async def test_create_success(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "李四", "phone": "13900139000", "region": "湖里区",
+            "name": "李四", "region": "湖里区",
         }, headers=admin_headers)
         assert resp.status_code == 200
         body = resp.json()
@@ -16,48 +16,47 @@ class TestCreateStudent:
 
     async def test_create_no_region(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "王五", "phone": "13700137000",
+            "name": "王五",
         }, headers=admin_headers)
         assert resp.status_code == 200
 
     async def test_create_missing_name(self, client, admin_headers):
         resp = await client.post(
             "/api/students",
-            json={"phone": "13600136000"},
+            json={"region": "测试"},
             headers=admin_headers,
         )
         assert resp.status_code == 422
 
-    async def test_create_missing_phone(self, client, admin_headers):
+    async def test_create_without_phone(self, client, admin_headers):
         resp = await client.post("/api/students", json={"name": "测试"}, headers=admin_headers)
-        assert resp.status_code == 422
+        assert resp.status_code == 200
 
     async def test_create_empty_body(self, client, admin_headers):
         resp = await client.post("/api/students", json={}, headers=admin_headers)
         assert resp.status_code == 422
 
     async def test_create_unauthorized(self, client):
-        resp = await client.post("/api/students", json={"name": "赵六", "phone": "13500135000"})
+        resp = await client.post("/api/students", json={"name": "赵六"})
         assert resp.status_code == 403
 
     async def test_create_unicode_name(self, client, admin_headers):
         resp = await client.post("/api/students", json={
-            "name": "𩷶测试", "phone": "13400134000", "region": "𩸽区",
+            "name": "𩷶测试", "region": "𩸽区",
         }, headers=admin_headers)
         assert resp.status_code == 200
 
-    async def test_create_duplicate_phone(self, client, admin_headers):
-        """App-level check rejects duplicate phone."""
+    async def test_create_same_name_allowed_without_phone(self, client, admin_headers):
+        """Students no longer require phone-based uniqueness."""
         resp1 = await client.post("/api/students", json={
-            "name": "重复电话", "phone": "13800138000",
+            "name": "重复电话",
         }, headers=admin_headers)
         assert resp1.json()["code"] == 0
 
         resp2 = await client.post("/api/students", json={
-            "name": "重复电话2", "phone": "13800138000",
+            "name": "重复电话2",
         }, headers=admin_headers)
-        assert resp2.json()["code"] == 1
-        assert "已存在" in resp2.json()["msg"]
+        assert resp2.json()["code"] == 0
 
 
 @pytest.mark.asyncio
@@ -78,7 +77,7 @@ class TestListStudents:
     async def test_list_pagination(self, client, admin_headers, db):
         from app.models import Student
         for i in range(15):
-            db.add(Student(name=f"学生{i}", phone=f"13{i:09d}000", region="测试"))
+            db.add(Student(name=f"学生{i}", region="测试"))
         await db.commit()
 
         resp = await client.get("/api/students?page=1&page_size=10", headers=admin_headers)
@@ -91,9 +90,9 @@ class TestListStudents:
 
     async def test_list_filter_by_region(self, client, admin_headers, db):
         from app.models import Student
-        db.add(Student(name="A", phone="1", region="思明区"))
-        db.add(Student(name="B", phone="2", region="湖里区"))
-        db.add(Student(name="C", phone="3", region="思明区"))
+        db.add(Student(name="A", region="思明区"))
+        db.add(Student(name="B", region="湖里区"))
+        db.add(Student(name="C", region="思明区"))
         await db.commit()
 
         resp = await client.get("/api/students?region=思明区", headers=admin_headers)
