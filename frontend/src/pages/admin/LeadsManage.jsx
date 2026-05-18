@@ -40,6 +40,7 @@ import {
 const STATUS_OPTS = ['', '未联系', '已联系', '待回访', '已完成', '无效', '已报名', '拒绝接听', '已过期'];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
+const STAGE_STAT_KEYS = ['未分配', ...STAGES];
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 const emptyStudentForm = {
@@ -128,6 +129,7 @@ export default function LeadsManage() {
   const [status, setStatus] = useState(searchParams.get('status') || '');
   const [region, setRegion] = useState(searchParams.get('region') || '');
   const [stage, setStage] = useState(searchParams.get('stage') || '');
+  const assignment = searchParams.get('assignment') || '';
   const [needHelp, setNeedHelp] = useState(searchParams.get('need_help') === '1');
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -169,6 +171,7 @@ export default function LeadsManage() {
   const [schools, setSchools] = useState([]);
   const [schoolAssignSchool, setSchoolAssignSchool] = useState('');
   const [schoolAssignAgents, setSchoolAssignAgents] = useState([]);
+  const [schoolAssignLoading, setSchoolAssignLoading] = useState(false);
 
   // Inline note
   const [noteText, setNoteText] = useState({});
@@ -193,6 +196,7 @@ export default function LeadsManage() {
       if (status) params.status = status;
       if (region) params.region = region;
       if (stage) params.stage = stage;
+      if (assignment) params.assignment = assignment;
       if (needHelp) params.need_help = '1';
       api
         .get('/students', { params })
@@ -204,14 +208,14 @@ export default function LeadsManage() {
         .catch(console.error)
         .finally(() => setLoading(false));
     },
-    [page, q, status, region, stage, needHelp],
+    [page, q, status, region, stage, assignment, needHelp],
   );
 
   useEffect(() => {
     fetchStudents(1);
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, region, stage, needHelp]);
+  }, [status, region, stage, assignment, needHelp]);
 
   useEffect(() => {
     api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch(() => {});
@@ -340,14 +344,20 @@ export default function LeadsManage() {
   };
 
   const handleRegionAssign = async () => {
-    // Open school assign modal — fetch schools list
-    const res = await api.get('/students/schools');
-    if (res.data.code === 0) {
-      setSchools(res.data.data || []);
-    }
     setSchoolAssignSchool('');
     setSchoolAssignAgents([]);
     setShowSchoolAssign(true);
+    setSchoolAssignLoading(true);
+    try {
+      const res = await api.get('/students/schools');
+      if (res.data.code === 0) {
+        setSchools(res.data.data || []);
+      }
+    } catch (e) {
+      alert('学校列表加载失败: ' + getApiErrorMessage(e));
+    } finally {
+      setSchoolAssignLoading(false);
+    }
   };
 
   const handleSchoolAssign = async () => {
@@ -516,9 +526,9 @@ export default function LeadsManage() {
                 {[
                   ['成绩', s.score != null ? s.score : '-'],
                   ['监护人', s.guardian_name || '-'],
-                  ['监护人电话', s.guardian_phone ? maskPhone(s.guardian_phone) : '-'],
+                  ['监护人电话', s.guardian_phone_raw || s.guardian_phone || '-'],
                   ['监护人2', s.guardian2_name || '-'],
-                  ['监护人2电话', s.guardian2_phone ? maskPhone(s.guardian2_phone) : '-'],
+                  ['监护人2电话', s.guardian2_phone_raw || s.guardian2_phone || '-'],
                   ['学校', s.school_name || '-'],
                 ].map(([k, v]) => (
                   <div key={k} className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
@@ -1060,6 +1070,13 @@ export default function LeadsManage() {
               <MapPin className="w-4 h-4" />
               {!isMobile && '学校分发'}
             </button>
+            <button
+              onClick={() => navigate('/admin/leads?assignment=unassigned')}
+              className="flex items-center gap-1 px-3 py-2 bg-slate-600 text-white rounded-lg text-sm"
+            >
+              <Users className="w-4 h-4" />
+              {!isMobile && '未分配任务'}
+            </button>
             {isMobile && (
               <button onClick={toggle} className="p-2 rounded-lg">
                 {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-500" />}
@@ -1113,7 +1130,7 @@ export default function LeadsManage() {
             <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
               <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 font-medium">跟进阶段分布</div>
               <div className="flex gap-1.5 h-16 items-end">
-                {STAGES.map((s) => {
+                {STAGE_STAT_KEYS.map((s) => {
                   const cnt = stageStats[s] || 0;
                   const maxVal = Math.max(...Object.values(stageStats), 1);
                   const pct = cnt > 0 ? Math.max(8, Math.round((cnt / maxVal) * 100)) : 0;
@@ -1122,6 +1139,10 @@ export default function LeadsManage() {
                       key={s}
                       className="flex-1 text-center flex flex-col items-center justify-end h-full cursor-pointer hover:opacity-80 transition-opacity"
                       onClick={() => {
+                        if (s === '未分配') {
+                          navigate('/admin/leads?assignment=unassigned');
+                          return;
+                        }
                         if (stage === s) {
                           setStage('');
                           navigate('/admin/leads');
@@ -1501,13 +1522,15 @@ export default function LeadsManage() {
                   value={schoolAssignSchool}
                   onChange={(e) => setSchoolAssignSchool(e.target.value)}
                   className={inputCls}
+                  disabled={schoolAssignLoading}
                 >
-                  <option value="">-- 请选择 --</option>
-                  {schools.map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.name} ({s.count}人)
-                    </option>
-                  ))}
+                  <option value="">{schoolAssignLoading ? '加载学校中...' : '-- 请选择 --'}</option>
+                  {!schoolAssignLoading &&
+                    schools.map((s) => (
+                      <option key={s.name} value={s.name}>
+                        {s.name} ({s.count}人)
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -1515,25 +1538,26 @@ export default function LeadsManage() {
               <div>
                 <label className="block text-sm mb-1 font-medium">选择话务员（多选）</label>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto border dark:border-gray-600 rounded-lg p-2">
-                  {agents
-                    .filter((a) => a.role === 'agent')
-                    .map((a) => (
-                      <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 rounded">
-                        <input
-                          type="checkbox"
-                          checked={schoolAssignAgents.includes(a.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSchoolAssignAgents([...schoolAssignAgents, a.id]);
-                            } else {
-                              setSchoolAssignAgents(schoolAssignAgents.filter((id) => id !== a.id));
-                            }
-                          }}
-                          className="accent-blue-500"
-                        />
-                        {a.name}
-                      </label>
-                    ))}
+                  {agents.map((a) => (
+                    <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 rounded">
+                      <input
+                        type="checkbox"
+                        checked={schoolAssignAgents.includes(a.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSchoolAssignAgents([...schoolAssignAgents, a.id]);
+                          } else {
+                            setSchoolAssignAgents(schoolAssignAgents.filter((id) => id !== a.id));
+                          }
+                        }}
+                        className="accent-blue-500"
+                      />
+                      {a.name}
+                    </label>
+                  ))}
+                  {agents.length === 0 && (
+                    <div className="text-sm text-gray-400 px-2 py-1">暂无可分发的话务员</div>
+                  )}
                 </div>
                 {schoolAssignAgents.length > 0 && (
                   <div className="text-xs text-gray-500 mt-1">
@@ -1544,7 +1568,8 @@ export default function LeadsManage() {
 
               <button
                 onClick={handleSchoolAssign}
-                className="w-full py-2.5 bg-teal-600 text-white rounded-lg text-sm"
+                disabled={schoolAssignLoading || !schoolAssignSchool || schoolAssignAgents.length === 0}
+                className="w-full py-2.5 bg-teal-600 text-white rounded-lg text-sm disabled:opacity-50"
               >
                 开始分发
               </button>
