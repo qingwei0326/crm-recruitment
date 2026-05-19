@@ -1,0 +1,514 @@
+diff --git a/frontend/src/components/HelpModal.jsx b/frontend/src/components/HelpModal.jsx
+index 4add559..1e21f90 100644
+--- a/frontend/src/components/HelpModal.jsx
++++ b/frontend/src/components/HelpModal.jsx
+@@ -1,95 +1,152 @@
+ import { useState } from 'react';
+ import { X, ChevronDown, ChevronRight, BookOpen } from 'lucide-react';
+ 
+-const SECTIONS = [
+-  {
+-    title: '系统概述',
+-    content: `本系统是招生话务CRM管理平台，用于管理潜在学生信息、跟踪沟通进度、记录通话和报名情况。
+-
+-角色分为两类：
+-• 管理员：查看数据报表、管理学生、分配话务员
+-• 话务员：拨打电话联系学生、记录沟通结果、更新跟进状态`,
+-  },
+-  {
+-    title: '学生状态说明',
+-    content: `学生跟进分为 6 个阶段：
+-① 初次联系 — 尚未拨打或刚分配
+-② 有意向  — 学生表示对课程有兴趣
+-③ 已送资料 — 已发送课程资料/简章
+-④ 预约参观 — 已预约来校参观或家访
+-⑤ 已来访  — 学生已到校参观/已家访
+-⑥ 已报名  — 已缴纳定金，报名成功
+-
+-附加标记：
+-• A级意向 — 高意向学生，转化可能性大
+-• 无效   — 号码错误/空号/明确拒绝等`,
+-  },
+-  {
+-    title: '仪表盘（管理员首页）',
+-    content: `顶部统计卡片：学生总数、已联系数、A级意向数、今日呼出数。
+-点击卡片可快速跳转到对应筛选的学生列表。
+-
+-跟进阶段分布图：直观展示各阶段学生数量。
+-点击柱状图可跳转到对应阶段的学生列表。
+-
+-各地域转化率：按生源地区统计学生数及转化效果。
+-
+-到访汇总：展示来校参观和家访的数量，以及近期到访安排。`,
+-  },
+-  {
+-    title: '学生管理',
+-    content: `• 左侧搜索栏可按姓名、学校、电话等筛选
+-• 状态筛选：未联系/已联系/待回访/已完成/已报名/无效
+-• 意向筛选：A/B/C/D 级
+-• 地区筛选：按生源所在地
+-• 话务员筛选：按负责人
+-• 点击学生行可查看详情，包括通话记录和沟通历史
+-• 管理员可分配话务员、修改学生信息`,
+-  },
+-  {
+-    title: '话务员工作台',
+-    content: `话务员登录后进入工作台，可以看到分配给自己的学生列表。
++const HELP_SECTIONS = {
++  admin: [
++    {
++      title: '管理后台概览',
++      content: `管理员用于查看招生进度、管理线索、分配话务员、回收长期未跟进线索，以及查看各类报表。
++
++常用入口：
++• 仪表盘：查看学生总数、已联系、A级意向、今日呼出和阶段分布
++• 学生管理：筛选、编辑、分配和批量管理学生线索
++• 线索回收：回收长期无回访线索，并重新分配给坐席
++• 话务员管理：新增、编辑、停用和删除话务员
++• 汇总报表/趋势报表/通电量查询：查看运营数据
++• 系统设置：维护系统级配置`,
++    },
++    {
++      title: '学生管理',
++      content: `学生管理页支持按关键词、状态、阶段、意向、地区、负责人和需协助标记筛选线索。
++
++常用操作：
++• 点击学生行查看详情、联系记录和通话记录
++• 修改学生基础信息、跟进状态、阶段和意向等级
++• 给未分配或需调整的线索指定话务员
++• 使用“需协助”筛选查看话务员标记出的重点问题线索
++• 对已报名、无效、拒绝接听等线索及时更新状态，保证报表准确`,
++    },
++    {
++      title: '线索回收',
++      content: `线索回收用于处理已分配但长期没有回访记录的学生。
+ 
+ 操作流程：
+-1. 在列表中选择学生，点击拨号按钮
+-2. 通话结束后，选择沟通结果（有意向/待回访/拒绝等）
+-3. 如有意向，可标记意向等级（A/B/C/D）
+-4. 添加备注，记录关键信息
+-5. 可预约下次回访时间或到访安排
+-
+-AI 通话分析（新功能）：
+-• 通话结束后，点击"AI分析"按钮
+-• 系统自动将通话文本发送到 DeepSeek AI 分析
+-• 分析结果：意向等级（A/B/C）、置信度、摘要、原因
+-• 若 AI 服务不可用，自动使用关键词匹配降级
+-• 分析记录会保存在通话详情中，方便后续跟进
+-
+-通话结果选项：
+-• 已联系-有意向 → 进入有意向阶段
+-• 已联系-待回访 → 标记待回访，设置回访时间
+-• 拒绝接听   → 标记拒绝
+-• 无效/空号  → 标记无效`,
+-  },
+-  {
+-    title: '数据报表',
+-    content: `汇总报表：按日/周/月统计通话量、意向数、报名数等关键指标。
+-
+-趋势报表：展示各项指标的时间趋势变化，支持图表可视化。
+-
+-通电量查询：按话务员、日期范围查询详细通话记录。`,
+-  },
+-  {
+-    title: '快捷操作技巧',
+-    content: `• 仪表盘卡片可直接点击跳转到筛选列表
+-• 阶段分布图可点击跳转
+-• 学生列表支持多条件组合筛选
+-• 话务员可一键复制学生电话
+-• 支持暗色/亮色模式切换（侧边栏底部）`,
+-  },
+-];
+-
+-export default function HelpModal({ isOpen, onClose }) {
++1. 选择 3/7/14/30 天，点击查询
++2. 勾选需要回收的线索，可单选或全选
++3. 点击“自动均摊”将线索平均分给可用话务员
++4. 或选择指定坐席后点击“确认分配”
++
++回收后线索会进入新的负责人名下，原负责人不再继续处理这些线索。`,
++    },
++    {
++      title: '话务员管理',
++      content: `话务员管理用于维护坐席账号和线索归属。
++
++常用操作：
++• 新增话务员账号，设置姓名、账号和初始密码
++• 编辑话务员信息或重置密码
++• 停用暂不工作的坐席，避免继续分配线索
++• 删除话务员前确认线索处理方式，相关线索会回收到线索池`,
++    },
++    {
++      title: '报表与数据',
++      content: `仪表盘展示当前整体进度，适合每天快速查看。
++
++汇总报表：按时间统计通话量、意向数、报名数等关键指标。
++趋势报表：查看不同日期的趋势变化，判断整体转化是否上升或下降。
++通电量查询：按话务员和时间范围查询具体通话明细，用于核对工作量。
++
++建议每天检查今日呼出、待回访、A级意向和报名数据，发现异常及时回到学生管理页处理。`,
++    },
++    {
++      title: '状态和阶段',
++      content: `状态用于描述当前处理结果：未联系、已联系、待回访、已完成、已报名、无效、拒绝接听等。
++
++阶段用于描述招生转化进度：
++① 初次联系
++② 有意向
++③ 已送资料
++④ 预约参观
++⑤ 已来访
++⑥ 已报名
++
++意向等级用于判断优先级：A 最高，B 次之，C 较低，无表示暂未判断或无明显意向。`,
++    },
++  ],
++  agent: [
++    {
++      title: '工作台概览',
++      content: `话务员工作台用于处理自己名下的学生线索。
++
++主要区域：
++• 今日任务：逐个处理今天需要联系的学生
++• 昨日回顾：查看昨日呼出和今日待回访提醒
++• 学生详情：查看学生资料、联系记录、意向和阶段
++• AI分析：粘贴通话内容，让系统生成意向判断和摘要`,
++    },
++    {
++      title: '联系学生流程',
++      content: `建议按以下顺序处理：
++1. 在今日任务中确认学生姓名、地区、学校和联系方式
++2. 点击电话按钮拨号
++3. 通话后选择快捷状态：已联系、待回访、已报名或无效
++4. 根据沟通结果调整阶段：有意向、已送资料、预约参观、已来访、已报名
++5. 在备注中记录关键信息，例如家长态度、关注点、下次跟进时间
++6. 需要主管协助时点击“需要协助”`,
++    },
++    {
++      title: 'AI 通话分析',
++      content: `点击“AI分析”后，在文本框中粘贴通话内容或输入通话摘要，再点击“开始分析”。
++
++分析结果包含：
++• 意向等级：A/B/C/无
++• 置信度：系统对判断的把握程度
++• 摘要：本次沟通重点
++• 判断依据：为什么给出该意向等级
++
++分析完成后学生会自动标记为“已联系”。AI 结果用于辅助判断，最终跟进阶段和备注仍以实际沟通情况为准。`,
++    },
++    {
++      title: '回访和到访',
++      content: `待回访：适合家长暂时没空、需要考虑、约定稍后再联系的情况。设置回访时间后，后续可在回顾和任务中继续跟进。
++
++预约参观/家访：学生或家长同意到校、来访或家访时填写到访类型、时间和备注。
++
++已来访：学生完成参观或家访后及时调整阶段，方便管理员查看转化进度。`,
++    },
++    {
++      title: '学生详情和备注',
++      content: `点击“学生详情”可查看学生基础信息、意向等级、阶段和历史联系记录。
++
++备注建议写具体事实：
++• 家长最关心的问题
++• 学生分数、学校、地区等补充信息
++• 是否需要发送资料
++• 约定的下次联系时间
++• 拒绝、无效或需协助的原因`,
++    },
++    {
++      title: '状态和意向',
++      content: `常用状态：
++• 已联系：电话已接通并完成沟通
++• 待回访：需要后续再联系
++• 已报名：确认报名成功
++• 无效：空号、错号、重复、明确无效
++• 拒绝接听：多次拒接或明确不愿沟通
++
++意向等级：
++• A：明确有兴趣，建议优先跟进
++• B：有一定兴趣，需要继续培育
++• C：兴趣较弱，后续观察
++• 无：暂无有效判断`,
++    },
++  ],
++};
++
++export default function HelpModal({ isOpen, onClose, role = 'admin' }) {
+   const [expanded, setExpanded] = useState({});
++  const sections = HELP_SECTIONS[role] || HELP_SECTIONS.admin;
++  const title = role === 'agent' ? '话务员使用说明' : '管理员使用说明';
+ 
+   const toggle = (i) => setExpanded((p) => ({ ...p, [i]: !p[i] }));
+ 
+@@ -108,7 +165,7 @@ export default function HelpModal({ isOpen, onClose }) {
+             <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+               <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+             </div>
+-            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">使用说明</h2>
++            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
+           </div>
+           <button
+             onClick={onClose}
+@@ -120,7 +177,7 @@ export default function HelpModal({ isOpen, onClose }) {
+ 
+         {/* Body */}
+         <div className="overflow-y-auto px-5 py-4 space-y-1 flex-1">
+-          {SECTIONS.map((section, i) => (
++          {sections.map((section, i) => (
+             <div key={i} className="border dark:border-gray-700 rounded-xl overflow-hidden">
+               <button
+                 onClick={() => toggle(i)}
+diff --git a/frontend/src/pages/admin/AdminDash.jsx b/frontend/src/pages/admin/AdminDash.jsx
+index 15a1532..43ffe1e 100644
+--- a/frontend/src/pages/admin/AdminDash.jsx
++++ b/frontend/src/pages/admin/AdminDash.jsx
+@@ -23,6 +23,7 @@ import {
+   GraduationCap,
+   HelpCircle,
+   Settings,
++  ArrowRightLeft,
+ } from 'lucide-react';
+ import HelpModal from '../../components/HelpModal';
+ 
+@@ -105,6 +106,13 @@ export default function AdminDash() {
+         >
+           <ListFilter className="w-4 h-4" /> 学生管理
+         </Link>
++        <Link
++          to="/admin/recycle"
++          onClick={closeSidebar}
++          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
++        >
++          <ArrowRightLeft className="w-4 h-4" /> 线索回收
++        </Link>
+         <Link
+           to="/admin/agents"
+           onClick={closeSidebar}
+@@ -455,7 +463,7 @@ export default function AdminDash() {
+           )}
+         </div>
+       </main>
+-      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
++      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="admin" />
+     </div>
+   );
+ }
+diff --git a/frontend/src/pages/agent/AgentWork.jsx b/frontend/src/pages/agent/AgentWork.jsx
+index 9cbe2a3..65616ee 100644
+--- a/frontend/src/pages/agent/AgentWork.jsx
++++ b/frontend/src/pages/agent/AgentWork.jsx
+@@ -58,8 +58,14 @@ const QUICK_STATUSES = [
+   { status: '无效', icon: UserX, color: 'bg-red-500 hover:bg-red-600' },
+ ];
+ const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
+-const inputCls =
+-  'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
++const INTENT_BADGES = {
++  A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
++  B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
++  C: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
++  '无': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
++};
++const inputCls =
++  'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
+ const emptyStudentForm = {
+   name: '',
+   region: '',
+@@ -389,10 +395,11 @@ export default function AgentWork() {
+     );
+   };
+ 
+-  const openAiPanel = (s) => {
+-    setActiveStudent(s);
+-    setShowAi(true);
+-  };
++  const openAiPanel = (s) => {
++    setActiveStudent(s);
++    setShowDetail(false);
++    setShowAi(true);
++  };
+ 
+   const prev = () => {
+     if (currentIdx > 0) setCurrentIdx(currentIdx - 1);
+@@ -740,8 +747,8 @@ export default function AgentWork() {
+                       <AlertTriangle className="w-4 h-4" />{' '}
+                       {current?.need_help ? '取消协助' : '需要协助'}
+                     </button>
+-                  </div>
+-                </div>
++                  </div>
++                </div>
+               )}
+             </div>
+           </>
+@@ -751,7 +758,7 @@ export default function AgentWork() {
+               <Loader2 className="w-6 h-6 mx-auto animate-spin" />
+             ) : yesterdayData ? (
+               <div className="space-y-4">
+-                <div className="grid grid-cols-2 gap-3">
++                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
+                     <div className="text-2xl font-bold text-blue-600">
+                       {yesterdayData.yesterday_calls}
+@@ -764,8 +771,36 @@ export default function AgentWork() {
+                     </div>
+                     <div className="text-xs text-gray-500">转化率</div>
+                   </div>
+-                </div>
+-              </div>
++                </div>
++                {yesterdayData.follow_up_list?.length > 0 && (
++                  <div className="space-y-3">
++                    <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
++                      今日待回访（{yesterdayData.follow_up_list.length}）
++                    </div>
++                    <div className="space-y-2">
++                      {yesterdayData.follow_up_list.map((item) => (
++                        <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl border p-3">
++                          <div className="flex items-start justify-between gap-3">
++                            <div className="min-w-0">
++                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
++                                {item.student_name}
++                              </div>
++                              <div className="text-xs text-gray-500 mt-1">
++                                {item.student_region || '-'} · {item.follow_up_date?.slice(11, 16) || '--:--'}
++                              </div>
++                            </div>
++                            <span
++                              className={`px-2 py-0.5 rounded-full text-xs font-medium ${INTENT_BADGES[item.intent_level] || INTENT_BADGES['无']}`}
++                            >
++                              {item.intent_level || '无'}
++                            </span>
++                          </div>
++                        </div>
++                      ))}
++                    </div>
++                  </div>
++                )}
++              </div>
+             ) : (
+               <div className="text-center text-gray-400">加载失败</div>
+             )}
+@@ -929,18 +964,19 @@ export default function AgentWork() {
+             <span className="text-xs">昨日回顾</span>
+           </button>
+         </nav>
+-        {showAi && (
+-          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col">
+-            <AiPanel
+-              activeStudent={activeStudent}
+-              onClose={() => setShowAi(false)}
+-              onStatusUpdate={updateStatus}
+-            />
+-          </div>
+-        )}
+-      </div>
+-    );
+-  }
++        {showAi && (
++          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col">
++            <AiPanel
++              activeStudent={activeStudent}
++              onClose={() => setShowAi(false)}
++              onStatusUpdate={updateStatus}
++            />
++          </div>
++        )}
++        <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
++      </div>
++    );
++  }
+ 
+   // Desktop layout
+   return (
+@@ -1233,15 +1269,43 @@ export default function AgentWork() {
+                       </div>
+                       <div className="text-xs text-gray-500">转化率</div>
+                     </div>
+-                  </div>
+-                </div>
+-              ) : (
++                  </div>
++                  {yesterdayData.follow_up_list?.length > 0 && (
++                    <div className="space-y-3">
++                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
++                        今日待回访（{yesterdayData.follow_up_list.length}）
++                      </div>
++                      <div className="space-y-2">
++                        {yesterdayData.follow_up_list.map((item) => (
++                          <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl border p-3">
++                            <div className="flex items-start justify-between gap-3">
++                              <div className="min-w-0">
++                                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
++                                  {item.student_name}
++                                </div>
++                                <div className="text-xs text-gray-500 mt-1">
++                                  {item.student_region || '-'} · {item.follow_up_date?.slice(11, 16) || '--:--'}
++                                </div>
++                              </div>
++                              <span
++                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${INTENT_BADGES[item.intent_level] || INTENT_BADGES['无']}`}
++                              >
++                                {item.intent_level || '无'}
++                              </span>
++                            </div>
++                          </div>
++                        ))}
++                      </div>
++                    </div>
++                  )}
++                </div>
++              ) : (
+                 <div className="text-center text-gray-400">加载失败</div>
+               )}
+             </div>
+           )}
+         </div>
+-        {/* Right: detail panel + AI */}
++        {/* Right: detail panel + AI */}
+         <div className="flex-1 flex-col bg-white dark:bg-gray-800 hidden lg:flex">
+           {showDetail && detailStudent ? (
+             <div className="flex flex-col h-full">
+@@ -1389,8 +1453,8 @@ export default function AgentWork() {
+             </div>
+           )}
+         </div>
+-        {showDetail && detailStudent && (
+-          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col lg:hidden">
++        {showDetail && detailStudent && (
++          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col lg:hidden">
+             <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
+               <h3 className="font-semibold">{detailStudent.name || '学生详情'}</h3>
+               <button onClick={() => setShowDetail(false)}>
+@@ -1482,12 +1546,13 @@ export default function AgentWork() {
+                 )}
+               </div>
+             </div>
+-          </div>
+-        )}
+-      </div>
+-    </div>
+-  );
+-}
++          </div>
++        )}
++        <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
++      </div>
++    </div>
++  );
++}
+ 
+ function StudentCreateModal({ student, setStudent, error, onClose, onSubmit }) {
+   return (
+@@ -1643,7 +1708,6 @@ function AiPanel({ activeStudent, onClose, onStatusUpdate }) {
+           </div>
+         )}
+       </div>
+-      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+-    </div>
+-  );
+-}
++    </div>
++  );
++}

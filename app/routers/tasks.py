@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Call, IntentLevel, Student, StudentStatus, User
+from app.models import Call, FollowUp, IntentLevel, Student, StudentStatus, User
 from app.schemas import Response
+from app.utils import mask_phone
 
 router = APIRouter(prefix="/api/tasks", tags=["任务"])
 
@@ -61,11 +62,9 @@ async def today_tasks(
                     "name": s.name,
                     "region": s.region,
                     "guardian_name": s.guardian_name,
-                    "guardian_phone": s.guardian_phone,
-                    "guardian_phone_raw": s.guardian_phone,
+                    "guardian_phone": mask_phone(s.guardian_phone),
                     "guardian2_name": s.guardian2_name,
-                    "guardian2_phone": s.guardian2_phone,
-                    "guardian2_phone_raw": s.guardian2_phone,
+                    "guardian2_phone": mask_phone(s.guardian2_phone),
                     "school_name": s.school_name,
                     "school_address": s.school_address,
                     "status": s.status,
@@ -135,11 +134,37 @@ async def yesterday_review(
         for s in assigned_result.scalars().all()
     ]
 
+    tomorrow = today + timedelta(days=1)
+    follow_up_result = await db.execute(
+        select(FollowUp, Student)
+        .join(Student, Student.id == FollowUp.student_id)
+        .where(
+            FollowUp.agent_id == current_user.id,
+            FollowUp.follow_up_date >= today,
+            FollowUp.follow_up_date < tomorrow,
+            FollowUp.is_notified.is_(False),
+        )
+        .order_by(FollowUp.follow_up_date.asc())
+    )
+    follow_up_list = [
+        {
+            "id": fu.id,
+            "follow_up_date": str(fu.follow_up_date),
+            "student_id": student.id,
+            "student_name": student.name,
+            "student_region": student.region,
+            "intent_level": student.intent_level,
+            "status": student.status,
+        }
+        for fu, student in follow_up_result.all()
+    ]
+
     return Response.ok(
         {
             "yesterday_calls": yesterday_calls,
             "yesterday_a": yesterday_a,
             "conversion_rate": conversion,
             "list": assigned_list,
+            "follow_up_list": follow_up_list,
         }
     )

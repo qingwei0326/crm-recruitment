@@ -5,6 +5,7 @@ import { useAuth } from './context/AuthContext';
 const Login = lazy(() => import('./pages/Login'));
 const AdminDash = lazy(() => import('./pages/admin/AdminDash'));
 const LeadsManage = lazy(() => import('./pages/admin/LeadsManage'));
+const LeadRecycle = lazy(() => import('./pages/admin/LeadRecycle'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
 const Report = lazy(() => import('./pages/admin/Report'));
@@ -59,6 +60,14 @@ export default function App() {
           element={
             <Protected role="admin">
               <LeadsManage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/recycle"
+          element={
+            <Protected role="admin">
+              <LeadRecycle />
             </Protected>
           }
         />

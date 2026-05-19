@@ -118,6 +118,12 @@ class FollowUpUpdate(BaseModel):
     is_notified: bool | None = None
 
 
+class StaleReassignReq(BaseModel):
+    student_ids: list[int]
+    mode: Literal["auto", "manual"]
+    agent_id: int | None = None
+
+
 # ── Visit ─────────────────────────────────────────────────
 
 
