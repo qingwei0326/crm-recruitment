@@ -188,6 +188,7 @@ async def stale_a_students(
 @router.get("/stale-students")
 async def stale_students(
     days: int = Query(3, ge=1, le=30),
+    agent_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -196,23 +197,32 @@ async def stale_students(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
     ).label("last_activity_at")
     cutoff = datetime.utcnow() - timedelta(days=days)
+    stale_filters = [
+        Student.status.not_in(
+            [
+                StudentStatus.enrolled,
+                StudentStatus.invalid,
+                StudentStatus.expired,
+                StudentStatus.rejected,
+            ]
+        )
+    ]
+
+    if agent_id is None:
+        stale_filters.extend(
+            [
+                Student.assigned_to.isnot(None),
+                last_activity_at < cutoff,
+            ]
+        )
+    else:
+        stale_filters.append(Student.assigned_to == agent_id)
 
     result = await db.execute(
         select(Student, User.name.label("agent_name"), last_activity_at)
         .outerjoin(User, User.id == Student.assigned_to)
         .outerjoin(last_activity, last_activity.c.student_id == Student.id)
-        .where(
-            Student.assigned_to.isnot(None),
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.invalid,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                ]
-            ),
-            last_activity_at < cutoff,
-        )
+        .where(*stale_filters)
         .order_by(last_activity_at.asc(), Student.id.asc())
     )
 
