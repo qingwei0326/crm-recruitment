@@ -15,13 +15,14 @@ from app.models import (
     IntentLevel,
     LeadViewLog,
     Note,
+    OperationLog,
     Student,
     StudentStatus,
     SystemConfig,
     User,
     UserRole,
 )
-from app.schemas import Response
+from app.schemas import Response, StaleReassignReq
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -62,6 +63,21 @@ def mask_config_value(key: str, value: str) -> str:
     if key == "pushplus_token" and len(value) > 4:
         return "****" + value[-4:]
     return value
+
+
+def build_last_activity_subquery():
+    activity_events = union_all(
+        select(Call.student_id.label("student_id"), Call.created_at.label("created_at")),
+        select(Note.student_id.label("student_id"), Note.created_at.label("created_at")),
+    ).subquery()
+    return (
+        select(
+            activity_events.c.student_id,
+            func.max(activity_events.c.created_at).label("last_activity_at"),
+        )
+        .group_by(activity_events.c.student_id)
+        .subquery()
+    )
 
 
 async def get_config_value(db: AsyncSession, key: str, fallback: str = "") -> str:
@@ -121,18 +137,7 @@ async def stale_a_students(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    activity_events = union_all(
-        select(Call.student_id.label("student_id"), Call.created_at.label("created_at")),
-        select(Note.student_id.label("student_id"), Note.created_at.label("created_at")),
-    ).subquery()
-    last_activity = (
-        select(
-            activity_events.c.student_id,
-            func.max(activity_events.c.created_at).label("last_activity_at"),
-        )
-        .group_by(activity_events.c.student_id)
-        .subquery()
-    )
+    last_activity = build_last_activity_subquery()
 
     latest_activity_at = func.coalesce(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
@@ -178,6 +183,132 @@ async def stale_a_students(
         )
 
     return Response.ok(data)
+
+
+@router.get("/stale-students")
+async def stale_students(
+    days: int = Query(3, ge=1, le=30),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    last_activity = build_last_activity_subquery()
+    last_activity_at = func.coalesce(
+        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
+    ).label("last_activity_at")
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    result = await db.execute(
+        select(Student, User.name.label("agent_name"), last_activity_at)
+        .outerjoin(User, User.id == Student.assigned_to)
+        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+        .where(
+            Student.assigned_to.isnot(None),
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.invalid,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                ]
+            ),
+            last_activity_at < cutoff,
+        )
+        .order_by(last_activity_at.asc(), Student.id.asc())
+    )
+
+    data = []
+    for student, agent_name, raw_last_activity_at in result.all():
+        activity_at = to_datetime(raw_last_activity_at)
+        data.append(
+            {
+                "student_id": student.id,
+                "name": student.name,
+                "region": student.region,
+                "intent_level": student.intent_level,
+                "status": student.status,
+                "agent_name": agent_name,
+                "assigned_at": student.assigned_at.isoformat() if student.assigned_at else None,
+                "last_activity_at": activity_at.isoformat() if activity_at else None,
+            }
+        )
+
+    return Response.ok(data)
+
+
+@router.post("/stale-reassign")
+async def stale_reassign(
+    body: StaleReassignReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    if not body.student_ids:
+        return Response.error(code=1, msg="student_ids不能为空")
+    student_ids = list(dict.fromkeys(body.student_ids))
+
+    students_result = await db.execute(select(Student).where(Student.id.in_(student_ids)))
+    students = students_result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg="没有可回收的线索")
+
+    now = datetime.utcnow()
+    distribution: dict[str, int] = {}
+
+    if body.mode == "manual":
+        if body.agent_id is None:
+            return Response.error(code=1, msg="manual mode requires agent_id")
+        agent_result = await db.execute(
+            select(User).where(
+                User.id == body.agent_id,
+                User.is_active,
+                User.role == UserRole.agent,
+            )
+        )
+        agent = agent_result.scalar_one_or_none()
+        if not agent:
+            return Response.error(code=1, msg="话务员不存在或已禁用")
+        for student in students:
+            student.assigned_to = agent.id
+            student.assigned_at = now
+            distribution[agent.name] = distribution.get(agent.name, 0) + 1
+    else:
+        agent_result = await db.execute(
+            select(User).where(User.is_active, User.role == UserRole.agent).order_by(User.id)
+        )
+        agents = agent_result.scalars().all()
+        if not agents:
+            return Response.error(code=1, msg="没有可用的话务员")
+
+        load = {}
+        for agent in agents:
+            count_result = await db.execute(
+                select(func.count(Student.id)).where(Student.assigned_to == agent.id)
+            )
+            load[agent.id] = count_result.scalar() or 0
+            distribution[agent.name] = 0
+        agent_map = {agent.id: agent for agent in agents}
+
+        for student in sorted(students, key=lambda item: item.id):
+            agent_id = min(load, key=load.get)
+            agent = agent_map[agent_id]
+            student.assigned_to = agent_id
+            student.assigned_at = now
+            load[agent_id] += 1
+            distribution[agent.name] += 1
+
+    for student in students:
+        db.add(
+            OperationLog(
+                operator_id=current_user.id,
+                operator_name=current_user.name,
+                target_student_id=student.id,
+                case_no=student.case_no or "",
+                action="线索回收",
+                content="超时未跟进，重新分配",
+            )
+        )
+
+    await db.commit()
+    return Response.ok({"reassigned_count": len(students), "distribution": distribution})
 
 
 @router.get("/agents")

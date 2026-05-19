@@ -58,6 +58,12 @@ const QUICK_STATUSES = [
   { status: '无效', icon: UserX, color: 'bg-red-500 hover:bg-red-600' },
 ];
 const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
+const INTENT_BADGES = {
+  A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  C: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+  '无': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+};
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 const emptyStudentForm = {
@@ -391,6 +397,7 @@ export default function AgentWork() {
 
   const openAiPanel = (s) => {
     setActiveStudent(s);
+    setShowDetail(false);
     setShowAi(true);
   };
 
@@ -765,6 +772,34 @@ export default function AgentWork() {
                     <div className="text-xs text-gray-500">转化率</div>
                   </div>
                 </div>
+                {yesterdayData.follow_up_list?.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      今日待回访（{yesterdayData.follow_up_list.length}）
+                    </div>
+                    <div className="space-y-2">
+                      {yesterdayData.follow_up_list.map((item) => (
+                        <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl border p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {item.student_name}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {item.student_region || '-'} · {item.follow_up_date?.slice(11, 16) || '--:--'}
+                              </div>
+                            </div>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-medium ${INTENT_BADGES[item.intent_level] || INTENT_BADGES['无']}`}
+                            >
+                              {item.intent_level || '无'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center text-gray-400">加载失败</div>
@@ -938,6 +973,7 @@ export default function AgentWork() {
             />
           </div>
         )}
+        <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
       </div>
     );
   }
@@ -1234,6 +1270,34 @@ export default function AgentWork() {
                       <div className="text-xs text-gray-500">转化率</div>
                     </div>
                   </div>
+                  {yesterdayData.follow_up_list?.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                        今日待回访（{yesterdayData.follow_up_list.length}）
+                      </div>
+                      <div className="space-y-2">
+                        {yesterdayData.follow_up_list.map((item) => (
+                          <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                  {item.student_name}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {item.student_region || '-'} · {item.follow_up_date?.slice(11, 16) || '--:--'}
+                                </div>
+                              </div>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${INTENT_BADGES[item.intent_level] || INTENT_BADGES['无']}`}
+                              >
+                                {item.intent_level || '无'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center text-gray-400">加载失败</div>
@@ -1484,6 +1548,7 @@ export default function AgentWork() {
             </div>
           </div>
         )}
+        <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
       </div>
     </div>
   );
@@ -1643,7 +1708,6 @@ function AiPanel({ activeStudent, onClose, onStatusUpdate }) {
           </div>
         )}
       </div>
-      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

@@ -23,6 +23,7 @@ from app.routers import (
     templates,
     visits,
 )
+from app.scheduler import follow_up_reminder_scheduler
 
 FRONTEND_DIR = os.getenv(
     "FRONTEND_DIR",
@@ -35,13 +36,16 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Startup backup + background scheduler
     await do_backup_async()
-    task = asyncio.create_task(backup_scheduler())
+    backup_task = asyncio.create_task(backup_scheduler())
+    follow_up_task = asyncio.create_task(follow_up_reminder_scheduler())
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    for task in (backup_task, follow_up_task):
+        task.cancel()
+    for task in (backup_task, follow_up_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="招生话务CRM系统", version="1.0.0", lifespan=lifespan)

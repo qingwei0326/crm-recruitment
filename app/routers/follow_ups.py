@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import FollowUp, User
+from app.models import FollowUp, User, UserRole
 from app.permissions import get_accessible_student
-from app.schemas import FollowUpCreate, Response
+from app.schemas import FollowUpCreate, FollowUpUpdate, Response
 
 router = APIRouter(prefix="/api/follow-ups", tags=["回访"])
 
@@ -53,3 +53,59 @@ async def list_follow_ups(
             for f in fus
         ]
     )
+
+
+async def _get_follow_up_or_none(db: AsyncSession, fu_id: int):
+    result = await db.execute(select(FollowUp).where(FollowUp.id == fu_id))
+    return result.scalar_one_or_none()
+
+
+def _can_manage_follow_up(current_user: User, follow_up: FollowUp) -> bool:
+    return current_user.role == UserRole.admin or follow_up.agent_id == current_user.id
+
+
+@router.put("/{fu_id}")
+async def update_follow_up(
+    fu_id: int,
+    body: FollowUpUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    follow_up = await _get_follow_up_or_none(db, fu_id)
+    if not follow_up:
+        return Response.error(code=1, msg="follow_up not found")
+    if not _can_manage_follow_up(current_user, follow_up):
+        return Response.error(code=1, msg="无权操作此回访")
+
+    if body.follow_up_date is not None:
+        follow_up.follow_up_date = body.follow_up_date
+    if body.is_notified is not None:
+        follow_up.is_notified = body.is_notified
+    await db.commit()
+    await db.refresh(follow_up)
+    return Response.ok(
+        {
+            "id": follow_up.id,
+            "follow_up_date": str(follow_up.follow_up_date),
+            "is_notified": follow_up.is_notified,
+            "student_id": follow_up.student_id,
+            "agent_id": follow_up.agent_id,
+        }
+    )
+
+
+@router.delete("/{fu_id}")
+async def delete_follow_up(
+    fu_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    follow_up = await _get_follow_up_or_none(db, fu_id)
+    if not follow_up:
+        return Response.error(code=1, msg="follow_up not found")
+    if not _can_manage_follow_up(current_user, follow_up):
+        return Response.error(code=1, msg="无权操作此回访")
+
+    await db.delete(follow_up)
+    await db.commit()
+    return Response.ok({"deleted": fu_id})

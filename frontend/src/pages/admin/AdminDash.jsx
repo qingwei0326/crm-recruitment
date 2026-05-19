@@ -23,6 +23,7 @@ import {
   GraduationCap,
   HelpCircle,
   Settings,
+  ArrowRightLeft,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
 
@@ -104,6 +105,13 @@ export default function AdminDash() {
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
         >
           <ListFilter className="w-4 h-4" /> 学生管理
+        </Link>
+        <Link
+          to="/admin/recycle"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <ArrowRightLeft className="w-4 h-4" /> 线索回收
         </Link>
         <Link
           to="/admin/agents"
@@ -455,7 +463,7 @@ export default function AdminDash() {
           )}
         </div>
       </main>
-      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="admin" />
     </div>
   );
 }
