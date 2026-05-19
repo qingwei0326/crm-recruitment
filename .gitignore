@@ -26,6 +26,9 @@ Thumbs.db
 *.log
 *.out
 
+# PID files
+*.pid
+
 # Project review / merge
 project_all.txt
 project_review.txt
@@ -35,13 +38,15 @@ releases/
 # Secret key
 .secret_key
 
-# Windows scripts (not code)
-*.ps1
-
 # PM2
 ecosystem.config.js
 forward.js
 forward.log
+
+# Build artifacts
+*.cmd
+deploy-update.cmd
+make-release.cmd
 
 # Env
 .env

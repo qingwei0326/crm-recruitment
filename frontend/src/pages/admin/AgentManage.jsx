@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -16,7 +16,7 @@ import {
   Phone,
   Target,
   CheckCircle2,
-  Clock,
+  ArrowRightLeft,
   X,
   Loader2,
   Sun,
@@ -35,6 +35,26 @@ function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function getStatusBadgeClass(status) {
+  if (status === '已报名' || status === '已完成') {
+    return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300';
+  }
+  if (status === '待回访') {
+    return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300';
+  }
+  if (status === '未联系') {
+    return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
+  }
+  return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300';
+}
+
 export default function AgentManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -48,6 +68,13 @@ export default function AgentManage() {
   const [expandedTaskId, setExpandedTaskId] = useState(null);
   const [taskDetailCache, setTaskDetailCache] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [recycleAgent, setRecycleAgent] = useState(null);
+  const [recycleStudents, setRecycleStudents] = useState([]);
+  const [recycleSelected, setRecycleSelected] = useState(new Set());
+  const [recycleLoading, setRecycleLoading] = useState(false);
+  const [recycleActionLoading, setRecycleActionLoading] = useState(false);
+  const [recycleAgentId, setRecycleAgentId] = useState('');
+  const recycleAllCheckboxRef = useRef(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -71,6 +98,12 @@ export default function AgentManage() {
   useEffect(() => {
     fetchAgents();
   }, []);
+
+  useEffect(() => {
+    if (!recycleAllCheckboxRef.current) return;
+    recycleAllCheckboxRef.current.indeterminate =
+      recycleSelected.size > 0 && recycleSelected.size < recycleStudents.length;
+  }, [recycleSelected, recycleStudents]);
 
   const viewAgentTasks = async (agent) => {
     setSelectedAgent(agent);
@@ -209,6 +242,80 @@ export default function AgentManage() {
       alert(res.data.msg || '密码已重置');
     } catch (err) {
       alert(err.response?.data?.msg || '操作失败');
+    }
+  };
+
+  const fetchRecycleStudents = async (agentId) => {
+    setRecycleLoading(true);
+    try {
+      const res = await api.get('/admin/stale-students', { params: { agent_id: agentId } });
+      setRecycleStudents(res.data.data || []);
+      setRecycleSelected(new Set());
+    } catch (error) {
+      setRecycleStudents([]);
+      alert(getApiErrorMessage(error));
+    } finally {
+      setRecycleLoading(false);
+    }
+  };
+
+  const openRecycleModal = (agent) => {
+    setRecycleAgent(agent);
+    setRecycleAgentId('');
+    setRecycleStudents([]);
+    setRecycleSelected(new Set());
+    fetchRecycleStudents(agent.id);
+  };
+
+  const closeRecycleModal = () => {
+    if (recycleActionLoading) return;
+    setRecycleAgent(null);
+    setRecycleStudents([]);
+    setRecycleSelected(new Set());
+    setRecycleAgentId('');
+  };
+
+  const toggleRecycleSelection = (studentId) => {
+    setRecycleSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  const toggleRecycleAll = () => {
+    if (recycleSelected.size === recycleStudents.length) {
+      setRecycleSelected(new Set());
+      return;
+    }
+    setRecycleSelected(new Set(recycleStudents.map((item) => item.student_id)));
+  };
+
+  const handleRecycleReassign = async (mode) => {
+    if (recycleSelected.size === 0 || !recycleAgent) return;
+    if (mode === 'manual' && !recycleAgentId) return;
+
+    setRecycleActionLoading(true);
+    try {
+      const res = await api.post('/admin/stale-reassign', {
+        student_ids: [...recycleSelected],
+        mode,
+        agent_id: mode === 'manual' ? Number(recycleAgentId) : undefined,
+      });
+      if (res.data.code === 0) {
+        await fetchRecycleStudents(recycleAgent.id);
+        fetchAgents();
+        if (selectedAgent?.id === recycleAgent.id) {
+          viewAgentTasks(recycleAgent);
+        }
+      } else {
+        alert(res.data.msg || '操作失败');
+      }
+    } catch (error) {
+      alert(getApiErrorMessage(error));
+    } finally {
+      setRecycleActionLoading(false);
     }
   };
 
@@ -376,6 +483,16 @@ export default function AgentManage() {
                               className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                             >
                               <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openRecycleModal(a);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs whitespace-nowrap"
+                            >
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                              回收线索
                             </button>
                             <button
                               onClick={(e) => {
@@ -670,6 +787,148 @@ export default function AgentManage() {
           </div>
         </div>
       </main>
+
+      {recycleAgent && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={closeRecycleModal}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+                {recycleAgent.name} 的线索回收
+              </h3>
+              <button
+                onClick={closeRecycleModal}
+                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-auto">
+              {recycleLoading ? (
+                <div className="py-20 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                </div>
+              ) : recycleStudents.length === 0 ? (
+                <div className="py-20 text-center text-sm text-gray-400 dark:text-gray-500">
+                  该话务员暂无可回收线索
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900/60 text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
+                    <tr>
+                      <th className="px-4 py-3 w-12 text-left">
+                        <input
+                          ref={recycleAllCheckboxRef}
+                          type="checkbox"
+                          checked={
+                            recycleStudents.length > 0 &&
+                            recycleSelected.size === recycleStudents.length
+                          }
+                          onChange={toggleRecycleAll}
+                          className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                        />
+                      </th>
+                      <th className="px-4 py-3 text-left font-medium">姓名</th>
+                      <th className="px-4 py-3 text-left font-medium">地区</th>
+                      <th className="px-4 py-3 text-left font-medium">意向</th>
+                      <th className="px-4 py-3 text-left font-medium">状态</th>
+                      <th className="px-4 py-3 text-left font-medium">最后活动时间</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y dark:divide-gray-700">
+                    {recycleStudents.map((item) => (
+                      <tr
+                        key={item.student_id}
+                        className="hover:bg-gray-50 dark:hover:bg-gray-900/30"
+                      >
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={recycleSelected.has(item.student_id)}
+                            onChange={() => toggleRecycleSelection(item.student_id)}
+                            className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+                          {item.name}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                          {item.region || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                          {item.intent_level || '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(item.status)}`}
+                          >
+                            {item.status || '-'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                          {formatDateTime(item.last_activity_at || item.assigned_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {recycleSelected.size > 0 && (
+              <div className="border-t dark:border-gray-700 px-5 py-4 bg-white dark:bg-gray-800 flex flex-col lg:flex-row lg:items-center gap-3">
+                <div className="text-sm text-gray-600 dark:text-gray-400 lg:mr-auto">
+                  已选 {recycleSelected.size} 条
+                </div>
+                <button
+                  onClick={() => handleRecycleReassign('auto')}
+                  disabled={recycleActionLoading}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  {recycleActionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ArrowRightLeft className="w-4 h-4" />
+                  )}
+                  自动均摊
+                </button>
+                <select
+                  value={recycleAgentId}
+                  onChange={(e) => setRecycleAgentId(e.target.value)}
+                  className={`${inputCls} lg:w-56`}
+                >
+                  <option value="">选择坐席</option>
+                  {agents
+                    .filter((agent) => agent.is_active)
+                    .map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                </select>
+                <button
+                  onClick={() => handleRecycleReassign('manual')}
+                  disabled={recycleActionLoading || !recycleAgentId}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {recycleActionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ArrowRightLeft className="w-4 h-4" />
+                  )}
+                  确认分配
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {showModal && (
