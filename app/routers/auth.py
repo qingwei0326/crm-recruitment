@@ -10,6 +10,7 @@ from app.auth import (
     get_current_user,
     verify_password,
 )
+from app.utils import utcnow
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
 from app.database import get_db
 from app.models import User
@@ -29,7 +30,7 @@ _ip_attempts: dict[str, list[datetime]] = {}
 
 def _check_ip_rate_limit(ip: str) -> bool:
     """Returns True if the IP is rate-limited (exceeded max attempts)."""
-    now = datetime.utcnow()
+    now = utcnow()
     window = timedelta(minutes=15)
     if ip in _ip_attempts:
         _ip_attempts[ip] = [t for t in _ip_attempts[ip] if t > now - window]
@@ -61,15 +62,15 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
     user = result.scalar_one_or_none()
 
     # Check account lockout
-    if user and user.locked_until and user.locked_until > datetime.utcnow():
-        remaining = int((user.locked_until - datetime.utcnow()).total_seconds() // 60) + 1
+    if user and user.locked_until and user.locked_until > utcnow():
+        remaining = int((user.locked_until - utcnow()).total_seconds() // 60) + 1
         return Response.error(code=1, msg=f"账号已锁定，请{remaining}分钟后再试")
 
     if user is None or not verify_password(req.password, user.hashed_password):
         if user:
             user.failed_login_attempts += 1
             if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
-                user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+                user.locked_until = utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
                 user.failed_login_attempts = 0
                 await db.commit()
                 return Response.error(

@@ -1,7 +1,11 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_VALID_STATUSES = {"未联系", "已联系", "待回访", "已完成", "无效", "已报名", "拒绝接听", "已过期"}
+_VALID_INTENT_LEVELS = {"A", "B", "C", "无"}
+_VALID_STAGES = {"初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"}
 
 
 class Response(BaseModel):
@@ -46,6 +50,27 @@ class StudentCreate(BaseModel):
     school_address: str | None = None
     need_help: bool | None = None
 
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in _VALID_STATUSES:
+            raise ValueError(f"无效的状态: {v}，合法值: {sorted(_VALID_STATUSES)}")
+        return v
+
+    @field_validator("intent_level")
+    @classmethod
+    def validate_intent_level(cls, v):
+        if v is not None and v not in _VALID_INTENT_LEVELS:
+            raise ValueError(f"无效的意向等级: {v}，合法值: {sorted(_VALID_INTENT_LEVELS)}")
+        return v
+
+    @field_validator("stage")
+    @classmethod
+    def validate_stage(cls, v):
+        if v is not None and v not in _VALID_STAGES:
+            raise ValueError(f"无效的阶段: {v}，合法值: {sorted(_VALID_STAGES)}")
+        return v
+
 
 class StudentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
@@ -67,6 +92,27 @@ class StudentUpdate(BaseModel):
     school_address: str | None = None
     need_help: bool | None = None
 
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in _VALID_STATUSES:
+            raise ValueError(f"无效的状态: {v}，合法值: {sorted(_VALID_STATUSES)}")
+        return v
+
+    @field_validator("intent_level")
+    @classmethod
+    def validate_intent_level(cls, v):
+        if v is not None and v not in _VALID_INTENT_LEVELS:
+            raise ValueError(f"无效的意向等级: {v}，合法值: {sorted(_VALID_INTENT_LEVELS)}")
+        return v
+
+    @field_validator("stage")
+    @classmethod
+    def validate_stage(cls, v):
+        if v is not None and v not in _VALID_STAGES:
+            raise ValueError(f"无效的阶段: {v}，合法值: {sorted(_VALID_STAGES)}")
+        return v
+
 
 class StageUpdate(BaseModel):
     stage: str
@@ -85,7 +131,7 @@ class CallCreate(BaseModel):
     student_id: int
     duration_seconds: int = 0
     recording_path: str = ""
-    transcript: str = ""
+    transcript: str = Field(default="", max_length=10000)
     ai_intent: str = ""
     ai_reasons: str = ""
     ai_summary: str = ""
@@ -111,11 +157,16 @@ class NoteCreate(BaseModel):
 class FollowUpCreate(BaseModel):
     student_id: int
     follow_up_date: datetime
+    follow_up_type: Literal["电话", "短信", "家访", "其他"] = "电话"
+    notes: str = ""
 
 
 class FollowUpUpdate(BaseModel):
     follow_up_date: datetime | None = None
     is_notified: bool | None = None
+    is_completed: bool | None = None
+    follow_up_type: Literal["电话", "短信", "家访", "其他"] | None = None
+    notes: str | None = None
 
 
 class StaleReassignReq(BaseModel):

@@ -246,8 +246,9 @@ class TestUpdateStudent:
             json={"intent_level": "无效等级"},
             headers=admin_headers,
         )
-        assert resp.json()["code"] == 1
-        assert "意向" in resp.json()["msg"] or "无效" in resp.json()["msg"]
+        # Pydantic now validates at request boundary (422) instead of app-level code=1
+        assert resp.status_code == 422 or resp.json().get("code") == 1
+        assert "意向" in str(resp.json()) or "无效" in str(resp.json())
 
     async def test_update_stage(self, client, admin_headers, sample_student):
         """Historical bug: stage enum serialization."""

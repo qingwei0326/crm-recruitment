@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -8,7 +8,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import Call, FollowUp, IntentLevel, Student, StudentStatus, User
 from app.schemas import Response
-from app.utils import mask_phone
+from app.utils import mask_phone, today_cst_as_utc
 
 router = APIRouter(prefix="/api/tasks", tags=["任务"])
 
@@ -84,7 +84,7 @@ async def yesterday_review(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = today_cst_as_utc()
     yesterday = today - timedelta(days=1)
 
     calls_result = await db.execute(

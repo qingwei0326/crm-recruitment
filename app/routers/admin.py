@@ -1,6 +1,6 @@
 import os
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -9,6 +9,7 @@ from sqlalchemy import func, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, require_admin
+from app.utils import today_cst_as_utc, utcnow
 from app.database import get_db
 from app.models import (
     Call,
@@ -142,7 +143,7 @@ async def stale_a_students(
     latest_activity_at = func.coalesce(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
     ).label("latest_activity_at")
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow() - timedelta(days=days)
 
     result = await db.execute(
         select(Student, User.name.label("agent_name"), latest_activity_at)
@@ -153,7 +154,6 @@ async def stale_a_students(
             Student.status.not_in(
                 [
                     StudentStatus.enrolled,
-                    StudentStatus.invalid,
                     StudentStatus.rejected,
                     StudentStatus.expired,
                 ]
@@ -163,7 +163,7 @@ async def stale_a_students(
         .order_by(latest_activity_at.asc(), Student.id.asc())
     )
 
-    now = datetime.utcnow()
+    now = utcnow()
     data = []
     for student, agent_name, raw_last_activity_at in result.all():
         last_activity_at = to_datetime(raw_last_activity_at)
@@ -196,12 +196,11 @@ async def stale_students(
     last_activity_at = func.coalesce(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
     ).label("last_activity_at")
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = utcnow() - timedelta(days=days)
     stale_filters = [
         Student.status.not_in(
             [
                 StudentStatus.enrolled,
-                StudentStatus.invalid,
                 StudentStatus.expired,
                 StudentStatus.rejected,
             ]
@@ -260,7 +259,7 @@ async def stale_reassign(
     if not students:
         return Response.error(code=1, msg="没有可回收的线索")
 
-    now = datetime.utcnow()
+    now = utcnow()
     distribution: dict[str, int] = {}
 
     if body.mode == "manual":
@@ -332,7 +331,7 @@ async def list_agents(
         return Response.ok([])
 
     agent_ids = [a.id for a in agents]
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = today_cst_as_utc()
 
     # Batch: total students per agent
     total_r = await db.execute(

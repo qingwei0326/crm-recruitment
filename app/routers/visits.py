@@ -1,4 +1,4 @@
-from datetime import datetime
+from app.utils import utcnow
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -138,7 +138,7 @@ async def visits_summary(
 
     upcoming_result = await db.execute(
         select(Visit)
-        .where(Visit.scheduled_date >= datetime.utcnow(), Visit.status != VisitStatus.cancelled)
+        .where(Visit.scheduled_date >= utcnow(), Visit.status != VisitStatus.cancelled)
         .options(joinedload(Visit.student))
         .order_by(Visit.scheduled_date.asc())
         .limit(50)

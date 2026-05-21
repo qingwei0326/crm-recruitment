@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from io import BytesIO
 from itertools import chain
 from zipfile import BadZipFile
@@ -37,7 +37,7 @@ from app.permissions import (
 )
 from app.pushplus import notify_a_level_change
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
-from app.utils import make_operation_log, mask_phone
+from app.utils import make_operation_log, mask_phone, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
 
@@ -400,10 +400,10 @@ async def import_students_excel(
             header_map = {}
             data_start_row = 1
 
-        student_rows = []
+        parsed_rows = []  # (row_idx, parsed_dict)
         skipped_rows = []
         default_expire = Student.default_expired_at()
-        assigned_at = datetime.utcnow() if default_agent_id is not None else None
+        assigned_at = utcnow() if default_agent_id is not None else None
 
         for row_idx, row in enumerate(rows, start=data_start_row):
             if _is_empty_import_row(row):
@@ -414,6 +414,29 @@ async def import_students_excel(
                 skipped_rows.append({"row": row_idx, "reason": error})
                 continue
 
+            parsed_rows.append((row_idx, parsed))
+
+        # Batch-check for duplicate phone numbers against existing DB records
+        phones_to_check = {p["guardian_phone"] for _, p in parsed_rows if p.get("guardian_phone")}
+        existing_phones: set[str] = set()
+        if phones_to_check:
+            existing_r = await db.execute(
+                select(Student.guardian_phone).where(Student.guardian_phone.in_(phones_to_check))
+            )
+            existing_phones = {row[0] for row in existing_r.all() if row[0]}
+
+        seen_in_file: set[str] = set()
+        student_rows = []
+        for row_idx, parsed in parsed_rows:
+            phone = parsed.get("guardian_phone", "")
+            if phone:
+                if phone in existing_phones:
+                    skipped_rows.append({"row": row_idx, "reason": f"手机号已存在（库中已有该学员）: {phone}"})
+                    continue
+                if phone in seen_in_file:
+                    skipped_rows.append({"row": row_idx, "reason": f"手机号在本次导入中重复: {phone}"})
+                    continue
+                seen_in_file.add(phone)
             student_rows.append(
                 {
                     "name": parsed["name"],
@@ -422,7 +445,7 @@ async def import_students_excel(
                     "assigned_at": assigned_at,
                     "score": parsed["score"],
                     "guardian_name": parsed["guardian_name"],
-                    "guardian_phone": parsed["guardian_phone"],
+                    "guardian_phone": phone,
                     "guardian2_name": parsed["guardian2_name"],
                     "guardian2_phone": parsed["guardian2_phone"],
                     "school_name": parsed["school_name"],
@@ -566,7 +589,7 @@ async def create_student(
         name=body.name,
         region=body.region,
         assigned_to=assigned_to,
-        assigned_at=datetime.utcnow() if assigned_to else None,
+        assigned_at=utcnow() if assigned_to else None,
         status=status,
         intent_level=intent_level,
         stage=stage,
@@ -656,7 +679,7 @@ async def list_students(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "list": [_student_payload(s, full_phone=True) for s in students],
+            "list": [_student_payload(s, full_phone=is_admin(current_user)) for s in students],
         }
     )
 
@@ -907,7 +930,7 @@ async def assign_students(
     if not agent_result.scalar_one_or_none():
         return Response.error(code=1, msg="话务员不存在或已禁用")
 
-    now = datetime.utcnow()
+    now = utcnow()
     await db.execute(
         update(Student)
         .where(Student.id.in_(body.student_ids))
@@ -945,7 +968,7 @@ async def auto_assign(
         return Response.ok({"message": "没有未分配的学生", "distribution": {}})
 
     distribution = {a.id: 0 for a in agents}
-    now = datetime.utcnow()
+    now = utcnow()
     by_agent: dict[int, list[int]] = {}
     for sid in unassigned_ids:
         min_agent_id = min(load, key=load.get)
@@ -995,7 +1018,7 @@ async def region_assign(
 
     distribution = {a.name: {"matched": 0, "fallback": 0} for a in agents}
     fallback_counts = {a.id: 0 for a in agents}
-    now = datetime.utcnow()
+    now = utcnow()
     total_assigned = 0
     by_agent: dict[int, list[int]] = {}
 
@@ -1069,7 +1092,7 @@ async def school_assign(
     if not students:
         return Response.error(code=1, msg="该学校没有未分配的学生")
 
-    now = datetime.utcnow()
+    now = utcnow()
     by_agent: dict[int, list[int]] = {}
     agent_id_list = [a.id for a in agents]
     counts = {a_id: 0 for a_id in agent_id_list}
@@ -1114,6 +1137,29 @@ async def toggle_need_help(
     )
     await db.commit()
     return Response.ok({"need_help": student.need_help})
+
+
+@router.get("/phone/{student_id}")
+async def get_student_phone(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    student = await get_accessible_student(db, student_id, current_user)
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "查看电话",
+            content="查看明文电话号码",
+        )
+    )
+    await db.commit()
+    return Response.ok({
+        "guardian_phone": student.guardian_phone,
+        "guardian2_phone": student.guardian2_phone,
+    })
 
 
 @router.delete("/{student_id}")

@@ -86,6 +86,9 @@ if os.path.isdir(FRONTEND_DIR):
 
     @app.get("/{path:path}")
     async def spa_fallback(path: str):
+        if path.startswith("api/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404)
         file_path = os.path.join(FRONTEND_DIR, path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
