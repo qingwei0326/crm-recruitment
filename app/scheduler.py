@@ -1,16 +1,17 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 
 from app.database import async_session
 from app.models import FollowUp, Student, User
 from app.pushplus import send_pushplus_message
+from app.utils import utcnow
 
 
 async def scan_follow_up_reminders():
     async with async_session() as db:
-        now = datetime.utcnow()
+        now = utcnow()
         deadline = now + timedelta(minutes=15)
         result = await db.execute(
             select(FollowUp, Student, User)

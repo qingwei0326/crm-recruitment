@@ -42,6 +42,22 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_drop_legacy_student_phone_column)
+        await conn.run_sync(_migrate_follow_up_columns)
+
+
+def _migrate_follow_up_columns(sync_connection):
+    inspector = inspect(sync_connection)
+    if "follow_ups" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("follow_ups")}
+    if "follow_up_type" not in columns:
+        sync_connection.execute(text("ALTER TABLE follow_ups ADD COLUMN follow_up_type VARCHAR(16)"))
+    if "notes" not in columns:
+        sync_connection.execute(text("ALTER TABLE follow_ups ADD COLUMN notes TEXT DEFAULT ''"))
+    if "is_completed" not in columns:
+        sync_connection.execute(
+            text("ALTER TABLE follow_ups ADD COLUMN is_completed BOOLEAN NOT NULL DEFAULT 0")
+        )
 
 
 def _drop_legacy_student_phone_column(sync_connection):

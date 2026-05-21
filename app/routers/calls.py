@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -12,7 +12,7 @@ from app.models import Call, IntentLevel, Student, User, UserRole
 from app.permissions import can_access_student
 from app.pushplus import notify_a_level_change
 from app.schemas import CallCreate, Response
-from app.utils import make_operation_log
+from app.utils import make_operation_log, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/calls", tags=["通话"])
 
@@ -34,7 +34,7 @@ async def check_today_call(
     if not _agent_can_access_student(student, current_user):
         raise HTTPException(status_code=403, detail="无权查看该学员的通话记录")
 
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = today_cst_as_utc()
     result = await db.execute(
         select(Call)
         .where(
@@ -81,7 +81,7 @@ async def create_call(
         ai_reasons=result["ai_reasons"],
         ai_summary=result["ai_summary"],
         ai_confidence=result["ai_confidence"],
-        analyzed_at=datetime.utcnow(),
+        analyzed_at=utcnow(),
     )
     db.add(call)
 

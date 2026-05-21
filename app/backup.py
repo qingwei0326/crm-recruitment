@@ -75,10 +75,9 @@ async def do_backup_async():
 
 async def backup_scheduler():
     """Run backup every 6 hours."""
-    await asyncio.sleep(random.uniform(0, 600))
     while True:
-        await asyncio.sleep(6 * 3600)
         try:
             await do_backup_async()
         except Exception as e:
             logger.error(f"Backup failed: {e}")
+        await asyncio.sleep(6 * 3600 + random.uniform(0, 600))

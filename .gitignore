@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.venv-win/
 venv/
 .pydeps/
 .pytest_cache/
@@ -21,6 +22,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # Logs
 *.log
@@ -51,6 +53,9 @@ make-release.cmd
 # Env
 .env
 *.env.local
+
+# Project docs
+docs/
 
 # Docker
 .docker/

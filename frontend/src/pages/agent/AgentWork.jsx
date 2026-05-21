@@ -336,10 +336,21 @@ export default function AgentWork() {
       return true;
     }
   };
-  const handleDial = async (phone, id) => {
+  const handleDial = async (contactKey, id) => {
+    let phone = '';
+    try {
+      const r = await api.get(`/students/phone/${id}`);
+      if (r.data.code === 0) {
+        phone = contactKey === 'guardian2'
+          ? r.data.data.guardian2_phone || ''
+          : r.data.data.guardian_phone || '';
+      }
+    } catch {
+      phone = '';
+    }
     const ok = await checkDup(id, phone);
     if (ok) {
-      window.location.href = `tel:${phone || ''}`;
+      window.location.href = `tel:${phone}`;
       setLockedStudentId(id);
     }
   };
@@ -636,7 +647,7 @@ export default function AgentWork() {
                         {getContactOptions(current).map((contact) => (
                           <button
                             key={contact.key}
-                            onClick={() => handleDial(contact.phone, current.id)}
+                            onClick={() => handleDial(contact.key, current.id)}
                             className="flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium"
                             title={contact.phone}
                           >
@@ -1135,7 +1146,7 @@ export default function AgentWork() {
                           {getContactOptions(current).map((contact) => (
                             <button
                               key={contact.key}
-                              onClick={() => handleDial(contact.phone, current.id)}
+                              onClick={() => handleDial(contact.key, current.id)}
                               className="flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm"
                               title={contact.phone}
                             >

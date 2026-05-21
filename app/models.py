@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -118,7 +118,7 @@ class Student(Base):
 
     @staticmethod
     def default_expired_at():
-        return (datetime.utcnow() + timedelta(days=30)).date()
+        return (datetime.now(timezone.utc) + timedelta(days=30)).date()
 
 
 class Call(Base):
@@ -161,7 +161,10 @@ class FollowUp(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     follow_up_date = Column(DateTime, nullable=False)
+    follow_up_type = Column(String(16), nullable=True)
+    notes = Column(Text, default="")
     is_notified = Column(Boolean, default=False, nullable=False)
+    is_completed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     student = relationship("Student", back_populates="follow_ups")

@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Cookie, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -26,7 +26,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({
         "exp": expire,

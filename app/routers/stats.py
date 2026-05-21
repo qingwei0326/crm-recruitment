@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.permissions import get_accessible_student
 from app.schemas import Response
+from app.utils import month_start_cst_as_utc, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/stats", tags=["统计"])
 
@@ -72,15 +73,30 @@ async def stage_stats(
     return Response.ok(by_stage)
 
 
+@router.get("/me")
+async def my_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """坐席查看自己的业绩统计"""
+    return await _get_agent_stats(current_user.id, db)
+
+
 @router.get("/agent/{agent_id}")
 async def agent_stats(
     agent_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    if current_user.role == UserRole.agent and agent_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权查看其他坐席的统计")
+    return await _get_agent_stats(agent_id, db)
+
+
+async def _get_agent_stats(agent_id: int, db: AsyncSession):
+    today = today_cst_as_utc()
     tomorrow = today + timedelta(days=1)
-    month_start = today.replace(day=1)
+    month_start = month_start_cst_as_utc()
 
     today_calls_r = await db.execute(
         select(func.count(Call.id)).where(
@@ -150,13 +166,13 @@ async def agent_ranking(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = today.replace(day=1)
+    today = today_cst_as_utc()
+    month_start = month_start_cst_as_utc()
 
     agents_r = await db.execute(select(User).where(User.role == UserRole.agent))
     agents = agents_r.scalars().all()
     if not agents:
-        return Response.ok({"ranking": [], "generated_at": str(datetime.utcnow())})
+        return Response.ok({"ranking": [], "generated_at": str(utcnow())})
     agent_ids = [a.id for a in agents]
 
     # Student stats per agent (total, contacted, A, enrolled)
@@ -246,7 +262,7 @@ async def agent_ranking(
         key=lambda x: x["a_count"] * 2 + x["enrolled"] * 5 + x["visits_done"] * 3 + x["contacted"],
         reverse=True,
     )
-    return Response.ok({"ranking": ranking, "generated_at": str(datetime.utcnow())})
+    return Response.ok({"ranking": ranking, "generated_at": str(utcnow())})
 
 
 @router.get("/enrollment-conversion")
@@ -404,7 +420,7 @@ async def predict_student_conversion(
 
     days_since = 30
     if student.assigned_at:
-        delta = datetime.utcnow() - student.assigned_at
+        delta = utcnow() - student.assigned_at
         days_since = max(1, delta.days)
 
     intent_val = student.intent_level.value if student.intent_level else "无"

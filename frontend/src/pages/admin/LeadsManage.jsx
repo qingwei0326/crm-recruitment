@@ -524,16 +524,28 @@ export default function LeadsManage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['成绩', s.score != null ? s.score : '-'],
-                  ['监护人', s.guardian_name || '-'],
-                  ['监护人电话', s.guardian_phone_raw || s.guardian_phone || '-'],
-                  ['监护人2', s.guardian2_name || '-'],
-                  ['监护人2电话', s.guardian2_phone_raw || s.guardian2_phone || '-'],
-                  ['学校', s.school_name || '-'],
-                ].map(([k, v]) => (
+                  ['成绩', s.score != null ? s.score : '-', false],
+                  ['监护人', s.guardian_name || '-', false],
+                  ['监护人电话', s.guardian_phone_raw || s.guardian_phone || '-', true],
+                  ['监护人2', s.guardian2_name || '-', false],
+                  ['监护人2电话', s.guardian2_phone_raw || s.guardian2_phone || '-', true],
+                  ['学校', s.school_name || '-', false],
+                ].map(([k, v, isPhone]) => (
                   <div key={k} className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
                     <div className="text-xs text-gray-400">{k}</div>
-                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{v}</div>
+                    <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                      {isPhone && v && v !== '-' ? (
+                        <a
+                          href={`tel:${v}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {v}
+                        </a>
+                      ) : (
+                        v
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

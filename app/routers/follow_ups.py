@@ -22,11 +22,13 @@ async def create_follow_up(
         student_id=body.student_id,
         agent_id=current_user.id,
         follow_up_date=body.follow_up_date,
+        follow_up_type=body.follow_up_type,
+        notes=body.notes,
     )
     db.add(fu)
     await db.commit()
     await db.refresh(fu)
-    return Response.ok({"id": fu.id, "follow_up_date": str(fu.follow_up_date)})
+    return Response.ok(_fu_payload(fu))
 
 
 @router.get("")
@@ -42,17 +44,19 @@ async def list_follow_ups(
         .order_by(FollowUp.follow_up_date.desc())
     )
     fus = result.scalars().all()
-    return Response.ok(
-        [
-            {
-                "id": f.id,
-                "follow_up_date": str(f.follow_up_date),
-                "is_notified": f.is_notified,
-                "created_at": str(f.created_at),
-            }
-            for f in fus
-        ]
-    )
+    return Response.ok([_fu_payload(f) for f in fus])
+
+
+def _fu_payload(f: FollowUp) -> dict:
+    return {
+        "id": f.id,
+        "follow_up_date": str(f.follow_up_date),
+        "follow_up_type": f.follow_up_type or "电话",
+        "notes": f.notes or "",
+        "is_notified": f.is_notified,
+        "is_completed": f.is_completed,
+        "created_at": str(f.created_at),
+    }
 
 
 async def _get_follow_up_or_none(db: AsyncSession, fu_id: int):
@@ -81,13 +85,18 @@ async def update_follow_up(
         follow_up.follow_up_date = body.follow_up_date
     if body.is_notified is not None:
         follow_up.is_notified = body.is_notified
+    if body.is_completed is not None:
+        follow_up.is_completed = body.is_completed
+    if body.follow_up_type is not None:
+        follow_up.follow_up_type = body.follow_up_type
+    if body.notes is not None:
+        follow_up.notes = body.notes
+
     await db.commit()
     await db.refresh(follow_up)
     return Response.ok(
         {
-            "id": follow_up.id,
-            "follow_up_date": str(follow_up.follow_up_date),
-            "is_notified": follow_up.is_notified,
+            **_fu_payload(follow_up),
             "student_id": follow_up.student_id,
             "agent_id": follow_up.agent_id,
         }
