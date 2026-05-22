@@ -250,9 +250,6 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 - 备注支持编辑/删除，模板支持编辑和启用/停用
 - 新增数据库手动备份 API（列表+触发+下载）
 - SystemSettings 支持恢复出厂设置
-
-### v1.1.1（2025-05-22）
-
 - 移除 MessageTemplate 整个模块（模型、路由、UI），数据库迁移清理
 - region_extractor 从学校名自动解析区县（导入和手动创建时）
 - CORS 添加生产域名，cloudflared 配置生产映射
