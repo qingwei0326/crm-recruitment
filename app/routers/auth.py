@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel, Field
+
 from app.auth import (
     create_access_token,
     get_current_user,
@@ -143,6 +145,23 @@ async def me(current_user: User = Depends(get_current_user)):
             "name": current_user.name,
             "role": current_user.role,
             "is_active": current_user.is_active,
+            "pushplus_token": current_user.pushplus_token,
             "created_at": str(current_user.created_at),
         }
     )
+
+
+class PushplusTokenUpdate(BaseModel):
+    pushplus_token: str = Field(default="", max_length=64)
+
+
+@router.put("/me/pushplus-token")
+async def update_my_pushplus_token(
+    body: PushplusTokenUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.pushplus_token = body.pushplus_token.strip()
+    db.add(current_user)
+    await db.commit()
+    return Response.ok({"pushplus_token": current_user.pushplus_token})

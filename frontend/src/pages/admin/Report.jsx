@@ -9,6 +9,7 @@ import {
   Trophy,
   Medal,
   TrendingUp,
+  TrendingDown,
   Target,
   CheckCircle2,
   MapPin,
@@ -28,7 +29,16 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
 } from 'lucide-react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 const rankColors = [
   'bg-amber-400 text-amber-900',
@@ -43,13 +53,19 @@ export default function Report() {
 
   const [ranking, setRanking] = useState([]);
   const [visits, setVisits] = useState(null);
+  const [substageData, setSubstageData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.get('/stats/agent-ranking'), api.get('/visits?page_size=100')])
-      .then(([rRes, vRes]) => {
+    Promise.all([
+      api.get('/stats/agent-ranking'),
+      api.get('/visits?page_size=100'),
+      api.get('/stats/enrollment-substage-distribution'),
+    ])
+      .then(([rRes, vRes, sRes]) => {
         setRanking(rRes.data.data?.ranking || []);
         setVisits(vRes.data.data?.list || []);
+        setSubstageData(sRes.data.data || null);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -180,6 +196,90 @@ export default function Report() {
         </header>
 
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-6">
+          {/* ── Section 0: 报名后生命周期分布 + 流失率 ── */}
+          {substageData && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                <TrendingDown className="w-5 h-5 text-red-500" />
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">报名后生命周期</h3>
+              </div>
+              <div className="p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 border dark:border-gray-700">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">总报名数</div>
+                    <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                      {substageData.total_enrolled}
+                    </div>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-700">
+                    <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 mb-1">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      报名后流失率
+                    </div>
+                    <div className="text-4xl font-bold text-red-600 dark:text-red-400">
+                      {substageData.churn_rate}%
+                    </div>
+                    <div className="text-xs text-red-500 dark:text-red-300 mt-1">
+                      已流失 {substageData.churned} 人 / 共 {substageData.total_enrolled} 人
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    报名后各阶段分布
+                  </div>
+                  {(() => {
+                    const COLORS = {
+                      定金待缴: '#f59e0b',
+                      全款待缴: '#3b82f6',
+                      已缴全款: '#10b981',
+                      入学注册: '#22c55e',
+                      流失: '#ef4444',
+                      未设置: '#9ca3af',
+                    };
+                    const data = Object.entries(substageData.distribution || {})
+                      .filter(([, v]) => v > 0)
+                      .map(([name, value]) => ({ name, value }));
+                    if (data.length === 0) {
+                      return (
+                        <div className="text-sm text-gray-400 py-10 text-center">暂无数据</div>
+                      );
+                    }
+                    return (
+                      <ResponsiveContainer width="100%" height={isMobile ? 220 : 260}>
+                        <PieChart>
+                          <Pie
+                            data={data}
+                            dataKey="value"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={isMobile ? 45 : 60}
+                            outerRadius={isMobile ? 75 : 95}
+                            label={({ name, value }) => `${name} ${value}`}
+                          >
+                            {data.map((entry) => (
+                              <Cell key={entry.name} fill={COLORS[entry.name] || '#9ca3af'} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: dark ? '#1f2937' : '#fff',
+                              border: `1px solid ${dark ? '#374151' : '#e5e7eb'}`,
+                              borderRadius: 8,
+                              fontSize: 12,
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 12 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Section 1: Agent ranking ── */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
             <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">

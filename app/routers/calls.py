@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_analyzer import analyze_transcript
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Call, IntentLevel, Student, User, UserRole
+from app.models import Call, IntentLevel, Note, Student, User, UserRole
 from app.permissions import can_access_student
 from app.pushplus import notify_a_level_change
 from app.schemas import CallCreate, Response
@@ -24,6 +24,7 @@ def _agent_can_access_student(student: Student, user: User) -> bool:
 @router.get("/check")
 async def check_today_call(
     student_id: int = Query(...),
+    within_hours: int = Query(24, ge=1, le=168),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -34,27 +35,29 @@ async def check_today_call(
     if not _agent_can_access_student(student, current_user):
         raise HTTPException(status_code=403, detail="无权查看该学员的通话记录")
 
-    today = today_cst_as_utc()
+    since = utcnow() - timedelta(hours=within_hours)
     result = await db.execute(
-        select(Call)
-        .where(
-            Call.student_id == student_id,
-            Call.agent_id == current_user.id,
-            Call.created_at >= today,
-        )
+        select(Call.created_at)
+        .where(Call.student_id == student_id, Call.created_at >= since)
         .order_by(Call.created_at.desc())
-        .limit(1)
     )
-    call = result.scalar_one_or_none()
-    if call:
-        return Response.ok(
-            {
-                "already_called": True,
-                "last_call_at": str(call.created_at),
-                "message": f"今日已联系过（{call.created_at.strftime('%H:%M')}），确认再次拨打？",
-            }
-        )
-    return Response.ok({"already_called": False})
+    rows = result.all()
+    count = len(rows)
+    last_call_at = str(rows[0][0]) if rows else None
+
+    return Response.ok(
+        {
+            "count": count,
+            "last_call_at": last_call_at,
+            "within_hours": within_hours,
+            "already_called": count > 0,
+            "message": (
+                f"{within_hours}h 内该学生已被通话 {count} 次（最近 {last_call_at}）"
+                if count
+                else ""
+            ),
+        }
+    )
 
 
 @router.post("/analyze")
@@ -99,6 +102,24 @@ async def create_call(
             old_status=str(old_intent),
             new_status=result["ai_intent"],
             note_content=body.transcript[:200],
+        )
+    )
+
+    ai_note_lines = [f"【AI 通话摘要】"]
+    if result.get("ai_summary"):
+        ai_note_lines.append(result["ai_summary"])
+    ai_note_lines.append("")
+    ai_note_lines.append(
+        f"意向 {result['ai_intent']}（置信度 {result['ai_confidence']}）"
+    )
+    if result.get("ai_reasons"):
+        ai_note_lines.append(f"依据：{result['ai_reasons']}")
+    db.add(
+        Note(
+            student_id=body.student_id,
+            agent_id=current_user.id,
+            content="\n".join(ai_note_lines),
+            source="ai",
         )
     )
 

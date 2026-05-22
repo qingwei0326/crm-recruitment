@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from itertools import chain
 from zipfile import BadZipFile
@@ -18,6 +18,8 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
     Call,
+    DialLog,
+    EnrollmentSubStage,
     FollowUp,
     IntentLevel,
     LeadViewLog,
@@ -25,6 +27,7 @@ from app.models import (
     Student,
     StudentStage,
     StudentStatus,
+    SystemConfig,
     User,
     UserRole,
     Visit,
@@ -165,6 +168,11 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
         "program": student.program,
         "deposit": student.deposit,
         "expired_at": str(student.expired_at) if student.expired_at else None,
+        "enrollment_substage": (
+            student.enrollment_substage.value
+            if hasattr(student.enrollment_substage, "value")
+            else student.enrollment_substage
+        ) if student.enrollment_substage else None,
         "created_at": str(student.created_at),
         "updated_at": str(student.updated_at),
     }
@@ -814,6 +822,23 @@ async def list_schools(
     return Response.ok(schools)
 
 
+_CST = timezone(timedelta(hours=8))
+
+
+async def _get_system_config(db: AsyncSession, key: str, default: str = "") -> str:
+    result = await db.execute(select(SystemConfig.value).where(SystemConfig.key == key))
+    value = result.scalar_one_or_none()
+    return (value or "").strip() or default
+
+
+def _parse_hhmm(value: str) -> tuple[int, int]:
+    try:
+        hh, mm = value.split(":")
+        return int(hh), int(mm)
+    except (ValueError, AttributeError):
+        return 0, 0
+
+
 @router.get("/phone/{student_id}")
 async def get_student_phone(
     student_id: int,
@@ -821,6 +846,45 @@ async def get_student_phone(
     current_user: User = Depends(get_current_user),
 ):
     student = await get_accessible_student(db, student_id, current_user)
+
+    # 1. 拨号窗口校验
+    window_start = await _get_system_config(db, "dial_window_start", "08:00")
+    window_end = await _get_system_config(db, "dial_window_end", "21:00")
+    max_per_24h_str = await _get_system_config(db, "dial_max_per_24h", "3")
+    try:
+        max_per_24h = int(max_per_24h_str)
+    except ValueError:
+        max_per_24h = 3
+
+    now_cst = datetime.now(_CST)
+    start_h, start_m = _parse_hhmm(window_start)
+    end_h, end_m = _parse_hhmm(window_end)
+    cur_minutes = now_cst.hour * 60 + now_cst.minute
+    start_minutes = start_h * 60 + start_m
+    end_minutes = end_h * 60 + end_m
+    if cur_minutes < start_minutes or cur_minutes >= end_minutes:
+        raise HTTPException(
+            status_code=403,
+            detail=f"当前为禁拨时段（拨号窗口 {window_start}-{window_end}）",
+        )
+
+    # 2. 24h 防撞号校验（全局，任何坐席）
+    since = utcnow() - timedelta(hours=24)
+    count_r = await db.execute(
+        select(func.count(DialLog.id)).where(
+            DialLog.student_id == student.id,
+            DialLog.dialed_at >= since,
+        )
+    )
+    count_24h = count_r.scalar() or 0
+    if count_24h >= max_per_24h:
+        raise HTTPException(
+            status_code=403,
+            detail=f"该学生 24h 内已被拨打 {count_24h} 次，达到上限 {max_per_24h}",
+        )
+
+    # 3. 通过校验，写 DialLog 并记录操作日志
+    db.add(DialLog(student_id=student.id, agent_id=current_user.id))
     db.add(
         make_operation_log(
             current_user,
@@ -835,6 +899,228 @@ async def get_student_phone(
         "guardian_phone": student.guardian_phone,
         "guardian2_phone": student.guardian2_phone,
     })
+
+
+@router.get("/{student_id}/intent-timeline")
+async def get_intent_timeline(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    student = await get_accessible_student(db, student_id, current_user)
+
+    result = await db.execute(
+        select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
+        .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
+        .order_by(Call.created_at.asc())
+    )
+    timeline = [
+        {
+            "call_id": call_id,
+            "intent": ai_intent,
+            "confidence": ai_confidence,
+            "agent_id": agent_id,
+            "at": str(created_at),
+        }
+        for call_id, ai_intent, ai_confidence, agent_id, created_at in result.all()
+    ]
+
+    return Response.ok(
+        {
+            "student_id": student.id,
+            "current_intent": str(student.intent_level),
+            "created_at": str(student.created_at),
+            "timeline": timeline,
+        }
+    )
+
+
+class EnrollmentSubStageBody(BaseModel):
+    enrollment_substage: str | None = None
+
+
+@router.put("/{student_id}/enrollment-substage")
+async def update_enrollment_substage(
+    student_id: int,
+    body: EnrollmentSubStageBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="无权修改报名后状态")
+    student = await get_student_or_404(db, student_id)
+
+    old_value = str(student.enrollment_substage) if student.enrollment_substage else ""
+    if body.enrollment_substage is None or body.enrollment_substage == "":
+        student.enrollment_substage = None
+        new_value = ""
+    else:
+        try:
+            student.enrollment_substage = EnrollmentSubStage(body.enrollment_substage)
+        except ValueError:
+            valid = [e.value for e in EnrollmentSubStage]
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的报名后状态，合法值：{valid}",
+            )
+        new_value = body.enrollment_substage
+
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "修改报名后状态",
+            content=f"{old_value} → {new_value}",
+            old_status=old_value,
+            new_status=new_value,
+        )
+    )
+    await db.commit()
+    await db.refresh(student)
+    return Response.ok(
+        {
+            "enrollment_substage": str(student.enrollment_substage)
+            if student.enrollment_substage
+            else None,
+        }
+    )
+
+
+@router.get("/{student_id}/detail")
+async def get_student_detail(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """聚合学生所有维度信息：基本资料 + 通话 + 备注 + 回访 + 到访 + 意向轨迹。"""
+    student = await get_accessible_student(db, student_id, current_user)
+
+    log = LeadViewLog(student_id=student.id, viewer_id=current_user.id)
+    db.add(log)
+
+    # 学生基本信息
+    payload = _student_payload(student, full_phone=is_admin(current_user))
+    payload["enrollment_substage"] = (
+        str(student.enrollment_substage) if student.enrollment_substage else None
+    )
+
+    # 通话（最近 50）
+    calls_r = await db.execute(
+        select(Call, User.name)
+        .outerjoin(User, Call.agent_id == User.id)
+        .where(Call.student_id == student.id)
+        .order_by(Call.created_at.desc())
+        .limit(50)
+    )
+    calls = [
+        {
+            "id": c.id,
+            "agent_id": c.agent_id,
+            "agent_name": agent_name or "",
+            "duration_seconds": c.duration_seconds,
+            "ai_intent": c.ai_intent,
+            "ai_confidence": c.ai_confidence,
+            "ai_summary": c.ai_summary,
+            "ai_reasons": c.ai_reasons,
+            "created_at": str(c.created_at),
+        }
+        for c, agent_name in calls_r.all()
+    ]
+
+    # 备注（最近 50）
+    notes_r = await db.execute(
+        select(Note, User.name)
+        .outerjoin(User, Note.agent_id == User.id)
+        .where(Note.student_id == student.id)
+        .order_by(Note.created_at.desc())
+        .limit(50)
+    )
+    notes = [
+        {
+            "id": n.id,
+            "content": n.content,
+            "source": n.source,
+            "agent_id": n.agent_id,
+            "agent_name": agent_name or "",
+            "created_at": str(n.created_at),
+            "updated_at": str(n.updated_at),
+        }
+        for n, agent_name in notes_r.all()
+    ]
+
+    # 回访（全部）
+    fu_r = await db.execute(
+        select(FollowUp, User.name)
+        .outerjoin(User, FollowUp.agent_id == User.id)
+        .where(FollowUp.student_id == student.id)
+        .order_by(FollowUp.follow_up_date.desc())
+    )
+    follow_ups = [
+        {
+            "id": f.id,
+            "agent_id": f.agent_id,
+            "agent_name": agent_name or "",
+            "follow_up_date": str(f.follow_up_date),
+            "follow_up_type": f.follow_up_type or "",
+            "notes": f.notes or "",
+            "is_completed": f.is_completed,
+            "is_notified": f.is_notified,
+            "created_at": str(f.created_at),
+        }
+        for f, agent_name in fu_r.all()
+    ]
+
+    # 到访（全部）
+    visits_r = await db.execute(
+        select(Visit, User.name)
+        .outerjoin(User, Visit.agent_id == User.id)
+        .where(Visit.student_id == student.id)
+        .order_by(Visit.scheduled_date.desc())
+    )
+    visits = [
+        {
+            "id": v.id,
+            "agent_id": v.agent_id,
+            "agent_name": agent_name or "",
+            "visit_type": str(v.visit_type),
+            "scheduled_date": str(v.scheduled_date),
+            "status": str(v.status),
+            "notes": v.notes or "",
+            "created_at": str(v.created_at),
+        }
+        for v, agent_name in visits_r.all()
+    ]
+
+    # 意向轨迹（复用 /intent-timeline 的查询逻辑）
+    intent_r = await db.execute(
+        select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
+        .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
+        .order_by(Call.created_at.asc())
+    )
+    intent_timeline = [
+        {
+            "call_id": cid,
+            "intent": ai_intent,
+            "confidence": ai_conf,
+            "agent_id": aid,
+            "at": str(created_at),
+        }
+        for cid, ai_intent, ai_conf, aid, created_at in intent_r.all()
+    ]
+
+    await db.commit()
+
+    return Response.ok(
+        {
+            "student": payload,
+            "calls": calls,
+            "notes": notes,
+            "follow_ups": follow_ups,
+            "visits": visits,
+            "intent_timeline": intent_timeline,
+        }
+    )
 
 
 @router.get("/{student_id}")
@@ -987,6 +1273,8 @@ async def set_enroll_info(
     student.deposit = body.deposit
     student.status = StudentStatus.enrolled
     student.stage = StudentStage.enrolled
+    if student.enrollment_substage is None:
+        student.enrollment_substage = EnrollmentSubStage.deposit_pending
 
     await db.commit()
     await db.refresh(student)
@@ -995,6 +1283,7 @@ async def set_enroll_info(
             "enrolled_at": str(student.enrolled_at),
             "program": student.program,
             "deposit": student.deposit,
+            "enrollment_substage": str(student.enrollment_substage) if student.enrollment_substage else None,
         }
     )
 

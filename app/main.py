@@ -22,7 +22,7 @@ from app.routers import (
     tasks,
     visits,
 )
-from app.scheduler import follow_up_reminder_scheduler
+from app.scheduler import expired_student_scheduler, follow_up_reminder_scheduler
 
 FRONTEND_DIR = os.getenv(
     "FRONTEND_DIR",
@@ -37,10 +37,11 @@ async def lifespan(app: FastAPI):
     await do_backup_async()
     backup_task = asyncio.create_task(backup_scheduler())
     follow_up_task = asyncio.create_task(follow_up_reminder_scheduler())
+    expired_task = asyncio.create_task(expired_student_scheduler())
     yield
-    for task in (backup_task, follow_up_task):
+    for task in (backup_task, follow_up_task, expired_task):
         task.cancel()
-    for task in (backup_task, follow_up_task):
+    for task in (backup_task, follow_up_task, expired_task):
         try:
             await task
         except asyncio.CancelledError:

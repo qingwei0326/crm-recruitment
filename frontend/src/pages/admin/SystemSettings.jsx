@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Eye, EyeOff, RefreshCw, Save, Settings2 } from 'lucide-react';
+import { Download, Eye, EyeOff, Phone, RefreshCw, Save, Settings2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -40,6 +40,11 @@ export default function SystemSettings() {
   const [daysMessage, setDaysMessage] = useState(null);
   const [savingToken, setSavingToken] = useState(false);
   const [savingDays, setSavingDays] = useState(false);
+  const [dialWindowStart, setDialWindowStart] = useState('08:00');
+  const [dialWindowEnd, setDialWindowEnd] = useState('21:00');
+  const [dialMaxPer24h, setDialMaxPer24h] = useState('3');
+  const [dialMessage, setDialMessage] = useState(null);
+  const [savingDial, setSavingDial] = useState(false);
   const [backups, setBackups] = useState([]);
   const [backupMessage, setBackupMessage] = useState(null);
   const [backingUp, setBackingUp] = useState(false);
@@ -83,6 +88,9 @@ export default function SystemSettings() {
       const cfg = res.data.data || {};
       setToken(cfg.pushplus_token || '');
       setStaleDays(cfg.stale_days || '3');
+      setDialWindowStart(cfg.dial_window_start || '08:00');
+      setDialWindowEnd(cfg.dial_window_end || '21:00');
+      setDialMaxPer24h(cfg.dial_max_per_24h || '3');
     } finally {
       setLoading(false);
     }
@@ -122,6 +130,23 @@ export default function SystemSettings() {
       setDaysMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
     } finally {
       setSavingDays(false);
+    }
+  };
+
+  const saveDial = async () => {
+    setDialMessage(null);
+    setSavingDial(true);
+    try {
+      await Promise.all([
+        api.put('/admin/config', { key: 'dial_window_start', value: String(dialWindowStart) }),
+        api.put('/admin/config', { key: 'dial_window_end', value: String(dialWindowEnd) }),
+        api.put('/admin/config', { key: 'dial_max_per_24h', value: String(dialMaxPer24h) }),
+      ]);
+      setDialMessage({ type: 'success', text: '已保存' });
+    } catch (err) {
+      setDialMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
+    } finally {
+      setSavingDial(false);
     }
   };
 
@@ -251,6 +276,56 @@ export default function SystemSettings() {
                   <RowMessage state={daysMessage} />
                 </div>
               </SettingRow>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
+            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+              <Phone className="w-5 h-5 text-green-600 dark:text-green-400" />
+              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">拨号设置</h1>
+            </div>
+            <div className="p-4 lg:p-6">
+              <SettingRow label="拨号窗口开始">
+                <input
+                  type="time"
+                  className={inputCls}
+                  value={dialWindowStart}
+                  onChange={(e) => setDialWindowStart(e.target.value)}
+                />
+              </SettingRow>
+              <SettingRow label="拨号窗口结束">
+                <input
+                  type="time"
+                  className={inputCls}
+                  value={dialWindowEnd}
+                  onChange={(e) => setDialWindowEnd(e.target.value)}
+                />
+              </SettingRow>
+              <SettingRow label="24 小时内最多拨打次数">
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  className={inputCls}
+                  value={dialMaxPer24h}
+                  onChange={(e) => setDialMaxPer24h(e.target.value)}
+                />
+              </SettingRow>
+              <div className="flex items-center justify-between pt-4">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  仅允许在窗口时段内拨打；同一学生 24h 内被任意坐席拨打超过该次数将被拦截。
+                </div>
+                <button
+                  type="button"
+                  onClick={saveDial}
+                  disabled={savingDial || loading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  保存
+                </button>
+              </div>
+              <RowMessage state={dialMessage} />
             </div>
           </div>
 

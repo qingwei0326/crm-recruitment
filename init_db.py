@@ -46,6 +46,15 @@ async def seed():
         conn.execute(
             text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('stale_days', '3')")
         )
+        conn.execute(
+            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_window_start', '08:00')")
+        )
+        conn.execute(
+            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_window_end', '21:00')")
+        )
+        conn.execute(
+            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_max_per_24h', '3')")
+        )
         conn.commit()
 
         insp = inspect(sync_engine)
@@ -83,6 +92,9 @@ async def seed():
             ("users", "failed_login_attempts", "INTEGER NOT NULL DEFAULT 0"),
             ("users", "locked_until", "TIMESTAMP"),
             ("users", "service_regions", "VARCHAR(512) NOT NULL DEFAULT ''"),
+            ("users", "pushplus_token", "VARCHAR(64) NOT NULL DEFAULT ''"),
+            ("notes", "source", "VARCHAR(16) NOT NULL DEFAULT 'human'"),
+            ("notes", "updated_at", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
         ]
         students_table = "students" if "students" in existing_tables else "leads"
         student_migrations = [
@@ -101,6 +113,7 @@ async def seed():
             ("school_address", "VARCHAR(256) NOT NULL DEFAULT ''"),
             ("case_no", "VARCHAR(36)"),
             ("need_help", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("enrollment_substage", "VARCHAR(32)"),
         ]
         # Generate case_no for existing rows without one
         import uuid

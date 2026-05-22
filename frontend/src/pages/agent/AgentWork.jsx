@@ -169,6 +169,10 @@ export default function AgentWork() {
   const [viewTab, setViewTab] = useState('today');
   const [showMenu, setShowMenu] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenMsg, setTokenMsg] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [newStudent, setNewStudent] = useState(emptyStudentForm);
   const [createErr, setCreateErr] = useState('');
@@ -208,6 +212,9 @@ export default function AgentWork() {
   const [showAi, setShowAi] = useState(false);
   const [hasAnalysis, setHasAnalysis] = useState(false);
 
+  // 拨号防撞：缓存每个学生的 24h 通话次数
+  const [dialCheckByStudent, setDialCheckByStudent] = useState({});
+
   useEffect(() => {
     api
       .get('/tasks/today')
@@ -242,6 +249,14 @@ export default function AgentWork() {
           if (r.data.code === 0) setPrediction(r.data.data);
         })
         .catch(() => setPrediction(null));
+      api
+        .get('/calls/check', { params: { student_id: c.id, within_hours: 24 } })
+        .then((r) => {
+          if (r.data.code === 0) {
+            setDialCheckByStudent((prev) => ({ ...prev, [c.id]: r.data.data }));
+          }
+        })
+        .catch(() => {});
     }
   }, [students, currentIdx]);
 
@@ -388,16 +403,27 @@ export default function AgentWork() {
     setTimeout(() => setActionMsg(''), 2000);
   };
 
-  const checkDup = async (id, phone) => {
+  const refreshDialCheck = async (id) => {
     try {
-      const r = await api.get('/calls/check', { params: { student_id: id } });
-      if (r.data.data?.already_called) return confirm(r.data.data.message);
-      return true;
-    } catch {
-      return true;
-    }
+      const r = await api.get('/calls/check', { params: { student_id: id, within_hours: 24 } });
+      if (r.data.code === 0) {
+        setDialCheckByStudent((prev) => ({ ...prev, [id]: r.data.data }));
+        return r.data.data;
+      }
+    } catch {}
+    return null;
   };
+
   const handleDial = async (contactKey, id) => {
+    // 1) 全局通话计数检查（任意坐席 24h 内）
+    const check = await refreshDialCheck(id);
+    const count = check?.count ?? 0;
+    if (count >= 3) {
+      const ok = window.confirm(`该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`);
+      if (!ok) return;
+    }
+
+    // 2) 拿明文电话（后端会做拨号窗口 + 频次双重校验）
     let phone = '';
     try {
       const r = await api.get(`/students/phone/${id}`);
@@ -406,14 +432,24 @@ export default function AgentWork() {
           ? r.data.data.guardian2_phone || ''
           : r.data.data.guardian_phone || '';
       }
-    } catch {
-      phone = '';
+    } catch (err) {
+      if (err?.response?.status === 403) {
+        const msg = err.response.data?.detail || err.response.data?.msg || '当前不允许拨号';
+        alert(msg);
+        return;
+      }
+      const msg = err?.response?.data?.detail || err?.response?.data?.msg || '获取电话失败';
+      alert(msg);
+      return;
     }
-    const ok = await checkDup(id, phone);
-    if (ok) {
-      window.location.href = `tel:${phone}`;
-      setLockedStudentId(id);
+    if (!phone) {
+      alert('该联系人没有电话');
+      return;
     }
+    window.location.href = `tel:${phone}`;
+    setLockedStudentId(id);
+    // 后端已记一条 DialLog，刷新计数
+    refreshDialCheck(id);
   };
 
   const loadDetail = async (id) => {
@@ -533,6 +569,16 @@ export default function AgentWork() {
           {dark ? '亮色模式' : '暗色模式'}
         </button>
         <button
+          onClick={() => {
+            setTokenInput(user?.pushplus_token || '');
+            setTokenMsg('');
+            setShowSettings(true);
+          }}
+          className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
+        >
+          <Sparkles className="w-4 h-4" /> 推送设置
+        </button>
+        <button
           onClick={logout}
           className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
         >
@@ -543,6 +589,72 @@ export default function AgentWork() {
   );
 
   // Mobile layout
+  const renderSettingsModal = () => {
+    if (!showSettings) return null;
+    const saveToken = async () => {
+      setTokenSaving(true);
+      setTokenMsg('');
+      try {
+        const res = await api.put('/auth/me/pushplus-token', { pushplus_token: tokenInput.trim() });
+        if (res.data.code === 0) {
+          setTokenMsg('保存成功，下次推送将使用此 token');
+          try {
+            const saved = JSON.parse(localStorage.getItem('crm_user') || '{}');
+            saved.pushplus_token = tokenInput.trim();
+            localStorage.setItem('crm_user', JSON.stringify(saved));
+          } catch {}
+        } else {
+          setTokenMsg(res.data.msg || '保存失败');
+        }
+      } catch (e) {
+        setTokenMsg(e?.response?.data?.msg || '保存失败');
+      } finally {
+        setTokenSaving(false);
+      }
+    };
+    return (
+      <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-5 shadow-xl">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">个人推送设置</h3>
+            <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            在 pushplus.plus 注册并获取个人 token。设置后，回访提醒和过期告警会推送到你自己的微信，而不是管理员。
+          </p>
+          <input
+            type="text"
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            placeholder="留空则使用全局 token"
+            className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+            maxLength={64}
+          />
+          {tokenMsg && (
+            <div className="text-xs mt-2 text-blue-600 dark:text-blue-400">{tokenMsg}</div>
+          )}
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => setShowSettings(false)}
+              className="flex-1 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
+            >
+              取消
+            </button>
+            <button
+              onClick={saveToken}
+              disabled={tokenSaving}
+              className="flex-1 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
+            >
+              {tokenSaving ? '保存中…' : '保存'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (isMobile) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -707,16 +819,24 @@ export default function AgentWork() {
                         ))}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                        {getContactOptions(current).map((contact) => (
-                          <button
-                            key={contact.key}
-                            onClick={() => handleDial(contact.key, current.id)}
-                            className="flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-medium"
-                            title={contact.phone}
-                          >
-                            <Phone className="w-4 h-4" /> {contact.label} {contact.name}
-                          </button>
-                        ))}
+                        {getContactOptions(current).map((contact) => {
+                          const dc = dialCheckByStudent[current.id];
+                          const cnt = dc?.count ?? 0;
+                          const warn = cnt >= 3;
+                          return (
+                            <button
+                              key={contact.key}
+                              onClick={() => handleDial(contact.key, current.id)}
+                              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium text-white ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                              title={contact.phone}
+                            >
+                              <Phone className="w-4 h-4" /> {contact.label} {contact.name}
+                              {dc && (
+                                <span className="text-[10px] opacity-90">(24h 已 {cnt} 次)</span>
+                              )}
+                            </button>
+                          );
+                        })}
                         {getContactOptions(current).length === 0 && (
                           <button
                             disabled
@@ -988,6 +1108,9 @@ export default function AgentWork() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
+                          {detailNotes[noteIdx].source === 'ai' && (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
+                          )}
                           <span className="text-xs font-medium">
                             {detailNotes[noteIdx].agent_name}
                           </span>
@@ -1057,7 +1180,8 @@ export default function AgentWork() {
             />
           </div>
         )}
-        <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
+                <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
+        {renderSettingsModal()}
       </div>
     );
   }
@@ -1218,16 +1342,24 @@ export default function AgentWork() {
                           ))}
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                          {getContactOptions(current).map((contact) => (
-                            <button
-                              key={contact.key}
-                              onClick={() => handleDial(contact.key, current.id)}
-                              className="flex items-center justify-center gap-1.5 py-2.5 bg-green-600 text-white rounded-lg text-sm"
-                              title={contact.phone}
-                            >
-                              <Phone className="w-4 h-4" /> {contact.label} {contact.name}
-                            </button>
-                          ))}
+                          {getContactOptions(current).map((contact) => {
+                            const dc = dialCheckByStudent[current.id];
+                            const cnt = dc?.count ?? 0;
+                            const warn = cnt >= 3;
+                            return (
+                              <button
+                                key={contact.key}
+                                onClick={() => handleDial(contact.key, current.id)}
+                                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm text-white ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                                title={contact.phone}
+                              >
+                                <Phone className="w-4 h-4" /> {contact.label} {contact.name}
+                                {dc && (
+                                  <span className="text-[10px] opacity-90">(24h 已 {cnt} 次)</span>
+                                )}
+                              </button>
+                            );
+                          })}
                           {getContactOptions(current).length === 0 && (
                             <button
                               disabled
@@ -1498,6 +1630,9 @@ export default function AgentWork() {
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
+                            {detailNotes[noteIdx].source === 'ai' && (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
+                            )}
                             <span className="text-xs font-medium">
                               {detailNotes[noteIdx].agent_name}
                             </span>
@@ -1609,6 +1744,9 @@ export default function AgentWork() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
+                          {detailNotes[noteIdx].source === 'ai' && (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
+                          )}
                           <span className="text-xs font-medium">{detailNotes[noteIdx].agent_name}</span>
                           <span className="text-xs text-gray-400">{detailNotes[noteIdx].created_at}</span>
                         </div>
@@ -1644,7 +1782,8 @@ export default function AgentWork() {
             </div>
           </div>
         )}
-        <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
+                <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
+        {renderSettingsModal()}
       </div>
     </div>
   );
