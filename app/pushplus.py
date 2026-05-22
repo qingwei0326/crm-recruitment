@@ -60,6 +60,30 @@ async def send_pushplus_message(db: AsyncSession, title: str, content: str) -> b
         return False
 
 
+async def send_pushplus_to_user(
+    db: AsyncSession,
+    user_id: int,
+    title: str,
+    content: str,
+) -> bool:
+    """优先用 User.pushplus_token 推送给个人，失败/未设置时回退到全局 token。"""
+    user_token = ""
+    if user_id:
+        result = await db.execute(select(User.pushplus_token).where(User.id == user_id))
+        user_token = (result.scalar_one_or_none() or "").strip()
+
+    token = user_token or await get_pushplus_token(db)
+    if not token:
+        return False
+
+    try:
+        await asyncio.to_thread(_send_pushplus_sync, token, title, content)
+        return True
+    except (URLError, TimeoutError, RuntimeError, OSError) as exc:
+        logger.warning("PushPlus user-send failed (user_id=%s): %s", user_id, exc)
+        return False
+
+
 async def notify_a_level_change(
     db: AsyncSession,
     student: Student,

@@ -63,6 +63,14 @@ class VisitStatus(enum.StrEnum):
     cancelled = "已取消"
 
 
+class EnrollmentSubStage(enum.StrEnum):
+    deposit_pending = "定金待缴"
+    full_payment_pending = "全款待缴"
+    full_payment_received = "已缴全款"
+    registered = "入学注册"
+    churned = "流失"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -75,6 +83,7 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
     service_regions = Column(String(512), default="", nullable=False)
+    pushplus_token = Column(String(64), default="", nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     students = relationship("Student", back_populates="assigned_agent", lazy="dynamic")
@@ -108,6 +117,7 @@ class Student(Base):
     need_help = Column(Boolean, default=False, nullable=False)
     expired_at = Column(Date, nullable=True)
     assigned_at = Column(DateTime, nullable=True)
+    enrollment_substage = Column(SAEnum(EnrollmentSubStage), nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -148,7 +158,9 @@ class Note(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     content = Column(Text, nullable=False)
+    source = Column(String(16), default="human", nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
     student = relationship("Student", back_populates="notes")
     agent = relationship("User", back_populates="notes")
@@ -231,3 +243,14 @@ class LoginAttempt(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     ip = Column(String(64), nullable=False, index=True)
     attempted_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+
+
+class DialLog(Base):
+    """拨号记录，用于全局 24h 防撞号。每次成功获取明文电话即记录一行。"""
+
+    __tablename__ = "dial_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False, index=True)
+    agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    dialed_at = Column(DateTime, default=func.now(), nullable=False, index=True)

@@ -9,6 +9,7 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
     Call,
+    EnrollmentSubStage,
     FollowUp,
     IntentLevel,
     Note,
@@ -409,6 +410,42 @@ async def trend_data(
         })
 
     return Response.ok({"daily": daily, "start": str(start), "end": str(end)})
+
+
+@router.get("/enrollment-substage-distribution")
+async def enrollment_substage_distribution(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """报名后子阶段分布 + 流失率。"""
+    result = await db.execute(
+        select(Student.enrollment_substage, func.count(Student.id))
+        .where(Student.status == StudentStatus.enrolled)
+        .group_by(Student.enrollment_substage)
+    )
+    rows = result.all()
+
+    distribution: dict[str, int] = {e.value: 0 for e in EnrollmentSubStage}
+    distribution["未设置"] = 0
+    total = 0
+    for substage, count in rows:
+        total += count
+        if substage is None:
+            distribution["未设置"] += count
+        else:
+            distribution[str(substage)] = count
+
+    churned = distribution.get(EnrollmentSubStage.churned.value, 0)
+    churn_rate = round(churned / total * 100, 2) if total else 0.0
+
+    return Response.ok(
+        {
+            "total_enrolled": total,
+            "distribution": distribution,
+            "churned": churned,
+            "churn_rate": churn_rate,
+        }
+    )
 
 
 @router.get("/predict-conversion/{student_id}")

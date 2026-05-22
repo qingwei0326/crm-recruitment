@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import useIsMobile from '../hooks/useIsMobile';
 import { LogIn, UserCheck, Sun, Moon } from 'lucide-react';
 
 export default function Login() {
@@ -11,6 +12,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const { dark, toggle } = useTheme();
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -20,7 +22,13 @@ export default function Login() {
     setError('');
     try {
       const user = await login(username, password);
-      navigate(user.role === 'admin' ? '/admin' : '/agent');
+      if (user.role === 'admin') {
+        navigate('/admin');
+      } else if (user.role === 'agent') {
+        navigate(isMobile ? '/mobile' : '/agent');
+      } else {
+        navigate('/login');
+      }
     } catch (err) {
       setError(err.message || '登录失败');
     } finally {

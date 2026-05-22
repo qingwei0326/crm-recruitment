@@ -33,12 +33,14 @@ import {
   Download,
   ChevronDown,
   Edit3,
+  ExternalLink,
 } from 'lucide-react';
 
 const STATUS_OPTS = ['', '未联系', '已联系', '待回访', '已完成', '无效', '已报名', '拒绝接听', '已过期'];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
 const STAGE_STAT_KEYS = ['未分配', ...STAGES];
+const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 const emptyStudentForm = {
@@ -456,6 +458,18 @@ export default function LeadsManage() {
     refreshExpand();
   };
 
+  const handleSubstageChange = async (id, value) => {
+    try {
+      await api.put(`/students/${id}/enrollment-substage`, {
+        enrollment_substage: value === '' ? null : value,
+      });
+      refreshExpand();
+      fetchStudents(page);
+    } catch (e) {
+      alert('更新报名后状态失败: ' + getApiErrorMessage(e));
+    }
+  };
+
   const handleEnroll = async (id) => {
     const data = expandCache[id]?.student;
     if (!data) return;
@@ -572,8 +586,11 @@ export default function LeadsManage() {
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {notes.map((n) => (
-                      <div key={n.id} className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
+                      <div key={n.id} className={`rounded-lg px-3 py-2 border ${n.source === 'ai' ? 'bg-purple-50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-gray-800 dark:border-gray-700'}`}>
                         <div className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
+                          {n.source === 'ai' && (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
+                          )}
                           <span className="font-medium text-gray-600 dark:text-gray-300">{n.agent_name}</span>
                           <span>{n.created_at}</span>
                         </div>
@@ -728,6 +745,14 @@ export default function LeadsManage() {
 
               {/* Action buttons */}
               <div className="flex gap-2 pt-1 border-t dark:border-gray-600 pt-3">
+                <Link
+                  to={`/admin/leads/${s.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs hover:bg-blue-100 dark:hover:bg-blue-900/50"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  查看详情
+                </Link>
                 <button
                   onClick={() => {
                     setEditStudent({
@@ -778,6 +803,25 @@ export default function LeadsManage() {
                     <div>定金: {s.deposit != null ? s.deposit : '-'}</div>
                     <div>报名日: {s.enrolled_at || '-'}</div>
                   </div>
+                  {user?.role === 'admin' && (
+                    <div className="flex items-center gap-2 pt-2 border-t border-green-200 dark:border-green-800">
+                      <label className="text-xs text-green-700 dark:text-green-300 font-medium">
+                        报名后状态
+                      </label>
+                      <select
+                        value={s.enrollment_substage || ''}
+                        onChange={(e) => handleSubstageChange(s.id, e.target.value)}
+                        className={`${inputCls} text-xs flex-1`}
+                      >
+                        <option value="">(清空)</option>
+                        {ENROLLMENT_SUBSTAGES.map((o) => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -822,6 +866,14 @@ export default function LeadsManage() {
             <div className="flex items-center gap-1.5">
               <span className="text-gray-900 dark:text-gray-100">{l.name}</span>
               {l.need_help && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
+              <Link
+                to={`/admin/leads/${l.id}`}
+                onClick={(e) => e.stopPropagation()}
+                title="查看详情"
+                className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
             </div>
           </td>
           <td className="px-2 py-2.5 hidden md:table-cell">

@@ -73,8 +73,10 @@ async def list_notes(
             {
                 "id": n.id,
                 "content": n.content,
+                "source": n.source,
                 "agent_name": agent.name if agent else "",
                 "created_at": str(n.created_at),
+                "updated_at": str(n.updated_at),
             }
         )
     return Response.ok(data)

@@ -52,7 +52,13 @@ class ConfigUpdateReq(BaseModel):
     value: str
 
 
-ALLOWED_CONFIG_KEYS = {"pushplus_token", "stale_days"}
+ALLOWED_CONFIG_KEYS = {
+    "pushplus_token",
+    "stale_days",
+    "dial_window_start",
+    "dial_window_end",
+    "dial_max_per_24h",
+}
 
 
 def to_datetime(value):
