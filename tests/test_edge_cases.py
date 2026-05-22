@@ -293,25 +293,6 @@ class TestVisitEndpoints:
 
 
 @pytest.mark.asyncio
-class TestTemplateEndpoints:
-    async def test_create_template(self, client, admin_headers):
-        resp = await client.post("/api/templates", json={
-            "title": "测试模板", "content": "尊敬的家长，您好...", "category": "通用",
-        }, headers=admin_headers)
-        assert resp.json()["code"] == 0
-
-    async def test_create_template_empty_title(self, client, admin_headers):
-        resp = await client.post("/api/templates", json={
-            "title": "", "content": "content",
-        }, headers=admin_headers)
-        assert resp.status_code == 422
-
-    async def test_list_templates(self, client, admin_headers):
-        resp = await client.get("/api/templates", headers=admin_headers)
-        assert resp.json()["code"] == 0
-
-
-@pytest.mark.asyncio
 class TestFollowUpEndpoints:
     async def test_create_follow_up(self, client, admin_headers, sample_student):
         resp = await client.post("/api/follow-ups", json={

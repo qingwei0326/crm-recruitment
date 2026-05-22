@@ -42,7 +42,11 @@ if (-not $env:SECRET_KEY) {
 $env:DATABASE_PATH = Join-Path $Root "crm.db"
 $env:FRONTEND_DIR = Join-Path $Root "frontend\dist"
 $env:PYTHONNOUSERSITE = "1"
-$env:CORS_ORIGINS = if ($env:CORS_ORIGINS) { $env:CORS_ORIGINS } else { "http://127.0.0.1:8000,http://localhost:8000,http://192.168.8.2:8000" }
+$env:CORS_ORIGINS = if ($env:CORS_ORIGINS) { $env:CORS_ORIGINS } else { "http://127.0.0.1:8000,http://localhost:8000,https://crm.qing-wei.com" }
+# 通过 Cloudflare Tunnel 接入，必须信任代理头才能拿到真实 IP（限流/审计才正确）
+if (-not $env:TRUST_PROXY_HEADERS) { $env:TRUST_PROXY_HEADERS = "1" }
+# 仅经 https://crm.qing-wei.com 暴露，cookie 走 HTTPS 才有效
+if (-not $env:COOKIE_SECURE) { $env:COOKIE_SECURE = "1" }
 
 # Load .env if exists
 $EnvFile = Join-Path $Root ".env"
@@ -104,10 +108,26 @@ foreach ($PidFile in @($BackendPidFile, $ForwardPidFile)) {
     }
 }
 
+# 日志轮转：旧进程已经停了，这是唯一能安全改 *.log 的时机
+$MaxLogSize = 5MB
+Get-ChildItem -Path $Root -Filter "*.log" -File -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Length -gt $MaxLogSize) {
+        $OldPath = "$($_.FullName).old"
+        if (Test-Path $OldPath) { Remove-Item $OldPath -Force -ErrorAction SilentlyContinue }
+        Move-Item -LiteralPath $_.FullName -Destination $OldPath -Force -ErrorAction SilentlyContinue
+        Write-Host "Rotated log: $($_.Name) -> $($_.Name).old"
+    }
+}
+# 顺手清理 30 天前的 .log.old
+$Cutoff = (Get-Date).AddDays(-30)
+Get-ChildItem -Path $Root -Filter "*.log.old" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt $Cutoff } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
 Write-Host "Starting crm-backend hidden..."
 $Backend = Start-Process `
     -FilePath $Python `
-    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000") `
+    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") `
     -WorkingDirectory $Root `
     -WindowStyle Hidden `
     -RedirectStandardOutput (Join-Path $Root "backend_out.log") `
@@ -130,4 +150,4 @@ if ($NodeCommand) {
 }
 
 Write-Host "Ready: http://127.0.0.1:8000"
-Write-Host "LAN:   http://192.168.8.2:8000"
+Write-Host "Public (via Cloudflare Tunnel): https://crm.qing-wei.com"

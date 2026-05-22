@@ -20,7 +20,6 @@ from app.routers import (
     stats,
     students,
     tasks,
-    templates,
     visits,
 )
 from app.scheduler import follow_up_reminder_scheduler
@@ -69,7 +68,6 @@ app.include_router(tasks.router)
 app.include_router(admin.router)
 app.include_router(visits.router)
 app.include_router(operation_logs.router)
-app.include_router(templates.router)
 
 
 @app.get("/api/health")

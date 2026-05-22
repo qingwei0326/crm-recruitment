@@ -197,19 +197,6 @@ class Visit(Base):
     agent = relationship("User", backref="visits")
 
 
-class MessageTemplate(Base):
-    __tablename__ = "message_templates"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    title = Column(String(128), nullable=False)
-    content = Column(Text, nullable=False)
-    category = Column(String(32), default="通用")
-    is_active = Column(Boolean, default=True, nullable=False)
-    sort_order = Column(Integer, default=0)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-
-
 class OperationLog(Base):
     __tablename__ = "operation_logs"
 

@@ -13,7 +13,9 @@
 # ============================================================
 
 tunnel: <TUNNEL_ID>          # Replace with: cloudflared tunnel list
-credentials-file: C:\Users\Administrator\.cloudflared\<TUNNEL_ID>.json
+# Replace <USERNAME> with the actual Windows user running cloudflared on this machine
+# (e.g. Administrator, qingwei). Get it with: echo %USERPROFILE%
+credentials-file: C:\Users\<USERNAME>\.cloudflared\<TUNNEL_ID>.json
 
 ingress:
   # Map the public CRM domain to the local J1900 CRM service

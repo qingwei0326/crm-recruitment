@@ -18,7 +18,6 @@ import {
   Loader2,
   ThumbsUp,
   Target,
-  MessageSquare,
   BarChart3,
   Calendar,
   CheckCheck,
@@ -201,10 +200,6 @@ export default function AgentWork() {
   // Follow-up lock after dial
   const [lockedStudentId, setLockedStudentId] = useState(null);
 
-  // Templates
-  const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState(false);
-
   // Backlog alert (一天一次)
   const [backlogAlert, setBacklogAlert] = useState(null);
 
@@ -249,13 +244,6 @@ export default function AgentWork() {
         .catch(() => setPrediction(null));
     }
   }, [students, currentIdx]);
-
-  useEffect(() => {
-    api
-      .get('/templates')
-      .then((r) => setTemplates(r.data.data || []))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -746,39 +734,6 @@ export default function AgentWork() {
                         </button>
                       </div>
                       <div className="flex gap-2 relative">
-                        <button
-                          onClick={() => setShowTemplates(!showTemplates)}
-                          className="px-2.5 py-2 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg text-sm whitespace-nowrap shrink-0"
-                          title="模板消息"
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                        </button>
-                        {showTemplates && (
-                          <div className="absolute bottom-full left-0 mb-1 w-56 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg shadow-lg z-20 max-h-44 overflow-y-auto">
-                            {templates.map((t) => (
-                              <button
-                                key={t.id}
-                                onClick={() => {
-                                  setNoteText(t.content);
-                                  setShowTemplates(false);
-                                }}
-                                className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 border-b dark:border-gray-600 last:border-0"
-                              >
-                                <div className="font-medium text-gray-800 dark:text-gray-200 text-xs">
-                                  {t.title}
-                                </div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                                  {t.content}
-                                </div>
-                              </button>
-                            ))}
-                            {templates.length === 0 && (
-                              <div className="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
-                                暂无模板
-                              </div>
-                            )}
-                          </div>
-                        )}
                         <input
                           value={noteText}
                           onChange={(e) => setNoteText(e.target.value)}
@@ -1290,39 +1245,6 @@ export default function AgentWork() {
                           </button>
                         </div>
                         <div className="flex gap-2 relative">
-                          <button
-                            onClick={() => setShowTemplates(!showTemplates)}
-                            className="px-2.5 py-2 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg text-sm shrink-0"
-                            title="模板消息"
-                          >
-                            <MessageSquare className="w-4 h-4" />
-                          </button>
-                          {showTemplates && (
-                            <div className="absolute bottom-full left-0 mb-1 w-56 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg shadow-lg z-20 max-h-44 overflow-y-auto">
-                              {templates.map((t) => (
-                                <button
-                                  key={t.id}
-                                  onClick={() => {
-                                    setNoteText(t.content);
-                                    setShowTemplates(false);
-                                  }}
-                                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 border-b dark:border-gray-600 last:border-0"
-                                >
-                                  <div className="font-medium text-gray-800 dark:text-gray-200 text-xs">
-                                    {t.title}
-                                  </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                                    {t.content}
-                                  </div>
-                                </button>
-                              ))}
-                              {templates.length === 0 && (
-                                <div className="px-3 py-2 text-sm text-gray-400 dark:text-gray-500">
-                                  暂无模板
-                                </div>
-                              )}
-                            </div>
-                          )}
                           <input
                             value={noteText}
                             onChange={(e) => setNoteText(e.target.value)}
