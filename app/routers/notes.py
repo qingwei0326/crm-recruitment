@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Note, Student, User
+from app.models import Note, Student, User, UserRole
 from app.permissions import get_accessible_student
-from app.schemas import NoteCreate, Response
+from app.schemas import NoteCreate, NoteUpdate, Response
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/notes", tags=["备注"])
@@ -78,3 +78,76 @@ async def list_notes(
             }
         )
     return Response.ok(data)
+
+
+async def _get_note_for_modify(db: AsyncSession, note_id: int, user: User) -> Note:
+    result = await db.execute(select(Note).where(Note.id == note_id))
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="备注不存在")
+    if user.role != UserRole.admin and note.agent_id != user.id:
+        raise HTTPException(status_code=403, detail="无权修改他人的备注")
+    return note
+
+
+@router.put("/{note_id}")
+async def update_note(
+    note_id: int,
+    body: NoteUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    note = await _get_note_for_modify(db, note_id, current_user)
+    student_r = await db.execute(select(Student).where(Student.id == note.student_id))
+    student = student_r.scalar_one_or_none()
+
+    old_content = note.content
+    note.content = body.content
+
+    db.add(
+        make_operation_log(
+            current_user,
+            note.student_id,
+            student.case_no if student else "",
+            "修改备注",
+            content=f"备注 #{note.id}",
+            old_status="",
+            new_status="",
+            note_content=f"原: {old_content[:200]} | 新: {body.content[:200]}",
+        )
+    )
+    await db.commit()
+    await db.refresh(note)
+    return Response.ok(
+        {
+            "id": note.id,
+            "student_id": note.student_id,
+            "content": note.content,
+            "created_at": str(note.created_at),
+        }
+    )
+
+
+@router.delete("/{note_id}")
+async def delete_note(
+    note_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    note = await _get_note_for_modify(db, note_id, current_user)
+    student_r = await db.execute(select(Student).where(Student.id == note.student_id))
+    student = student_r.scalar_one_or_none()
+
+    db.add(
+        make_operation_log(
+            current_user,
+            note.student_id,
+            student.case_no if student else "",
+            "删除备注",
+            content=f"删除备注 #{note.id}",
+            note_content=note.content[:200],
+        )
+    )
+    await db.delete(note)
+    await db.commit()
+    return Response.ok({"deleted": note_id})

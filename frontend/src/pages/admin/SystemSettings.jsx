@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, Save, Settings2 } from 'lucide-react';
+import { Download, Eye, EyeOff, RefreshCw, Save, Settings2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -40,8 +40,41 @@ export default function SystemSettings() {
   const [daysMessage, setDaysMessage] = useState(null);
   const [savingToken, setSavingToken] = useState(false);
   const [savingDays, setSavingDays] = useState(false);
+  const [backups, setBackups] = useState([]);
+  const [backupMessage, setBackupMessage] = useState(null);
+  const [backingUp, setBackingUp] = useState(false);
 
   const closeSidebar = () => setSidebarOpen(false);
+
+  const loadBackups = async () => {
+    try {
+      const res = await api.get('/admin/backups');
+      setBackups(res.data.data || []);
+    } catch {
+      // 静默失败，下次刷新自然重试
+    }
+  };
+
+  const triggerBackup = async () => {
+    setBackupMessage(null);
+    setBackingUp(true);
+    try {
+      await api.post('/admin/backups');
+      setBackupMessage({ type: 'success', text: '备份已生成' });
+      await loadBackups();
+    } catch (err) {
+      setBackupMessage({ type: 'error', text: err.response?.data?.msg || '备份失败' });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const formatBytes = (n) => {
+    if (!n && n !== 0) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  };
 
   const loadConfig = async () => {
     setLoading(true);
@@ -57,6 +90,7 @@ export default function SystemSettings() {
 
   useEffect(() => {
     loadConfig().catch(() => setLoading(false));
+    loadBackups();
   }, []);
 
   const saveToken = async () => {
@@ -217,6 +251,55 @@ export default function SystemSettings() {
                   <RowMessage state={daysMessage} />
                 </div>
               </SettingRow>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
+            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center justify-between">
+              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">数据备份</h1>
+              <button
+                type="button"
+                onClick={triggerBackup}
+                disabled={backingUp}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${backingUp ? 'animate-spin' : ''}`} />
+                {backingUp ? '备份中…' : '立即备份'}
+              </button>
+            </div>
+            <div className="p-4 lg:p-6">
+              <RowMessage state={backupMessage} />
+              {backups.length === 0 ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400 py-4">
+                  暂无备份。系统每 6 小时自动备份一次，也可点击"立即备份"手动触发。
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {backups.map((b) => (
+                    <li
+                      key={b.name}
+                      className="py-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                          {b.name}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {b.modified_at?.replace('T', ' ').slice(0, 19)} · {formatBytes(b.size)}
+                        </div>
+                      </div>
+                      <a
+                        href={`/api/admin/backups/${encodeURIComponent(b.name)}`}
+                        download
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        <Download className="w-4 h-4" />
+                        下载
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>

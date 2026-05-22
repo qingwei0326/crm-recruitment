@@ -1,9 +1,0 @@
-{
-  "scripts": {
-    "start": "powershell -ExecutionPolicy Bypass -File ./start.ps1",
-    "stop": "powershell -ExecutionPolicy Bypass -File ./stop.ps1"
-  },
-  "devDependencies": {
-    "pm2": "^7.0.1"
-  }
-}

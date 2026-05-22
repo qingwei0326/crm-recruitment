@@ -4,16 +4,13 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($env:CRM_PYTHON) {
     $Python = $env:CRM_PYTHON
 } else {
-    $PythonCandidates = @(
-        (Join-Path $Root ".venv-win\Scripts\python.exe"),
-        (Join-Path $Root "venv\Scripts\python.exe")
-    )
-
-    $Python = $PythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $Python) {
+    $VenvPython = Join-Path $Root ".venv-win\Scripts\python.exe"
+    if (Test-Path $VenvPython) {
+        $Python = $VenvPython
+    } else {
         $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
         if (-not $PythonCommand) {
-            throw "Python interpreter not found. Create .venv-win/venv or set CRM_PYTHON to your Python path."
+            throw "Python interpreter not found. Create .venv-win or set CRM_PYTHON to your Python path."
         }
         $Python = $PythonCommand.Source
     }
@@ -29,16 +26,6 @@ $PyDeps = Join-Path $Root ".pydeps"
 if (Test-Path $PyDeps) {
     $env:PYTHONNOUSERSITE = "1"
     $env:PYTHONPATH = if ($env:PYTHONPATH) { "$PyDeps;$env:PYTHONPATH" } else { $PyDeps }
-}
-
-$LocalPm2 = Join-Path $Root "node_modules\.bin\pm2.cmd"
-if (Test-Path $LocalPm2) {
-    $Pm2 = $LocalPm2
-} else {
-    $Pm2Command = Get-Command pm2 -ErrorAction SilentlyContinue
-    if ($Pm2Command) {
-        $Pm2 = $Pm2Command.Source
-    }
 }
 
 if (-not $env:SECRET_KEY) {
@@ -103,14 +90,6 @@ try {
     }
 } finally {
     Pop-Location
-}
-
-if ($Pm2) {
-    try {
-        & $Pm2 stop crm-backend crm-lan-forward *> $null
-    } catch {
-        Write-Warning "PM2 stop skipped: $($_.Exception.Message)"
-    }
 }
 
 $BackendPidFile = Join-Path $Root "backend.pid"

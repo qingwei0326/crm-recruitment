@@ -41,7 +41,7 @@ class TestCreateStudent:
 
     async def test_create_unauthorized(self, client):
         resp = await client.post("/api/students", json={"name": "赵六"})
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     async def test_create_unicode_name(self, client, admin_headers):
         resp = await client.post("/api/students", json={

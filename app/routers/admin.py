@@ -1,15 +1,17 @@
 import os
 import secrets
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, require_admin
-from app.utils import today_cst_as_utc, utcnow
+from app.backup import BACKUP_DIR, do_backup_async
+from app.utils import make_operation_log, today_cst_as_utc, utcnow
 from app.database import get_db
 from app.models import (
     Call,
@@ -18,6 +20,7 @@ from app.models import (
     Note,
     OperationLog,
     Student,
+    StudentStage,
     StudentStatus,
     SystemConfig,
     User,
@@ -262,7 +265,12 @@ async def stale_reassign(
     now = utcnow()
     distribution: dict[str, int] = {}
 
-    if body.mode == "manual":
+    if body.mode == "recycle":
+        for student in students:
+            student.assigned_to = None
+            student.assigned_at = None
+        distribution["总名单"] = len(students)
+    elif body.mode == "manual":
         if body.agent_id is None:
             return Response.error(code=1, msg="manual mode requires agent_id")
         agent_result = await db.execute(
@@ -290,7 +298,16 @@ async def stale_reassign(
         load = {}
         for agent in agents:
             count_result = await db.execute(
-                select(func.count(Student.id)).where(Student.assigned_to == agent.id)
+                select(func.count(Student.id)).where(
+                    Student.assigned_to == agent.id,
+                    Student.status.not_in(
+                        [
+                            StudentStatus.enrolled,
+                            StudentStatus.expired,
+                            StudentStatus.rejected,
+                        ]
+                    ),
+                )
             )
             load[agent.id] = count_result.scalar() or 0
             distribution[agent.name] = 0
@@ -304,6 +321,7 @@ async def stale_reassign(
             load[agent_id] += 1
             distribution[agent.name] += 1
 
+    log_content = "回收到总名单" if body.mode == "recycle" else "超时未跟进，重新分配"
     for student in students:
         db.add(
             OperationLog(
@@ -312,7 +330,7 @@ async def stale_reassign(
                 target_student_id=student.id,
                 case_no=student.case_no or "",
                 action="线索回收",
-                content="超时未跟进，重新分配",
+                content=log_content,
             )
         )
 
@@ -474,6 +492,16 @@ async def create_user(
         is_active=True,
     )
     db.add(user)
+    await db.flush()
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="创建用户",
+            content=f"创建{body.role} {user.username}({user.name})",
+        )
+    )
     await db.commit()
     await db.refresh(user)
     return Response.ok(
@@ -492,16 +520,54 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         return Response.error(code=1, msg="用户不存在")
-    if body.name is not None:
+
+    changes = []
+    if body.name is not None and body.name != user.name:
+        changes.append(f"姓名 {user.name}→{body.name}")
         user.name = body.name
     if body.role is not None:
-        user.role = UserRole(body.role)
-    if body.is_active is not None:
+        new_role = UserRole(body.role)
+        if new_role != user.role:
+            # 防止把唯一一个 admin 降级
+            if user.role == UserRole.admin and new_role != UserRole.admin:
+                admin_count = (await db.execute(
+                    select(func.count(User.id)).where(
+                        User.role == UserRole.admin, User.is_active
+                    )
+                )).scalar() or 0
+                if admin_count <= 1:
+                    return Response.error(code=1, msg="系统至少需要保留一个管理员")
+            changes.append(f"角色 {user.role}→{new_role}")
+            user.role = new_role
+    if body.is_active is not None and body.is_active != user.is_active:
+        # 防止把唯一一个 admin 停用
+        if user.role == UserRole.admin and user.is_active and not body.is_active:
+            admin_count = (await db.execute(
+                select(func.count(User.id)).where(
+                    User.role == UserRole.admin, User.is_active
+                )
+            )).scalar() or 0
+            if admin_count <= 1:
+                return Response.error(code=1, msg="不能停用最后一个管理员")
+        changes.append("启用" if body.is_active else "停用")
         user.is_active = body.is_active
-    if body.service_regions is not None:
+    if body.service_regions is not None and body.service_regions != user.service_regions:
+        changes.append("修改服务区域")
         user.service_regions = body.service_regions
     if body.password is not None:
+        changes.append("重置密码")
         user.hashed_password = hash_password(body.password)
+
+    if changes:
+        db.add(
+            make_operation_log(
+                current_user,
+                target_student_id=None,
+                case_no="",
+                action="修改用户",
+                content=f"{user.username}: {'; '.join(changes)}",
+            )
+        )
     await db.commit()
     return Response.ok(
         {"id": user.id, "username": user.username, "name": user.name, "is_active": user.is_active}
@@ -520,10 +586,52 @@ async def delete_user(
     user = result.scalar_one_or_none()
     if not user:
         return Response.error(code=1, msg="用户不存在")
+    # 防止删除最后一个 admin
+    if user.role == UserRole.admin:
+        admin_count = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == UserRole.admin, User.is_active
+            )
+        )).scalar() or 0
+        if admin_count <= 1:
+            return Response.error(code=1, msg="不能删除最后一个管理员")
+    # 回收非终态学生：清除分配、状态、意向、阶段，避免新话务员误以为旧记录是自己跟出来的。
+    # 已报名/已过期/拒绝接听 保留原状态作为历史归档。
+    await db.execute(
+        update(Student)
+        .where(
+            Student.assigned_to == user_id,
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                ]
+            ),
+        )
+        .values(
+            assigned_to=None,
+            assigned_at=None,
+            status=StudentStatus.not_contacted,
+            intent_level=IntentLevel.none,
+            stage=StudentStage.initial_contact,
+            need_help=False,
+        )
+    )
+    # 终态学生只解绑话务员，保留状态
     await db.execute(
         update(Student)
         .where(Student.assigned_to == user_id)
         .values(assigned_to=None, assigned_at=None)
+    )
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="删除用户",
+            content=f"删除{user.role} {user.username}({user.name})，非终态学生已重置并回收至池",
+        )
     )
     await db.delete(user)
     await db.commit()
@@ -542,6 +650,15 @@ async def unlock_user(
         return Response.error(code=1, msg="用户不存在")
     user.failed_login_attempts = 0
     user.locked_until = None
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="解锁用户",
+            content=f"解锁 {user.username}",
+        )
+    )
     await db.commit()
     return Response.ok(msg=f"用户 {user.username} 已解锁")
 
@@ -560,10 +677,87 @@ async def reset_user_password(
     user.hashed_password = hash_password(new_password)
     user.failed_login_attempts = 0
     user.locked_until = None
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="重置密码",
+            content=f"重置 {user.username} 的密码",
+        )
+    )
     await db.commit()
     return Response.ok(
         {"new_password": new_password, "msg": f"用户 {user.name} 密码已重置为 {new_password}"}
     )
+
+
+@router.get("/backups")
+async def list_backups(
+    current_user: User = Depends(require_admin),
+):
+    """列出已有备份文件。"""
+    if not os.path.isdir(BACKUP_DIR):
+        return Response.ok([])
+    items = []
+    for fname in os.listdir(BACKUP_DIR):
+        if not (fname.startswith("crm_") and fname.endswith(".db")):
+            continue
+        fpath = os.path.join(BACKUP_DIR, fname)
+        try:
+            st = os.stat(fpath)
+        except OSError:
+            continue
+        items.append(
+            {
+                "name": fname,
+                "size": st.st_size,
+                "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            }
+        )
+    items.sort(key=lambda x: x["modified_at"], reverse=True)
+    return Response.ok(items)
+
+
+@router.post("/backups")
+async def trigger_backup(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """手动触发一次数据库备份。"""
+    await do_backup_async()
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="手动备份",
+            content="管理员手动触发数据库备份",
+        )
+    )
+    await db.commit()
+    return Response.ok({"msg": "备份完成"})
+
+
+@router.get("/backups/{name}")
+async def download_backup(
+    name: str,
+    current_user: User = Depends(require_admin),
+):
+    """下载指定备份文件。"""
+    # 防路径穿越：只允许形如 crm_YYYYMMDD_HHMMSS.db 的文件
+    if (
+        not name.startswith("crm_")
+        or not name.endswith(".db")
+        or "/" in name
+        or "\\" in name
+        or ".." in name
+    ):
+        raise HTTPException(status_code=400, detail="非法的备份文件名")
+    fpath = os.path.join(BACKUP_DIR, name)
+    if not os.path.isfile(fpath):
+        raise HTTPException(status_code=404, detail="备份文件不存在")
+    return FileResponse(fpath, media_type="application/octet-stream", filename=name)
 
 
 @router.post("/expire-check")
@@ -571,19 +765,37 @@ async def check_expired(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """标记过期学生"""
+    """标记过期学生：expired_at 已到期且最后活动早于到期日，且不在终态。"""
     today = date.today()
+    today_dt = datetime(today.year, today.month, today.day)
+
+    last_activity = build_last_activity_subquery()
+    latest_activity_at = func.coalesce(
+        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
+    )
+
     result = await db.execute(
-        select(Student).where(
+        select(Student, latest_activity_at.label("activity_at"))
+        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+        .where(
             Student.expired_at.isnot(None),
             Student.expired_at < today,
-            Student.status == StudentStatus.not_contacted,
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                ]
+            ),
+            # 距离最后活动也已超出 expired_at；纯日期与 datetime 混比，
+            # 用 today_dt 作为活动上限（即活动早于今天 00:00 视为不活跃）。
+            latest_activity_at < today_dt,
         )
     )
-    expired = result.scalars().all()
+    rows = result.all()
     count = 0
-    for s in expired:
-        s.status = StudentStatus.expired
+    for student, _activity_at in rows:
+        student.status = StudentStatus.expired
         count += 1
     await db.commit()
     return Response.ok({"expired_count": count})

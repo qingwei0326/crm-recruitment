@@ -61,7 +61,6 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(auth.api_router)
 app.include_router(students.router)
-app.include_router(students.compat)  # backward compat /api/leads → /api/students
 app.include_router(calls.router)
 app.include_router(notes.router)
 app.include_router(follow_ups.router)

@@ -40,7 +40,7 @@ class StudentCreate(BaseModel):
     stage: str | None = None
     enrolled_at: date | None = None
     program: str | None = None
-    deposit: float | None = None
+    deposit: float | None = Field(default=None, ge=0)
     score: float | None = None
     guardian_name: str | None = None
     guardian_phone: str | None = None
@@ -82,7 +82,7 @@ class StudentUpdate(BaseModel):
     stage: str | None = None
     enrolled_at: date | None = None
     program: str | None = None
-    deposit: float | None = None
+    deposit: float | None = Field(default=None, ge=0)
     score: float | None = None
     guardian_name: str | None = None
     guardian_phone: str | None = None
@@ -121,7 +121,7 @@ class StageUpdate(BaseModel):
 class EnrollInfo(BaseModel):
     enrolled_at: date | None = None
     program: str = Field(default="")
-    deposit: float | None = None
+    deposit: float | None = Field(default=None, ge=0)
 
 
 # ── Call ──────────────────────────────────────────────────
@@ -139,15 +139,15 @@ class CallCreate(BaseModel):
     analyzed_at: datetime | None = None
 
 
-class CallCheck(BaseModel):
-    student_id: int
-
-
 # ── Note ──────────────────────────────────────────────────
 
 
 class NoteCreate(BaseModel):
     student_id: int
+    content: str = Field(..., min_length=1)
+
+
+class NoteUpdate(BaseModel):
     content: str = Field(..., min_length=1)
 
 
@@ -171,7 +171,7 @@ class FollowUpUpdate(BaseModel):
 
 class StaleReassignReq(BaseModel):
     student_ids: list[int]
-    mode: Literal["auto", "manual"]
+    mode: Literal["auto", "manual", "recycle"]
     agent_id: int | None = None
 
 

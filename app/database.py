@@ -1,7 +1,4 @@
-import asyncio
-
 from sqlalchemy import create_engine, event, inspect, text
-from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -21,9 +18,6 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
 if DATABASE_URL.startswith("sqlite"):
     event.listen(engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
     event.listen(sync_engine, "connect", _enable_sqlite_foreign_keys)
-
-RETRY_MAX = 3
-RETRY_BASE_DELAY = 0.1
 
 
 class Base(DeclarativeBase):
@@ -73,18 +67,3 @@ def _drop_legacy_student_phone_column(sync_connection):
             sync_connection.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
     sync_connection.execute(text("ALTER TABLE students DROP COLUMN phone"))
 
-
-async def run_with_retry(db_session_factory, operation, *args, **kwargs):
-    """Execute a DB operation with retry on deadlock/OperationalError."""
-    last_error = None
-    for attempt in range(RETRY_MAX):
-        try:
-            async with db_session_factory() as session:
-                return await operation(session, *args, **kwargs)
-        except OperationalError as e:
-            if "deadlock" in str(e).lower() and attempt < RETRY_MAX - 1:
-                await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
-                last_error = e
-                continue
-            raise
-    raise last_error
