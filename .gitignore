@@ -55,3 +55,6 @@ forward.js
 
 # Project docs
 docs/
+
+# Backups
+backups/
