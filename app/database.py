@@ -37,6 +37,7 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_drop_legacy_student_phone_column)
         await conn.run_sync(_migrate_follow_up_columns)
+        await conn.run_sync(_drop_message_templates_table)
 
 
 def _migrate_follow_up_columns(sync_connection):
@@ -66,4 +67,10 @@ def _drop_legacy_student_phone_column(sync_connection):
             index_name = index["name"].replace('"', '""')
             sync_connection.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
     sync_connection.execute(text("ALTER TABLE students DROP COLUMN phone"))
+
+
+def _drop_message_templates_table(sync_connection):
+    inspector = inspect(sync_connection)
+    if "message_templates" in inspector.get_table_names():
+        sync_connection.execute(text("DROP TABLE message_templates"))
 

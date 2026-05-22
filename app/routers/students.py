@@ -36,6 +36,7 @@ from app.permissions import (
     is_admin,
 )
 from app.pushplus import notify_a_level_change
+from app.region_extractor import extract_region
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
 from app.utils import make_operation_log, mask_phone, utcnow
 
@@ -336,7 +337,7 @@ def _parse_import_row(row, header_map: dict[str, int]) -> tuple[dict | None, str
             score = _parse_import_float(_row_value(row, header_map, "score"), "score")
         except ValueError as exc:
             return None, str(exc)
-        return {
+        parsed = {
             "name": name,
             "region": _clean_import_text(_row_value(row, header_map, "region")),
             "score": score,
@@ -348,12 +349,15 @@ def _parse_import_row(row, header_map: dict[str, int]) -> tuple[dict | None, str
             "school_address": _clean_import_text(_row_value(row, header_map, "school_address")),
             "program": _clean_import_text(_row_value(row, header_map, "program")),
             "join_reasons": _clean_import_text(_row_value(row, header_map, "join_reasons")),
-        }, None
+        }
+    else:
+        parsed = _infer_import_row(row)
+        if not parsed.get("name"):
+            return None, "无法识别姓名"
 
-    inferred = _infer_import_row(row)
-    if not inferred.get("name"):
-        return None, "无法识别姓名"
-    return inferred, None
+    if not parsed.get("region") and parsed.get("school_name"):
+        parsed["region"] = extract_region(parsed["school_name"])
+    return parsed, None
 
 
 @router.post("/import")
@@ -603,9 +607,13 @@ async def create_student(
         if not agent_result.scalar_one_or_none():
             return Response.error(code=1, msg="话务员不存在或已禁用")
 
+    region_value = body.region
+    if not region_value and body.school_name:
+        region_value = extract_region(body.school_name)
+
     student = Student(
         name=body.name,
-        region=body.region,
+        region=region_value,
         assigned_to=assigned_to,
         assigned_at=utcnow() if assigned_to else None,
         status=status,

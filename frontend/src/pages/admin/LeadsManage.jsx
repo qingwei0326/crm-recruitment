@@ -20,7 +20,6 @@ import {
   Square,
   Users,
   Plus,
-  MessageSquare,
   Clock,
   Loader2,
   Calendar,
@@ -139,7 +138,6 @@ export default function LeadsManage() {
   const [showImport, setShowImport] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
-  const [showTemplateMgr, setShowTemplateMgr] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
   // Expand
@@ -175,12 +173,6 @@ export default function LeadsManage() {
   // Inline note
   const [noteText, setNoteText] = useState({});
   const [followUpDate, setFollowUpDate] = useState({});
-
-  // Templates
-  const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState({});
-  const [newTemplate, setNewTemplate] = useState({ title: '', content: '', category: '通用' });
-  const [editingTemplate, setEditingTemplate] = useState(null);
 
   // Edit modal
   const [editStudent, setEditStudent] = useState(null);
@@ -220,7 +212,6 @@ export default function LeadsManage() {
   useEffect(() => {
     api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch(() => {});
     api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch(() => {});
-    fetchTemplates();
   }, []);
 
   useEffect(() => {
@@ -254,10 +245,6 @@ export default function LeadsManage() {
       cancelled = true;
     };
   }, [showSchoolAssign, schoolAssignRegions]);
-
-  const fetchTemplates = () => {
-    api.get('/templates/all').then((r) => setTemplates(r.data.data || [])).catch(() => {});
-  };
 
   const loadExpandData = async (id) => {
     setExpandCache((prev) => {
@@ -490,30 +477,6 @@ export default function LeadsManage() {
     refreshExpand();
   };
 
-  // Templates
-  const addTemplate = async () => {
-    if (!newTemplate.title || !newTemplate.content) return;
-    await api.post('/templates', newTemplate);
-    setNewTemplate({ title: '', content: '', category: '通用' });
-    fetchTemplates();
-  };
-  const delTemplate = async (id) => {
-    if (!confirm('确认删除此模板？')) return;
-    await api.delete(`/templates/${id}`);
-    fetchTemplates();
-  };
-  const saveTemplateEdit = async () => {
-    if (!editingTemplate?.title || !editingTemplate?.content) return;
-    const { id, title, content, category, is_active } = editingTemplate;
-    await api.put(`/templates/${id}`, { title, content, category, is_active });
-    setEditingTemplate(null);
-    fetchTemplates();
-  };
-  const toggleTemplateActive = async (t) => {
-    await api.put(`/templates/${t.id}`, { is_active: !t.is_active });
-    fetchTemplates();
-  };
-
   const closeSidebar = () => setSidebarOpen(false);
 
   // ── Render helpers ──
@@ -685,38 +648,6 @@ export default function LeadsManage() {
               <div className="border-t dark:border-gray-600 pt-3">
                 <label className="text-xs text-gray-500 mb-1 block">写备注</label>
                 <div className="flex gap-1">
-                  <button
-                    onClick={() =>
-                      setShowTemplates((prev) => ({ ...prev, [s.id]: !prev[s.id] }))
-                    }
-                    className="px-2 py-2 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-lg text-sm shrink-0 relative"
-                    title="模板消息"
-                  >
-                    <MessageSquare className="w-4 h-4" />
-                    {showTemplates[s.id] && (
-                      <div className="absolute bottom-full left-0 mb-1 w-56 bg-white dark:bg-gray-700 border dark:border-gray-600 rounded-lg shadow-lg z-20 max-h-44 overflow-y-auto">
-                        {templates
-                          .filter((t) => t.is_active !== false)
-                          .map((t) => (
-                            <button
-                              key={t.id}
-                              onClick={() => {
-                                setNoteText((prev) => ({ ...prev, [s.id]: t.content }));
-                                setShowTemplates((prev) => ({ ...prev, [s.id]: false }));
-                              }}
-                              className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 border-b dark:border-gray-600 last:border-0"
-                            >
-                              <div className="font-medium text-gray-800 dark:text-gray-200 text-xs">
-                                {t.title}
-                              </div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                                {t.content}
-                              </div>
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </button>
                   <input
                     value={noteText[s.id] || ''}
                     onChange={(e) => setNoteText((prev) => ({ ...prev, [s.id]: e.target.value }))}
@@ -1029,15 +960,6 @@ export default function LeadsManage() {
           <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
             <Search className="w-4 h-4" /> 学生管理
           </div>
-          <button
-            onClick={() => {
-              setShowTemplateMgr(true);
-              closeSidebar();
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <MessageSquare className="w-4 h-4" /> 模板消息
-          </button>
         </nav>
         <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
           <button
@@ -1415,104 +1337,6 @@ export default function LeadsManage() {
                 {agents.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
               </select>
               <button onClick={handleAssign} disabled={!assignAgentId} className="w-full py-2.5 bg-green-600 text-white rounded-lg text-sm disabled:opacity-50">确认分配</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Template Management */}
-      {showTemplateMgr && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowTemplateMgr(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b dark:border-gray-700 shrink-0">
-              <h3 className="text-lg font-semibold">模板消息管理</h3>
-              <button onClick={() => setShowTemplateMgr(false)}><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div className="space-y-3 border dark:border-gray-700 rounded-lg p-4">
-                <h4 className="text-sm font-semibold">新建模板</h4>
-                <input value={newTemplate.title} onChange={(e) => setNewTemplate({ ...newTemplate, title: e.target.value })} placeholder="模板标题" className={inputCls} />
-                <textarea value={newTemplate.content} onChange={(e) => setNewTemplate({ ...newTemplate, content: e.target.value })} placeholder="模板内容" className={`${inputCls} h-20 resize-none`} rows={3} />
-                <div className="flex gap-2">
-                  <select value={newTemplate.category} onChange={(e) => setNewTemplate({ ...newTemplate, category: e.target.value })} className={`${inputCls} w-auto`}>
-                    <option>通用</option><option>初次联系</option><option>跟进</option><option>回访</option><option>报名</option>
-                  </select>
-                  <button onClick={addTemplate} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm shrink-0">添加</button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {templates.length === 0 ? (
-                  <div className="text-center text-gray-400 py-4 text-sm">暂无模板</div>
-                ) : (
-                  templates.map((t) => (
-                    <div key={t.id} className="flex items-start justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{t.title}</span>
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">{t.category}</span>
-                          {!t.is_active && <span className="text-xs text-red-500">已禁用</span>}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">{t.content}</div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0 mt-1">
-                        <button onClick={() => setEditingTemplate({ ...t })} className="text-blue-500 hover:text-blue-700 text-xs">编辑</button>
-                        <button onClick={() => toggleTemplateActive(t)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs">
-                          {t.is_active ? '停用' : '启用'}
-                        </button>
-                        <button onClick={() => delTemplate(t.id)} className="text-red-400 hover:text-red-600 text-xs">删除</button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Template Modal */}
-      {editingTemplate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col">
-            <div className="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">编辑模板</h3>
-              <button onClick={() => setEditingTemplate(null)}><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-3">
-              <input
-                value={editingTemplate.title}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, title: e.target.value })}
-                placeholder="模板标题"
-                className={inputCls}
-              />
-              <textarea
-                value={editingTemplate.content}
-                onChange={(e) => setEditingTemplate({ ...editingTemplate, content: e.target.value })}
-                placeholder="模板内容"
-                className={`${inputCls} h-32 resize-none`}
-                rows={5}
-              />
-              <div className="flex items-center gap-2">
-                <select
-                  value={editingTemplate.category}
-                  onChange={(e) => setEditingTemplate({ ...editingTemplate, category: e.target.value })}
-                  className={`${inputCls} w-auto`}
-                >
-                  <option>通用</option><option>初次联系</option><option>跟进</option><option>回访</option><option>报名</option>
-                </select>
-                <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={editingTemplate.is_active !== false}
-                    onChange={(e) => setEditingTemplate({ ...editingTemplate, is_active: e.target.checked })}
-                  />
-                  启用
-                </label>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t dark:border-gray-700 flex justify-end gap-2">
-              <button onClick={() => setEditingTemplate(null)} className="px-4 py-2 rounded-lg border dark:border-gray-600 text-sm">取消</button>
-              <button onClick={saveTemplateEdit} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm">保存</button>
             </div>
           </div>
         </div>

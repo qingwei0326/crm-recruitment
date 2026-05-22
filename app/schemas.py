@@ -190,20 +190,3 @@ class VisitUpdate(BaseModel):
     scheduled_date: datetime | None = None
     status: Literal["待确认", "已确认", "已完成", "已取消"] | None = None
     notes: str | None = None
-
-
-# ── Message Template ──────────────────────────────────────
-
-
-class TemplateCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=128)
-    content: str = Field(..., min_length=1)
-    category: str = Field(default="通用")
-
-
-class TemplateUpdate(BaseModel):
-    title: str | None = None
-    content: str | None = None
-    category: str | None = None
-    is_active: bool | None = None
-    sort_order: int | None = None
