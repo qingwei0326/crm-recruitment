@@ -247,9 +247,26 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 - IP 限流从内存迁移至数据库，支持跨进程共享
 - 线索分配：新增回收模式、排除终态学生、按区县筛选学校
 - 回访模块：新增待办回访接口和话务员面板
-- 备注支持编辑/删除
+- 备注支持编辑/删除，模板支持编辑和启用/停用
 - 新增数据库手动备份 API（列表+触发+下载）
 - SystemSettings 支持恢复出厂设置
+
+### v1.1.1（2025-05-22）
+
+- 移除 MessageTemplate 整个模块（模型、路由、UI），数据库迁移清理
+- region_extractor 从学校名自动解析区县（导入和手动创建时）
+- CORS 添加生产域名，cloudflared 配置生产映射
+- students 表 region/school_name 加索引，启动时自动创建
+- 新增拨打限制系统：DialLog 防撞号表、拨号窗口配置、24h 上限
+- 报名后生命周期：EnrollmentSubStage 枚举 + 管理端可编辑 + 报表饼图
+- PushPlus 支持按话务员个人 token 推送
+- 通话检查改为可配置 within_hours 窗口
+- Note 新增 source/updated_at 字段
+- 新增移动端页面（MobileHome, CallForm, StudentDetail）
+- 前端组件化：StatusBadge, IntentLevelBadge 等可复用组件
+- 学校派案 UI 优化：ref 防 race condition、区县人数统计
+- 清理调试产物（backups/ 加入 .gitignore）
+- 日志配置独立为 logging.json，启动脚本适配
 
 ### v1.0.0（2025-03）
 
