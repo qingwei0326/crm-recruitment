@@ -8,11 +8,11 @@ from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
+from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, BCRYPT_ROUNDS, SECRET_KEY
 from app.database import get_db
 from app.models import User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 security = HTTPBearer(auto_error=False)
 
 
@@ -43,7 +43,7 @@ async def get_current_user(
 ) -> User:
     token = credentials.credentials if credentials else access_token
     if not token:
-        raise HTTPException(status_code=403, detail="未登录")
+        raise HTTPException(status_code=401, detail="未登录")
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

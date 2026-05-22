@@ -30,7 +30,6 @@ import {
   BarChart3,
   TrendingUp,
   AlertTriangle,
-  Send,
   Trash2,
   Download,
   ChevronDown,
@@ -140,7 +139,6 @@ export default function LeadsManage() {
   const [showImport, setShowImport] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
-  const [showQuickAssign, setShowQuickAssign] = useState(false);
   const [showTemplateMgr, setShowTemplateMgr] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
@@ -163,15 +161,16 @@ export default function LeadsManage() {
 
   // Assign
   const [assignAgentId, setAssignAgentId] = useState('');
-  const [quickAssignCount, setQuickAssignCount] = useState(0);
-  const [quickAssignAgentId, setQuickAssignAgentId] = useState('');
 
   // School assign
   const [showSchoolAssign, setShowSchoolAssign] = useState(false);
   const [schools, setSchools] = useState([]);
+  const [dispatchRegions, setDispatchRegions] = useState([]);
+  const [schoolAssignRegions, setSchoolAssignRegions] = useState([]);
   const [schoolAssignSchool, setSchoolAssignSchool] = useState('');
   const [schoolAssignAgents, setSchoolAssignAgents] = useState([]);
   const [schoolAssignLoading, setSchoolAssignLoading] = useState(false);
+  const [schoolListLoading, setSchoolListLoading] = useState(false);
 
   // Inline note
   const [noteText, setNoteText] = useState({});
@@ -181,6 +180,7 @@ export default function LeadsManage() {
   const [templates, setTemplates] = useState([]);
   const [showTemplates, setShowTemplates] = useState({});
   const [newTemplate, setNewTemplate] = useState({ title: '', content: '', category: '通用' });
+  const [editingTemplate, setEditingTemplate] = useState(null);
 
   // Edit modal
   const [editStudent, setEditStudent] = useState(null);
@@ -222,6 +222,38 @@ export default function LeadsManage() {
     api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch(() => {});
     fetchTemplates();
   }, []);
+
+  useEffect(() => {
+    if (!showSchoolAssign) return;
+    if (schoolAssignRegions.length === 0) {
+      setSchools([]);
+      setSchoolAssignSchool('');
+      return;
+    }
+    let cancelled = false;
+    setSchoolListLoading(true);
+    const params = new URLSearchParams();
+    schoolAssignRegions.forEach((r) => params.append('regions', r));
+    api
+      .get(`/students/schools?${params.toString()}`)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.data.code === 0) {
+          const list = res.data.data || [];
+          setSchools(list);
+          setSchoolAssignSchool((prev) => (list.find((s) => s.name === prev) ? prev : ''));
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) alert('学校列表加载失败: ' + getApiErrorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setSchoolListLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSchoolAssign, schoolAssignRegions]);
 
   const fetchTemplates = () => {
     api.get('/templates/all').then((r) => setTemplates(r.data.data || [])).catch(() => {});
@@ -332,39 +364,33 @@ export default function LeadsManage() {
     refreshExpand();
   };
 
-  const handleQuickAssign = async () => {
-    if (!quickAssignAgentId || quickAssignCount < 1) return;
-    const res = await api.get(`/students?page_size=${quickAssignCount}&assignment=unassigned`);
-    const ids = (res.data.data?.list || []).map((s) => s.id).slice(0, quickAssignCount);
-    if (ids.length === 0) return alert('没有未分配的学生');
-    await api.post('/students/assign', { student_ids: ids, agent_id: parseInt(quickAssignAgentId) });
-    setShowQuickAssign(false);
-    fetchStudents(page);
-    alert(`已分配 ${ids.length} 名学生`);
-  };
-
   const handleRegionAssign = async () => {
     setSchoolAssignSchool('');
     setSchoolAssignAgents([]);
+    setSchoolAssignRegions([]);
+    setSchools([]);
+    setDispatchRegions([]);
     setShowSchoolAssign(true);
     setSchoolAssignLoading(true);
     try {
-      const res = await api.get('/students/schools');
+      const res = await api.get('/students/dispatch-regions');
       if (res.data.code === 0) {
-        setSchools(res.data.data || []);
+        setDispatchRegions(res.data.data || []);
       }
     } catch (e) {
-      alert('学校列表加载失败: ' + getApiErrorMessage(e));
+      alert('区县列表加载失败: ' + getApiErrorMessage(e));
     } finally {
       setSchoolAssignLoading(false);
     }
   };
 
   const handleSchoolAssign = async () => {
+    if (schoolAssignRegions.length === 0) return alert('请先选择区县');
     if (!schoolAssignSchool) return alert('请选择学校');
     if (schoolAssignAgents.length === 0) return alert('请选择至少一个话务员');
     const res = await api.post('/students/school-assign', {
       school_name: schoolAssignSchool,
+      regions: schoolAssignRegions,
       agent_ids: schoolAssignAgents,
     });
     if (res.data.code === 0) {
@@ -474,6 +500,17 @@ export default function LeadsManage() {
   const delTemplate = async (id) => {
     if (!confirm('确认删除此模板？')) return;
     await api.delete(`/templates/${id}`);
+    fetchTemplates();
+  };
+  const saveTemplateEdit = async () => {
+    if (!editingTemplate?.title || !editingTemplate?.content) return;
+    const { id, title, content, category, is_active } = editingTemplate;
+    await api.put(`/templates/${id}`, { title, content, category, is_active });
+    setEditingTemplate(null);
+    fetchTemplates();
+  };
+  const toggleTemplateActive = async (t) => {
+    await api.put(`/templates/${t.id}`, { is_active: !t.is_active });
     fetchTemplates();
   };
 
@@ -1048,13 +1085,6 @@ export default function LeadsManage() {
               </button>
             )}
             <button
-              onClick={() => setShowQuickAssign(true)}
-              className="flex items-center gap-1 px-3 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium"
-            >
-              <Send className="w-4 h-4" />
-              {!isMobile && '快捷派案'}
-            </button>
-            <button
               onClick={() => {
                 setShowCreate(true);
                 setCreateErr('');
@@ -1258,38 +1288,6 @@ export default function LeadsManage() {
 
       {/* ── Modals ── */}
 
-      {/* Quick Assign */}
-      {showQuickAssign && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowQuickAssign(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">快捷派案</h3>
-              <button onClick={() => setShowQuickAssign(false)}><X className="w-5 h-5" /></button>
-            </div>
-            <div className="space-y-3">
-              <div className="text-sm text-gray-600 dark:text-gray-400">选择话务员和分配数量</div>
-              <select value={quickAssignAgentId} onChange={(e) => setQuickAssignAgentId(e.target.value)} className={inputCls}>
-                <option value="">选择话务员</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} (已分配{a.total_tasks}条)</option>
-                ))}
-              </select>
-              <input
-                type="number" value={quickAssignCount}
-                onChange={(e) => setQuickAssignCount(parseInt(e.target.value) || 0)}
-                placeholder="分配数量" className={inputCls} min={1}
-              />
-              <button
-                onClick={handleQuickAssign}
-                disabled={!quickAssignAgentId || quickAssignCount < 1}
-                className="w-full py-2.5 bg-orange-600 text-white rounded-lg font-medium text-sm disabled:opacity-50"
-              >
-                <Send className="w-4 h-4 inline mr-1" />确认派发
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Import */}
       {showImport && (
@@ -1456,11 +1454,65 @@ export default function LeadsManage() {
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">{t.content}</div>
                       </div>
-                      <button onClick={() => delTemplate(t.id)} className="text-red-400 hover:text-red-600 text-xs shrink-0 mt-1">删除</button>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0 mt-1">
+                        <button onClick={() => setEditingTemplate({ ...t })} className="text-blue-500 hover:text-blue-700 text-xs">编辑</button>
+                        <button onClick={() => toggleTemplateActive(t)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-xs">
+                          {t.is_active ? '停用' : '启用'}
+                        </button>
+                        <button onClick={() => delTemplate(t.id)} className="text-red-400 hover:text-red-600 text-xs">删除</button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Template Modal */}
+      {editingTemplate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">编辑模板</h3>
+              <button onClick={() => setEditingTemplate(null)}><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
+              <input
+                value={editingTemplate.title}
+                onChange={(e) => setEditingTemplate({ ...editingTemplate, title: e.target.value })}
+                placeholder="模板标题"
+                className={inputCls}
+              />
+              <textarea
+                value={editingTemplate.content}
+                onChange={(e) => setEditingTemplate({ ...editingTemplate, content: e.target.value })}
+                placeholder="模板内容"
+                className={`${inputCls} h-32 resize-none`}
+                rows={5}
+              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={editingTemplate.category}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, category: e.target.value })}
+                  className={`${inputCls} w-auto`}
+                >
+                  <option>通用</option><option>初次联系</option><option>跟进</option><option>回访</option><option>报名</option>
+                </select>
+                <label className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={editingTemplate.is_active !== false}
+                    onChange={(e) => setEditingTemplate({ ...editingTemplate, is_active: e.target.checked })}
+                  />
+                  启用
+                </label>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t dark:border-gray-700 flex justify-end gap-2">
+              <button onClick={() => setEditingTemplate(null)} className="px-4 py-2 rounded-lg border dark:border-gray-600 text-sm">取消</button>
+              <button onClick={saveTemplateEdit} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm">保存</button>
             </div>
           </div>
         </div>
@@ -1527,6 +1579,47 @@ export default function LeadsManage() {
               <button onClick={() => setShowSchoolAssign(false)}><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3">
+              {/* Select regions */}
+              <div>
+                <label className="block text-sm mb-1 font-medium">选择区县（多选）</label>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto border dark:border-gray-600 rounded-lg p-2">
+                  {schoolAssignLoading && (
+                    <div className="text-sm text-gray-400 px-2 py-1">加载区县中...</div>
+                  )}
+                  {!schoolAssignLoading && dispatchRegions.length === 0 && (
+                    <div className="text-sm text-gray-400 px-2 py-1">暂无可分发的区县</div>
+                  )}
+                  {!schoolAssignLoading &&
+                    dispatchRegions.map((r) => (
+                      <label
+                        key={r.name}
+                        className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1 hover:bg-gray-50 dark:hover:bg-gray-700 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={schoolAssignRegions.includes(r.name)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSchoolAssignRegions([...schoolAssignRegions, r.name]);
+                            } else {
+                              setSchoolAssignRegions(
+                                schoolAssignRegions.filter((n) => n !== r.name),
+                              );
+                            }
+                          }}
+                          className="accent-blue-500"
+                        />
+                        {r.name} ({r.count}人)
+                      </label>
+                    ))}
+                </div>
+                {schoolAssignRegions.length > 0 && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    已选 {schoolAssignRegions.length} 个区县
+                  </div>
+                )}
+              </div>
+
               {/* Select school */}
               <div>
                 <label className="block text-sm mb-1 font-medium">选择学校</label>
@@ -1534,10 +1627,18 @@ export default function LeadsManage() {
                   value={schoolAssignSchool}
                   onChange={(e) => setSchoolAssignSchool(e.target.value)}
                   className={inputCls}
-                  disabled={schoolAssignLoading}
+                  disabled={schoolAssignRegions.length === 0 || schoolListLoading}
                 >
-                  <option value="">{schoolAssignLoading ? '加载学校中...' : '-- 请选择 --'}</option>
-                  {!schoolAssignLoading &&
+                  <option value="">
+                    {schoolAssignRegions.length === 0
+                      ? '请先选择区县'
+                      : schoolListLoading
+                      ? '加载学校中...'
+                      : schools.length === 0
+                      ? '所选区县下无未分配学生'
+                      : '-- 请选择 --'}
+                  </option>
+                  {!schoolListLoading &&
                     schools.map((s) => (
                       <option key={s.name} value={s.name}>
                         {s.name} ({s.count}人)
@@ -1580,7 +1681,13 @@ export default function LeadsManage() {
 
               <button
                 onClick={handleSchoolAssign}
-                disabled={schoolAssignLoading || !schoolAssignSchool || schoolAssignAgents.length === 0}
+                disabled={
+                  schoolAssignLoading ||
+                  schoolListLoading ||
+                  schoolAssignRegions.length === 0 ||
+                  !schoolAssignSchool ||
+                  schoolAssignAgents.length === 0
+                }
                 className="w-full py-2.5 bg-teal-600 text-white rounded-lg text-sm disabled:opacity-50"
               >
                 开始分发

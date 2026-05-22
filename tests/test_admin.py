@@ -22,7 +22,7 @@ class TestAdminAgents:
 
     async def test_list_agents_no_auth(self, client):
         resp = await client.get("/api/admin/agents")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

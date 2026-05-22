@@ -96,13 +96,13 @@ class TestAuthEdgeCases:
 
     async def test_empty_authorization(self, client):
         resp = await client.get("/api/auth/me", headers={"Authorization": ""})
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     async def test_wrong_auth_scheme(self, client):
         resp = await client.get("/api/auth/me", headers={
             "Authorization": "Basic dGVzdDp0ZXN0",
         })
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     async def test_lowercase_bearer(self, client):
         resp = await client.get("/api/auth/me", headers={
@@ -328,8 +328,3 @@ class TestFollowUpEndpoints:
         assert resp.json()["code"] == 0
 
 
-@pytest.mark.asyncio
-class TestCompatEndpoints:
-    async def test_leads_redirects(self, client):
-        resp = await client.get("/api/leads/something", follow_redirects=False)
-        assert resp.status_code in (301, 307, 308)

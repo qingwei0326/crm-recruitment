@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models import Student, User, Visit, VisitStatus, VisitType
 from app.permissions import get_accessible_student, is_admin
 from app.schemas import Response, VisitCreate, VisitUpdate
+from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/visits", tags=["到访"])
 
@@ -173,17 +174,67 @@ async def update_visit(
     visit = result.scalar_one_or_none()
     if not visit:
         raise HTTPException(status_code=404, detail="到访记录不存在")
-    await get_accessible_student(db, visit.student_id, current_user)
-    if body.visit_type is not None:
+    if not is_admin(current_user) and visit.agent_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权修改他人创建的到访记录")
+    student = await get_accessible_student(db, visit.student_id, current_user)
+
+    changes = []
+    if body.visit_type is not None and body.visit_type != visit.visit_type:
+        changes.append(f"类型 {visit.visit_type}→{body.visit_type}")
         visit.visit_type = VisitType(body.visit_type)
-    if body.scheduled_date is not None:
+    if body.scheduled_date is not None and body.scheduled_date != visit.scheduled_date:
+        changes.append("时间")
         visit.scheduled_date = body.scheduled_date
-    if body.status is not None:
+    old_status = visit.status
+    if body.status is not None and body.status != visit.status:
         visit.status = VisitStatus(body.status)
-    if body.notes is not None:
+    if body.notes is not None and body.notes != visit.notes:
+        changes.append("备注")
         visit.notes = body.notes
+
+    if changes or old_status != visit.status:
+        db.add(
+            make_operation_log(
+                current_user,
+                visit.student_id,
+                student.case_no if student else "",
+                "修改到访",
+                content=f"到访 #{visit.id}: {'; '.join(changes) if changes else ''}",
+                old_status=str(old_status) if old_status != visit.status else "",
+                new_status=str(visit.status) if old_status != visit.status else "",
+            )
+        )
     await db.commit()
     await db.refresh(visit)
     return Response.ok(
         {"id": visit.id, "status": visit.status, "updated_at": str(visit.updated_at)}
     )
+
+
+@router.delete("/{visit_id}")
+async def delete_visit(
+    visit_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Visit).where(Visit.id == visit_id))
+    visit = result.scalar_one_or_none()
+    if not visit:
+        raise HTTPException(status_code=404, detail="到访记录不存在")
+    if not is_admin(current_user) and visit.agent_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除他人创建的到访记录")
+    student_r = await db.execute(select(Student).where(Student.id == visit.student_id))
+    student = student_r.scalar_one_or_none()
+
+    db.add(
+        make_operation_log(
+            current_user,
+            visit.student_id,
+            student.case_no if student else "",
+            "删除到访",
+            content=f"删除到访 #{visit.id} ({visit.visit_type})",
+        )
+    )
+    await db.delete(visit)
+    await db.commit()
+    return Response.ok({"deleted": visit_id})

@@ -1,12 +1,15 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import FollowUp, User, UserRole
+from app.models import FollowUp, Student, User, UserRole
 from app.permissions import get_accessible_student
 from app.schemas import FollowUpCreate, FollowUpUpdate, Response
+from app.utils import utcnow
 
 router = APIRouter(prefix="/api/follow-ups", tags=["回访"])
 
@@ -45,6 +48,47 @@ async def list_follow_ups(
     )
     fus = result.scalars().all()
     return Response.ok([_fu_payload(f) for f in fus])
+
+
+@router.get("/my-pending")
+async def my_pending_follow_ups(
+    days_ahead: int = Query(7, ge=1, le=60),
+    include_overdue: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """当前话务员的待办回访（默认未来 7 天 + 逾期未完成）。"""
+    now = utcnow()
+    horizon = now + timedelta(days=days_ahead)
+
+    conditions = [
+        FollowUp.agent_id == current_user.id,
+        FollowUp.is_completed.is_(False),
+        FollowUp.follow_up_date <= horizon,
+    ]
+    if not include_overdue:
+        conditions.append(FollowUp.follow_up_date >= now - timedelta(hours=1))
+
+    result = await db.execute(
+        select(FollowUp, Student)
+        .join(Student, Student.id == FollowUp.student_id)
+        .where(*conditions)
+        .order_by(FollowUp.follow_up_date.asc())
+    )
+    data = []
+    for fu, student in result.all():
+        data.append(
+            {
+                **_fu_payload(fu),
+                "student_id": student.id,
+                "student_name": student.name,
+                "student_region": student.region,
+                "intent_level": student.intent_level,
+                "status": student.status,
+                "overdue": fu.follow_up_date < now,
+            }
+        )
+    return Response.ok(data)
 
 
 def _fu_payload(f: FollowUp) -> dict:

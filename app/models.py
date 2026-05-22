@@ -234,3 +234,13 @@ class SystemConfig(Base):
     key = Column(String(64), primary_key=True, nullable=False)
     value = Column(Text, default="", nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class LoginAttempt(Base):
+    """登录尝试，用于跨进程共享 IP 限流。"""
+
+    __tablename__ = "login_attempts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ip = Column(String(64), nullable=False, index=True)
+    attempted_at = Column(DateTime, default=func.now(), nullable=False, index=True)

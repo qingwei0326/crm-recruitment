@@ -41,9 +41,6 @@ from app.utils import make_operation_log, mask_phone, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
 
-# backward compat redirect
-compat = APIRouter(prefix="/api/leads", tags=["兼容旧路径"])
-
 
 STAGE_ORDER = ["初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"]
 
@@ -416,27 +413,48 @@ async def import_students_excel(
 
             parsed_rows.append((row_idx, parsed))
 
-        # Batch-check for duplicate phone numbers against existing DB records
-        phones_to_check = {p["guardian_phone"] for _, p in parsed_rows if p.get("guardian_phone")}
+        # Batch-check for duplicate phone numbers against existing DB records.
+        # 同一行的 guardian_phone / guardian2_phone 都纳入查重；库里命中任一字段视为已存在。
+        phones_to_check: set[str] = set()
+        for _, p in parsed_rows:
+            for key in ("guardian_phone", "guardian2_phone"):
+                val = p.get(key) or ""
+                if val:
+                    phones_to_check.add(val)
+
         existing_phones: set[str] = set()
         if phones_to_check:
             existing_r = await db.execute(
-                select(Student.guardian_phone).where(Student.guardian_phone.in_(phones_to_check))
+                select(Student.guardian_phone, Student.guardian2_phone).where(
+                    or_(
+                        Student.guardian_phone.in_(phones_to_check),
+                        Student.guardian2_phone.in_(phones_to_check),
+                    )
+                )
             )
-            existing_phones = {row[0] for row in existing_r.all() if row[0]}
+            for g1, g2 in existing_r.all():
+                if g1:
+                    existing_phones.add(g1)
+                if g2:
+                    existing_phones.add(g2)
 
         seen_in_file: set[str] = set()
         student_rows = []
         for row_idx, parsed in parsed_rows:
-            phone = parsed.get("guardian_phone", "")
-            if phone:
-                if phone in existing_phones:
-                    skipped_rows.append({"row": row_idx, "reason": f"手机号已存在（库中已有该学员）: {phone}"})
-                    continue
-                if phone in seen_in_file:
-                    skipped_rows.append({"row": row_idx, "reason": f"手机号在本次导入中重复: {phone}"})
-                    continue
-                seen_in_file.add(phone)
+            phone = parsed.get("guardian_phone", "") or ""
+            phone2 = parsed.get("guardian2_phone", "") or ""
+            row_phones = [p for p in (phone, phone2) if p]
+
+            dup_db = next((p for p in row_phones if p in existing_phones), None)
+            if dup_db:
+                skipped_rows.append({"row": row_idx, "reason": f"手机号已存在（库中已有该学员）: {dup_db}"})
+                continue
+            dup_file = next((p for p in row_phones if p in seen_in_file), None)
+            if dup_file:
+                skipped_rows.append({"row": row_idx, "reason": f"手机号在本次导入中重复: {dup_file}"})
+                continue
+            seen_in_file.update(row_phones)
+
             student_rows.append(
                 {
                     "name": parsed["name"],
@@ -447,7 +465,7 @@ async def import_students_excel(
                     "guardian_name": parsed["guardian_name"],
                     "guardian_phone": phone,
                     "guardian2_name": parsed["guardian2_name"],
-                    "guardian2_phone": parsed["guardian2_phone"],
+                    "guardian2_phone": phone2,
                     "school_name": parsed["school_name"],
                     "school_address": parsed["school_address"],
                     "program": parsed["program"],
@@ -486,12 +504,12 @@ async def import_students_excel(
     except (InvalidFileException, BadZipFile, OSError) as exc:
         await db.rollback()
         return Response.error(code=1, msg=f"文件解析失败: {exc}")
-    except SQLAlchemyError as exc:
+    except SQLAlchemyError:
         await db.rollback()
-        return Response.error(code=1, msg=f"数据库写入失败: {exc}")
-    except Exception as exc:
+        return Response.error(code=1, msg="数据库写入失败")
+    except Exception:
         await db.rollback()
-        return Response.error(code=1, msg=f"导入失败: {exc}")
+        return Response.error(code=1, msg="导入失败，请检查文件格式")
     finally:
         if workbook is not None:
             workbook.close()
@@ -744,20 +762,71 @@ async def enrolled_students(
     )
 
 
-@router.get("/schools")
-async def list_schools(
+@router.get("/dispatch-regions")
+async def list_dispatch_regions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """获取有未分配学生的学校列表及其未分配数量"""
+    """获取「未分配且有学校名」学生的区县列表及其未分配人数。"""
+    result = await db.execute(
+        select(Student.region, func.count(Student.id))
+        .where(
+            Student.school_name != "",
+            Student.region != "",
+            Student.assigned_to.is_(None),
+        )
+        .group_by(Student.region)
+        .order_by(func.count(Student.id).desc())
+    )
+    regions = [{"name": row[0], "count": row[1]} for row in result.all()]
+    return Response.ok(regions)
+
+
+@router.get("/schools")
+async def list_schools(
+    regions: list[str] = Query(default=[]),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """获取有未分配学生的学校列表及其未分配数量。
+
+    可选 regions：仅统计属于这些区县的未分配学生。
+    """
+    cleaned_regions = [r.strip() for r in regions if r and r.strip()]
+    conditions = [Student.school_name != "", Student.assigned_to.is_(None)]
+    if cleaned_regions:
+        conditions.append(Student.region.in_(cleaned_regions))
     result = await db.execute(
         select(Student.school_name, func.count(Student.id))
-        .where(Student.school_name != "", Student.assigned_to.is_(None))
+        .where(*conditions)
         .group_by(Student.school_name)
         .order_by(func.count(Student.id).desc())
     )
     schools = [{"name": row[0], "count": row[1]} for row in result.all()]
     return Response.ok(schools)
+
+
+@router.get("/phone/{student_id}")
+async def get_student_phone(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    student = await get_accessible_student(db, student_id, current_user)
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "查看电话",
+            content="查看明文电话号码",
+        )
+    )
+    await db.commit()
+    return Response.ok({
+        "guardian_phone": student.guardian_phone,
+        "guardian2_phone": student.guardian2_phone,
+    })
 
 
 @router.get("/{student_id}")
@@ -795,6 +864,9 @@ async def update_student(
         raise HTTPException(status_code=403, detail=f"无权修改字段: {', '.join(forbidden)}")
 
     old_intent = student.intent_level
+    old_status = student.status
+    old_stage = student.stage
+    old_assigned = student.assigned_to
     for k, v in raw.items():
         if k == "status" and v is not None:
             try:
@@ -820,7 +892,12 @@ async def update_student(
         if not student.enrolled_at:
             student.enrolled_at = date.today()
 
-    if "intent_level" in raw and old_intent != student.intent_level:
+    intent_changed = "intent_level" in raw and old_intent != student.intent_level
+    status_changed = old_status != student.status
+    stage_changed = old_stage != student.stage
+    assigned_changed = "assigned_to" in raw and old_assigned != student.assigned_to
+
+    if intent_changed:
         db.add(
             make_operation_log(
                 current_user,
@@ -834,11 +911,31 @@ async def update_student(
             )
         )
 
+    if status_changed or stage_changed or assigned_changed:
+        parts = []
+        if status_changed:
+            parts.append(f"状态 {old_status} → {student.status}")
+        if stage_changed:
+            parts.append(f"阶段 {old_stage} → {student.stage}")
+        if assigned_changed:
+            parts.append(f"分配 {old_assigned} → {student.assigned_to}")
+        db.add(
+            make_operation_log(
+                current_user,
+                student.id,
+                student.case_no or "",
+                "修改状态" if status_changed else "修改信息",
+                content="; ".join(parts),
+                old_status=str(old_status) if status_changed else "",
+                new_status=str(student.status) if status_changed else "",
+            )
+        )
+
     await db.commit()
     await db.refresh(student)
-    if "intent_level" in raw and old_intent != student.intent_level and student.intent_level == IntentLevel.A:
+    if intent_changed and student.intent_level == IntentLevel.A:
         await notify_a_level_change(db, student, current_user, "manual")
-    return Response.ok(_student_payload(student, full_phone=True))
+    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
 
 @router.put("/{student_id}/stage")
@@ -957,7 +1054,18 @@ async def auto_assign(
 
     load = {}
     for a in agents:
-        cnt = await db.execute(select(func.count(Student.id)).where(Student.assigned_to == a.id))
+        cnt = await db.execute(
+            select(func.count(Student.id)).where(
+                Student.assigned_to == a.id,
+                Student.status.not_in(
+                    [
+                        StudentStatus.enrolled,
+                        StudentStatus.expired,
+                        StudentStatus.rejected,
+                    ]
+                ),
+            )
+        )
         load[a.id] = cnt.scalar() or 0
 
     unassigned_result = await db.execute(
@@ -1003,13 +1111,32 @@ async def region_assign(
     if not agents:
         return Response.error(code=1, msg="没有可用的话务员")
 
-    region_map = {}
+    # 一个地区可被多个话务员服务；命中地区时按当前活跃负载最小者分配
+    region_map: dict[str, list[User]] = {}
     for a in agents:
         if a.service_regions:
             for r in a.service_regions.replace("，", ",").split(","):
                 r = r.strip()
-                if r and r not in region_map:
-                    region_map[r] = a
+                if r:
+                    region_map.setdefault(r, []).append(a)
+
+    # 活跃负载基线（排除终态学生），避免历史已报名/已过期影响公平
+    load = {}
+    for a in agents:
+        cnt = await db.execute(
+            select(func.count(Student.id)).where(
+                Student.assigned_to == a.id,
+                Student.status.not_in(
+                    [
+                        StudentStatus.enrolled,
+                        StudentStatus.expired,
+                        StudentStatus.rejected,
+                    ]
+                ),
+            )
+        )
+        load[a.id] = cnt.scalar() or 0
+    agent_name_by_id = {a.id: a.name for a in agents}
 
     unassigned_result = await db.execute(
         select(Student).where(Student.assigned_to.is_(None)).order_by(Student.created_at.asc())
@@ -1017,28 +1144,25 @@ async def region_assign(
     unassigned = unassigned_result.scalars().all()
 
     distribution = {a.name: {"matched": 0, "fallback": 0} for a in agents}
-    fallback_counts = {a.id: 0 for a in agents}
     now = utcnow()
     total_assigned = 0
     by_agent: dict[int, list[int]] = {}
 
     for student in unassigned:
-        matched_agent = None
-        if student.region and student.region in region_map:
-            matched_agent = region_map[student.region]
-
-        if matched_agent:
-            agent_id = matched_agent.id
-            distribution[matched_agent.name]["matched"] += 1
+        matched_candidates = region_map.get(student.region or "", [])
+        if matched_candidates:
+            # 同地区多话务员：选负载最小者
+            chosen = min(matched_candidates, key=lambda a: load[a.id])
+            agent_id = chosen.id
+            distribution[chosen.name]["matched"] += 1
         else:
-            min_agent_id = min(fallback_counts, key=fallback_counts.get)
-            agent_id = min_agent_id
-            name = next((a.name for a in agents if a.id == min_agent_id), "")
+            agent_id = min(load, key=load.get)
+            name = agent_name_by_id.get(agent_id, "")
             if name:
                 distribution[name]["fallback"] += 1
 
         by_agent.setdefault(agent_id, []).append(student.id)
-        fallback_counts[agent_id] = fallback_counts.get(agent_id, 0) + 1
+        load[agent_id] += 1
         total_assigned += 1
 
     for agent_id, ids in by_agent.items():
@@ -1065,9 +1189,13 @@ async def school_assign(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """按学校分发：选学校、选多个话务员ID、轮询分配"""
+    """按学校分发：选学校、可选区县过滤、选多个话务员ID、轮询分配"""
     school = body.get("school_name", "").strip()
     agent_ids = body.get("agent_ids", [])
+    regions_raw = body.get("regions", []) or []
+    if not isinstance(regions_raw, list):
+        return Response.error(code=1, msg="区县参数格式错误")
+    regions = [r.strip() for r in regions_raw if isinstance(r, str) and r.strip()]
     if not school:
         return Response.error(code=1, msg="请选择学校")
     if not agent_ids or not isinstance(agent_ids, list):
@@ -1081,16 +1209,19 @@ async def school_assign(
     if not agents:
         return Response.error(code=1, msg="没有可用的话务员")
 
-    # 查出该学校未分配的学生
+    # 查出该学校未分配的学生（可选按区县过滤）
+    conditions = [
+        Student.school_name == school,
+        Student.assigned_to.is_(None),
+    ]
+    if regions:
+        conditions.append(Student.region.in_(regions))
     students_result = await db.execute(
-        select(Student).where(
-            Student.school_name == school,
-            Student.assigned_to.is_(None),
-        ).order_by(Student.created_at.asc())
+        select(Student).where(*conditions).order_by(Student.created_at.asc())
     )
     students = students_result.scalars().all()
     if not students:
-        return Response.error(code=1, msg="该学校没有未分配的学生")
+        return Response.error(code=1, msg="该学校在所选区县下没有未分配的学生" if regions else "该学校没有未分配的学生")
 
     now = utcnow()
     by_agent: dict[int, list[int]] = {}
@@ -1139,29 +1270,6 @@ async def toggle_need_help(
     return Response.ok({"need_help": student.need_help})
 
 
-@router.get("/phone/{student_id}")
-async def get_student_phone(
-    student_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    student = await get_accessible_student(db, student_id, current_user)
-    db.add(
-        make_operation_log(
-            current_user,
-            student.id,
-            student.case_no or "",
-            "查看电话",
-            content="查看明文电话号码",
-        )
-    )
-    await db.commit()
-    return Response.ok({
-        "guardian_phone": student.guardian_phone,
-        "guardian2_phone": student.guardian2_phone,
-    })
-
-
 @router.delete("/{student_id}")
 async def delete_student(
     student_id: int,
@@ -1169,6 +1277,15 @@ async def delete_student(
     current_user: User = Depends(require_admin),
 ):
     student = await get_student_or_404(db, student_id)
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "删除线索",
+            content=f"删除学生 {student.name}（含通话/备注/回访/到访/查看日志）",
+        )
+    )
     for model in (Call, Note, FollowUp, LeadViewLog, Visit):
         await db.execute(delete(model).where(model.student_id == student_id))
     await db.delete(student)
@@ -1176,17 +1293,3 @@ async def delete_student(
     return Response.ok(msg="删除成功")
 
 
-# ── Backward compat redirects ──
-@compat.get("/{path:path}")
-async def compat_get(path: str, request=None):
-    raise HTTPException(status_code=301, headers={"Location": f"/api/students/{path}"})
-
-
-@compat.post("/{path:path}")
-async def compat_post(path: str):
-    raise HTTPException(status_code=308, headers={"Location": f"/api/students/{path}"})
-
-
-@compat.put("/{path:path}")
-async def compat_put(path: str):
-    raise HTTPException(status_code=308, headers={"Location": f"/api/students/{path}"})

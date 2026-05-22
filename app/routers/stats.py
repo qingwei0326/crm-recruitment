@@ -12,6 +12,7 @@ from app.models import (
     FollowUp,
     IntentLevel,
     Note,
+    OperationLog,
     Student,
     StudentStatus,
     User,
@@ -110,20 +111,33 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     )
     month_calls = month_calls_r.scalar() or 0
 
+    # 真正的"今日/本月新转 A"：基于 OperationLog 中意向变化记录，
+    # 避免 Student.updated_at 被任何字段变更刷新导致的统计虚高。
     today_a_r = await db.execute(
-        select(func.count(Student.id)).where(
+        select(func.count(func.distinct(OperationLog.target_student_id)))
+        .select_from(OperationLog)
+        .join(Student, Student.id == OperationLog.target_student_id)
+        .where(
             Student.assigned_to == agent_id,
-            Student.intent_level == IntentLevel.A,
-            Student.updated_at >= today,
+            OperationLog.action.in_(["AI分析", "手动评级"]),
+            OperationLog.new_status == "A",
+            OperationLog.old_status != "A",
+            OperationLog.created_at >= today,
+            OperationLog.created_at < tomorrow,
         )
     )
     today_a = today_a_r.scalar() or 0
 
     month_a_r = await db.execute(
-        select(func.count(Student.id)).where(
+        select(func.count(func.distinct(OperationLog.target_student_id)))
+        .select_from(OperationLog)
+        .join(Student, Student.id == OperationLog.target_student_id)
+        .where(
             Student.assigned_to == agent_id,
-            Student.intent_level == IntentLevel.A,
-            Student.updated_at >= month_start,
+            OperationLog.action.in_(["AI分析", "手动评级"]),
+            OperationLog.new_status == "A",
+            OperationLog.old_status != "A",
+            OperationLog.created_at >= month_start,
         )
     )
     month_a = month_a_r.scalar() or 0

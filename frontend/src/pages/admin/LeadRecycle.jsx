@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -15,6 +15,7 @@ import {
   Moon,
   RefreshCw,
   ArrowRightLeft,
+  Inbox,
   Users,
   LayoutDashboard,
   ListFilter,
@@ -38,21 +39,9 @@ export default function LeadRecycle() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [days, setDays] = useState(3);
   const [loading, setLoading] = useState(false);
-  const [agents, setAgents] = useState([]);
   const [students, setStudents] = useState([]);
   const [selected, setSelected] = useState(new Set());
-  const [mode, setMode] = useState('auto');
-  const [agentId, setAgentId] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-
-  const fetchAgents = async () => {
-    try {
-      const res = await api.get('/admin/agents');
-      setAgents(res.data.data || []);
-    } catch {
-      setAgents([]);
-    }
-  };
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -68,7 +57,7 @@ export default function LeadRecycle() {
   };
 
   useEffect(() => {
-    fetchAgents();
+    fetchStudents();
   }, []);
 
   const closeSidebar = () => setSidebarOpen(false);
@@ -88,15 +77,13 @@ export default function LeadRecycle() {
     setSelected(new Set(students.map((item) => item.student_id)));
   };
 
-  const handleRecycle = async (nextMode = mode) => {
+  const handleRecycle = async () => {
     if (selected.size === 0) return;
-    if (nextMode === 'manual' && !agentId) return;
     setActionLoading(true);
     try {
       const res = await api.post('/admin/stale-reassign', {
         student_ids: [...selected],
-        mode: nextMode,
-        agent_id: nextMode === 'manual' ? Number(agentId) : undefined,
+        mode: 'recycle',
       });
       if (res.data.code === 0) {
         await fetchStudents();
@@ -167,11 +154,6 @@ export default function LeadRecycle() {
   );
 
   const selectedCount = selected.size;
-  const distributionHint = useMemo(() => {
-    if (mode !== 'manual') return '';
-    const agent = agents.find((item) => item.id === Number(agentId));
-    return agent ? `分配给 ${agent.name}` : '';
-  }, [agents, agentId, mode]);
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
@@ -272,24 +254,12 @@ export default function LeadRecycle() {
           {selectedCount > 0 && (
             <div className="sticky bottom-4 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-lg p-4 flex flex-col lg:flex-row lg:items-center gap-3">
               <div className="text-sm text-gray-600 dark:text-gray-400">
-                已选 {selectedCount} 条 {distributionHint ? `· ${distributionHint}` : ''}
+                已选 {selectedCount} 条
               </div>
               <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                <button onClick={() => { setMode('auto'); setAgentId(''); handleRecycle('auto'); }} disabled={actionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-600 text-white text-sm disabled:opacity-50">
-                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
-                  自动均摊
-                </button>
-                <select value={agentId} onChange={(e) => { setMode('manual'); setAgentId(e.target.value); }} className={inputCls}>
-                  <option value="">手动分配坐席</option>
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-                <button onClick={() => { setMode('manual'); handleRecycle('manual'); }} disabled={actionLoading || !agentId} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">
-                  <ArrowRightLeft className="w-4 h-4" />
-                  确认分配
+                <button onClick={handleRecycle} disabled={actionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Inbox className="w-4 h-4" />}
+                  回收到总名单
                 </button>
               </div>
             </div>

@@ -38,7 +38,7 @@ Register-ScheduledTask `
     -Action $Action `
     -Trigger $Trigger `
     -Settings $Settings `
-    -Description "Start Admissions CRM via PM2 at user logon." `
+    -Description "Start Admissions CRM at user logon." `
     -Force | Out-Null
 
 Write-Host "Startup task installed: $TaskName"

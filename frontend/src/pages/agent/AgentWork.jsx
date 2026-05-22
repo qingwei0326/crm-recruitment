@@ -116,6 +116,25 @@ function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
 }
 
+function AssignedDaysBadge({ days }) {
+  if (days == null) return null;
+  if (days === 0) {
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+        今日新分配
+      </span>
+    );
+  }
+  const cls =
+    days >= 7
+      ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+      : days >= 3
+        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
+  const label = days >= 7 ? `积压 ${days} 天` : `${days} 天前分配`;
+  return <span className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+}
+
 function getContactOptions(student) {
   if (!student) return [];
   return [
@@ -186,6 +205,9 @@ export default function AgentWork() {
   const [templates, setTemplates] = useState([]);
   const [showTemplates, setShowTemplates] = useState(false);
 
+  // Backlog alert (一天一次)
+  const [backlogAlert, setBacklogAlert] = useState(null);
+
   // AI
   const [activeStudent, setActiveStudent] = useState(null);
   const [showAi, setShowAi] = useState(false);
@@ -235,7 +257,58 @@ export default function AgentWork() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `crm_backlog_dismissed_${user.id}_${today}`;
+    if (localStorage.getItem(key)) return;
+    api
+      .get('/tasks/backlog', { params: { days_threshold: 3 } })
+      .then((r) => {
+        if (r.data.code === 0 && r.data.data?.count > 0) {
+          setBacklogAlert(r.data.data);
+        }
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
+  const dismissBacklogAlert = () => {
+    if (user?.id) {
+      const today = new Date().toISOString().slice(0, 10);
+      localStorage.setItem(`crm_backlog_dismissed_${user.id}_${today}`, '1');
+    }
+    setBacklogAlert(null);
+  };
+
   const current = students[currentIdx];
+
+  const backlogBanner = backlogAlert ? (
+    <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700 px-4 py-2.5 flex items-center gap-2">
+      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
+      <div className="flex-1 text-sm text-amber-800 dark:text-amber-200">
+        你有 <span className="font-bold">{backlogAlert.count}</span> 个学员积压超过{' '}
+        {backlogAlert.threshold_days} 天没动
+        {backlogAlert.oldest_days > 0 && `，最久 ${backlogAlert.oldest_days} 天`}
+      </div>
+      <button
+        onClick={() => {
+          setViewTab('yesterday');
+          fetchYesterday();
+          dismissBacklogAlert();
+        }}
+        className="text-xs text-amber-700 dark:text-amber-200 font-medium whitespace-nowrap"
+      >
+        去看看
+      </button>
+      <button
+        onClick={dismissBacklogAlert}
+        className="text-amber-600 dark:text-amber-300 hover:text-amber-800 shrink-0"
+        aria-label="关闭提醒"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  ) : null;
 
   const handleCreate = async () => {
     if (!newStudent.name) {
@@ -550,6 +623,7 @@ export default function AgentWork() {
                 </div>
               ))}
             </div>
+            {backlogBanner}
             {actionMsg && (
               <div className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm px-4 py-2 text-center">
                 {actionMsg}
@@ -570,7 +644,7 @@ export default function AgentWork() {
                     >
                       <div className="flex items-center justify-between mb-3">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-lg text-gray-900 dark:text-gray-100">
                               {current.name}
                             </span>
@@ -580,6 +654,7 @@ export default function AgentWork() {
                                 需协助
                               </span>
                             )}
+                            <AssignedDaysBadge days={current.days_since_assigned} />
                           </div>
                           <div className="text-sm text-gray-500 font-mono mt-0.5">
                             {current.school_name || '未知学校'}
@@ -805,6 +880,49 @@ export default function AgentWork() {
                             >
                               {item.intent_level || '无'}
                             </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {yesterdayData.stale_unconcat?.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4" />
+                        昨日及之前未联系（{yesterdayData.stale_unconcat.length}）
+                      </div>
+                      <button
+                        onClick={() => {
+                          const ids = new Set(yesterdayData.stale_unconcat.map((s) => s.id));
+                          const idx = students.findIndex((s) => ids.has(s.id));
+                          if (idx >= 0) {
+                            setCurrentIdx(idx);
+                            setViewTab('today');
+                          }
+                        }}
+                        className="text-xs text-blue-600 dark:text-blue-400"
+                      >
+                        去处理 →
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      {yesterdayData.stale_unconcat.map((item) => (
+                        <div
+                          key={item.id}
+                          className="bg-white dark:bg-gray-800 rounded-xl border border-red-100 dark:border-red-900/40 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {item.name}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1 truncate">
+                                {item.school_name || '未知学校'} · {item.region || '-'}
+                              </div>
+                            </div>
+                            <AssignedDaysBadge days={item.days_since_assigned} />
                           </div>
                         </div>
                       ))}
@@ -1058,6 +1176,7 @@ export default function AgentWork() {
                   />
                 </div>
               </div>
+              {backlogBanner}
               {actionMsg && (
                 <div className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm px-4 py-2 text-center">
                   {actionMsg}
@@ -1077,7 +1196,7 @@ export default function AgentWork() {
                       >
                         <div className="flex items-center justify-between mb-3">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-lg">{current.name}</span>
                               {current.need_help && (
                                 <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 flex items-center gap-1">
@@ -1085,6 +1204,7 @@ export default function AgentWork() {
                                   需协助
                                 </span>
                               )}
+                              <AssignedDaysBadge days={current.days_since_assigned} />
                             </div>
                             <div className="text-sm text-gray-500 font-mono mt-0.5">
                               {current.school_name || '未知学校'}
@@ -1303,6 +1423,49 @@ export default function AgentWork() {
                               >
                                 {item.intent_level || '无'}
                               </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {yesterdayData.stale_unconcat?.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4" />
+                          昨日及之前未联系（{yesterdayData.stale_unconcat.length}）
+                        </div>
+                        <button
+                          onClick={() => {
+                            const ids = new Set(yesterdayData.stale_unconcat.map((s) => s.id));
+                            const idx = students.findIndex((s) => ids.has(s.id));
+                            if (idx >= 0) {
+                              setCurrentIdx(idx);
+                              setViewTab('today');
+                            }
+                          }}
+                          className="text-xs text-blue-600 dark:text-blue-400"
+                        >
+                          去处理 →
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {yesterdayData.stale_unconcat.map((item) => (
+                          <div
+                            key={item.id}
+                            className="bg-white dark:bg-gray-800 rounded-xl border border-red-100 dark:border-red-900/40 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                  {item.name}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1 truncate">
+                                  {item.school_name || '未知学校'} · {item.region || '-'}
+                                </div>
+                              </div>
+                              <AssignedDaysBadge days={item.days_since_assigned} />
                             </div>
                           </div>
                         ))}

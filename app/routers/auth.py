@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -13,7 +13,7 @@ from app.auth import (
 from app.utils import utcnow
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
 from app.database import get_db
-from app.models import User
+from app.models import LoginAttempt, OperationLog, User
 from app.schemas import LoginReq, Response
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
@@ -21,24 +21,30 @@ api_router = APIRouter(tags=["通用"])
 
 MAX_LOGIN_ATTEMPTS = 3
 LOCKOUT_MINUTES = 5
-
-# Simple in-memory IP rate limiter (per-process). Under multiple workers or
-# processes each instance has its own counter, so effective limits scale with
-# replica count unless you move this to Redis or another shared store.
-_ip_attempts: dict[str, list[datetime]] = {}
+IP_RATE_WINDOW_MIN = 15
+IP_RATE_MAX = 20
 
 
-def _check_ip_rate_limit(ip: str) -> bool:
-    """Returns True if the IP is rate-limited (exceeded max attempts)."""
+async def _check_ip_rate_limit(db: AsyncSession, ip: str) -> bool:
+    """跨进程共享的 IP 限流：用 login_attempts 表计数。返回 True 表示已超限。"""
     now = utcnow()
-    window = timedelta(minutes=15)
-    if ip in _ip_attempts:
-        _ip_attempts[ip] = [t for t in _ip_attempts[ip] if t > now - window]
-        if len(_ip_attempts[ip]) >= 20:
-            return True
-        _ip_attempts[ip].append(now)
-    else:
-        _ip_attempts[ip] = [now]
+    window_start = now - timedelta(minutes=IP_RATE_WINDOW_MIN)
+    # 顺手清理远早于窗口的旧记录（额外保留 1 小时缓冲，避免每次都全表清扫）
+    await db.execute(
+        delete(LoginAttempt).where(LoginAttempt.attempted_at < window_start - timedelta(hours=1))
+    )
+    count_r = await db.execute(
+        select(func.count(LoginAttempt.id)).where(
+            LoginAttempt.ip == ip,
+            LoginAttempt.attempted_at > window_start,
+        )
+    )
+    count = count_r.scalar() or 0
+    if count >= IP_RATE_MAX:
+        await db.commit()
+        return True
+    db.add(LoginAttempt(ip=ip, attempted_at=now))
+    await db.commit()
     return False
 
 
@@ -52,7 +58,7 @@ def _get_client_ip(request: Request) -> str:
 @router.post("/login")
 async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_db)):
     client_ip = _get_client_ip(request)
-    if _check_ip_rate_limit(client_ip):
+    if await _check_ip_rate_limit(db, client_ip):
         return JSONResponse(
             status_code=429,
             content={"code": 1, "data": None, "msg": "登录尝试过于频繁，请15分钟后再试"},
@@ -85,6 +91,14 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
     # Reset on successful login
     user.failed_login_attempts = 0
     user.locked_until = None
+    db.add(
+        OperationLog(
+            operator_id=user.id,
+            operator_name=user.name,
+            action="登录",
+            content=f"IP {client_ip}",
+        )
+    )
     await db.commit()
 
     token = create_access_token({"sub": str(user.id), "role": user.role})

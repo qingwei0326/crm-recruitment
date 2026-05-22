@@ -84,7 +84,7 @@ class TestLoginEndpoint:
         assert logout_resp.cookies.get("access_token") is None
 
         me_resp = await client.get("/api/auth/me")
-        assert me_resp.status_code == 403
+        assert me_resp.status_code == 401
 
     async def test_login_wrong_password(self, client, admin_user):
         resp = await client.post("/api/auth/login", json={
@@ -153,7 +153,7 @@ class TestCurrentUserEndpoint:
 
     async def test_me_no_token(self, client):
         resp = await client.get("/api/auth/me")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
 
     async def test_me_invalid_token(self, client):
         resp = await client.get("/api/auth/me", headers={
