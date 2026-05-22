@@ -127,11 +127,11 @@ Get-ChildItem -Path $Root -Filter "*.log.old" -File -ErrorAction SilentlyContinu
 Write-Host "Starting crm-backend hidden..."
 $Backend = Start-Process `
     -FilePath $Python `
-    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") `
+    -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000", "--log-config", "logging.json") `
     -WorkingDirectory $Root `
     -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $Root "backend_out.log") `
-    -RedirectStandardError (Join-Path $Root "backend_err.log") `
+    -RedirectStandardOutput (Join-Path $Root "backend_stdout.log") `
+    -RedirectStandardError (Join-Path $Root "backend_stderr.log") `
     -PassThru
 Set-Content -Path $BackendPidFile -Value $Backend.Id -Encoding ASCII
 

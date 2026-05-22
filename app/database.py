@@ -38,6 +38,16 @@ async def init_db():
         await conn.run_sync(_drop_legacy_student_phone_column)
         await conn.run_sync(_migrate_follow_up_columns)
         await conn.run_sync(_drop_message_templates_table)
+        await conn.run_sync(_ensure_student_indexes)
+
+
+def _ensure_student_indexes(sync_connection):
+    sync_connection.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_students_region ON students(region)"
+    ))
+    sync_connection.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_students_school_name ON students(school_name)"
+    ))
 
 
 def _migrate_follow_up_columns(sync_connection):

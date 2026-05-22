@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -113,6 +113,13 @@ function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
 }
 
+function schoolPlaceholder(regions, loading, schools) {
+  if (regions.length === 0) return '请先选择区县';
+  if (loading) return '加载学校中...';
+  if (schools.length === 0) return '所选区县下无未分配学生';
+  return '-- 请选择 --';
+}
+
 export default function LeadsManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -169,6 +176,7 @@ export default function LeadsManage() {
   const [schoolAssignAgents, setSchoolAssignAgents] = useState([]);
   const [schoolAssignLoading, setSchoolAssignLoading] = useState(false);
   const [schoolListLoading, setSchoolListLoading] = useState(false);
+  const schoolsReqIdRef = useRef(0);
 
   // Inline note
   const [noteText, setNoteText] = useState({});
@@ -221,14 +229,14 @@ export default function LeadsManage() {
       setSchoolAssignSchool('');
       return;
     }
-    let cancelled = false;
+    const reqId = ++schoolsReqIdRef.current;
     setSchoolListLoading(true);
     const params = new URLSearchParams();
     schoolAssignRegions.forEach((r) => params.append('regions', r));
     api
       .get(`/students/schools?${params.toString()}`)
       .then((res) => {
-        if (cancelled) return;
+        if (reqId !== schoolsReqIdRef.current) return;
         if (res.data.code === 0) {
           const list = res.data.data || [];
           setSchools(list);
@@ -236,14 +244,13 @@ export default function LeadsManage() {
         }
       })
       .catch((e) => {
-        if (!cancelled) alert('学校列表加载失败: ' + getApiErrorMessage(e));
+        if (reqId === schoolsReqIdRef.current) {
+          alert('学校列表加载失败: ' + getApiErrorMessage(e));
+        }
       })
       .finally(() => {
-        if (!cancelled) setSchoolListLoading(false);
+        if (reqId === schoolsReqIdRef.current) setSchoolListLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [showSchoolAssign, schoolAssignRegions]);
 
   const loadExpandData = async (id) => {
@@ -1405,7 +1412,14 @@ export default function LeadsManage() {
             <div className="space-y-3">
               {/* Select regions */}
               <div>
-                <label className="block text-sm mb-1 font-medium">选择区县（多选）</label>
+                <label className="block text-sm mb-1 font-medium">
+                  选择区县（多选）
+                  {!schoolAssignLoading && dispatchRegions.length > 0 && (
+                    <span className="ml-2 text-xs text-gray-500 font-normal">
+                      共 {dispatchRegions.length} 个区县 · {dispatchRegions.reduce((s, r) => s + (r.count || 0), 0)} 人
+                    </span>
+                  )}
+                </label>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto border dark:border-gray-600 rounded-lg p-2">
                   {schoolAssignLoading && (
                     <div className="text-sm text-gray-400 px-2 py-1">加载区县中...</div>
@@ -1453,15 +1467,7 @@ export default function LeadsManage() {
                   className={inputCls}
                   disabled={schoolAssignRegions.length === 0 || schoolListLoading}
                 >
-                  <option value="">
-                    {schoolAssignRegions.length === 0
-                      ? '请先选择区县'
-                      : schoolListLoading
-                      ? '加载学校中...'
-                      : schools.length === 0
-                      ? '所选区县下无未分配学生'
-                      : '-- 请选择 --'}
-                  </option>
+                  <option value="">{schoolPlaceholder(schoolAssignRegions, schoolListLoading, schools)}</option>
                   {!schoolListLoading &&
                     schools.map((s) => (
                       <option key={s.name} value={s.name}>

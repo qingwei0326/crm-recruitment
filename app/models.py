@@ -88,7 +88,7 @@ class Student(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), nullable=False)
-    region = Column(String(64), default="", nullable=False)
+    region = Column(String(64), default="", nullable=False, index=True)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(SAEnum(StudentStatus), nullable=False, default=StudentStatus.not_contacted)
     intent_level = Column(SAEnum(IntentLevel), nullable=False, default=IntentLevel.none)
@@ -102,7 +102,7 @@ class Student(Base):
     guardian_phone = Column(String(20), default="", nullable=False)
     guardian2_name = Column(String(64), default="", nullable=False)
     guardian2_phone = Column(String(20), default="", nullable=False)
-    school_name = Column(String(128), default="", nullable=False)
+    school_name = Column(String(128), default="", nullable=False, index=True)
     school_address = Column(String(256), default="", nullable=False)
     case_no = Column(String(36), unique=True, nullable=True)
     need_help = Column(Boolean, default=False, nullable=False)
