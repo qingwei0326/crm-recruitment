@@ -10,13 +10,19 @@ Do not use a Chinese path on J1900.
 
 ## Current First-Deploy Folder
 
-Use this exact release folder from the dev machine:
+Use the **latest** release folder under `releases\` on the dev machine. List the folder and pick the one with the newest timestamp:
 
-```text
-releases\admissions-crm-20260517-130821
+```powershell
+Get-ChildItem releases -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 ```
 
-This is the full offline first-deploy package. It already includes:
+If `releases\` is empty or stale, generate a fresh full-deps bundle first:
+
+```powershell
+.\make-release.ps1 -IncludeDeps
+```
+
+The release folder is a full offline first-deploy package. It already includes:
 
 ```text
 .pydeps
@@ -53,8 +59,10 @@ D:\CRM\.env
 3. Copy the full release folder to J1900, but keep it outside `D:\CRM`. A simple staging path is:
 
 ```text
-D:\deploy\admissions-crm-20260517-130821
+D:\deploy\admissions-crm-<version>
 ```
+
+(`<version>` matches whatever folder name `make-release.ps1` produced.)
 
 4. Open PowerShell inside that copied folder and run:
 
@@ -91,10 +99,16 @@ After the app works on J1900, install startup from the target folder:
 
 ```powershell
 Set-Location 'D:\CRM'
-.\install-startup-folder.ps1
+.\install-startup.ps1
 ```
 
-This creates a startup shortcut for the current Windows user.
+This registers a Windows Scheduled Task that launches the app at user logon.
+
+To remove it later:
+
+```powershell
+.\uninstall-startup.ps1
+```
 
 ## Future Updates
 

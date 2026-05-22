@@ -2,9 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-.venv/
 .venv-win/
-venv/
 .pydeps/
 .pytest_cache/
 
@@ -40,15 +38,16 @@ releases/
 # Secret key
 .secret_key
 
-# PM2
-ecosystem.config.js
-forward.js
+# Forward log
 forward.log
+
+# LAN forward (machine-specific IP)
+forward.js
 
 # Build artifacts
 *.cmd
-deploy-update.cmd
-make-release.cmd
+!deploy-update.cmd
+!make-release.cmd
 
 # Env
 .env
@@ -56,6 +55,3 @@ make-release.cmd
 
 # Project docs
 docs/
-
-# Docker
-.docker/

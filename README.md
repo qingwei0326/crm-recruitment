@@ -10,7 +10,7 @@
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
 ![AI](https://img.shields.io/badge/AI-DeepSeek%20API-orange)
 
-[English](README.md) | 中文
+中文
 
 </div>
 
@@ -26,18 +26,6 @@
 - 回访跟进容易漏，没有自动提醒和状态流转
 
 **招生话务 CRM** 就是为解决这些问题而生：一套轻量、开箱即用的话务管理系统，让招生团队专注在"打电话"这件事上。
-
----
-
-## 🖼 界面预览
-
-|                   线索管理                   |                   工作台                   |
-| :----------------------------------------: | :--------------------------------------: |
-| ![线索管理](screenshots/leads.png) | ![工作台](screenshots/workspace.png) |
-
-|                   统计看板                   |                   通话分析                   |
-| :----------------------------------------: | :--------------------------------------: |
-| ![统计看板](screenshots/stats.png) | ![通话分析](screenshots/ai-analyze.png) |
 
 ---
 
@@ -101,25 +89,37 @@
 .\start.ps1
 ```
 
-启动后访问 `http://localhost:5173` 即可进入系统。
+启动后访问 `http://127.0.0.1:8000` 即可进入系统。`start.ps1` 会先 `vite build` 出前端静态产物，再由 FastAPI 在 8000 端口一并托管。
 
-### 手动启动
+### 手动启动（生产模式）
 
-```bash
-# 后端
+```powershell
+# 1. 构建前端
+cd D:\招生系统\frontend
+npm run build
+
+# 2. 启动后端（同时托管 frontend/dist 静态资源）
 cd D:\招生系统
 uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### 开发模式
+
+```powershell
+# 后端
+cd D:\招生系统
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 # 前端（另一个终端）
 cd D:\招生系统\frontend
-npm run dev
+npm run dev   # 默认 http://localhost:3000，已在 vite.config.js 中代理 /api → 8000
 ```
 
 ### 启动参数
 
 | 环境变量 | 说明 | 默认值 |
 |---------|------|--------|
-| `CRM_PYTHON` | 指定 Python 路径 | 自动检测 `.venv-win` / `venv` |
+| `CRM_PYTHON` | 指定 Python 路径 | 自动检测 `.venv-win` |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 | 可选（不设置则仅用关键词分析） |
 
 ---
@@ -139,7 +139,7 @@ npm run dev
 | **图表** | Recharts |
 | **HTTP 客户端** | Axios |
 | **AI 分析** | DeepSeek API + 本地关键词兜底 |
-| **进程管理** | PM2（可选） |
+| **进程管理** | PowerShell 脚本（start.ps1 / stop.ps1）+ Windows 任务计划程序 |
 
 ---
 
@@ -156,14 +156,17 @@ D:\招生系统\
 │   ├── auth.py                 # 登录认证
 │   ├── permissions.py          # 权限控制
 │   ├── routers/                # 路由模块
-│   │   ├── admin.py            # 管理员接口
-│   │   ├── auth.py             # 认证接口
-│   │   ├── calls.py            # 通话记录接口
-│   │   ├── follow_ups.py       # 回访跟进接口
-│   │   ├── notes.py            # 备注接口
-│   │   ├── operation_logs.py   # 操作日志
-│   │   ├── stats.py            # 统计数据
-│   │   └── ...
+│   │   ├── admin.py             # 管理员接口
+│   │   ├── auth.py              # 认证接口
+│   │   ├── calls.py             # 通话记录接口
+│   │   ├── follow_ups.py        # 回访跟进接口
+│   │   ├── students.py          # 学生线索接口
+│   │   ├── tasks.py             # 任务接口
+│   │   ├── templates.py         # 模板接口
+│   │   ├── visits.py            # 到访记录接口
+│   │   ├── notes.py             # 备注接口
+│   │   ├── operation_logs.py    # 操作日志
+│   │   └── stats.py             # 统计数据
 │   ├── ai_analyzer.py          # DeepSeek AI 意向分析
 │   ├── keywords.json           # 关键词兜底规则
 │   ├── utils.py                # 工具函数
@@ -180,11 +183,15 @@ D:\招生系统\
 │   │   ├── App.jsx             # 根组件
 │   │   └── main.jsx            # 入口文件
 │   └── package.json
-├── start.ps1                   # Windows 一键启动脚本
-├── start.bat                   # 快捷启动批处理
-├── init_db.py                  # 数据库初始化脚本
+├── crm.db                      # SQLite 数据库（运行时生成）
+├── backups/                    # 自动备份目录
+├── start.ps1 / start.bat       # 一键启动（构建前端 + 启动后端）
+├── stop.ps1 / stop.bat         # 停止服务
+├── install-startup.ps1         # 注册开机自启（Windows 任务计划程序）
+├── uninstall-startup.ps1       # 卸载开机自启
 ├── make-release.ps1            # 打包发布脚本
 ├── deploy-update.ps1           # 部署更新脚本
+├── init_db.py                  # 数据库初始化脚本
 └── README.md                   # 本文件
 ```
 
@@ -209,7 +216,7 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 <details>
 <summary><strong>数据存储在哪里？</strong></summary>
 
-数据库文件在 `app/` 目录下的 SQLite 文件。备份文件在 `backups/` 目录，每日自动轮换。管理员也可以手动触发备份。
+数据库文件是仓库根目录的 `crm.db`（SQLite，路径由 `start.ps1` 中的 `DATABASE_PATH` 指定）。备份文件在 `backups/` 目录，每日自动轮换。管理员也可以手动触发备份。
 
 </details>
 
