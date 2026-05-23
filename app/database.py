@@ -12,6 +12,10 @@ sync_engine = create_engine(DATABASE_URL_SYNC, echo=False)
 def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
+    # WAL：并发读写期间避免 "database is locked"。备份/回访/过期三个后台任务并发写入，必需。
+    cursor.execute("PRAGMA journal_mode=WAL")
+    # NORMAL 比 FULL 快很多，WAL 模式下崩溃后仍能保证最近 commit 的数据不丢。
+    cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
 

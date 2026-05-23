@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, Eye, EyeOff, Phone, RefreshCw, Save, Settings2 } from 'lucide-react';
+import { Download, Eye, EyeOff, Phone, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -35,6 +35,12 @@ export default function SystemSettings() {
   const [loading, setLoading] = useState(true);
   const [showToken, setShowToken] = useState(false);
   const [token, setToken] = useState('');
+  const [tokenDirty, setTokenDirty] = useState(false);
+  const [showDsKey, setShowDsKey] = useState(false);
+  const [dsKey, setDsKey] = useState('');
+  const [dsKeyDirty, setDsKeyDirty] = useState(false);
+  const [dsKeyMessage, setDsKeyMessage] = useState(null);
+  const [savingDsKey, setSavingDsKey] = useState(false);
   const [staleDays, setStaleDays] = useState('3');
   const [tokenMessage, setTokenMessage] = useState(null);
   const [daysMessage, setDaysMessage] = useState(null);
@@ -87,6 +93,9 @@ export default function SystemSettings() {
       const res = await api.get('/admin/config');
       const cfg = res.data.data || {};
       setToken(cfg.pushplus_token || '');
+      setTokenDirty(false);
+      setDsKey(cfg.deepseek_api_key || '');
+      setDsKeyDirty(false);
       setStaleDays(cfg.stale_days || '3');
       setDialWindowStart(cfg.dial_window_start || '08:00');
       setDialWindowEnd(cfg.dial_window_end || '21:00');
@@ -103,19 +112,39 @@ export default function SystemSettings() {
 
   const saveToken = async () => {
     setTokenMessage(null);
-    if (token.includes('****')) {
-      setTokenMessage({ type: 'success', text: '已保存' });
+    if (!tokenDirty) {
+      setTokenMessage({ type: 'success', text: '未修改' });
       return;
     }
     setSavingToken(true);
     try {
       const res = await api.put('/admin/config', { key: 'pushplus_token', value: token });
       setToken(res.data.data?.value ?? token);
+      setTokenDirty(false);
       setTokenMessage({ type: 'success', text: '已保存' });
     } catch (err) {
       setTokenMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
     } finally {
       setSavingToken(false);
+    }
+  };
+
+  const saveDsKey = async () => {
+    setDsKeyMessage(null);
+    if (!dsKeyDirty) {
+      setDsKeyMessage({ type: 'success', text: '未修改' });
+      return;
+    }
+    setSavingDsKey(true);
+    try {
+      const res = await api.put('/admin/config', { key: 'deepseek_api_key', value: dsKey });
+      setDsKey(res.data.data?.value ?? dsKey);
+      setDsKeyDirty(false);
+      setDsKeyMessage({ type: 'success', text: '已保存（下次通话分析生效，无需重启）' });
+    } catch (err) {
+      setDsKeyMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
+    } finally {
+      setSavingDsKey(false);
     }
   };
 
@@ -217,7 +246,7 @@ export default function SystemSettings() {
                       type={showToken ? 'text' : 'password'}
                       className={inputCls}
                       value={token}
-                      onChange={(e) => setToken(e.target.value)}
+                      onChange={(e) => { setToken(e.target.value); setTokenDirty(true); }}
                       placeholder="输入 Token 后每晚 20:00 自动推送"
                     />
                     <button
@@ -274,6 +303,56 @@ export default function SystemSettings() {
                     A 级学员超过 X 天无跟进记录时推送预警.
                   </div>
                   <RowMessage state={daysMessage} />
+                </div>
+              </SettingRow>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
+            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">AI 分析</h1>
+            </div>
+            <div className="p-4 lg:p-6">
+              <SettingRow label="DeepSeek API Key">
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type={showDsKey ? 'text' : 'password'}
+                      className={inputCls}
+                      value={dsKey}
+                      onChange={(e) => { setDsKey(e.target.value); setDsKeyDirty(true); }}
+                      placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDsKey((v) => !v)}
+                      className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      {showDsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveDsKey}
+                      disabled={savingDsKey || loading}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      <Save className="w-4 h-4" />
+                      保存
+                    </button>
+                  </div>
+                  <a
+                    href="https://platform.deepseek.com/api_keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    获取 API Key →
+                  </a>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    通话 AI 分析所用密钥。留空时回退到关键词匹配模式。改完无需重启，下次分析即生效。
+                  </div>
+                  <RowMessage state={dsKeyMessage} />
                 </div>
               </SettingRow>
             </div>

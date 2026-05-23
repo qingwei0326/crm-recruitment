@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,13 +9,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_analyzer import analyze_transcript
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Call, IntentLevel, Note, Student, User, UserRole
+from app.models import Call, IntentLevel, Note, Student, SystemConfig, User, UserRole
 from app.permissions import can_access_student
 from app.pushplus import notify_a_level_change
 from app.schemas import CallCreate, Response
 from app.utils import make_operation_log, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/calls", tags=["通话"])
+
+
+async def _get_deepseek_key(db: AsyncSession) -> str:
+    """优先用 SystemConfig 里 admin 设置的 key，未设置时 fallback 到 env 变量。"""
+    result = await db.execute(select(SystemConfig).where(SystemConfig.key == "deepseek_api_key"))
+    config = result.scalar_one_or_none()
+    if config and config.value:
+        return config.value.strip()
+    return os.getenv("DEEPSEEK_API_KEY", "").strip()
 
 
 def _agent_can_access_student(student: Student, user: User) -> bool:
@@ -73,7 +83,7 @@ async def create_call(
     if not _agent_can_access_student(student, current_user):
         raise HTTPException(status_code=403, detail="无权对该学员进行通话分析")
 
-    result = await asyncio.to_thread(analyze_transcript, body.transcript)
+    result = await asyncio.to_thread(analyze_transcript, body.transcript, await _get_deepseek_key(db))
 
     call = Call(
         student_id=body.student_id,

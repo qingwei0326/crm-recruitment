@@ -20,6 +20,7 @@ $ExcludeDirs = @(
     ".venv-win",
     "venv",
     "__pycache__",
+    "__tests__",
     "backups",
     "releases"
 )
@@ -43,7 +44,8 @@ $ExcludeFiles = @(
     "project_all.txt",
     "project_review.txt",
     "project_review_bundle.txt",
-    "crm.before-j1900-migration.db"
+    "crm.before-j1900-migration.db",
+    "health_check_report.txt"
 )
 
 function Test-ExcludedPath {

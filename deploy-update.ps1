@@ -140,6 +140,31 @@ if ($MissingRequired.Count -gt 0) {
 }
 
 if (-not $SkipStart) {
+    $InitDbScript = Join-Path $TargetFull "init_db.py"
+    if (Test-Path $InitDbScript) {
+        Write-Host "Running database migrations (init_db.py)..."
+        $PyExe = $env:CRM_PYTHON
+        if (-not $PyExe -or -not (Test-Path $PyExe)) {
+            $LocalVenv = Join-Path $TargetFull ".venv-win\Scripts\python.exe"
+            if (Test-Path $LocalVenv) {
+                $PyExe = $LocalVenv
+            } else {
+                $PyExe = "python"
+            }
+        }
+        Push-Location $TargetFull
+        try {
+            & $PyExe init_db.py
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "init_db.py exited with code $LASTEXITCODE. Check the output above before starting the service."
+            }
+        } catch {
+            Write-Warning "init_db.py failed: $($_.Exception.Message). Continuing to start, but new columns/tables may be missing."
+        } finally {
+            Pop-Location
+        }
+    }
+
     $StartScript = Join-Path $TargetFull "start.ps1"
     if (-not (Test-Path $StartScript)) {
         throw "start.ps1 not found after deployment: $StartScript"

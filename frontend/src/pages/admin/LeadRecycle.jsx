@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { formatDateTime } from '../../utils';
 import {
   CheckSquare,
   Square,
@@ -241,8 +242,8 @@ export default function LeadRecycle() {
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.intent_level || '-'}</td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.status || '-'}</td>
                         <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.agent_name || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.assigned_at || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.last_activity_at || item.assigned_at || '-'}</td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{formatDateTime(item.assigned_at)}</td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{formatDateTime(item.last_activity_at || item.assigned_at)}</td>
                       </tr>
                     ))
                   )}

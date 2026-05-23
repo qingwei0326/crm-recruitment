@@ -38,6 +38,8 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
+import { stageLabel, statusLabel } from '../../labels';
+import { formatDateTime } from '../../utils';
 
 const mask = (p) => (p ? p.slice(0, 3) + '****' + p.slice(-4) : '');
 const STATUS_STYLE = {
@@ -344,7 +346,17 @@ export default function AgentWork() {
   };
 
   const updateStatus = async (id, s) => {
-    await api.put(`/students/${id}`, { status: s });
+    let payload = { status: s };
+    if (s === '无效') {
+      const reason = window.prompt(
+        '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
+      );
+      if (!reason || !reason.trim()) {
+        return;
+      }
+      payload.invalid_reason = reason.trim();
+    }
+    await api.put(`/students/${id}`, payload);
     setStudents((p) => p.map((t) => (t.id === id ? { ...t, status: s } : t)));
     if (detailStudent?.id === id) setDetailStudent((p) => (p ? { ...p, status: s } : null));
     setLockedStudentId((prev) => (prev === id ? null : prev));
@@ -779,7 +791,7 @@ export default function AgentWork() {
                         <span
                           className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status] || STATUS_STYLE['未联系']}`}
                         >
-                          {current.status}
+                          {statusLabel(current.status)}
                         </span>
                       </div>
                       <div className="flex items-center gap-1 mb-3">
@@ -790,7 +802,7 @@ export default function AgentWork() {
                               key={s}
                               onClick={() => updateStage(current.id, s)}
                               className={`flex-1 h-1.5 rounded-full transition-all ${i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'} ${s === current.stage ? 'ring-2 ring-blue-300' : ''}`}
-                              title={s}
+                              title={stageLabel(s)}
                             />
                           );
                         })}
@@ -802,7 +814,7 @@ export default function AgentWork() {
                             ⚠ 可继续拨联系人2，确认结果后再更新状态
                           </div>
                           <div className="text-xs text-orange-500">
-                            已联系 / 待回访 / 无效 / 已报名
+                            已联系 / 待回访 / 未接通 / 已报名
                           </div>
                         </div>
                       )}
@@ -814,7 +826,7 @@ export default function AgentWork() {
                             className={`flex items-center gap-1 px-3 py-2 text-white rounded-lg text-xs font-medium ${s.color}`}
                           >
                             <s.icon className="w-3.5 h-3.5" />
-                            {s.status}
+                            {statusLabel(s.status)}
                           </button>
                         ))}
                       </div>
@@ -1115,7 +1127,7 @@ export default function AgentWork() {
                             {detailNotes[noteIdx].agent_name}
                           </span>
                           <span className="text-xs text-gray-400">
-                            {detailNotes[noteIdx].created_at}
+                            {formatDateTime(detailNotes[noteIdx].created_at)}
                           </span>
                         </div>
                         <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
@@ -1302,7 +1314,7 @@ export default function AgentWork() {
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status]}`}
                           >
-                            {current.status}
+                            {statusLabel(current.status)}
                           </span>
                         </div>
                         <div className="flex items-center gap-1 mb-3">
@@ -1313,7 +1325,7 @@ export default function AgentWork() {
                                 key={s}
                                 onClick={() => updateStage(current.id, s)}
                                 className={`flex-1 h-1.5 rounded-full transition-all ${i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'} ${s === current.stage ? 'ring-2 ring-blue-300' : ''}`}
-                                title={s}
+                                title={stageLabel(s)}
                               />
                             );
                           })}
@@ -1325,7 +1337,7 @@ export default function AgentWork() {
                               ⚠ 可继续拨联系人2，确认结果后再更新状态
                             </div>
                             <div className="text-xs text-orange-500">
-                              已联系 / 待回访 / 无效 / 已报名
+                              已联系 / 待回访 / 未接通 / 已报名
                             </div>
                           </div>
                         )}
@@ -1337,7 +1349,7 @@ export default function AgentWork() {
                               className={`flex items-center gap-1 px-3 py-2 text-white rounded-lg text-xs font-medium ${s.color}`}
                             >
                               <s.icon className="w-3.5 h-3.5" />
-                              {s.status}
+                              {statusLabel(s.status)}
                             </button>
                           ))}
                         </div>
@@ -1637,7 +1649,7 @@ export default function AgentWork() {
                               {detailNotes[noteIdx].agent_name}
                             </span>
                             <span className="text-xs text-gray-400">
-                              {detailNotes[noteIdx].created_at}
+                              {formatDateTime(detailNotes[noteIdx].created_at)}
                             </span>
                           </div>
                           <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
@@ -1748,7 +1760,7 @@ export default function AgentWork() {
                             <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
                           )}
                           <span className="text-xs font-medium">{detailNotes[noteIdx].agent_name}</span>
-                          <span className="text-xs text-gray-400">{detailNotes[noteIdx].created_at}</span>
+                          <span className="text-xs text-gray-400">{formatDateTime(detailNotes[noteIdx].created_at)}</span>
                         </div>
                         <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                           {detailNotes[noteIdx].content}

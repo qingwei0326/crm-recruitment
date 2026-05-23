@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 from datetime import date, datetime, timedelta
 from typing import Literal
@@ -58,7 +59,46 @@ ALLOWED_CONFIG_KEYS = {
     "dial_window_start",
     "dial_window_end",
     "dial_max_per_24h",
+    "deepseek_api_key",
 }
+
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_config_value(key: str, value: str) -> tuple[str | None, str | None]:
+    """Returns (normalized_value, error_msg). 任一字段在前端都能改，必须独立校验。"""
+    if key == "stale_days":
+        try:
+            n = int(value)
+        except ValueError:
+            return None, "stale_days must be an integer between 1 and 30"
+        if not 1 <= n <= 30:
+            return None, "stale_days must be an integer between 1 and 30"
+        return str(n), None
+    if key == "dial_max_per_24h":
+        try:
+            n = int(value)
+        except ValueError:
+            return None, "dial_max_per_24h must be an integer between 1 and 20"
+        if not 1 <= n <= 20:
+            return None, "dial_max_per_24h must be an integer between 1 and 20"
+        return str(n), None
+    if key in ("dial_window_start", "dial_window_end"):
+        if not _HHMM_RE.match(value):
+            return None, f"{key} must be HH:MM (24h)"
+        return value, None
+    if key == "pushplus_token":
+        if len(value) > 64:
+            return None, "pushplus_token too long"
+        return value, None
+    if key == "deepseek_api_key":
+        if value and len(value) > 128:
+            return None, "deepseek_api_key too long"
+        # 接受空串（用于清除）；非空必须形如 sk-xxx 避免误填
+        if value and not value.startswith("sk-"):
+            return None, "deepseek_api_key 必须以 sk- 开头"
+        return value, None
+    return value, None
 
 
 def to_datetime(value):
@@ -70,7 +110,7 @@ def to_datetime(value):
 
 
 def mask_config_value(key: str, value: str) -> str:
-    if key == "pushplus_token" and len(value) > 4:
+    if key in ("pushplus_token", "deepseek_api_key") and len(value) > 4:
         return "****" + value[-4:]
     return value
 
@@ -120,14 +160,10 @@ async def update_system_config(
     if key not in ALLOWED_CONFIG_KEYS:
         return Response.error(code=1, msg="Unsupported config key")
 
-    if key == "stale_days":
-        try:
-            stale_days = int(value)
-        except ValueError:
-            return Response.error(code=1, msg="stale_days must be an integer between 1 and 30")
-        if stale_days < 1 or stale_days > 30:
-            return Response.error(code=1, msg="stale_days must be an integer between 1 and 30")
-        value = str(stale_days)
+    normalized, err = _validate_config_value(key, value)
+    if err:
+        return Response.error(code=1, msg=err)
+    value = normalized
 
     result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
     item = result.scalar_one_or_none()
@@ -165,6 +201,7 @@ async def stale_a_students(
                     StudentStatus.enrolled,
                     StudentStatus.rejected,
                     StudentStatus.expired,
+                    StudentStatus.invalid,
                 ]
             ),
             latest_activity_at < cutoff,
@@ -212,6 +249,7 @@ async def stale_students(
                 StudentStatus.enrolled,
                 StudentStatus.expired,
                 StudentStatus.rejected,
+                StudentStatus.invalid,
             ]
         )
     ]
@@ -311,6 +349,7 @@ async def stale_reassign(
                             StudentStatus.enrolled,
                             StudentStatus.expired,
                             StudentStatus.rejected,
+                            StudentStatus.invalid,
                         ]
                     ),
                 )
@@ -601,20 +640,26 @@ async def delete_user(
         )).scalar() or 0
         if admin_count <= 1:
             return Response.error(code=1, msg="不能删除最后一个管理员")
-    # 回收非终态学生：清除分配、状态、意向、阶段，避免新话务员误以为旧记录是自己跟出来的。
-    # 已报名/已过期/拒绝接听 保留原状态作为历史归档。
+    # 1) 先处理终态学员：只解绑话务员，保留状态作为历史归档
     await db.execute(
         update(Student)
         .where(
             Student.assigned_to == user_id,
-            Student.status.not_in(
+            Student.status.in_(
                 [
                     StudentStatus.enrolled,
                     StudentStatus.expired,
                     StudentStatus.rejected,
+                    StudentStatus.invalid,
                 ]
             ),
         )
+        .values(assigned_to=None, assigned_at=None)
+    )
+    # 2) 再回收非终态学员：清除分配、状态、意向、阶段，避免新话务员误以为旧记录是自己跟出来的
+    await db.execute(
+        update(Student)
+        .where(Student.assigned_to == user_id)
         .values(
             assigned_to=None,
             assigned_at=None,
@@ -623,12 +668,6 @@ async def delete_user(
             stage=StudentStage.initial_contact,
             need_help=False,
         )
-    )
-    # 终态学生只解绑话务员，保留状态
-    await db.execute(
-        update(Student)
-        .where(Student.assigned_to == user_id)
-        .values(assigned_to=None, assigned_at=None)
     )
     db.add(
         make_operation_log(
@@ -751,7 +790,7 @@ async def download_backup(
     current_user: User = Depends(require_admin),
 ):
     """下载指定备份文件。"""
-    # 防路径穿越：只允许形如 crm_YYYYMMDD_HHMMSS.db 的文件
+    # 双重防穿越：1) 文件名白名单 2) realpath 必须仍在 BACKUP_DIR 下
     if (
         not name.startswith("crm_")
         or not name.endswith(".db")
@@ -760,7 +799,10 @@ async def download_backup(
         or ".." in name
     ):
         raise HTTPException(status_code=400, detail="非法的备份文件名")
-    fpath = os.path.join(BACKUP_DIR, name)
+    backup_root = os.path.realpath(BACKUP_DIR)
+    fpath = os.path.realpath(os.path.join(BACKUP_DIR, name))
+    if not fpath.startswith(backup_root + os.sep):
+        raise HTTPException(status_code=400, detail="非法的备份路径")
     if not os.path.isfile(fpath):
         raise HTTPException(status_code=404, detail="备份文件不存在")
     return FileResponse(fpath, media_type="application/octet-stream", filename=name)
@@ -791,6 +833,7 @@ async def check_expired(
                     StudentStatus.enrolled,
                     StudentStatus.expired,
                     StudentStatus.rejected,
+                    StudentStatus.invalid,
                 ]
             ),
             # 距离最后活动也已超出 expired_at；纯日期与 datetime 混比，

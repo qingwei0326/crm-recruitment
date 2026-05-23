@@ -91,6 +91,8 @@ class StudentUpdate(BaseModel):
     school_name: str | None = None
     school_address: str | None = None
     need_help: bool | None = None
+    # 仅当 status 改为"无效"时由前端传入，用于审计；不持久化到 students 表，记入 OperationLog
+    invalid_reason: str | None = Field(default=None, max_length=200)
 
     @field_validator("status")
     @classmethod

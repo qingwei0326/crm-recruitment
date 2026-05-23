@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { stageLabel, statusLabel } from '../../labels';
+import { formatDateTime } from '../../utils';
 import {
   ArrowLeft,
   Search,
@@ -398,7 +400,19 @@ export default function LeadsManage() {
   };
 
   const quickStatus = async (id, s) => {
-    await api.put(`/students/${id}`, { status: s });
+    let payload = { status: s };
+    if (s === '无效') {
+      const reason = window.prompt(
+        '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
+      );
+      if (!reason || !reason.trim()) {
+        // 用户取消或留空，不提交；重新拉一次列表把下拉值还原
+        fetchStudents(page);
+        return;
+      }
+      payload.invalid_reason = reason.trim();
+    }
+    await api.put(`/students/${id}`, payload);
     fetchStudents(page);
     refreshExpand();
   };
@@ -592,7 +606,7 @@ export default function LeadsManage() {
                             <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
                           )}
                           <span className="font-medium text-gray-600 dark:text-gray-300">{n.agent_name}</span>
-                          <span>{n.created_at}</span>
+                          <span>{formatDateTime(n.created_at)}</span>
                         </div>
                         <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                           {n.content}
@@ -632,7 +646,7 @@ export default function LeadsManage() {
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
                   {STAGES.map((st) => (
                     <span key={st} className="truncate max-w-[16%] text-center">
-                      {st.length > 2 ? st.slice(0, 2) : st}
+                      {(() => { const lab = stageLabel(st); return lab.length > 2 ? lab.slice(0, 2) : lab; })()}
                     </span>
                   ))}
                 </div>
@@ -648,7 +662,7 @@ export default function LeadsManage() {
                     className={`${inputCls} text-xs`}
                   >
                     {STATUS_OPTS.filter(Boolean).map((o) => (
-                      <option key={o}>{o}</option>
+                      <option key={o} value={o}>{statusLabel(o)}</option>
                     ))}
                   </select>
                 </div>
@@ -896,7 +910,7 @@ export default function LeadsManage() {
               className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 border-0 cursor-pointer"
             >
               {STAGES.map((st) => (
-                <option key={st}>{st}</option>
+                <option key={st} value={st}>{stageLabel(st)}</option>
               ))}
             </select>
           </td>
@@ -919,7 +933,7 @@ export default function LeadsManage() {
               }`}
             >
               {STATUS_OPTS.filter(Boolean).map((st) => (
-                <option key={st}>{st}</option>
+                <option key={st} value={st}>{statusLabel(st)}</option>
               ))}
             </select>
           </td>
@@ -1125,7 +1139,7 @@ export default function LeadsManage() {
                 <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputCls} w-auto`}>
                   {STATUS_OPTS.map((s) => (
                     <option key={s} value={s}>
-                      {s || '全部状态'}
+                      {s ? statusLabel(s) : '全部状态'}
                     </option>
                   ))}
                 </select>
@@ -1180,7 +1194,7 @@ export default function LeadsManage() {
                         className={`w-full rounded-t transition-all ${stage === s ? 'bg-orange-500' : 'bg-blue-600'}`}
                         style={{ height: `${pct}%` }}
                       />
-                      <div className={`text-xs mt-1 truncate ${stage === s ? 'text-orange-600 font-bold dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}>{s}</div>
+                      <div className={`text-xs mt-1 truncate ${stage === s ? 'text-orange-600 font-bold dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}>{s === '未分配' ? s : stageLabel(s)}</div>
                     </div>
                   );
                 })}
@@ -1338,7 +1352,7 @@ export default function LeadsManage() {
               <div>
                 <label className="block text-sm mb-1">状态</label>
                 <select value={newStudent.status} onChange={(e) => setNewStudent({ ...newStudent, status: e.target.value })} className={inputCls}>
-                  {STATUS_OPTS.map((o) => <option key={o} value={o}>{o || '默认'}</option>)}
+                  {STATUS_OPTS.map((o) => <option key={o} value={o}>{o ? statusLabel(o) : '默认'}</option>)}
                 </select>
               </div>
               <div>
@@ -1351,7 +1365,7 @@ export default function LeadsManage() {
                 <label className="block text-sm mb-1">跟进阶段</label>
                 <select value={newStudent.stage} onChange={(e) => setNewStudent({ ...newStudent, stage: e.target.value })} className={inputCls}>
                   <option value="">默认</option>
-                  {STAGES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  {STAGES.map((o) => <option key={o} value={o}>{stageLabel(o)}</option>)}
                 </select>
               </div>
               <div>

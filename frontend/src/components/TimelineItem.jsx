@@ -1,4 +1,5 @@
 import { Sparkles } from 'lucide-react';
+import { formatDateTime } from '../utils';
 
 export default function TimelineItem({ type, icon: Icon, color = 'gray', title, content, agentName, timestamp, source }) {
   const colorMap = {
@@ -35,7 +36,7 @@ export default function TimelineItem({ type, icon: Icon, color = 'gray', title, 
         )}
         <div className="mt-1 text-xs text-gray-400 flex items-center gap-2">
           {agentName && <span>{agentName}</span>}
-          {timestamp && <span>· {timestamp}</span>}
+          {timestamp && <span>· {formatDateTime(timestamp)}</span>}
         </div>
       </div>
     </div>

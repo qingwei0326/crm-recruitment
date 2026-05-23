@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.2-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -238,6 +238,24 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.1.2（2025-05-23）
+
+- 新增无效线索（invalid）枚举状态 + 无效原因日志审计
+- SQLite 启用 WAL 模式，解决三后台任务并发写锁冲突
+- DeepSeek API Key 改为管理后端可配置（SystemSettings 页面）
+- ai_analyzer 支持调用方传入 API Key，优先使用用户配置
+- DeepSeek API Key 服务端校验（sk- 前缀；空串可用于清除）
+- 线索列表默认隐藏终态线索（已报名/已过期/未接通/无效）
+- 列表筛选用 enum 实例查询，修复 status/stage/intent 传中文值不匹配
+- 删除用户逻辑拆分：终态只解绑、非终态回收全部状态
+- 所有统计查询排除无效线索（不纳入已联系/转化率计算）
+- 管理员后台配置项校验重构为统一 _validate_config_value
+- 下载备份双重防路径穿越（白名单 + realpath 校验）
+- 操作日志 CSV 导出改用 StreamingResponse 解决大文件 OOM
+- 配置项新增 deepseek_api_key，mask_config 兼容其脱敏显示
+- 移除 import_students 路由中对其他模块的无用 import
+- start.ps1 不再强制设置 DEEPSEEK_API_KEY 环境变量（改为 DB 配置）
 
 ### v1.1.1（2025-05-22）
 

@@ -55,6 +55,9 @@ async def seed():
         conn.execute(
             text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_max_per_24h', '3')")
         )
+        conn.execute(
+            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('deepseek_api_key', '')")
+        )
         conn.commit()
 
         insp = inspect(sync_engine)

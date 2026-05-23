@@ -140,7 +140,7 @@ def _keyword_analyze(transcript: str) -> dict:
     }
 
 
-def _call_deepseek(prompt: str) -> dict | None:
+def _call_deepseek(prompt: str, api_key: str) -> dict | None:
     """Synchronous DeepSeek API call with retry logic"""
     req = Request(
         f"{DEEPSEEK_BASE}/v1/chat/completions",
@@ -153,7 +153,7 @@ def _call_deepseek(prompt: str) -> dict | None:
             }
         ).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
     )
@@ -173,9 +173,10 @@ def _call_deepseek(prompt: str) -> dict | None:
     }
 
 
-def _deepseek_analyze(transcript: str) -> dict | None:
+def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict | None:
     """Call DeepSeek API with retry & timeout protection"""
-    if not DEEPSEEK_API_KEY or not transcript or not transcript.strip():
+    key = (api_key or DEEPSEEK_API_KEY or "").strip()
+    if not key or not transcript or not transcript.strip():
         return None
 
     # [optimization: limit input length]
@@ -199,7 +200,7 @@ def _deepseek_analyze(transcript: str) -> dict | None:
 
     for attempt in range(API_RETRIES + 1):
         try:
-            return _call_deepseek(prompt)
+            return _call_deepseek(prompt, key)
         except URLError as e:
             logger.warning(f"DeepSeek API attempt {attempt + 1}/{API_RETRIES + 1} failed: {e}")
             if attempt < API_RETRIES:
@@ -212,9 +213,13 @@ def _deepseek_analyze(transcript: str) -> dict | None:
     return None
 
 
-def analyze_transcript(transcript: str) -> dict:
-    """Analyze transcript: prefer DeepSeek API, fall back to keyword matching"""
-    result = _deepseek_analyze(transcript)
+def analyze_transcript(transcript: str, api_key: str | None = None) -> dict:
+    """Analyze transcript: prefer DeepSeek API, fall back to keyword matching.
+
+    api_key 优先用调用方传入（来自 SystemConfig）；为空则 fallback 到模块加载时
+    读取的 DEEPSEEK_API_KEY env 变量。
+    """
+    result = _deepseek_analyze(transcript, api_key)
     if result:
         result = {**result, "ai_intent": normalize_ai_intent(result.get("ai_intent"))}
         return result
