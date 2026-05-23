@@ -167,6 +167,47 @@ async def seed():
             except Exception as e:
                 print(f"[SKIP] {table}.{col}: {e}")
 
+        # 3. operation_logs.operator_id: NOT NULL → NULL（SQLite 需重建表）
+        # 旧 schema NOT NULL 会让"删用户"在 SQLAlchemy set null 时 IntegrityError
+        # operator_name 已同步存储，仍可作为审计追溯
+        try:
+            if "operation_logs" in insp.get_table_names():
+                op_cols = insp.get_columns("operation_logs")
+                op_id = next((c for c in op_cols if c["name"] == "operator_id"), None)
+                if op_id and not op_id.get("nullable", True):
+                    print("[MIG] operation_logs.operator_id 重建为 nullable...")
+                    conn.execute(text("PRAGMA foreign_keys=OFF"))
+                    conn.execute(text("""
+                        CREATE TABLE operation_logs_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            operator_id INTEGER REFERENCES users(id),
+                            operator_name VARCHAR(64) NOT NULL,
+                            target_student_id INTEGER,
+                            case_no VARCHAR(36) DEFAULT '',
+                            action VARCHAR(32) NOT NULL,
+                            content TEXT DEFAULT '',
+                            old_status VARCHAR(32) DEFAULT '',
+                            new_status VARCHAR(32) DEFAULT '',
+                            note_content TEXT DEFAULT '',
+                            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    conn.execute(text("""
+                        INSERT INTO operation_logs_new
+                        (id, operator_id, operator_name, target_student_id, case_no, action,
+                         content, old_status, new_status, note_content, created_at)
+                        SELECT id, operator_id, operator_name, target_student_id, case_no, action,
+                               content, old_status, new_status, note_content, created_at
+                        FROM operation_logs
+                    """))
+                    conn.execute(text("DROP TABLE operation_logs"))
+                    conn.execute(text("ALTER TABLE operation_logs_new RENAME TO operation_logs"))
+                    conn.execute(text("PRAGMA foreign_keys=ON"))
+                    conn.commit()
+                    print("[MIG] operation_logs.operator_id 重建完成")
+        except Exception as e:
+            print(f"[WARN] operation_logs.operator_id 迁移失败: {e}")
+
     async with async_session() as session:
         if os.getenv("SEED_PRESET_USERS", "0").lower() not in {"1", "true", "yes", "on"}:
             print("[SKIP] 未启用预置账号初始化。如需本地测试，设置 SEED_PRESET_USERS=1")
