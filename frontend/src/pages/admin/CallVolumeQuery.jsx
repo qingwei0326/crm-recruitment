@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { formatDateTime } from '../../utils';
 import {
   LogOut,
   Menu,
@@ -91,7 +92,7 @@ export default function CallVolumeQuery() {
         l.old_status,
         l.new_status,
         l.note_content,
-        l.created_at,
+        formatDateTime(l.created_at, true),
       ]),
     );
     const csv = '﻿' + rows.map((r) => r.join(',')).join('\n');
@@ -296,7 +297,7 @@ export default function CallVolumeQuery() {
                           {l.note_content}
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-500">
-                          {l.created_at?.split('.')[0]}
+                          {formatDateTime(l.created_at, true)}
                         </td>
                       </tr>
                     ))

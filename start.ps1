@@ -98,11 +98,16 @@ try {
 
 $BackendPidFile = Join-Path $Root "backend.pid"
 $ForwardPidFile = Join-Path $Root "forward.pid"
+# 已知的进程名白名单：避免 PID 复用后误杀无关进程
+$ExpectedNames = @("python", "python.exe", "pythonw", "pythonw.exe", "node", "node.exe", "uvicorn")
 foreach ($PidFile in @($BackendPidFile, $ForwardPidFile)) {
     if (Test-Path $PidFile) {
         $OldPid = (Get-Content -Raw $PidFile).Trim()
         if ($OldPid) {
-            Stop-Process -Id ([int]$OldPid) -Force -ErrorAction SilentlyContinue
+            $Proc = Get-Process -Id ([int]$OldPid) -ErrorAction SilentlyContinue
+            if ($Proc -and ($ExpectedNames -contains $Proc.ProcessName -or $ExpectedNames -contains "$($Proc.ProcessName).exe")) {
+                Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
+            }
         }
         Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
     }

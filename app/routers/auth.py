@@ -51,9 +51,12 @@ async def _check_ip_rate_limit(db: AsyncSession, ip: str) -> bool:
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For") if TRUST_PROXY_HEADERS else None
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    # 仅信任 Cloudflare 注入的 CF-Connecting-IP；客户端不能伪造（cloudflared 隧道层会覆写）。
+    # X-Forwarded-For 不能信：客户端能任意构造让 IP 限流计数器分散。
+    if TRUST_PROXY_HEADERS:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip:
+            return cf_ip.strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -122,7 +125,7 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
         path="/",
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite="strict",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     return response

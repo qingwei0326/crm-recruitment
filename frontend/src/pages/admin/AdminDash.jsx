@@ -26,6 +26,7 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
+import { stageLabel } from '../../labels';
 
 export default function AdminDash() {
   const { user, logout } = useAuth();
@@ -298,7 +299,7 @@ export default function AdminDash() {
                         }}
                       />
                       <div className="text-xs text-gray-400 mt-2 truncate">
-                        {s.split('').join('​')}
+                        {stageLabel(s).split('').join('​')}
                       </div>
                     </div>
                   );

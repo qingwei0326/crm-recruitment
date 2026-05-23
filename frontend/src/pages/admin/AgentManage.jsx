@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { formatDateTime } from '../../utils';
+import { statusLabel } from '../../labels';
 import {
   ArrowLeft,
   Users,
@@ -33,13 +35,6 @@ const inputCls =
 
 function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
-}
-
-function formatDateTime(value) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('zh-CN', { hour12: false });
 }
 
 function getStatusBadgeClass(status) {
@@ -685,7 +680,7 @@ export default function AgentManage() {
                             )}
                             {!isMobile && (
                               <span className="text-xs text-gray-400 dark:text-gray-500 w-24 text-right">
-                                {l.updated_at?.split(' ')[0]}
+                                {formatDateTime(l.updated_at)?.split(' ')[0]}
                               </span>
                             )}
                             </div>
@@ -771,7 +766,7 @@ export default function AgentManage() {
                                                     <span className="font-medium text-gray-600 dark:text-gray-300">
                                                       {note.agent_name || '-'}
                                                     </span>
-                                                    <span>{note.created_at}</span>
+                                                    <span>{formatDateTime(note.created_at)}</span>
                                                   </div>
                                                   <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                                                     {note.content}

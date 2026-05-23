@@ -226,6 +226,7 @@ async def my_backlog(
                     StudentStatus.expired,
                     StudentStatus.rejected,
                     StudentStatus.completed,
+                    StudentStatus.invalid,
                 ]
             ),
             Student.assigned_at.isnot(None),

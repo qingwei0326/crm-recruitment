@@ -38,7 +38,17 @@ async def source_stats(
         select(
             Student.region,
             func.count(Student.id),
-            func.sum(case((Student.status != StudentStatus.not_contacted, 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        Student.status.not_in(
+                            [StudentStatus.not_contacted, StudentStatus.invalid]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
             func.sum(case((Student.intent_level == IntentLevel.A, 1), else_=0)),
         )
         .where(Student.region != "")
@@ -64,7 +74,10 @@ async def stage_stats(
 ):
     result = await db.execute(
         select(Student.stage, func.count(Student.id))
-        .where(Student.assigned_to.is_not(None))
+        .where(
+            Student.assigned_to.is_not(None),
+            Student.status != StudentStatus.invalid,
+        )
         .group_by(Student.stage)
     )
     by_stage = {row[0]: row[1] for row in result.all()}
@@ -145,7 +158,10 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
 
     total_contacted_r = await db.execute(
         select(func.count(Student.id)).where(
-            Student.assigned_to == agent_id, Student.status != StudentStatus.not_contacted
+            Student.assigned_to == agent_id,
+            Student.status.not_in(
+                [StudentStatus.not_contacted, StudentStatus.invalid]
+            ),
         )
     )
     total_contacted = total_contacted_r.scalar() or 0
@@ -195,7 +211,17 @@ async def agent_ranking(
         select(
             Student.assigned_to,
             func.count(Student.id),
-            func.sum(case((Student.status != StudentStatus.not_contacted, 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        Student.status.not_in(
+                            [StudentStatus.not_contacted, StudentStatus.invalid]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
             func.sum(case((Student.intent_level == IntentLevel.A, 1), else_=0)),
             func.sum(case((Student.status == StudentStatus.enrolled, 1), else_=0)),
         )
@@ -296,7 +322,17 @@ async def enrollment_conversion(
         select(
             Student.assigned_to,
             func.count(Student.id),
-            func.sum(case((Student.status != StudentStatus.not_contacted, 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        Student.status.not_in(
+                            [StudentStatus.not_contacted, StudentStatus.invalid]
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
             func.sum(case((Student.intent_level == IntentLevel.A, 1), else_=0)),
             func.sum(case((Student.status == StudentStatus.enrolled, 1), else_=0)),
         )

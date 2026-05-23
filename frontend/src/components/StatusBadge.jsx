@@ -1,3 +1,5 @@
+import { statusLabel } from '../labels';
+
 const STATUS_STYLES = {
   已报名: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
   未联系: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
@@ -14,7 +16,7 @@ export default function StatusBadge({ status }) {
   const cls = STATUS_STYLES[status] || 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
-      {status}
+      {statusLabel(status)}
     </span>
   );
 }

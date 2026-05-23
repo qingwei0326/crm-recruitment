@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -44,6 +45,8 @@ from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, Studen
 from app.utils import make_operation_log, mask_phone, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
+
+logger = logging.getLogger(__name__)
 
 
 STAGE_ORDER = ["初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"]
@@ -515,12 +518,15 @@ async def import_students_excel(
         )
     except (InvalidFileException, BadZipFile, OSError) as exc:
         await db.rollback()
+        logger.warning("Excel import parse failed: %s", exc)
         return Response.error(code=1, msg=f"文件解析失败: {exc}")
     except SQLAlchemyError:
         await db.rollback()
+        logger.exception("Excel import DB write failed")
         return Response.error(code=1, msg="数据库写入失败")
     except Exception:
         await db.rollback()
+        logger.exception("Excel import failed (unexpected)")
         return Response.error(code=1, msg="导入失败，请检查文件格式")
     finally:
         if workbook is not None:
@@ -681,9 +687,31 @@ async def list_students(
             )
         )
     if status:
-        query = query.where(Student.status == status)
+        # SAEnum 列存的是 enum.name（英文），前端传的是 value（中文）。
+        # 转成 enum 实例后 SQLAlchemy 才会正确映射为 name 进 SQL。
+        try:
+            status_enum = StudentStatus(status)
+        except ValueError:
+            return Response.ok({"total": 0, "page": page, "page_size": page_size, "list": []})
+        query = query.where(Student.status == status_enum)
+    else:
+        # 默认隐藏终态线索：已报名/已过期/未接通/无效。需要看时手动选状态筛选。
+        query = query.where(
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            )
+        )
     if intent_level:
-        query = query.where(Student.intent_level == intent_level)
+        try:
+            intent_enum = IntentLevel(intent_level)
+        except ValueError:
+            return Response.ok({"total": 0, "page": page, "page_size": page_size, "list": []})
+        query = query.where(Student.intent_level == intent_enum)
     if assignment == "unassigned" or assigned_to == 0:
         if not is_admin(current_user):
             raise HTTPException(status_code=403, detail="无权查看未分配学生")
@@ -695,7 +723,11 @@ async def list_students(
     if region:
         query = query.where(Student.region == region)
     if stage:
-        query = query.where(Student.stage == stage)
+        try:
+            stage_enum = StudentStage(stage)
+        except ValueError:
+            return Response.ok({"total": 0, "page": page, "page_size": page_size, "list": []})
+        query = query.where(Student.stage == stage_enum)
     if need_help == "1":
         query = query.where(Student.need_help)
 
@@ -1147,6 +1179,8 @@ async def update_student(
 ):
     student = await get_accessible_student(db, student_id, current_user)
     raw = body.model_dump(exclude_unset=True)
+    # invalid_reason 不写入 Student 表，仅用于在状态改为"无效"时附加到操作日志，作为审计依据
+    invalid_reason = (raw.pop("invalid_reason", None) or "").strip()
     if not raw:
         return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
 
@@ -1209,6 +1243,9 @@ async def update_student(
         parts = []
         if status_changed:
             parts.append(f"状态 {old_status} → {student.status}")
+            # 改为"无效"时附加原因，留作管理员事后抽查
+            if student.status == StudentStatus.invalid and invalid_reason:
+                parts.append(f"无效原因：{invalid_reason}")
         if stage_changed:
             parts.append(f"阶段 {old_stage} → {student.stage}")
         if assigned_changed:
@@ -1222,6 +1259,7 @@ async def update_student(
                 content="; ".join(parts),
                 old_status=str(old_status) if status_changed else "",
                 new_status=str(student.status) if status_changed else "",
+                note_content=invalid_reason if (status_changed and student.status == StudentStatus.invalid) else "",
             )
         )
 
@@ -1359,6 +1397,7 @@ async def auto_assign(
                         StudentStatus.enrolled,
                         StudentStatus.expired,
                         StudentStatus.rejected,
+                        StudentStatus.invalid,
                     ]
                 ),
             )
@@ -1428,6 +1467,7 @@ async def region_assign(
                         StudentStatus.enrolled,
                         StudentStatus.expired,
                         StudentStatus.rejected,
+                        StudentStatus.invalid,
                     ]
                 ),
             )

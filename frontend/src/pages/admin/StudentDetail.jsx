@@ -26,6 +26,7 @@ import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import TimelineItem from '../../components/TimelineItem';
+import { formatDateTime } from '../../utils';
 
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 const TABS = [
@@ -116,7 +117,7 @@ export default function StudentDetail() {
     return intentTimeline.map((it) => {
       const lvl = it.intent_level || it.level || '无';
       return {
-        date: (it.created_at || it.date || '').slice(0, 16),
+        date: formatDateTime(it.created_at || it.date),
         value: INTENT_TO_NUM[lvl] != null ? INTENT_TO_NUM[lvl] : 0,
         label: lvl,
         agent: it.agent_name || '',
@@ -393,7 +394,7 @@ export default function StudentDetail() {
                       <span className="font-medium text-gray-700 dark:text-gray-200">
                         {c.agent_name || '-'}
                       </span>
-                      <span>· {c.created_at || c.call_time}</span>
+                      <span>· {formatDateTime(c.created_at || c.call_time)}</span>
                       {c.duration != null && <span>· 时长 {c.duration}s</span>}
                       {c.ai_confidence != null && (
                         <span className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">

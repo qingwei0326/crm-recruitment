@@ -61,7 +61,8 @@ function Add-Target {
 foreach ($name in @(
     "backend_out.log","backend_err.log",
     "forward.log","forward_out.log","forward_err.log",
-    "startup.log"
+    "startup.log",
+    "health_check_report.txt"
 )) {
     Add-Target -Path (Join-Path $Root $name) -Reason "运行时日志"
 }
@@ -132,6 +133,7 @@ foreach ($name in @(
 foreach ($name in @(
     "MIGRATE_REGION.md",
     "migrate_backfill.py",
+    "fix_schema.py",
     "release-manifest.json"
 )) {
     Add-Target -Path (Join-Path $Root $name) -Reason "迁移/发布残留"
