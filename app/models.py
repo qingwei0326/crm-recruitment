@@ -213,7 +213,7 @@ class OperationLog(Base):
     __tablename__ = "operation_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    operator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    operator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     operator_name = Column(String(64), nullable=False)
     target_student_id = Column(Integer, nullable=True)
     case_no = Column(String(36), default="")

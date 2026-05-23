@@ -1623,7 +1623,7 @@ async def delete_student(
             content=f"删除学生 {student.name}（含通话/备注/回访/到访/查看日志）",
         )
     )
-    for model in (Call, Note, FollowUp, LeadViewLog, Visit):
+    for model in (Call, Note, FollowUp, LeadViewLog, Visit, DialLog):
         await db.execute(delete(model).where(model.student_id == student_id))
     await db.delete(student)
     await db.commit()
