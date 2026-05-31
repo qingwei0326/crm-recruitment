@@ -54,8 +54,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # 显式枚举：避免 "*" 与 allow_credentials 组合带来的安全盲区。
+    # 新增方法/头时主动来这里加一行，等于强制 code review 一次。
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    max_age=600,  # 预检结果缓存 10 分钟，减少 OPTIONS 请求
 )
 
 app.include_router(auth.router)

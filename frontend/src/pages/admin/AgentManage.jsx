@@ -11,7 +11,7 @@ import {
   Users,
   UserPlus,
   Eye,
-  Trash2,
+  UserX,
   Edit3,
   LogOut,
   Menu,
@@ -224,11 +224,33 @@ export default function AgentManage() {
     await api.put(`/admin/users/${agent.id}`, { is_active: !agent.is_active });
     fetchAgents();
   };
-  const handleDelete = async (agent) => {
-    if (!confirm(`确定删除话务员「${agent.name}」吗？其线索将回收至线索池。`)) return;
-    await api.delete(`/admin/users/${agent.id}`);
-    fetchAgents();
-    if (selectedAgent?.id === agent.id) setSelectedAgent(null);
+  const handleOffboard = async (agent) => {
+    if (
+      !confirm(
+        `确定为话务员「${agent.name}」办理离职吗？\n\n` +
+          `· 名下未结案的线索会被回收到池\n` +
+          `· 已报名/已过期等历史记录会保留并解绑\n` +
+          `· 账号会被禁用、已登录的会话立即失效\n\n` +
+          `账号会保留以便保留历史，如需彻底删除请联系开发者。`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await api.post(`/admin/users/${agent.id}/offboard`);
+      const d = res.data?.data;
+      if (d) {
+        alert(
+          `${agent.name} 已办理离职：\n` +
+            `回收线索 ${d.recycled_count} 条\n` +
+            `保留历史 ${d.preserved_count} 条`,
+        );
+      }
+      fetchAgents();
+      if (selectedAgent?.id === agent.id) setSelectedAgent(null);
+    } catch (err) {
+      alert(getApiErrorMessage(err));
+    }
   };
   const handleResetPassword = async (agent) => {
     if (!confirm(`确定重置「${agent.name}」的密码吗？系统将生成一个随机临时密码。`)) return;
@@ -492,11 +514,12 @@ export default function AgentManage() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDelete(a);
+                                handleOffboard(a);
                               }}
+                              title="办理离职：回收线索、禁用账号、保留历史"
                               className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                             >
-                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              <UserX className="w-3.5 h-3.5 text-red-400" />
                             </button>
                           </div>
                         </div>

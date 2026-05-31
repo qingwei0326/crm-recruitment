@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import hash_password, require_admin
+from app.auth import hash_password, invalidate_user_tokens, require_admin
 from app.backup import BACKUP_DIR, do_backup_async
 from app.utils import make_operation_log, today_cst_as_utc, utcnow
 from app.database import get_db
@@ -596,12 +596,16 @@ async def update_user(
                 return Response.error(code=1, msg="不能停用最后一个管理员")
         changes.append("启用" if body.is_active else "停用")
         user.is_active = body.is_active
+        # 禁用时立即撤销现有 token，防止账号被禁用后旧会话仍能访问
+        if not body.is_active:
+            invalidate_user_tokens(user)
     if body.service_regions is not None and body.service_regions != user.service_regions:
         changes.append("修改服务区域")
         user.service_regions = body.service_regions
     if body.password is not None:
         changes.append("重置密码")
         user.hashed_password = hash_password(body.password)
+        invalidate_user_tokens(user)
 
     if changes:
         db.add(
@@ -683,6 +687,108 @@ async def delete_user(
     return Response.ok(msg="已删除，该话务员的学生已回收至池")
 
 
+@router.post("/users/{user_id}/offboard")
+async def offboard_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """软离职：禁用账号 + 撤销 token + 回收线索 + 留存历史。
+
+    相比 delete_user 的优势：
+      1) 保留 Call/Note/FollowUp 等历史归属，报表口径不丢
+      2) 绕开 FK 约束（hard delete 在话务员有工作记录时会报错）
+      3) 一个原子操作完成所有离职动作，避免 admin 分多步做漏环节
+    """
+    if user_id == current_user.id:
+        return Response.error(code=1, msg="不能离职自己")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return Response.error(code=1, msg="用户不存在")
+
+    # 防止把最后一个 admin 离职
+    if user.role == UserRole.admin and user.is_active:
+        admin_count = (await db.execute(
+            select(func.count(User.id)).where(
+                User.role == UserRole.admin, User.is_active
+            )
+        )).scalar() or 0
+        if admin_count <= 1:
+            return Response.error(code=1, msg="不能离职最后一个管理员")
+
+    # 1) 终态学员（已报名/已过期/拒绝/无效）：只解绑，状态保留作为历史
+    terminal_statuses = [
+        StudentStatus.enrolled,
+        StudentStatus.expired,
+        StudentStatus.rejected,
+        StudentStatus.invalid,
+    ]
+    preserved_q = await db.execute(
+        select(func.count(Student.id)).where(
+            Student.assigned_to == user_id,
+            Student.status.in_(terminal_statuses),
+        )
+    )
+    preserved_count = preserved_q.scalar() or 0
+    await db.execute(
+        update(Student)
+        .where(
+            Student.assigned_to == user_id,
+            Student.status.in_(terminal_statuses),
+        )
+        .values(assigned_to=None, assigned_at=None)
+    )
+
+    # 2) 非终态学员：全部回收到池，清除阶段/意向，避免新话务员误以为是自己跟出来的
+    recycled_q = await db.execute(
+        select(func.count(Student.id)).where(Student.assigned_to == user_id)
+    )
+    recycled_count = recycled_q.scalar() or 0
+    await db.execute(
+        update(Student)
+        .where(Student.assigned_to == user_id)
+        .values(
+            assigned_to=None,
+            assigned_at=None,
+            status=StudentStatus.not_contacted,
+            intent_level=IntentLevel.none,
+            stage=StudentStage.initial_contact,
+            need_help=False,
+        )
+    )
+
+    # 3) 禁用账号 + 撤销现有 token
+    was_active = user.is_active
+    user.is_active = False
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    invalidate_user_tokens(user)
+
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="离职用户",
+            content=(
+                f"离职 {user.role} {user.username}({user.name})："
+                f"回收非终态 {recycled_count} 条、保留终态 {preserved_count} 条"
+                + ("" if was_active else "（账号原本已禁用）")
+            ),
+        )
+    )
+    await db.commit()
+    return Response.ok({
+        "user_id": user.id,
+        "username": user.username,
+        "recycled_count": recycled_count,
+        "preserved_count": preserved_count,
+        "was_already_disabled": not was_active,
+    })
+
+
 @router.post("/users/{user_id}/unlock")
 async def unlock_user(
     user_id: int,
@@ -722,6 +828,7 @@ async def reset_user_password(
     user.hashed_password = hash_password(new_password)
     user.failed_login_attempts = 0
     user.locked_until = None
+    invalidate_user_tokens(user)
     db.add(
         make_operation_log(
             current_user,
@@ -848,3 +955,135 @@ async def check_expired(
         count += 1
     await db.commit()
     return Response.ok({"expired_count": count})
+
+
+@router.get("/invalid-students")
+async def list_invalid_students(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """列出所有标记为无效的线索，用于回收和重新分配"""
+    query = (
+        select(Student, User.name.label("agent_name"))
+        .outerjoin(User, User.id == Student.assigned_to)
+        .where(Student.status == StudentStatus.invalid)
+        .order_by(Student.updated_at.desc())
+    )
+
+    count_q = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_q)).scalar()
+
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    rows = result.all()
+
+    # 获取无效原因（从操作日志中提取）
+    student_ids = [s.id for s, _ in rows]
+    invalid_reasons = {}
+    if student_ids:
+        # 查询最近一次标记为无效的操作日志
+        logs_result = await db.execute(
+            select(OperationLog.target_student_id, OperationLog.note_content, OperationLog.created_at)
+            .where(
+                OperationLog.target_student_id.in_(student_ids),
+                OperationLog.action == "修改状态",
+                OperationLog.new_status == "无效",
+            )
+            .order_by(OperationLog.created_at.desc())
+        )
+        for sid, reason, _ in logs_result.all():
+            if sid not in invalid_reasons and reason:
+                invalid_reasons[sid] = reason
+
+    data = [
+        {
+            "id": s.id,
+            "name": s.name,
+            "region": s.region,
+            "school_name": s.school_name,
+            "guardian_phone": s.guardian_phone[-4:] if s.guardian_phone else "",
+            "assigned_to": s.assigned_to,
+            "agent_name": agent_name or "未分配",
+            "invalid_reason": invalid_reasons.get(s.id, ""),
+            "updated_at": str(s.updated_at),
+            "case_no": s.case_no,
+        }
+        for s, agent_name in rows
+    ]
+
+    return Response.ok({
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "list": data,
+    })
+
+
+class ReclaimStudentsReq(BaseModel):
+    student_ids: list[int]
+    agent_id: int
+
+
+@router.post("/reclaim-students")
+async def reclaim_invalid_students(
+    body: ReclaimStudentsReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """回收无效线索并重新分配给话务员验证"""
+    if not body.student_ids:
+        return Response.error(code=1, msg="student_ids不能为空")
+
+    # 验证话务员存在且激活
+    agent_result = await db.execute(select(User).where(User.id == body.agent_id, User.is_active))
+    agent = agent_result.scalar_one_or_none()
+    if not agent:
+        return Response.error(code=1, msg="话务员不存在或已禁用")
+
+    # 查询要回收的学生，确保都是无效状态
+    students_result = await db.execute(
+        select(Student).where(Student.id.in_(body.student_ids))
+    )
+    students = students_result.scalars().all()
+
+    if not students:
+        return Response.error(code=1, msg="未找到指定的学生")
+
+    # 检查是否都是无效状态
+    non_invalid = [s for s in students if s.status != StudentStatus.invalid]
+    if non_invalid:
+        names = ", ".join([s.name for s in non_invalid[:3]])
+        return Response.error(code=1, msg=f"部分学生不是无效状态，无法回收: {names}")
+
+    # 回收：重置状态为未联系，重新分配
+    now = utcnow()
+    reclaimed_count = 0
+    for student in students:
+        old_agent_id = student.assigned_to
+        student.status = StudentStatus.not_contacted
+        student.assigned_to = body.agent_id
+        student.assigned_at = now
+
+        # 记录操作日志
+        db.add(
+            make_operation_log(
+                current_user,
+                student.id,
+                student.case_no or "",
+                "回收无效线索",
+                content=f"从话务员 {old_agent_id or '未分配'} 回收，重新分配给 {agent.name}（ID:{body.agent_id}）",
+                old_status="无效",
+                new_status="未联系",
+            )
+        )
+        reclaimed_count += 1
+
+    await db.commit()
+
+    return Response.ok({
+        "reclaimed_count": reclaimed_count,
+        "agent_id": body.agent_id,
+        "agent_name": agent.name,
+    })

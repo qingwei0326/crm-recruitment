@@ -24,6 +24,7 @@ import {
   HelpCircle,
   Settings,
   ArrowRightLeft,
+  RefreshCw,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
 import { stageLabel } from '../../labels';
@@ -113,6 +114,13 @@ export default function AdminDash() {
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
         >
           <ArrowRightLeft className="w-4 h-4" /> 线索回收
+        </Link>
+        <Link
+          to="/admin/invalid-reclaim"
+          onClick={closeSidebar}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
+        >
+          <RefreshCw className="w-4 h-4" /> 无效线索回收
         </Link>
         <Link
           to="/admin/agents"
