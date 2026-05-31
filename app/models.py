@@ -82,8 +82,12 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
+    # 递增式 token 版本号：改密码 / 禁用用户时 +1，旧 JWT 立即失效
+    token_version = Column(Integer, default=1, nullable=False)
     service_regions = Column(String(512), default="", nullable=False)
     pushplus_token = Column(String(64), default="", nullable=False)
+    last_login_device = Column(String(512), default="", nullable=False)
+    last_login_ip = Column(String(64), default="", nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     students = relationship("Student", back_populates="assigned_agent", lazy="dynamic")

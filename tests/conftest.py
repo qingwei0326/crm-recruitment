@@ -94,12 +94,20 @@ async def agent_user(db):
 
 @pytest_asyncio.fixture
 async def admin_token(admin_user):
-    return create_access_token({"sub": str(admin_user.id), "role": admin_user.role})
+    return create_access_token({
+        "sub": str(admin_user.id),
+        "role": admin_user.role,
+        "tv": admin_user.token_version,
+    })
 
 
 @pytest_asyncio.fixture
 async def agent_token(agent_user):
-    return create_access_token({"sub": str(agent_user.id), "role": agent_user.role})
+    return create_access_token({
+        "sub": str(agent_user.id),
+        "role": agent_user.role,
+        "tv": agent_user.token_version,
+    })
 
 
 @pytest_asyncio.fixture

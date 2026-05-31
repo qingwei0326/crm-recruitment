@@ -16,6 +16,7 @@ from app.utils import utcnow
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
 from app.database import get_db
 from app.models import LoginAttempt, OperationLog, User
+from app.pushplus import send_pushplus_to_user
 from app.schemas import LoginReq, Response
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
@@ -60,6 +61,12 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _get_device_fingerprint(request: Request) -> str:
+    """生成设备指纹：User-Agent 的前 512 字符"""
+    user_agent = request.headers.get("User-Agent", "")
+    return user_agent[:512]
+
+
 @router.post("/login")
 async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_db)):
     client_ip = _get_client_ip(request)
@@ -93,9 +100,22 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
     if not user.is_active:
         return Response.error(code=1, msg="账号已被禁用")
 
+    # 检测设备变化
+    current_device = _get_device_fingerprint(request)
+    device_changed = False
+    if user.last_login_device and user.last_login_device != current_device:
+        device_changed = True
+
     # Reset on successful login
     user.failed_login_attempts = 0
     user.locked_until = None
+
+    # 更新设备信息
+    old_device = user.last_login_device or "首次登录"
+    old_ip = user.last_login_ip or "未知"
+    user.last_login_device = current_device
+    user.last_login_ip = client_ip
+
     db.add(
         OperationLog(
             operator_id=user.id,
@@ -106,7 +126,31 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
     )
     await db.commit()
 
-    token = create_access_token({"sub": str(user.id), "role": user.role})
+    # 如果检测到设备变化，发送推送通知
+    if device_changed:
+        device_info = current_device[:100] if current_device else "未知设备"
+        content = f"""## 新设备登录提醒
+
+- **用户**: {user.name}
+- **新设备**: {device_info}
+- **新IP**: {client_ip}
+- **旧设备**: {old_device[:100] if old_device != "首次登录" else old_device}
+- **旧IP**: {old_ip}
+- **时间**: {utcnow().strftime('%Y-%m-%d %H:%M:%S')}
+
+如非本人操作，请立即联系管理员修改密码。"""
+
+        # 异步发送推送，不阻塞登录流程
+        import asyncio
+        asyncio.create_task(
+            send_pushplus_to_user(db, user.id, "新设备登录提醒", content)
+        )
+
+    token = create_access_token({
+        "sub": str(user.id),
+        "role": user.role,
+        "tv": user.token_version,
+    })
     body = Response.ok(
         {
             "access_token": token,
