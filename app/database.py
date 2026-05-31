@@ -43,6 +43,78 @@ async def init_db():
         await conn.run_sync(_migrate_follow_up_columns)
         await conn.run_sync(_drop_message_templates_table)
         await conn.run_sync(_ensure_student_indexes)
+        await conn.run_sync(_migrate_user_token_version)
+        await conn.run_sync(_migrate_user_device_tracking)
+        await conn.run_sync(_migrate_operation_log_nullable)
+
+
+def _migrate_user_token_version(sync_connection):
+    inspector = inspect(sync_connection)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "token_version" not in columns:
+        sync_connection.execute(
+            text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1")
+        )
+
+
+def _migrate_user_device_tracking(sync_connection):
+    inspector = inspect(sync_connection)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "last_login_device" not in columns:
+        sync_connection.execute(
+            text("ALTER TABLE users ADD COLUMN last_login_device VARCHAR(512) DEFAULT '' NOT NULL")
+        )
+    if "last_login_ip" not in columns:
+        sync_connection.execute(
+            text("ALTER TABLE users ADD COLUMN last_login_ip VARCHAR(64) DEFAULT '' NOT NULL")
+        )
+
+
+def _migrate_operation_log_nullable(sync_connection):
+    """将 operation_logs.operator_id 改为 nullable（删除学生时系统操作无 operator）"""
+    inspector = inspect(sync_connection)
+    if "operation_logs" not in inspector.get_table_names():
+        return
+
+    # 检查 operator_id 是否已经是 nullable
+    columns = inspector.get_columns("operation_logs")
+    operator_id_col = next((c for c in columns if c["name"] == "operator_id"), None)
+    if not operator_id_col or operator_id_col.get("nullable", False):
+        return  # 已经是 nullable 或字段不存在
+
+    # SQLite 不支持 ALTER COLUMN，需要重建表
+    sync_connection.execute(text("""
+        CREATE TABLE operation_logs_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operator_id INTEGER,
+            operator_name VARCHAR(64) NOT NULL,
+            target_student_id INTEGER,
+            case_no VARCHAR(36) DEFAULT '',
+            action VARCHAR(64) NOT NULL,
+            details TEXT DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (operator_id) REFERENCES users(id)
+        )
+    """))
+
+    sync_connection.execute(text(
+        "INSERT INTO operation_logs_new SELECT * FROM operation_logs"
+    ))
+
+    sync_connection.execute(text("DROP TABLE operation_logs"))
+    sync_connection.execute(text("ALTER TABLE operation_logs_new RENAME TO operation_logs"))
+
+    # 重建索引
+    sync_connection.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_operation_logs_created_at ON operation_logs(created_at)"
+    ))
+    sync_connection.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_operation_logs_target_student_id ON operation_logs(target_student_id)"
+    ))
 
 
 def _ensure_student_indexes(sync_connection):
