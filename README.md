@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.1.2-blue)
+![Version](https://img.shields.io/badge/version-1.1.3-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -238,6 +238,16 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.1.3（2026-05-31）
+
+- **话务员换设备安全机制**：登录时记录设备指纹（User-Agent + IP），检测到换设备自动推送 PushPlus 通知
+- **无效线索回收页面**：管理员可查看所有无效线索、批量选择、一键回收并重新分配给话务员验证
+- **软离职功能**（`/users/{id}/offboard`）：一个原子操作完成禁用账号 + 撤销 token + 回收线索 + 保留历史，比手动分步操作更安全
+- **Token 即时撤销**：管理员禁用账号或重置密码时，旧 token 立即失效（JWT 携带 tv 字段，user.token_version 递增触发）
+- **权限边界测试**：新增 4 套测试（设备追踪、软离职、权限隔离、token 撤销），守住话务员数据隔离红线
+- **部署脚本改进**：start.sh / stop.sh 重构，支持更可靠的前后端启停
+- **J1900 迁移文档更新**：新增纯 Python / PowerShell 修复方案，降低部署门槛
 
 ### v1.1.2（2025-05-23）
 
