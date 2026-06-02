@@ -5,6 +5,7 @@ import os
 from sqlalchemy import inspect, select, text
 
 from app.auth import hash_password
+from app.config import DB_ENGINE
 from app.database import async_session, init_db, sync_engine
 from app.models import User, UserRole
 
@@ -40,24 +41,46 @@ async def seed():
     print("[OK] 数据库表创建完成")
 
     with sync_engine.connect() as conn:
-        conn.execute(
-            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('pushplus_token', '')")
-        )
-        conn.execute(
-            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('stale_days', '3')")
-        )
-        conn.execute(
-            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_window_start', '08:00')")
-        )
-        conn.execute(
-            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_window_end', '21:00')")
-        )
-        conn.execute(
-            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_max_per_24h', '3')")
-        )
-        conn.execute(
-            text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('deepseek_api_key', '')")
-        )
+        if DB_ENGINE == "postgresql":
+            # PostgreSQL 使用 ON CONFLICT DO NOTHING
+            conn.execute(
+                text("INSERT INTO system_configs (key, value) VALUES ('pushplus_token', '') ON CONFLICT (key) DO NOTHING")
+            )
+            conn.execute(
+                text("INSERT INTO system_configs (key, value) VALUES ('stale_days', '3') ON CONFLICT (key) DO NOTHING")
+            )
+            conn.execute(
+                text("INSERT INTO system_configs (key, value) VALUES ('dial_window_start', '08:00') ON CONFLICT (key) DO NOTHING")
+            )
+            conn.execute(
+                text("INSERT INTO system_configs (key, value) VALUES ('dial_window_end', '21:00') ON CONFLICT (key) DO NOTHING")
+            )
+            conn.execute(
+                text("INSERT INTO system_configs (key, value) VALUES ('dial_max_per_24h', '3') ON CONFLICT (key) DO NOTHING")
+            )
+            conn.execute(
+                text("INSERT INTO system_configs (key, value) VALUES ('deepseek_api_key', '') ON CONFLICT (key) DO NOTHING")
+            )
+        else:
+            # SQLite 使用 INSERT OR IGNORE
+            conn.execute(
+                text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('pushplus_token', '')")
+            )
+            conn.execute(
+                text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('stale_days', '3')")
+            )
+            conn.execute(
+                text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_window_start', '08:00')")
+            )
+            conn.execute(
+                text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_window_end', '21:00')")
+            )
+            conn.execute(
+                text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('dial_max_per_24h', '3')")
+            )
+            conn.execute(
+                text("INSERT OR IGNORE INTO system_configs (key, value) VALUES ('deepseek_api_key', '')")
+            )
         conn.commit()
 
         insp = inspect(sync_engine)
@@ -136,11 +159,16 @@ async def seed():
         try:
             cols = [c["name"] for c in insp.get_columns(students_table)]
             if "phone" in cols:
-                for index in insp.get_indexes(students_table):
-                    if "phone" in index.get("column_names", []):
-                        index_name = index["name"].replace('"', '""')
-                        conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
-                conn.execute(text(f"ALTER TABLE {students_table} DROP COLUMN phone"))
+                if DB_ENGINE == "postgresql":
+                    # PostgreSQL 直接 DROP COLUMN，CASCADE 自动删除依赖索引
+                    conn.execute(text(f"ALTER TABLE {students_table} DROP COLUMN IF EXISTS phone CASCADE"))
+                else:
+                    # SQLite 需要先手动删除索引
+                    for index in insp.get_indexes(students_table):
+                        if "phone" in index.get("column_names", []):
+                            index_name = index["name"].replace('"', '""')
+                            conn.execute(text(f'DROP INDEX IF EXISTS "{index_name}"'))
+                    conn.execute(text(f"ALTER TABLE {students_table} DROP COLUMN phone"))
                 conn.commit()
                 print(f"[MIG] {students_table}.phone 已删除")
         except Exception as e:
@@ -161,13 +189,17 @@ async def seed():
             try:
                 cols = [c["name"] for c in insp.get_columns(table)]
                 if col not in cols:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}"))
+                    if DB_ENGINE == "postgresql":
+                        # PostgreSQL 支持 IF NOT EXISTS
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {dtype}"))
+                    else:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {dtype}"))
                     conn.commit()
                     print(f"[MIG] {table}.{col} 添加成功")
             except Exception as e:
                 print(f"[SKIP] {table}.{col}: {e}")
 
-        # 3. operation_logs.operator_id: NOT NULL → NULL（SQLite 需重建表）
+        # 3. operation_logs.operator_id: NOT NULL → NULL
         # 旧 schema NOT NULL 会让"删用户"在 SQLAlchemy set null 时 IntegrityError
         # operator_name 已同步存储，仍可作为审计追溯
         try:
@@ -175,36 +207,44 @@ async def seed():
                 op_cols = insp.get_columns("operation_logs")
                 op_id = next((c for c in op_cols if c["name"] == "operator_id"), None)
                 if op_id and not op_id.get("nullable", True):
-                    print("[MIG] operation_logs.operator_id 重建为 nullable...")
-                    conn.execute(text("PRAGMA foreign_keys=OFF"))
-                    conn.execute(text("""
-                        CREATE TABLE operation_logs_new (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            operator_id INTEGER REFERENCES users(id),
-                            operator_name VARCHAR(64) NOT NULL,
-                            target_student_id INTEGER,
-                            case_no VARCHAR(36) DEFAULT '',
-                            action VARCHAR(32) NOT NULL,
-                            content TEXT DEFAULT '',
-                            old_status VARCHAR(32) DEFAULT '',
-                            new_status VARCHAR(32) DEFAULT '',
-                            note_content TEXT DEFAULT '',
-                            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-                        )
-                    """))
-                    conn.execute(text("""
-                        INSERT INTO operation_logs_new
-                        (id, operator_id, operator_name, target_student_id, case_no, action,
-                         content, old_status, new_status, note_content, created_at)
-                        SELECT id, operator_id, operator_name, target_student_id, case_no, action,
-                               content, old_status, new_status, note_content, created_at
-                        FROM operation_logs
-                    """))
-                    conn.execute(text("DROP TABLE operation_logs"))
-                    conn.execute(text("ALTER TABLE operation_logs_new RENAME TO operation_logs"))
-                    conn.execute(text("PRAGMA foreign_keys=ON"))
-                    conn.commit()
-                    print("[MIG] operation_logs.operator_id 重建完成")
+                    if DB_ENGINE == "postgresql":
+                        # PostgreSQL 直接 ALTER COLUMN
+                        print("[MIG] operation_logs.operator_id ALTER COLUMN DROP NOT NULL...")
+                        conn.execute(text("ALTER TABLE operation_logs ALTER COLUMN operator_id DROP NOT NULL"))
+                        conn.commit()
+                        print("[MIG] operation_logs.operator_id 修改完成")
+                    else:
+                        # SQLite 需重建表
+                        print("[MIG] operation_logs.operator_id 重建为 nullable...")
+                        conn.execute(text("PRAGMA foreign_keys=OFF"))
+                        conn.execute(text("""
+                            CREATE TABLE operation_logs_new (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                operator_id INTEGER REFERENCES users(id),
+                                operator_name VARCHAR(64) NOT NULL,
+                                target_student_id INTEGER,
+                                case_no VARCHAR(36) DEFAULT '',
+                                action VARCHAR(32) NOT NULL,
+                                content TEXT DEFAULT '',
+                                old_status VARCHAR(32) DEFAULT '',
+                                new_status VARCHAR(32) DEFAULT '',
+                                note_content TEXT DEFAULT '',
+                                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                            )
+                        """))
+                        conn.execute(text("""
+                            INSERT INTO operation_logs_new
+                            (id, operator_id, operator_name, target_student_id, case_no, action,
+                             content, old_status, new_status, note_content, created_at)
+                            SELECT id, operator_id, operator_name, target_student_id, case_no, action,
+                                   content, old_status, new_status, note_content, created_at
+                            FROM operation_logs
+                        """))
+                        conn.execute(text("DROP TABLE operation_logs"))
+                        conn.execute(text("ALTER TABLE operation_logs_new RENAME TO operation_logs"))
+                        conn.execute(text("PRAGMA foreign_keys=ON"))
+                        conn.commit()
+                        print("[MIG] operation_logs.operator_id 重建完成")
         except Exception as e:
             print(f"[WARN] operation_logs.operator_id 迁移失败: {e}")
 
