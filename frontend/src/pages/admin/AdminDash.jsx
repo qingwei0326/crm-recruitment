@@ -27,6 +27,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
+import FunnelChart from './FunnelChart';
 import { stageLabel } from '../../labels';
 
 export default function AdminDash() {
@@ -42,6 +43,7 @@ export default function AdminDash() {
   const [visitSummary, setVisitSummary] = useState(null);
   const [stageStats, setStageStats] = useState({});
   const [enrollmentData, setEnrollmentData] = useState(null);
+  const [funnelData, setFunnelData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,8 +54,9 @@ export default function AdminDash() {
       api.get('/visits/summary'),
       api.get('/stats/stages'),
       api.get('/students/enrolled?page_size=1'),
+      api.get('/stats/funnel'),
     ])
-      .then(([sRes, lRes, aRes, vRes, stRes, eRes]) => {
+      .then(([sRes, lRes, aRes, vRes, stRes, eRes, fRes]) => {
         setStats(sRes.data.data || []);
         setTotalStudents(lRes.data.data?.total || 0);
         const agents = aRes.data.data || [];
@@ -61,6 +64,7 @@ export default function AdminDash() {
         setVisitSummary(vRes.data.data || null);
         setStageStats(stRes.data.data || {});
         setEnrollmentData(eRes.data.data || null);
+        setFunnelData(fRes.data.data || null);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -312,6 +316,20 @@ export default function AdminDash() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Funnel chart */}
+          {funnelData && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="px-4 py-4 border-b dark:border-gray-700">
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4" /> 转化漏斗
+                </h3>
+              </div>
+              <div className="p-4">
+                <FunnelChart data={funnelData} />
               </div>
             </div>
           )}
