@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, func, select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_analyzer import predict_conversion
@@ -393,12 +393,12 @@ async def trend_data(
 
     calls_raw = await db.execute(
         select(
-            func.date(Call.created_at),
+            cast(Call.created_at, Date),
             Call.agent_id,
             func.count(Call.id),
         )
         .where(Call.created_at >= first_day, Call.created_at < last_day_end)
-        .group_by(func.date(Call.created_at), Call.agent_id)
+        .group_by(cast(Call.created_at, Date), Call.agent_id)
     )
     for day_str, agent_id, cnt in calls_raw.all():
         calls_by_date_agent.setdefault(day_str, {})[agent_name_of.get(agent_id, "")] = int(cnt)
@@ -424,11 +424,11 @@ async def trend_data(
     calls_total_by_date = {}
     calls_raw_total = await db.execute(
         select(
-            func.date(Call.created_at),
+            cast(Call.created_at, Date),
             func.count(Call.id),
         )
         .where(Call.created_at >= first_day, Call.created_at < last_day_end)
-        .group_by(func.date(Call.created_at))
+        .group_by(cast(Call.created_at, Date))
     )
     for day_str, cnt in calls_raw_total.all():
         calls_total_by_date[day_str] = int(cnt)
@@ -536,3 +536,202 @@ async def predict_student_conversion(
             },
         }
     )
+
+
+@router.get("/funnel")
+async def funnel_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """转化漏斗：总线索 → 已分配 → 已联系 → A意向 → 已到访 → 已报名"""
+    total_r = await db.execute(select(func.count(Student.id)))
+    total = total_r.scalar() or 0
+
+    assigned_r = await db.execute(
+        select(func.count(Student.id)).where(Student.assigned_to.is_not(None))
+    )
+    assigned = assigned_r.scalar() or 0
+
+    contacted_r = await db.execute(
+        select(func.count(Student.id)).where(
+            Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
+        )
+    )
+    contacted = contacted_r.scalar() or 0
+
+    a_level_r = await db.execute(
+        select(func.count(Student.id)).where(Student.intent_level == IntentLevel.A)
+    )
+    a_level = a_level_r.scalar() or 0
+
+    visited_r = await db.execute(
+        select(func.count(func.distinct(Visit.student_id))).where(
+            Visit.status == VisitStatus.completed
+        )
+    )
+    visited = visited_r.scalar() or 0
+
+    enrolled_r = await db.execute(
+        select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
+    )
+    enrolled = enrolled_r.scalar() or 0
+
+    return Response.ok({
+        "stages": [
+            {"name": "总线索", "value": total},
+            {"name": "已分配", "value": assigned},
+            {"name": "已联系", "value": contacted},
+            {"name": "A意向", "value": a_level},
+            {"name": "已到访", "value": visited},
+            {"name": "已报名", "value": enrolled},
+        ]
+    })
+
+
+@router.get("/heatmap")
+async def heatmap_data(
+    start_date: str = Query(None),
+    end_date: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """坐席工作量热力图：坐席 × 日期 的通话次数矩阵"""
+    end = date.today()
+    if end_date:
+        end = date.fromisoformat(end_date)
+    start = end - timedelta(days=29)
+    if start_date:
+        start = date.fromisoformat(start_date)
+
+    first_day = datetime(start.year, start.month, start.day)
+    last_day_end = datetime(end.year, end.month, end.day) + timedelta(days=1)
+
+    # 获取所有坐席
+    agents_r = await db.execute(
+        select(User.id, User.name).where(User.role == UserRole.agent).order_by(User.name)
+    )
+    agent_rows = agents_r.all()
+    agents = [{"id": aid, "name": name} for aid, name in agent_rows]
+
+    # 构建日期列表
+    days = []
+    curr = start
+    while curr <= end:
+        days.append(curr)
+        curr += timedelta(days=1)
+
+    if not agents or not days:
+        return Response.ok({"agents": [], "dates": [], "data": []})
+
+    # 查询坐席 × 日期的通话次数
+    calls_r = await db.execute(
+        select(
+            Call.agent_id,
+            cast(Call.created_at, Date),
+            func.count(Call.id),
+        )
+        .where(Call.created_at >= first_day, Call.created_at < last_day_end)
+        .group_by(Call.agent_id, cast(Call.created_at, Date))
+    )
+
+    # 构建矩阵
+    agent_id_to_idx = {a["id"]: i for i, a in enumerate(agents)}
+    date_strs = [str(d) for d in days]
+    date_to_idx = {d: i for i, d in enumerate(date_strs)}
+
+    matrix = [[0] * len(date_strs) for _ in range(len(agents))]
+    for agent_id, day_val, cnt in calls_r.all():
+        day_str = str(day_val)
+        if agent_id in agent_id_to_idx and day_str in date_to_idx:
+            matrix[agent_id_to_idx[agent_id]][date_to_idx[day_str]] = int(cnt)
+
+    return Response.ok({
+        "agents": [a["name"] for a in agents],
+        "dates": date_strs,
+        "data": matrix,
+    })
+
+
+@router.get("/predictions")
+async def prediction_distribution(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """活跃学生的转化概率分布统计"""
+    # 查询所有非终态学生
+    result = await db.execute(
+        select(Student).where(
+            Student.status.not_in([
+                StudentStatus.enrolled,
+                StudentStatus.expired,
+                StudentStatus.rejected,
+                StudentStatus.invalid,
+            ])
+        )
+    )
+    students = result.scalars().all()
+
+    high = 0   # 概率 > 0.7
+    medium = 0  # 0.3 ~ 0.7
+    low = 0     # < 0.3
+    total_prob = 0.0
+
+    for s in students:
+        # 获取该学生的补充数据
+        notes_r = await db.execute(
+            select(func.count(Note.id)).where(Note.student_id == s.id)
+        )
+        total_notes = notes_r.scalar() or 0
+
+        fu_r = await db.execute(
+            select(FollowUp).where(FollowUp.student_id == s.id).limit(1)
+        )
+        has_follow_up = fu_r.scalar_one_or_none() is not None
+
+        visit_r = await db.execute(
+            select(Visit).where(
+                Visit.student_id == s.id, Visit.status == VisitStatus.completed
+            ).limit(1)
+        )
+        has_visit = visit_r.scalar_one_or_none() is not None
+
+        days_since = 30
+        if s.assigned_at:
+            delta = utcnow() - s.assigned_at
+            days_since = max(1, delta.days)
+
+        intent_val = s.intent_level.value if s.intent_level else "无"
+        stage_val = s.stage.value if s.stage else "初次联系"
+
+        prob = predict_conversion(
+            intent_level=intent_val,
+            stage=stage_val,
+            total_notes=total_notes,
+            has_follow_up=has_follow_up,
+            has_visit=has_visit,
+            days_since_assign=days_since,
+        )
+        total_prob += prob
+
+        if prob > 0.7:
+            high += 1
+        elif prob >= 0.3:
+            medium += 1
+        else:
+            low += 1
+
+    total = len(students)
+    avg_prob = round(total_prob / total, 4) if total > 0 else 0
+
+    return Response.ok({
+        "total": total,
+        "high": high,
+        "medium": medium,
+        "low": low,
+        "avg_probability": avg_prob,
+        "distribution": [
+            {"name": "高概率 (>70%)", "value": high, "color": "#22c55e"},
+            {"name": "中概率 (30-70%)", "value": medium, "color": "#eab308"},
+            {"name": "低概率 (<30%)", "value": low, "color": "#ef4444"},
+        ],
+    })

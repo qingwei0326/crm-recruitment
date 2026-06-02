@@ -2,11 +2,14 @@ import asyncio
 import logging
 import os
 import random
+import shutil
 import sqlite3
+import subprocess
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-from app.config import DB_PATH
+from app.config import DB_ENGINE, DATABASE_URL, DB_PATH
 
 logger = logging.getLogger("backup")
 
@@ -14,7 +17,70 @@ BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 MAX_BACKUPS = 7
 
 
-def do_backup():
+def _get_backup_extension():
+    """返回当前数据库引擎对应的备份文件扩展名。"""
+    return ".dump" if DB_ENGINE == "postgresql" else ".db"
+
+
+def _backup_postgresql():
+    """使用 pg_dump 备份 PostgreSQL 数据库。"""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ext = _get_backup_extension()
+    dest = os.path.join(BACKUP_DIR, f"crm_{ts}{ext}")
+
+    # 从 DATABASE_URL 解析连接参数
+    # 格式: postgresql+asyncpg://user:pass@host:5432/dbname
+    url = DATABASE_URL
+    # 移除驱动后缀以解析
+    for suffix in ("+asyncpg", "+psycopg2", "+psycopg"):
+        url = url.replace(suffix, "")
+    parsed = urlparse(url)
+
+    host = parsed.hostname or "localhost"
+    port = str(parsed.port or 5432)
+    user = parsed.username or ""
+    dbname = parsed.path.lstrip("/") or ""
+    password = parsed.password or ""
+
+    env = os.environ.copy()
+    if password:
+        env["PGPASSWORD"] = password
+
+    try:
+        cmd = [
+            "pg_dump",
+            "-h", host,
+            "-p", port,
+            "-U", user,
+            "-d", dbname,
+            "-Fc",  # custom format，可 pg_restore
+            "-f", dest,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+        if result.returncode != 0:
+            logger.error(f"pg_dump failed (code {result.returncode}): {result.stderr}")
+            if os.path.isfile(dest):
+                os.remove(dest)
+            return
+    except FileNotFoundError:
+        logger.error("pg_dump not found. Install PostgreSQL client tools.")
+        return
+    except subprocess.TimeoutExpired:
+        logger.error("pg_dump timed out after 300s")
+        if os.path.isfile(dest):
+            os.remove(dest)
+        return
+
+    if not os.path.isfile(dest):
+        return
+
+    logger.info(f"Backup created: {dest}")
+    _prune_old_backups()
+
+
+def _backup_sqlite():
     """Hot-copy DB via SQLite backup API. Keeps last MAX_BACKUPS files."""
     if not DB_PATH or DB_PATH == ":memory:":
         logger.warning("Skipping backup: in-memory or empty database path")
@@ -26,7 +92,8 @@ def do_backup():
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = os.path.join(BACKUP_DIR, f"crm_{ts}.db")
+    ext = _get_backup_extension()
+    dest = os.path.join(BACKUP_DIR, f"crm_{ts}{ext}")
 
     src_uri = Path(DB_PATH).resolve().as_uri() + "?mode=ro"
     try:
@@ -55,9 +122,14 @@ def do_backup():
         return
 
     logger.info(f"Backup created: {dest}")
+    _prune_old_backups()
 
+
+def _prune_old_backups():
+    """保留最近 MAX_BACKUPS 个备份文件，删除更早的。"""
+    ext = _get_backup_extension()
     files = sorted(
-        [f for f in os.listdir(BACKUP_DIR) if f.startswith("crm_") and f.endswith(".db")],
+        [f for f in os.listdir(BACKUP_DIR) if f.startswith("crm_") and f.endswith(ext)],
         reverse=True,
     )
     for old in files[MAX_BACKUPS:]:
@@ -66,6 +138,14 @@ def do_backup():
             logger.info(f"Removed old backup: {old}")
         except OSError as e:
             logger.warning(f"Could not remove old backup {old}: {e}")
+
+
+def do_backup():
+    """根据数据库引擎选择备份方式。"""
+    if DB_ENGINE == "postgresql":
+        _backup_postgresql()
+    else:
+        _backup_sqlite()
 
 
 async def do_backup_async():
