@@ -2,9 +2,27 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DB_PATH = os.getenv("DATABASE_PATH", os.path.join(BASE_DIR, "crm.db"))
-DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
-DATABASE_URL_SYNC = f"sqlite:///{DB_PATH}"
+# ── 数据库配置 ──────────────────────────────────────────
+# 优先使用 DATABASE_URL 环境变量（PostgreSQL / SQLite 均可）。
+# 未设置时回退到本地 SQLite 文件（向后兼容）。
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+if not DATABASE_URL:
+    # SQLite 模式
+    DB_PATH = os.getenv("DATABASE_PATH", os.path.join(BASE_DIR, "crm.db"))
+    DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+    DATABASE_URL_SYNC = f"sqlite:///{DB_PATH}"
+    DB_ENGINE = "sqlite"
+else:
+    # PostgreSQL 模式：DATABASE_URL 由用户提供，
+    # 例如 postgresql+asyncpg://user:pass@localhost:5432/crm_recruitment
+    DB_PATH = ""  # PostgreSQL 无本地文件
+    # 派生同步驱动 URL（用于 init_db / backup 等同步场景）
+    DATABASE_URL_SYNC = DATABASE_URL.replace("+asyncpg", "+psycopg2")
+    if DATABASE_URL_SYNC == DATABASE_URL:
+        # 用户可能直接写了 postgresql://，补上 psycopg2 驱动
+        DATABASE_URL_SYNC = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    DB_ENGINE = "postgresql"
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:

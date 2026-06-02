@@ -11,7 +11,7 @@ from sqlalchemy import func, select, union_all, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, invalidate_user_tokens, require_admin
-from app.backup import BACKUP_DIR, do_backup_async
+from app.backup import BACKUP_DIR, do_backup_async, _get_backup_extension
 from app.utils import make_operation_log, today_cst_as_utc, utcnow
 from app.database import get_db
 from app.models import (
@@ -852,8 +852,9 @@ async def list_backups(
     if not os.path.isdir(BACKUP_DIR):
         return Response.ok([])
     items = []
+    ext = _get_backup_extension()
     for fname in os.listdir(BACKUP_DIR):
-        if not (fname.startswith("crm_") and fname.endswith(".db")):
+        if not (fname.startswith("crm_") and fname.endswith(ext)):
             continue
         fpath = os.path.join(BACKUP_DIR, fname)
         try:
@@ -898,9 +899,10 @@ async def download_backup(
 ):
     """下载指定备份文件。"""
     # 双重防穿越：1) 文件名白名单 2) realpath 必须仍在 BACKUP_DIR 下
+    ext = _get_backup_extension()
     if (
         not name.startswith("crm_")
-        or not name.endswith(".db")
+        or not name.endswith(ext)
         or "/" in name
         or "\\" in name
         or ".." in name
