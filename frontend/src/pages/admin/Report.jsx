@@ -39,6 +39,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import HeatmapChart from './HeatmapChart';
+import PredictionChart from './PredictionChart';
 
 const rankColors = [
   'bg-amber-400 text-amber-900',
@@ -54,6 +56,8 @@ export default function Report() {
   const [ranking, setRanking] = useState([]);
   const [visits, setVisits] = useState(null);
   const [substageData, setSubstageData] = useState(null);
+  const [heatmapData, setHeatmapData] = useState(null);
+  const [predictionData, setPredictionData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -61,11 +65,15 @@ export default function Report() {
       api.get('/stats/agent-ranking'),
       api.get('/visits?page_size=100'),
       api.get('/stats/enrollment-substage-distribution'),
+      api.get('/stats/heatmap'),
+      api.get('/stats/predictions'),
     ])
-      .then(([rRes, vRes, sRes]) => {
+      .then(([rRes, vRes, sRes, hRes, pRes]) => {
         setRanking(rRes.data.data?.ranking || []);
         setVisits(vRes.data.data?.list || []);
         setSubstageData(sRes.data.data || null);
+        setHeatmapData(hRes.data.data || null);
+        setPredictionData(pRes.data.data || null);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -500,6 +508,33 @@ export default function Report() {
               </div>
             </div>
           </div>
+
+          {/* ── Section 3: 坐席工作量热力图 ── */}
+          {heatmapData && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-blue-500" />
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">坐席工作量热力图</h3>
+                <span className="text-xs text-gray-400 ml-2">近30天通话分布</span>
+              </div>
+              <div className="p-4 lg:p-6">
+                <HeatmapChart data={heatmapData} />
+              </div>
+            </div>
+          )}
+
+          {/* ── Section 4: 转化预测分布 ── */}
+          {predictionData && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                <Target className="w-5 h-5 text-purple-500" />
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">转化预测分析</h3>
+              </div>
+              <div className="p-4 lg:p-6">
+                <PredictionChart data={predictionData} />
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
