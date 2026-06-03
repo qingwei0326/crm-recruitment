@@ -1,4 +1,3 @@
-import asyncio
 import os
 from datetime import timedelta
 
@@ -83,7 +82,7 @@ async def create_call(
     if not _agent_can_access_student(student, current_user):
         raise HTTPException(status_code=403, detail="无权对该学员进行通话分析")
 
-    result = await asyncio.to_thread(analyze_transcript, body.transcript, await _get_deepseek_key(db))
+    result = await analyze_transcript(body.transcript, await _get_deepseek_key(db))
 
     call = Call(
         student_id=body.student_id,
