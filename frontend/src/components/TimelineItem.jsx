@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import { Sparkles } from 'lucide-react';
 import { formatDateTime } from '../utils';
 
-export default function TimelineItem({ type, icon: Icon, color = 'gray', title, content, agentName, timestamp, source }) {
+export default memo(function TimelineItem({ type, icon: Icon, color = 'gray', title, content, agentName, timestamp, source }) {
   const colorMap = {
     blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-800',
     green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-300 border-green-200 dark:border-green-800',
@@ -41,4 +42,4 @@ export default function TimelineItem({ type, icon: Icon, color = 'gray', title, 
       </div>
     </div>
   );
-}
+});

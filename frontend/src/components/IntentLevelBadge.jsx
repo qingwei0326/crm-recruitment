@@ -1,4 +1,6 @@
-export default function IntentLevelBadge({ level }) {
+import { memo } from 'react';
+
+export default memo(function IntentLevelBadge({ level }) {
   const v = level || '无';
   const cls =
     v === 'A'
@@ -13,4 +15,4 @@ export default function IntentLevelBadge({ level }) {
       {v === '无' ? '无' : v}
     </span>
   );
-}
+});

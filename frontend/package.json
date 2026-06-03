@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.2.5",
     "antd": "^6.4.3",
     "axios": "^1.6.2",
     "lucide-react": "^0.300.0",
