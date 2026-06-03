@@ -108,22 +108,34 @@ def _migrate_operation_log_nullable(sync_connection):
         ))
     else:
         # SQLite 不支持 ALTER COLUMN，需要重建表
-        sync_connection.execute(text("""
-            CREATE TABLE operation_logs_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                operator_id INTEGER,
-                operator_name VARCHAR(64) NOT NULL,
-                target_student_id INTEGER,
-                case_no VARCHAR(36) DEFAULT '',
-                action VARCHAR(64) NOT NULL,
-                details TEXT DEFAULT '',
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (operator_id) REFERENCES users(id)
-            )
-        """))
+        # 动态获取当前列，只修改 operator_id 为 nullable
+        col_names = [c["name"] for c in columns]
+        col_defs = []
+        for c in columns:
+            if c["name"] == "operator_id":
+                col_defs.append("operator_id INTEGER")
+            else:
+                # 保留原始定义
+                col_type = str(c["type"])
+                nullable = "NOT NULL" if not c.get("nullable", True) else ""
+                default = ""
+                if c.get("default") is not None:
+                    default_val = str(c["default"])
+                    if "CURRENT_TIMESTAMP" in default_val:
+                        default = "DEFAULT CURRENT_TIMESTAMP"
+                    elif "nextval" in default_val:
+                        default = ""  # SERIAL handled by AUTOINCREMENT
+                    else:
+                        default = f"DEFAULT {default_val}"
+                pk = " PRIMARY KEY AUTOINCREMENT" if c.get("primary_key") else ""
+                col_defs.append(f"    {c['name']} {col_type}{pk} {nullable} {default}".strip())
 
+        create_sql = "CREATE TABLE operation_logs_new (\n" + ",\n".join(col_defs) + "\n)"
+        sync_connection.execute(text(create_sql))
+
+        cols_str = ", ".join(col_names)
         sync_connection.execute(text(
-            "INSERT INTO operation_logs_new SELECT * FROM operation_logs"
+            f"INSERT INTO operation_logs_new ({cols_str}) SELECT {cols_str} FROM operation_logs"
         ))
 
         sync_connection.execute(text("DROP TABLE operation_logs"))
