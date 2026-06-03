@@ -1,15 +1,17 @@
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.backup import backup_scheduler, do_backup_async
 from app.config import CORS_ORIGINS
-from app.database import init_db
+from app.database import async_session, init_db
 from app.routers import (
     admin,
     auth,
@@ -76,7 +78,14 @@ app.include_router(operation_logs.router)
 
 @app.get("/api/health")
 async def health():
-    return {"code": 0, "msg": "ok"}
+    start = time.monotonic()
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        db_ms = round((time.monotonic() - start) * 1000)
+        return {"code": 0, "msg": "ok", "db": "ok", "db_ms": db_ms}
+    except Exception as e:
+        return {"code": 1, "msg": f"database error: {e}", "db": "error"}
 
 
 # Serve frontend static in production
