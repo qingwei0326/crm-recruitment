@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import StatusBadge from './StatusBadge';
 import IntentLevelBadge from './IntentLevelBadge';
@@ -20,7 +21,7 @@ function Field({ label, children }) {
   );
 }
 
-export default function StudentInfoCard({ student }) {
+export default memo(function StudentInfoCard({ student }) {
   const { user } = useAuth();
   if (!student) return null;
   const isAdmin = user?.role === 'admin';
@@ -74,4 +75,4 @@ export default function StudentInfoCard({ student }) {
       )}
     </div>
   );
-}
+});
