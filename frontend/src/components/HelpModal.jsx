@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { X, ChevronDown, ChevronRight, BookOpen } from 'lucide-react';
 
 const HELP_SECTIONS = {
@@ -143,7 +143,7 @@ const HELP_SECTIONS = {
   ],
 };
 
-export default function HelpModal({ isOpen, onClose, role = 'admin' }) {
+export default memo(function HelpModal({ isOpen, onClose, role = 'admin' }) {
   const [expanded, setExpanded] = useState({});
   const sections = HELP_SECTIONS[role] || HELP_SECTIONS.admin;
   const title = role === 'agent' ? '话务员使用说明' : '管理员使用说明';
@@ -208,4 +208,4 @@ export default function HelpModal({ isOpen, onClose, role = 'admin' }) {
       </div>
     </div>
   );
-}
+});

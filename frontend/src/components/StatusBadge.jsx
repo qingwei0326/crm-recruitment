@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { statusLabel } from '../labels';
 
 const STATUS_STYLES = {
@@ -11,7 +12,7 @@ const STATUS_STYLES = {
   已过期: 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
 };
 
-export default function StatusBadge({ status }) {
+export default memo(function StatusBadge({ status }) {
   if (!status) return <span className="text-xs text-gray-400">-</span>;
   const cls = STATUS_STYLES[status] || 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
   return (
@@ -19,4 +20,4 @@ export default function StatusBadge({ status }) {
       {statusLabel(status)}
     </span>
   );
-}
+});

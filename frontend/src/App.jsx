@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import useIsMobile from './hooks/useIsMobile';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const Login = lazy(() => import('./pages/Login'));
 const AdminDash = lazy(() => import('./pages/admin/AdminDash'));
@@ -52,6 +53,7 @@ export default function App() {
   if (loading) return <LoadingScreen />;
 
   return (
+    <ErrorBoundary>
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
         <Route
@@ -177,5 +179,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
+    </ErrorBoundary>
   );
 }
