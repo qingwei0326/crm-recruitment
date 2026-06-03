@@ -4,9 +4,8 @@ import json
 import logging
 import os
 import re
-import time
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from app.config import DEEPSEEK_API_KEY, DEEPSEEK_BASE
 
@@ -140,25 +139,24 @@ def _keyword_analyze(transcript: str) -> dict:
     }
 
 
-def _call_deepseek(prompt: str, api_key: str) -> dict | None:
-    """Synchronous DeepSeek API call with retry logic"""
-    req = Request(
-        f"{DEEPSEEK_BASE}/v1/chat/completions",
-        data=json.dumps(
-            {
+async def _call_deepseek(prompt: str, api_key: str) -> dict | None:
+    """Async DeepSeek API call via httpx"""
+    async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        resp = await client.post(
+            f"{DEEPSEEK_BASE}/v1/chat/completions",
+            json={
                 "model": "deepseek-chat",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.1,
                 "max_tokens": 300,
-            }
-        ).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-    )
-    resp = urlopen(req, timeout=API_TIMEOUT)
-    body = json.loads(resp.read().decode("utf-8"))
+            },
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        resp.raise_for_status()
+        body = resp.json()
     content = body["choices"][0]["message"]["content"].strip()
 
     if "```" in content:
@@ -173,13 +171,14 @@ def _call_deepseek(prompt: str, api_key: str) -> dict | None:
     }
 
 
-def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict | None:
-    """Call DeepSeek API with retry & timeout protection"""
+async def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict | None:
+    """Call DeepSeek API with retry & timeout protection (async)"""
+    import asyncio
+
     key = (api_key or DEEPSEEK_API_KEY or "").strip()
     if not key or not transcript or not transcript.strip():
         return None
 
-    # [optimization: limit input length]
     truncated = transcript[:MAX_TRANSCRIPT_LENGTH]
 
     prompt = (
@@ -200,11 +199,11 @@ def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict | Non
 
     for attempt in range(API_RETRIES + 1):
         try:
-            return _call_deepseek(prompt, key)
-        except URLError as e:
+            return await _call_deepseek(prompt, key)
+        except httpx.HTTPError as e:
             logger.warning(f"DeepSeek API attempt {attempt + 1}/{API_RETRIES + 1} failed: {e}")
             if attempt < API_RETRIES:
-                time.sleep(1 * (attempt + 1))  # linear backoff
+                await asyncio.sleep(1 * (attempt + 1))
             else:
                 logger.error("DeepSeek API all retries exhausted, falling back to keyword")
         except Exception as e:
@@ -213,13 +212,13 @@ def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict | Non
     return None
 
 
-def analyze_transcript(transcript: str, api_key: str | None = None) -> dict:
+async def analyze_transcript(transcript: str, api_key: str | None = None) -> dict:
     """Analyze transcript: prefer DeepSeek API, fall back to keyword matching.
 
     api_key 优先用调用方传入（来自 SystemConfig）；为空则 fallback 到模块加载时
     读取的 DEEPSEEK_API_KEY env 变量。
     """
-    result = _deepseek_analyze(transcript, api_key)
+    result = await _deepseek_analyze(transcript, api_key)
     if result:
         result = {**result, "ai_intent": normalize_ai_intent(result.get("ai_intent"))}
         return result

@@ -7,7 +7,7 @@ export function formatDateTime(value, withSeconds = false) {
     let s = String(value).replace(' ', 'T');
     // 已经带时区（Z 或 +08:00 等）就不再追加
     const tail = s.slice(10);
-    const hasTz = /[Zz]$/.test(tail) || /[+\-]\d{2}:?\d{2}$/.test(tail);
+    const hasTz = /[Zz]$/.test(tail) || /[+-]\d{2}:?\d{2}$/.test(tail);
     if (!hasTz) s += 'Z';
     const d = new Date(s);
     if (isNaN(d.getTime())) return value;
@@ -31,7 +31,7 @@ export function formatDate(value) {
   try {
     let s = String(value).replace(' ', 'T');
     const tail = s.slice(10);
-    const hasTz = /[Zz]$/.test(tail) || /[+\-]\d{2}:?\d{2}$/.test(tail);
+    const hasTz = /[Zz]$/.test(tail) || /[+-]\d{2}:?\d{2}$/.test(tail);
     if (!hasTz) s += 'Z';
     const d = new Date(s);
     if (isNaN(d.getTime())) return value;

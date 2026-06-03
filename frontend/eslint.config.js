@@ -1,0 +1,83 @@
+import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
+import reactRefresh from 'eslint-plugin-react-refresh';
+
+export default [
+  js.configs.recommended,
+  {
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    languageOptions: {
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        navigator: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        alert: 'readonly',
+        confirm: 'readonly',
+        prompt: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+        File: 'readonly',
+        FileReader: 'readonly',
+        AbortController: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+        getComputedStyle: 'readonly',
+        matchMedia: 'readonly',
+        scrollTo: 'readonly',
+        resizeTo: 'readonly',
+        resizeBy: 'readonly',
+        moveBy: 'readonly',
+        moveTo: 'readonly',
+        open: 'readonly',
+        close: 'readonly',
+        print: 'readonly',
+        focus: 'readonly',
+        blur: 'readonly',
+        find: 'readonly',
+        atob: 'readonly',
+        btoa: 'readonly',
+        createImageBitmap: 'readonly',
+        queueMicrotask: 'readonly',
+        structuredClone: 'readonly',
+        crypto: 'readonly',
+        performance: 'readonly',
+        console: 'readonly',
+      },
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    files: ['src/__tests__/**', '**/*.test.*', '**/*.spec.*'],
+    languageOptions: {
+      globals: {
+        global: 'readonly',
+        vi: 'readonly',
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+      },
+    },
+  },
+  {
+    ignores: ['dist/', 'node_modules/'],
+  },
+];
