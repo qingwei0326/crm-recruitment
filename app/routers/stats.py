@@ -113,37 +113,41 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     tomorrow = today + timedelta(days=1)
     month_start = month_start_cst_as_utc()
 
-    today_calls_r = await db.execute(
-        select(func.count(Call.id)).where(
-            Call.agent_id == agent_id, Call.created_at >= today, Call.created_at < tomorrow
+    # 合并 Call 统计：today_calls + month_calls + avg_duration 一次查询
+    calls_r = await db.execute(
+        select(
+            func.count().filter(Call.created_at >= today, Call.created_at < tomorrow).label("today_calls"),
+            func.count().label("month_calls"),
+            func.avg(Call.duration_seconds).label("avg_duration"),
+        ).where(Call.agent_id == agent_id, Call.created_at >= month_start)
+    )
+    row = calls_r.one()
+    today_calls = row.today_calls or 0
+    month_calls = row.month_calls or 0
+    avg_duration = round(row.avg_duration or 0, 1)
+
+    # 合并意向统计：total_contacted + all_a 一次查询
+    student_r = await db.execute(
+        select(
+            func.count().filter(
+                Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
+            ).label("total_contacted"),
+            func.count().filter(Student.intent_level == IntentLevel.A).label("all_a"),
+        ).where(Student.assigned_to == agent_id)
+    )
+    srow = student_r.one()
+    total_contacted = srow.total_contacted or 0
+    all_a = srow.all_a or 0
+    conversion_rate = round(all_a / total_contacted * 100, 1) if total_contacted > 0 else 0
+
+    # 合并"今日/本月新转 A"：基于 OperationLog 中意向变化记录
+    a_log_r = await db.execute(
+        select(
+            func.count(func.distinct(OperationLog.target_student_id)).filter(
+                OperationLog.created_at >= today, OperationLog.created_at < tomorrow
+            ).label("today_a"),
+            func.count(func.distinct(OperationLog.target_student_id)).label("month_a"),
         )
-    )
-    today_calls = today_calls_r.scalar() or 0
-
-    month_calls_r = await db.execute(
-        select(func.count(Call.id)).where(Call.agent_id == agent_id, Call.created_at >= month_start)
-    )
-    month_calls = month_calls_r.scalar() or 0
-
-    # 真正的"今日/本月新转 A"：基于 OperationLog 中意向变化记录，
-    # 避免 Student.updated_at 被任何字段变更刷新导致的统计虚高。
-    today_a_r = await db.execute(
-        select(func.count(func.distinct(OperationLog.target_student_id)))
-        .select_from(OperationLog)
-        .join(Student, Student.id == OperationLog.target_student_id)
-        .where(
-            Student.assigned_to == agent_id,
-            OperationLog.action.in_(["AI分析", "手动评级"]),
-            OperationLog.new_status == "A",
-            OperationLog.old_status != "A",
-            OperationLog.created_at >= today,
-            OperationLog.created_at < tomorrow,
-        )
-    )
-    today_a = today_a_r.scalar() or 0
-
-    month_a_r = await db.execute(
-        select(func.count(func.distinct(OperationLog.target_student_id)))
         .select_from(OperationLog)
         .join(Student, Student.id == OperationLog.target_student_id)
         .where(
@@ -154,30 +158,9 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
             OperationLog.created_at >= month_start,
         )
     )
-    month_a = month_a_r.scalar() or 0
-
-    total_contacted_r = await db.execute(
-        select(func.count(Student.id)).where(
-            Student.assigned_to == agent_id,
-            Student.status.not_in(
-                [StudentStatus.not_contacted, StudentStatus.invalid]
-            ),
-        )
-    )
-    total_contacted = total_contacted_r.scalar() or 0
-
-    all_a_r = await db.execute(
-        select(func.count(Student.id)).where(
-            Student.assigned_to == agent_id, Student.intent_level == IntentLevel.A
-        )
-    )
-    all_a = all_a_r.scalar() or 0
-    conversion_rate = round(all_a / total_contacted * 100, 1) if total_contacted > 0 else 0
-
-    avg_dur_r = await db.execute(
-        select(func.avg(Call.duration_seconds)).where(Call.agent_id == agent_id)
-    )
-    avg_duration = round(avg_dur_r.scalar() or 0, 1)
+    arow = a_log_r.one()
+    today_a = arow.today_a or 0
+    month_a = arow.month_a or 0
 
     return Response.ok(
         {
@@ -190,7 +173,6 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
             "avg_duration_seconds": avg_duration,
         }
     )
-
 
 @router.get("/agent-ranking")
 async def agent_ranking(

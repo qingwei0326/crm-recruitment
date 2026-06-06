@@ -144,11 +144,9 @@ def _enum_or_error(enum_cls, value: str, label: str):
 
 
 def _student_payload(student: Student, full_phone: bool = False) -> dict:
-    status = student.status.value if hasattr(student.status, "value") else student.status
-    intent_level = (
-        student.intent_level.value if hasattr(student.intent_level, "value") else student.intent_level
-    )
-    stage = student.stage.value if hasattr(student.stage, "value") else student.stage
+    status = student.status.value
+    intent_level = student.intent_level.value
+    stage = student.stage.value
     payload = {
         "id": student.id,
         "name": student.name,
@@ -171,11 +169,7 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
         "program": student.program,
         "deposit": student.deposit,
         "expired_at": str(student.expired_at) if student.expired_at else None,
-        "enrollment_substage": (
-            student.enrollment_substage.value
-            if hasattr(student.enrollment_substage, "value")
-            else student.enrollment_substage
-        ) if student.enrollment_substage else None,
+        "enrollment_substage": student.enrollment_substage.value if student.enrollment_substage else None,
         "created_at": str(student.created_at),
         "updated_at": str(student.updated_at),
     }
