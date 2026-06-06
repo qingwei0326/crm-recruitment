@@ -1,3 +1,8 @@
+param(
+    # 看门狗重启时用：跳过前端构建（前端早已 build 过，没必要在 J1900 上每次重建）
+    [switch]$NoBuild
+)
+
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -80,20 +85,24 @@ if (-not $NpmCommand) {
     $NpmCommand = (Get-Command npm -ErrorAction SilentlyContinue).Source
 }
 
-Write-Host "Building frontend..."
-$FrontendRoot = Join-Path $Root "frontend"
-Push-Location $FrontendRoot
-try {
-    $LocalVite = Join-Path $FrontendRoot "node_modules\.bin\vite.cmd"
-    if (Test-Path $LocalVite) {
-        & $LocalVite build
-    } elseif ($NpmCommand) {
-        & $NpmCommand run build
-    } else {
-        throw "Neither frontend\node_modules\.bin\vite.cmd nor npm was found. Install the official Node.js LTS Windows installer so node and npm are both available."
+if ($NoBuild) {
+    Write-Host "Skipping frontend build (-NoBuild)."
+} else {
+    Write-Host "Building frontend..."
+    $FrontendRoot = Join-Path $Root "frontend"
+    Push-Location $FrontendRoot
+    try {
+        $LocalVite = Join-Path $FrontendRoot "node_modules\.bin\vite.cmd"
+        if (Test-Path $LocalVite) {
+            & $LocalVite build
+        } elseif ($NpmCommand) {
+            & $NpmCommand run build
+        } else {
+            throw "Neither frontend\node_modules\.bin\vite.cmd nor npm was found. Install the official Node.js LTS Windows installer so node and npm are both available."
+        }
+    } finally {
+        Pop-Location
     }
-} finally {
-    Pop-Location
 }
 
 $BackendPidFile = Join-Path $Root "backend.pid"

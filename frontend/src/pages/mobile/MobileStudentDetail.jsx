@@ -16,6 +16,7 @@ import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import TimelineItem from '../../components/TimelineItem';
+import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
 
 function getApiErrorMessage(error) {
@@ -118,7 +119,7 @@ export default function MobileStudentDetail() {
     if (!student) return;
     setDialing(true);
     try {
-      await dial(student.id);
+      await dial(student.id, { studentName: student.name });
     } finally {
       setDialing(false);
     }
@@ -297,6 +298,9 @@ export default function MobileStudentDetail() {
         onSubmit={handleSubmitNote}
         submitting={noteSubmitting}
       />
+
+      {/* 打完电话返回后弹“选择处理结果”，更新联系状况 */}
+      <MobileDialResult onUpdated={() => loadDetail()} />
 
       {toast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-gray-900/90 text-white text-sm px-4 py-2 rounded-full">
