@@ -206,6 +206,19 @@ export default function AgentWork() {
   // Follow-up lock after dial
   const [lockedStudentId, setLockedStudentId] = useState(null);
 
+  // 拨号后弹窗：页面重载时从 sessionStorage 恢复拨号上下文
+  const [dialModal, setDialModal] = useState(null); // { studentId, studentName }
+  useEffect(() => {
+    const raw = sessionStorage.getItem('pendingDial');
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        sessionStorage.removeItem('pendingDial');
+        setDialModal(data);
+      } catch { sessionStorage.removeItem('pendingDial'); }
+    }
+  }, []);
+
   // Backlog alert (一天一次)
   const [backlogAlert, setBacklogAlert] = useState(null);
 
@@ -363,6 +376,26 @@ export default function AgentWork() {
     flashMsg('状态已更新');
   };
 
+  // 拨号弹窗：选完状态后更新，已联系/待回访时展开意向等级
+  const handleDialModalStatus = async (s) => {
+    if (!dialModal) return;
+    await updateStatus(dialModal.studentId, s);
+    if (s === '已联系' || s === '待回访') {
+      // 更新状态但不关弹窗，展开意向评级
+      setDialModal((p) => p ? { ...p, showIntent: true } : null);
+    } else {
+      setDialModal(null);
+    }
+  };
+
+  // 拨号弹窗：选完意向等级后更新并关闭弹窗
+  const handleDialModalIntent = async (level) => {
+    if (!dialModal) return;
+    await updateDetailField('intent_level', level);
+    flashMsg('意向等级已更新');
+    setDialModal(null);
+  };
+
   const updateStage = async (id, stag) => {
     await api.put(`/students/${id}/stage`, { stage: stag });
     setStudents((p) =>
@@ -458,6 +491,12 @@ export default function AgentWork() {
       alert('该联系人没有电话');
       return;
     }
+    // 拨号前把学生信息存 sessionStorage，打完电话回来弹状态选择弹窗
+    const dialStudent = students.find((s) => s.id === id);
+    sessionStorage.setItem('pendingDial', JSON.stringify({
+      studentId: id,
+      studentName: dialStudent?.name || '未知',
+    }));
     window.location.href = `tel:${phone}`;
     setLockedStudentId(id);
     // 后端已记一条 DialLog，刷新计数
@@ -662,6 +701,77 @@ export default function AgentWork() {
               {tokenSaving ? '保存中…' : '保存'}
             </button>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 拨号后弹窗：打完电话回到页面后，弹窗让话务员选状态
+  const renderDialModal = () => {
+    if (!dialModal) return null;
+    const colors = {
+      '已联系': 'bg-blue-600 hover:bg-blue-700',
+      '待回访': 'bg-amber-600 hover:bg-amber-700',
+      '已报名': 'bg-green-600 hover:bg-green-700',
+      '无效': 'bg-red-500 hover:bg-red-600',
+      '拒绝接听': 'bg-gray-500 hover:bg-gray-600',
+    };
+    // 只有已联系/待回访才需要选意向等级
+    const showIntent = dialModal.showIntent;
+    return (
+      <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6">
+          <div className="text-center mb-4">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+              <PhoneCall className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
+              {dialModal.studentName}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">通话已完成，请选择处理结果</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {Object.keys(colors).map((s) => (
+              <button
+                key={s}
+                onClick={() => handleDialModalStatus(s)}
+                className={`px-4 py-3 rounded-xl text-sm font-medium text-white ${colors[s]}`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          {/* Intent level：仅已联系/待回访时展开 */}
+          {showIntent && (
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 mb-3">
+              <div className="text-xs text-gray-500 mb-1.5 text-center">意向等级</div>
+              <div className="flex gap-2 justify-center">
+                {['A', 'B', 'C', '无'].map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => handleDialModalIntent(level)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      level === 'A'
+                        ? 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200'
+                        : level === 'B'
+                          ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300 hover:bg-amber-200'
+                          : level === 'C'
+                            ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200 hover:bg-gray-300'
+                            : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200'
+                    }`}
+                  >
+                    {level === '无' ? '无' : `${level}级`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => setDialModal(null)}
+            className="mt-4 w-full py-2.5 rounded-xl border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
+          >
+            稍后处理
+          </button>
         </div>
       </div>
     );
@@ -1194,6 +1304,7 @@ export default function AgentWork() {
         )}
                 <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
         {renderSettingsModal()}
+        {renderDialModal()}
       </div>
     );
   }
@@ -1796,6 +1907,7 @@ export default function AgentWork() {
         )}
                 <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
         {renderSettingsModal()}
+        {renderDialModal()}
       </div>
     </div>
   );

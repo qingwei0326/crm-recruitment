@@ -16,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
+import MobileDialResult from '../../components/MobileDialResult';
 import useTodayTasks from '../../hooks/useTodayTasks';
 import useDialFlow from '../../hooks/useDialFlow';
 import { formatDateTime } from '../../utils';
@@ -412,7 +413,8 @@ export default function MobileHome() {
   const handleDial = async (id) => {
     setDialingId(id);
     try {
-      await dial(id);
+      const s = students.find((x) => x.id === id);
+      await dial(id, { studentName: s?.name });
       const dc = await checkDup(id);
       if (dc) setDialCountMap((prev) => ({ ...prev, [id]: dc.count ?? 0 }));
     } finally {
@@ -506,6 +508,9 @@ export default function MobileHome() {
 
       <TabBar active={tab} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* 打完电话返回后弹“选择处理结果”，更新联系状况并刷新今日任务 */}
+      <MobileDialResult onUpdated={() => refetch()} />
     </div>
   );
 }
