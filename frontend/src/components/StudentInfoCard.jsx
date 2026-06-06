@@ -26,13 +26,17 @@ export default memo(function StudentInfoCard({ student }) {
   if (!student) return null;
   const isAdmin = user?.role === 'admin';
   const phone = (raw, masked) => {
-    const value = isAdmin ? raw || masked : masked || raw;
+    const value = isAdmin ? raw || masked : masked;
     if (!value) return '-';
-    return (
-      <a href={`tel:${value}`} className="text-blue-600 dark:text-blue-400 hover:underline">
-        {isAdmin ? value : maskPhone(value)}
-      </a>
-    );
+    // Admin: 明文 + tel: 链接；坐席: 脱敏文本（拨号走 useDialFlow）
+    if (isAdmin) {
+      return (
+        <a href={`tel:${value}`} className="text-blue-600 dark:text-blue-400 hover:underline">
+          {value}
+        </a>
+      );
+    }
+    return <span>{value}</span>;  // backend already masked
   };
 
   return (
