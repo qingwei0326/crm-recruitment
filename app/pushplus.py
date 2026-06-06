@@ -1,10 +1,7 @@
-﻿import asyncio
-import json
 import logging
 import os
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 PUSHPLUS_API = "https://www.pushplus.plus/send"
 PUSHPLUS_TITLE = "CRM A-level intent alert"
+PUSHPLUS_TIMEOUT = 10
 
 
 def _markdown_escape(value: object) -> str:
@@ -28,34 +26,23 @@ async def get_pushplus_token(db: AsyncSession) -> str:
     return os.getenv("PUSHPLUS_TOKEN", "").strip()
 
 
-def _send_pushplus_sync(token: str, title: str, content: str) -> None:
-    payload = {
-        "token": token,
-        "title": title,
-        "content": content,
-        "template": "markdown",
-    }
-    request = Request(
-        PUSHPLUS_API,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urlopen(request, timeout=30) as response:
-        body = response.read().decode("utf-8", errors="replace")
-        if response.status >= 400:
-            raise RuntimeError(f"PushPlus request failed: HTTP {response.status} {body}")
+async def _send_pushplus(token: str, title: str, content: str) -> None:
+    async with httpx.AsyncClient(timeout=PUSHPLUS_TIMEOUT) as client:
+        resp = await client.post(
+            PUSHPLUS_API,
+            json={"token": token, "title": title, "content": content, "template": "markdown"},
+        )
+        resp.raise_for_status()
 
 
 async def send_pushplus_message(db: AsyncSession, title: str, content: str) -> bool:
     token = await get_pushplus_token(db)
     if not token:
         return False
-
     try:
-        await asyncio.to_thread(_send_pushplus_sync, token, title, content)
+        await _send_pushplus(token, title, content)
         return True
-    except (URLError, TimeoutError, RuntimeError, OSError) as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
         logger.warning("PushPlus send failed: %s", exc)
         return False
 
@@ -75,11 +62,10 @@ async def send_pushplus_to_user(
     token = user_token or await get_pushplus_token(db)
     if not token:
         return False
-
     try:
-        await asyncio.to_thread(_send_pushplus_sync, token, title, content)
+        await _send_pushplus(token, title, content)
         return True
-    except (URLError, TimeoutError, RuntimeError, OSError) as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
         logger.warning("PushPlus user-send failed (user_id=%s): %s", user_id, exc)
         return False
 

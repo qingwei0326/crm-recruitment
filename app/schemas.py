@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 _VALID_STATUSES = {"未联系", "已联系", "待回访", "已完成", "无效", "已报名", "拒绝接听", "已过期"}
@@ -8,18 +9,16 @@ _VALID_INTENT_LEVELS = {"A", "B", "C", "无"}
 _VALID_STAGES = {"初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"}
 
 
-class Response(BaseModel):
-    code: int = 0
-    data: object = None
-    msg: str = "ok"
+class Response:
+    """统一 API 响应格式，返回 JSONResponse 以确保类型安全。"""
 
     @staticmethod
-    def ok(data=None, msg="ok"):
-        return {"code": 0, "data": data, "msg": msg}
+    def ok(data=None, msg="ok") -> JSONResponse:
+        return JSONResponse(content={"code": 0, "data": data, "msg": msg})
 
     @staticmethod
-    def error(code=1, msg="error", data=None):
-        return {"code": code, "data": data, "msg": msg}
+    def error(code=1, msg="error", data=None) -> JSONResponse:
+        return JSONResponse(content={"code": code, "data": data, "msg": msg})
 
 
 class LoginReq(BaseModel):
@@ -192,3 +191,37 @@ class VisitUpdate(BaseModel):
     scheduled_date: datetime | None = None
     status: Literal["待确认", "已确认", "已完成", "已取消"] | None = None
     notes: str | None = None
+
+
+# ── Student Response (API payload) ─────────────────────────
+
+class StudentResponse(BaseModel):
+    """学生信息 API 响应体，替代 _student_payload 的 dict。"""
+    id: int
+    name: str
+    region: str = ""
+    assigned_to: int | None = None
+    status: str
+    intent_level: str
+    stage: str
+    join_reasons: str = ""
+    case_no: str | None = None
+    need_help: bool = False
+    score: float | None = None
+    guardian_name: str = ""
+    guardian_phone: str = ""  # masked
+    guardian2_name: str = ""
+    guardian2_phone: str = ""  # masked
+    school_name: str = ""
+    school_address: str = ""
+    enrolled_at: str | None = None
+    program: str = ""
+    deposit: float | None = None
+    expired_at: str | None = None
+    enrollment_substage: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+    guardian_phone_raw: str | None = None  # only when full_phone=True
+    guardian2_phone_raw: str | None = None  # only when full_phone=True
+
+    model_config = {'from_attributes': True}

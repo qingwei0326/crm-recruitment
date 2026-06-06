@@ -89,11 +89,21 @@ async def follow_up_reminder_scheduler():
 
 
 async def expired_student_scheduler():
-    """每天扫一次过期学生（间隔 24h）。"""
+    """每天 08:00 CST 扫一次过期学生，重启后不丢窗口。"""
+    from app.utils import _CST
     while True:
         try:
+            now = datetime.now(_CST)
+            # 计算下一次 08:00 CST
+            target = now.replace(hour=8, minute=0, second=0, microsecond=0)
+            if target <= now:
+                from datetime import timedelta
+                target += timedelta(days=1)
+            wait_seconds = (target - now).total_seconds()
+            logger.info("expired_student_scheduler: next scan in %.0fs", wait_seconds)
+            await asyncio.sleep(wait_seconds)
             await scan_expired_students()
         except Exception as e:
             logger.error("scan_expired_students failed: %s", e)
-        await asyncio.sleep(86400)
+            await asyncio.sleep(3600)  # 失败后 1h 重试
 

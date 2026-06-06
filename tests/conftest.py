@@ -23,13 +23,6 @@ from app.database import Base, async_session, engine
 from app.main import app
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture(autouse=True)
 async def setup_db():
     """Create all tables before each test, drop after."""

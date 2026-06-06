@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, BCRYPT_ROUNDS, SECRET_KEY
 from app.database import get_db
-from app.models import User
+from app.models import User, UserRole
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=BCRYPT_ROUNDS)
 security = HTTPBearer(auto_error=False)
@@ -74,7 +74,7 @@ async def get_current_user(
     return user
 
 
-def require_role(*roles: str):
+def require_role(*roles: UserRole):
     async def checker(current_user: User = Depends(get_current_user)):
         if current_user.role not in roles:
             raise HTTPException(status_code=403, detail="权限不足")
@@ -83,5 +83,5 @@ def require_role(*roles: str):
     return checker
 
 
-require_admin = require_role("admin")
-require_agent = require_role("admin", "agent")
+require_admin = require_role(UserRole.admin)
+require_agent = require_role(UserRole.admin, UserRole.agent)

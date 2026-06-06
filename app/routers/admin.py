@@ -339,22 +339,21 @@ async def stale_reassign(
         if not agents:
             return Response.error(code=1, msg="没有可用的话务员")
 
-        load = {}
-        for agent in agents:
-            count_result = await db.execute(
-                select(func.count(Student.id)).where(
-                    Student.assigned_to == agent.id,
-                    Student.status.not_in(
-                        [
-                            StudentStatus.enrolled,
-                            StudentStatus.expired,
-                            StudentStatus.rejected,
-                            StudentStatus.invalid,
-                        ]
-                    ),
-                )
+        # 一次查询获取所有 agent 的当前负载
+        load_r = await db.execute(
+            select(Student.assigned_to, func.count(Student.id))
+            .where(
+                Student.assigned_to.in_([a.id for a in agents]),
+                Student.status.not_in([
+                    StudentStatus.enrolled, StudentStatus.expired,
+                    StudentStatus.rejected, StudentStatus.invalid,
+                ]),
             )
-            load[agent.id] = count_result.scalar() or 0
+            .group_by(Student.assigned_to)
+        )
+        load = {aid: cnt for aid, cnt in load_r.all()}
+        for agent in agents:
+            load.setdefault(agent.id, 0)
             distribution[agent.name] = 0
         agent_map = {agent.id: agent for agent in agents}
 
@@ -396,37 +395,22 @@ async def list_agents(
     agent_ids = [a.id for a in agents]
     today = today_cst_as_utc()
 
-    # Batch: total students per agent
-    total_r = await db.execute(
-        select(Student.assigned_to, func.count(Student.id))
+    # 合并学生统计：total + done + pending 一次查询
+    stats_r = await db.execute(
+        select(
+            Student.assigned_to,
+            func.count().label("total"),
+            func.count().filter(
+                Student.status.in_([StudentStatus.completed, StudentStatus.enrolled])
+            ).label("done"),
+            func.count().filter(Student.status == StudentStatus.not_contacted).label("pending"),
+        )
         .where(Student.assigned_to.in_(agent_ids))
         .group_by(Student.assigned_to)
     )
-    total_map = dict(total_r.all())
+    stats_map = {row.assigned_to: row for row in stats_r.all()}
 
-    # Batch: done (completed/enrolled) per agent
-    done_r = await db.execute(
-        select(Student.assigned_to, func.count(Student.id))
-        .where(
-            Student.assigned_to.in_(agent_ids),
-            Student.status.in_([StudentStatus.completed, StudentStatus.enrolled]),
-        )
-        .group_by(Student.assigned_to)
-    )
-    done_map = dict(done_r.all())
-
-    # Batch: pending (not_contacted) per agent
-    pending_r = await db.execute(
-        select(Student.assigned_to, func.count(Student.id))
-        .where(
-            Student.assigned_to.in_(agent_ids),
-            Student.status == StudentStatus.not_contacted,
-        )
-        .group_by(Student.assigned_to)
-    )
-    pending_map = dict(pending_r.all())
-
-    # Batch: today calls per agent
+    # 今日通话数
     today_calls_r = await db.execute(
         select(Call.agent_id, func.count(Call.id))
         .where(Call.agent_id.in_(agent_ids), Call.created_at >= today)
@@ -434,27 +418,23 @@ async def list_agents(
     )
     today_calls_map = dict(today_calls_r.all())
 
-    data = [
-        {
+    data = []
+    for a in agents:
+        s = stats_map.get(a.id)
+        data.append({
             "id": a.id,
             "name": a.name,
             "username": a.username,
             "is_active": a.is_active,
             "service_regions": a.service_regions,
-            "total_tasks": total_map.get(a.id, 0),
-            "done_tasks": done_map.get(a.id, 0),
-            "pending_tasks": pending_map.get(a.id, 0),
-            "today_calls": today_calls_map.get(a.id, 0),
+            "total_tasks": int(s.total if s else 0),
+            "done_tasks": int(s.done if s else 0),
+            "pending_tasks": int(s.pending if s else 0),
+            "today_calls": int(today_calls_map.get(a.id, 0)),
             "created_at": str(a.created_at),
-        }
-        for a in agents
-    ]
+        })
 
-    for item in data:
-        item["total_tasks"] = int(item["total_tasks"] or 0)
-        item["done_tasks"] = int(item["done_tasks"] or 0)
-        item["pending_tasks"] = int(item["pending_tasks"] or 0)
-        item["today_calls"] = int(item["today_calls"] or 0)
+    return Response.ok(data)
 
     return Response.ok(data)
 
