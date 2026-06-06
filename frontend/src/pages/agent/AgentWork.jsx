@@ -376,7 +376,7 @@ export default function AgentWork() {
     flashMsg('状态已更新');
   };
 
-  // 拨号弹窗：选完状态后更新，已联系/待回访时展开意向等级
+  // 拨号弹窗：选完状态后更新，已联系/待回访时展开意向等级，其余自动跳下一条
   const handleDialModalStatus = async (s) => {
     if (!dialModal) return;
     await updateStatus(dialModal.studentId, s);
@@ -385,15 +385,17 @@ export default function AgentWork() {
       setDialModal((p) => p ? { ...p, showIntent: true } : null);
     } else {
       setDialModal(null);
+      next();
     }
   };
 
-  // 拨号弹窗：选完意向等级后更新并关闭弹窗
+  // 拨号弹窗：选完意向等级后更新并跳下一条
   const handleDialModalIntent = async (level) => {
     if (!dialModal) return;
     await updateDetailField('intent_level', level);
     flashMsg('意向等级已更新');
     setDialModal(null);
+    next();
   };
 
   const updateStage = async (id, stag) => {
