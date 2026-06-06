@@ -754,7 +754,7 @@ export default function AgentManage() {
                                               <div className="text-sm font-medium break-words mt-0.5">
                                                 {key === 'guardian_phone' && student[key] && student[key] !== '-' ? (
                                                   <a
-                                                    href={`tel:${student[key]}`}
+                                                    href={`tel:${student.guardian_phone_raw || student[key]}`}
                                                     className="text-blue-600 dark:text-blue-400 hover:underline"
                                                     onClick={(e) => e.stopPropagation()}
                                                   >

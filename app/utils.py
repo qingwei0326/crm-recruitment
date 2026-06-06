@@ -27,7 +27,14 @@ def month_start_cst_as_utc() -> datetime:
 
 
 def mask_phone(phone: str) -> str:
-    return phone or ""
+    """脱敏电话号码：保留前3后4，中间用 * 替代。"""
+    if not phone:
+        return ""
+    s = phone.strip()
+    n = len(s)
+    if n <= 7:
+        return s[:1] + "*" * max(n - 3, 0) + s[-2:] if n > 2 else s
+    return s[:3] + "*" * (n - 7) + s[-4:]
 
 
 def make_operation_log(
