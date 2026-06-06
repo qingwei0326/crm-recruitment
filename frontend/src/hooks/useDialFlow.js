@@ -8,8 +8,11 @@ import api from '../api';
  *   3) GET /api/students/phone/{id} 拿明文电话；403 时 alert detail
  *   4) 成功 → window.location.href = `tel:${phone}`
  *
- * dial(studentId, options?) options: { contactKey?: 'guardian' | 'guardian2', onSuccess?, onError? }
+ * dial(studentId, options?) options: { contactKey?: 'guardian' | 'guardian2', studentName?, onSuccess?, onError? }
  * checkDup(studentId) → { count, last_call_at, message } | null
+ *
+ * 拨号成功跳起 tel: 前，会把 { studentId, studentName } 写入 sessionStorage('pendingDial')，
+ * 供话务员打完电话返回 App 时由 <MobileDialResult> 弹窗读取，更新联系状况(已联系/待回访/…)。
  */
 export default function useDialFlow() {
   const checkDup = useCallback(async (studentId) => {
@@ -26,7 +29,7 @@ export default function useDialFlow() {
 
   const dial = useCallback(
     async (studentId, options = {}) => {
-      const { contactKey = 'guardian', onSuccess, onError } = options;
+      const { contactKey = 'guardian', studentName = '', onSuccess, onError } = options;
 
       // 1) 查 24h 拨打次数
       const check = await checkDup(studentId);
@@ -66,7 +69,15 @@ export default function useDialFlow() {
         return { ok: false, reason: 'no_phone', message: msg };
       }
 
-      // 3) 跳起拨号
+      // 3) 跳起拨号。先存拨号上下文：打完电话返回 App 时弹“选择处理结果”更新联系状况
+      try {
+        sessionStorage.setItem(
+          'pendingDial',
+          JSON.stringify({ studentId, studentName }),
+        );
+      } catch {
+        // sessionStorage 不可用时不应阻塞拨号
+      }
       window.location.href = `tel:${phone}`;
       onSuccess && onSuccess(phone);
       // 4) 拨号窗口已记 DialLog；刷新检查（异步，不阻塞）
