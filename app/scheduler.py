@@ -81,7 +81,7 @@ async def scan_expired_students():
                 db.add(OperationLog(
                     operator_id=None,
                     operator_name="scheduler",
-                    action="notify_fail",
+                    action="通知失败",
                     content=f"expired_student alert failed for agent_id={agent_id}, {len(students)} students",
                 ))
                 try:
