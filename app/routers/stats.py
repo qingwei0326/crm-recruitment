@@ -264,6 +264,8 @@ async def agent_ranking(
         a_count = s.get("a_count", 0)
         enrolled = s.get("enrolled", 0)
         conversion = round(a_count / contacted * 100, 1) if contacted > 0 else 0
+        enroll_rate = round(enrolled / contacted * 100, 1) if contacted > 0 else 0
+        a_to_enroll = round(enrolled / a_count * 100, 1) if a_count > 0 else 0
         ranking.append({
             "id": a.id,
             "name": a.name,
@@ -279,6 +281,8 @@ async def agent_ranking(
             "today_calls": int(today_calls_map.get(a.id, 0)),
             "month_calls": int(month_calls_map.get(a.id, 0)),
             "conversion_rate": conversion,
+            "enroll_rate": enroll_rate,
+            "a_to_enroll": a_to_enroll,
         })
 
     ranking.sort(

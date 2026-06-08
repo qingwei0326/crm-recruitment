@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { useToast } from '../../components/Toast';
 import {
   ArrowLeft,
   Trophy,
@@ -30,6 +31,7 @@ import {
   ChevronDown,
   ChevronUp,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
 import {
   PieChart,
@@ -51,6 +53,7 @@ export default function Report() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [ranking, setRanking] = useState([]);
@@ -75,7 +78,7 @@ export default function Report() {
         setHeatmapData(hRes.data.data || null);
         setPredictionData(pRes.data.data || null);
       })
-      .catch(console.error)
+      .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -84,6 +87,24 @@ export default function Report() {
   const homeVisits = (visits || []).filter((v) => v.visit_type === '家访');
 
   const closeSidebar = () => setSidebarOpen(false);
+
+  const exportRanking = () => {
+    if (!ranking.length) return;
+    const header = ['排名', '话务员', '总线索', '已联系', 'A级', '已报名', '转化率', '报名率', 'A→报名', '到访', '参观', '家访', '本月呼出'];
+    const rows = ranking.map((a, i) => [
+      i + 1, a.name, a.total_leads, a.contacted, a.a_count, a.enrolled,
+      a.conversion_rate + '%', a.enroll_rate + '%', a.a_to_enroll + '%',
+      a.total_visits, a.campus_visits, a.home_visits, a.month_calls,
+    ]);
+    const csv = [header, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `话务员业绩排行_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const SidebarNav = () => (
     <>
@@ -290,9 +311,18 @@ export default function Report() {
 
           {/* ── Section 1: Agent ranking ── */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
-            <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-amber-500" />
-              <h3 className="font-semibold text-gray-800 dark:text-gray-100">话务员业绩排行</h3>
+            <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-500" />
+                <h3 className="font-semibold text-gray-800 dark:text-gray-100">话务员业绩排行</h3>
+              </div>
+              <button
+                onClick={exportRanking}
+                disabled={!ranking.length}
+                className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" /> 导出
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -305,6 +335,8 @@ export default function Report() {
                     <th className="px-2 py-3 font-medium text-center">A级</th>
                     <th className="px-2 py-3 font-medium text-center">已报名</th>
                     <th className="px-2 py-3 font-medium text-center">转化率</th>
+                    <th className="px-2 py-3 font-medium text-center">报名率</th>
+                    <th className="px-2 py-3 font-medium text-center">A→报名</th>
                     <th className="px-2 py-3 font-medium text-center">到访</th>
                     <th className="px-2 py-3 font-medium text-center">参观</th>
                     <th className="px-2 py-3 font-medium text-center">家访</th>
@@ -314,7 +346,7 @@ export default function Report() {
                 <tbody className="divide-y dark:divide-gray-700">
                   {ranking.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="text-center py-10 text-gray-400">
+                      <td colSpan={13} className="text-center py-10 text-gray-400">
                         暂无数据
                       </td>
                     </tr>
@@ -362,6 +394,20 @@ export default function Report() {
                             className={`font-semibold ${a.conversion_rate >= 50 ? 'text-green-600' : a.conversion_rate >= 20 ? 'text-amber-600' : 'text-gray-500'}`}
                           >
                             {a.conversion_rate}%
+                          </span>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span
+                            className={`font-semibold ${a.enroll_rate >= 30 ? 'text-green-600' : a.enroll_rate >= 10 ? 'text-amber-600' : 'text-gray-500'}`}
+                          >
+                            {a.enroll_rate}%
+                          </span>
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <span
+                            className={`font-semibold ${a.a_to_enroll >= 50 ? 'text-green-600' : a.a_to_enroll >= 20 ? 'text-amber-600' : 'text-gray-500'}`}
+                          >
+                            {a.a_to_enroll}%
                           </span>
                         </td>
                         <td className="px-2 py-3 text-center text-gray-700 dark:text-gray-300">
