@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 async def scan_follow_up_reminders():
     async with async_session() as db:
         now = utcnow()
-        deadline = now + timedelta(minutes=15)
+        # 从 SystemConfig 读回访提醒窗口，默认 15min
+        from app.routers.admin import get_config_value
+        window_str = await get_config_value(db, "follow_up_window_minutes", "15")
+        try:
+            window_minutes = max(1, min(60, int(window_str)))
+        except (ValueError, TypeError):
+            window_minutes = 15
+        deadline = now + timedelta(minutes=window_minutes)
         # 下限：只扫 7 天内的待提醒回访，避免拉取大量历史未通知记录
         floor = now - timedelta(days=7)
         result = await db.execute(
