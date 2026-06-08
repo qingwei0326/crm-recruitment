@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { useToast } from '../../components/Toast';
 import {
   ArrowLeft,
   LogOut,
@@ -34,6 +35,7 @@ export default function TrendReport() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ export default function TrendReport() {
       .then((res) => {
         setTrendData(res.data.data);
       })
-      .catch(console.error)
+      .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
   };
 
@@ -89,6 +91,22 @@ export default function TrendReport() {
   const agentNames = trendData?.daily?.[0]?.agent_calls
     ? Object.keys(trendData.daily[0].agent_calls)
     : [];
+
+  // 周同比：把 7 天前的呼出量偏移到对应日期上
+  const chartData = useMemo(() => {
+    if (!trendData?.daily) return [];
+    const dateMap = {};
+    trendData.daily.forEach(d => { dateMap[d.date] = d; });
+    return trendData.daily.map(d => {
+      const prev = new Date(d.date);
+      prev.setDate(prev.getDate() - 7);
+      const prevKey = prev.toISOString().split('T')[0];
+      return {
+        ...d,
+        prev_calls: dateMap[prevKey]?.calls ?? null,
+      };
+    });
+  }, [trendData]);
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -254,7 +272,7 @@ export default function TrendReport() {
                   每日呼出量 & 新增报名
                 </h3>
                 <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
-                  <LineChart data={trendData.daily}>
+                  <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke={dark ? '#374151' : '#e5e7eb'} />
                     <XAxis
                       dataKey="date"
@@ -285,6 +303,16 @@ export default function TrendReport() {
                       name="报名数"
                       strokeWidth={2}
                       dot={{ r: 3 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="prev_calls"
+                      stroke="#94a3b8"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                      name="上周同期"
+                      connectNulls={false}
                     />
                   </LineChart>
                 </ResponsiveContainer>
