@@ -206,11 +206,11 @@ async def retry_failed_notifications():
 
 
 async def notification_retry_scheduler():
-    """每 10 分钟重试失败的通知。"""
+    """每 30 分钟重试失败的通知。"""
     while True:
         try:
             await retry_failed_notifications()
         except Exception as e:
             logger.error("retry_failed_notifications failed: %s", e)
-        await asyncio.sleep(600)
+        await asyncio.sleep(1800)
 
