@@ -60,7 +60,19 @@ ALLOWED_CONFIG_KEYS = {
     "dial_window_end",
     "dial_max_per_24h",
     "deepseek_api_key",
+    "ai_provider",
+    "mimo_api_key",
+    "mimo_base",
+    "mimo_model",
+    "ai_custom_api_key",
+    "ai_custom_base",
+    "ai_custom_model",
 }
+
+_AI_PROVIDERS = {"deepseek", "mimo", "custom"}
+_AI_BASE_KEYS = {"mimo_base", "ai_custom_base"}
+_AI_MODEL_KEYS = {"mimo_model", "ai_custom_model"}
+_AI_GENERIC_KEY_KEYS = {"mimo_api_key", "ai_custom_api_key"}
 
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -98,6 +110,25 @@ def _validate_config_value(key: str, value: str) -> tuple[str | None, str | None
         if value and not value.startswith("sk-"):
             return None, "deepseek_api_key 必须以 sk- 开头"
         return value, None
+    if key == "ai_provider":
+        if value and value not in _AI_PROVIDERS:
+            return None, "ai_provider 必须是 deepseek / mimo / custom 之一"
+        return (value or "deepseek"), None
+    if key in _AI_BASE_KEYS:
+        if value and not (value.startswith("http://") or value.startswith("https://")):
+            return None, f"{key} 必须是 http(s):// 开头的接口地址"
+        if len(value) > 256:
+            return None, f"{key} too long"
+        return value, None
+    if key in _AI_MODEL_KEYS:
+        if len(value) > 64:
+            return None, f"{key} too long"
+        return value, None
+    if key in _AI_GENERIC_KEY_KEYS:
+        # MiMo / 自定义 的 key 不强制 sk- 前缀，只做长度上限
+        if len(value) > 256:
+            return None, f"{key} too long"
+        return value, None
     return value, None
 
 
@@ -110,7 +141,7 @@ def to_datetime(value):
 
 
 def mask_config_value(key: str, value: str) -> str:
-    if key in ("pushplus_token", "deepseek_api_key") and len(value) > 4:
+    if key in ("pushplus_token", "deepseek_api_key", "mimo_api_key", "ai_custom_api_key") and len(value) > 4:
         return "****" + value[-4:]
     return value
 
