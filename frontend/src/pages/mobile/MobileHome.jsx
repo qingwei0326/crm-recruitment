@@ -379,7 +379,7 @@ function MePanel({ onOpenSettings }) {
 export default function MobileHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { students, stats, schools, loading, error, refetch, search, setSearch, rawStudents } = useTodayTasks();
+  const { students, stats, schools, loading, error, refetch, search, setSearch, rawStudents, loadMore, hasMore } = useTodayTasks();
   const { dial, checkDup } = useDialFlow();
   const [dialCountMap, setDialCountMap] = useState({});
   const [dialingId, setDialingId] = useState(null);
@@ -586,6 +586,14 @@ export default function MobileHome() {
                     onDetail={handleDetail}
                   />
                 ))}
+                {hasMore && !search && !selectedSchool && (
+                  <button
+                    onClick={loadMore}
+                    className="w-full py-3 text-sm text-blue-600 dark:text-blue-400 text-center active:bg-gray-100 dark:active:bg-gray-700 rounded-xl"
+                  >
+                    加载更多
+                  </button>
+                )}
               </div>
             )}
           </>
