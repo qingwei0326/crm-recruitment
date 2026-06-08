@@ -2,15 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import api from '../../api';
-
-function getApiErrorMessage(error) {
-  return (
-    error?.response?.data?.detail ||
-    error?.response?.data?.msg ||
-    error?.message ||
-    '提交失败'
-  );
-}
+import { getApiErrorMessage } from '../../utils';
 
 const intentColors = {
   A: 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700',

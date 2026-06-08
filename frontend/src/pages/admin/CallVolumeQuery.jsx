@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { useToast } from '../../components/Toast';
 import { formatDateTime } from '../../utils';
 import {
   LogOut,
@@ -28,6 +29,7 @@ export default function CallVolumeQuery() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [agents, setAgents] = useState([]);
   const [selectedAgents, setSelectedAgents] = useState([]);
@@ -65,7 +67,7 @@ export default function CallVolumeQuery() {
         setLogs(res.data.data?.list || []);
         setTotal(res.data.data?.total || 0);
       })
-      .catch(console.error)
+      .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
   };
 

@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
-import { stageLabel, statusLabel } from '../../labels';
-import { formatDateTime } from '../../utils';
+import { useToast } from '../../components/Toast';
+import { stageLabel, statusLabel, STAGES } from '../../labels';
+import { formatDateTime, buildStudentPayload, getApiErrorMessage } from '../../utils';
 import {
   ArrowLeft,
   Search,
@@ -40,7 +41,6 @@ import {
 
 const STATUS_OPTS = ['', '未联系', '已联系', '待回访', '已完成', '无效', '已报名', '拒绝接听', '已过期'];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
-const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
 const STAGE_STAT_KEYS = ['未分配', ...STAGES];
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 const inputCls =
@@ -80,43 +80,6 @@ const createStudentFields = [
   { key: 'enrolled_at', label: '报名日期', type: 'date' },
 ];
 
-function buildStudentPayload(form) {
-  const payload = {
-    name: form.name.trim(),
-  };
-  [
-    'region',
-    'guardian_name',
-    'guardian_phone',
-    'guardian2_name',
-    'guardian2_phone',
-    'school_name',
-    'join_reasons',
-    'program',
-  ].forEach((key) => {
-    const value = form[key]?.trim();
-    if (value) payload[key] = value;
-  });
-  ['status', 'intent_level', 'stage', 'enrolled_at'].forEach((key) => {
-    if (form[key]) payload[key] = form[key];
-  });
-  ['score', 'deposit'].forEach((key) => {
-    if (form[key] !== '' && form[key] != null) payload[key] = Number(form[key]);
-  });
-  if (form.assigned_to) payload.assigned_to = Number(form.assigned_to);
-  if (form.need_help) payload.need_help = true;
-  return payload;
-}
-
-function maskPhone(p) {
-  if (!p || p.length < 7) return p;
-  return p.slice(0, 3) + '****' + p.slice(-4);
-}
-
-function getApiErrorMessage(error) {
-  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
-}
-
 function schoolPlaceholder(regions, loading, schools) {
   if (regions.length === 0) return '请先选择区县';
   if (loading) return '加载学校中...';
@@ -128,6 +91,7 @@ export default function LeadsManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -209,7 +173,7 @@ export default function LeadsManage() {
           setTotal(res.data.data?.total || 0);
           setSelected(new Set());
         })
-        .catch(console.error)
+        .catch(() => { toast?.error('数据加载失败'); })
         .finally(() => setLoading(false));
     },
     [page, q, status, region, stage, assignment, needHelp],
@@ -249,7 +213,7 @@ export default function LeadsManage() {
       })
       .catch((e) => {
         if (reqId === schoolsReqIdRef.current) {
-          alert('学校列表加载失败: ' + getApiErrorMessage(e));
+          toast?.error('学校列表加载失败: ' + getApiErrorMessage(e));
         }
       })
       .finally(() => {
@@ -376,27 +340,27 @@ export default function LeadsManage() {
         setDispatchRegions(res.data.data || []);
       }
     } catch (e) {
-      alert('区县列表加载失败: ' + getApiErrorMessage(e));
+      toast?.error('区县列表加载失败: ' + getApiErrorMessage(e));
     } finally {
       setSchoolAssignLoading(false);
     }
   };
 
   const handleSchoolAssign = async () => {
-    if (schoolAssignRegions.length === 0) return alert('请先选择区县');
-    if (!schoolAssignSchool) return alert('请选择学校');
-    if (schoolAssignAgents.length === 0) return alert('请选择至少一个话务员');
+    if (schoolAssignRegions.length === 0) return toast?.warning('请先选择区县');
+    if (!schoolAssignSchool) return toast?.warning('请选择学校');
+    if (schoolAssignAgents.length === 0) return toast?.warning('请选择至少一个话务员');
     const res = await api.post('/students/school-assign', {
       school_name: schoolAssignSchool,
       regions: schoolAssignRegions,
       agent_ids: schoolAssignAgents,
     });
     if (res.data.code === 0) {
-      alert(`分发完成：${res.data.data.total_assigned} 名学生`);
+      toast?.success(`分发完成：${res.data.data.total_assigned} 名学生`);
       setShowSchoolAssign(false);
       fetchStudents(page);
       refreshExpand();
-    } else alert(res.data.msg);
+    } else toast?.error(res.data.msg);
   };
 
   const quickStatus = async (id, s) => {
@@ -440,7 +404,7 @@ export default function LeadsManage() {
       if (expandedId === id) setExpandedId(null);
       fetchStudents(page);
     } catch (e) {
-      alert('删除失败: ' + (e.response?.data?.msg || e.message));
+      toast?.error('删除失败: ' + (e.response?.data?.msg || e.message));
     }
   };
 
@@ -480,7 +444,7 @@ export default function LeadsManage() {
       refreshExpand();
       fetchStudents(page);
     } catch (e) {
-      alert('更新报名后状态失败: ' + getApiErrorMessage(e));
+      toast?.error('更新报名后状态失败: ' + getApiErrorMessage(e));
     }
   };
 

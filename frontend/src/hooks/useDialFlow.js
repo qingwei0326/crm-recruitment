@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
 import api from '../api';
+import { useConfirm } from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
 
 /**
  * 封装拨号流程：
@@ -15,6 +17,9 @@ import api from '../api';
  * 供话务员打完电话返回 App 时由 <MobileDialResult> 弹窗读取，更新联系状况(已联系/待回访/…)。
  */
 export default function useDialFlow() {
+  const confirm = useConfirm();
+  const toast = useToast();
+
   const checkDup = useCallback(async (studentId) => {
     try {
       const r = await api.get('/calls/check', {
@@ -35,9 +40,12 @@ export default function useDialFlow() {
       const check = await checkDup(studentId);
       const count = check?.count ?? 0;
       if (count >= 3) {
-        const ok = window.confirm(
-          `该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`,
-        );
+        const ok = await confirm({
+          title: '拨号频次提醒',
+          message: `该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`,
+          confirmText: '仍要拨打',
+          tone: 'danger',
+        });
         if (!ok) return { ok: false, reason: 'cancelled' };
       }
 
@@ -54,17 +62,13 @@ export default function useDialFlow() {
       } catch (err) {
         const detail =
           err?.response?.data?.detail || err?.response?.data?.msg || '获取电话失败';
-        if (err?.response?.status === 403) {
-          alert(detail);
-        } else {
-          alert(detail);
-        }
+        toast?.error(detail);
         onError && onError(detail);
         return { ok: false, reason: 'phone_error', message: detail };
       }
       if (!phone) {
         const msg = '该联系人没有电话';
-        alert(msg);
+        toast?.error(msg);
         onError && onError(msg);
         return { ok: false, reason: 'no_phone', message: msg };
       }
@@ -84,7 +88,7 @@ export default function useDialFlow() {
       checkDup(studentId);
       return { ok: true, phone };
     },
-    [checkDup],
+    [checkDup, confirm, toast],
   );
 
   return { dial, checkDup };

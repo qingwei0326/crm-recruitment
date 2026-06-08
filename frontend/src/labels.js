@@ -23,3 +23,12 @@ export function statusLabel(value) {
   if (!value) return '';
   return STATUS_LABEL_MAP[value] || value;
 }
+
+export const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
+
+export const INTENT_BADGES = {
+  A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  C: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+  '无': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+};

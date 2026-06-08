@@ -18,15 +18,7 @@ import StudentInfoCard from '../../components/StudentInfoCard';
 import TimelineItem from '../../components/TimelineItem';
 import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
-
-function getApiErrorMessage(error) {
-  return (
-    error?.response?.data?.detail ||
-    error?.response?.data?.msg ||
-    error?.message ||
-    '加载失败'
-  );
-}
+import { getApiErrorMessage } from '../../utils';
 
 function NoteSheet({ open, onClose, onSubmit, submitting }) {
   const [text, setText] = useState('');

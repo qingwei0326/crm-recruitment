@@ -4,9 +4,10 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import DATABASE_URL, DATABASE_URL_SYNC, DB_ENGINE
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+_sqlite_args = {"timeout": 15} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_async_engine(DATABASE_URL, echo=False, connect_args=_sqlite_args)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-sync_engine = create_engine(DATABASE_URL_SYNC, echo=False)
+sync_engine = create_engine(DATABASE_URL_SYNC, echo=False, connect_args=_sqlite_args)
 
 
 def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
