@@ -1,11 +1,11 @@
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
 from app.database import async_session
-from app.models import FollowUp, Student, StudentStatus, User
+from app.models import FollowUp, OperationLog, Student, StudentStatus, User
 from app.pushplus import send_pushplus_to_user
 from app.utils import today_cst_as_utc, utcnow
 
@@ -76,7 +76,21 @@ async def scan_expired_students():
                 lines.append(f"- {s.name}（{s.intent_level}，过期 {s.expired_at}）")
             if len(students) > 20:
                 lines.append(f"- ……另有 {len(students) - 20} 名")
-            await send_pushplus_to_user(db, agent_id, "CRM 学生过期告警", "\n".join(lines))
+            ok = await send_pushplus_to_user(db, agent_id, "CRM 学生过期告警", "\n".join(lines))
+            if not ok:
+                db.add(OperationLog(
+                    operator_id=None,
+                    operator_name="scheduler",
+                    action="notify_fail",
+                    content=f"expired_student alert failed for agent_id={agent_id}, {len(students)} students",
+                ))
+                try:
+                    await db.commit()
+                except Exception as e:
+                    logger.warning("notify_fail log commit failed: %s", e)
+                    await db.rollback()
+            else:
+                logger.info("expired alert sent to agent_id=%s (%d students)", agent_id, len(students))
 
 
 async def follow_up_reminder_scheduler():

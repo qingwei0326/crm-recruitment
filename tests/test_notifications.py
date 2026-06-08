@@ -1,0 +1,38 @@
+import pytest
+from unittest.mock import patch, AsyncMock
+
+@pytest.mark.asyncio
+async def test_expired_scan_logs_failure(db):
+    """When PushPlus fails, OperationLog should have a notify_fail entry."""
+    from app.models import OperationLog, Student, User, StudentStatus, IntentLevel
+    from app.scheduler import scan_expired_students
+    from datetime import date, timedelta
+    from sqlalchemy import select
+
+    # Create an agent
+    from app.auth import hash_password
+    agent = User(username="testagent_b1", hashed_password=hash_password("pass"), role="agent", name="B1 Agent", is_active=True)
+    db.add(agent)
+    await db.commit()
+    await db.refresh(agent)
+
+    # Create an expired student assigned to this agent
+    student = Student(
+        name="过期学生B1", intent_level=IntentLevel.B,
+        status=StudentStatus.pending_visit,
+        expired_at=date.today() - timedelta(days=1),
+        assigned_to=agent.id,
+    )
+    db.add(student)
+    await db.commit()
+
+    # Patch PushPlus to fail
+    with patch("app.scheduler.send_pushplus_to_user", new_callable=AsyncMock, return_value=False):
+        await scan_expired_students()
+
+    # Check OperationLog
+    logs = (await db.execute(
+        select(OperationLog).where(OperationLog.action == "notify_fail")
+    )).scalars().all()
+    assert len(logs) >= 1
+    assert "agent_id=" in logs[0].content
