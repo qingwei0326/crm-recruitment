@@ -25,6 +25,7 @@ from app.models import (
     IntentLevel,
     LeadViewLog,
     Note,
+    OperationLog,
     Student,
     StudentStage,
     StudentStatus,
@@ -1120,22 +1121,47 @@ async def get_student_detail(
         for v, agent_name in visits_r.all()
     ]
 
-    # 意向轨迹（复用 /intent-timeline 的查询逻辑）
+    # 意向轨迹：合并 AI 分析（Call）和手动评级（OperationLog）
     intent_r = await db.execute(
         select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
         .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
         .order_by(Call.created_at.asc())
     )
-    intent_timeline = [
+    ai_events = [
         {
-            "call_id": cid,
-            "intent": ai_intent,
+            "source": "ai",
+            "intent_level": ai_intent,
             "confidence": ai_conf,
             "agent_id": aid,
-            "at": str(created_at),
+            "created_at": str(created_at),
         }
         for cid, ai_intent, ai_conf, aid, created_at in intent_r.all()
     ]
+
+    manual_r = await db.execute(
+        select(OperationLog)
+        .where(
+            OperationLog.target_student_id == student.id,
+            OperationLog.action == "手动评级",
+        )
+        .order_by(OperationLog.created_at.asc())
+    )
+    manual_events = [
+        {
+            "source": "manual",
+            "intent_level": log.new_status or "无",
+            "old_intent": log.old_status or "",
+            "operator_name": log.operator_name or "",
+            "created_at": str(log.created_at),
+        }
+        for log in manual_r.scalars().all()
+    ]
+
+    # 合并并按时间排序
+    intent_timeline = sorted(
+        ai_events + manual_events,
+        key=lambda x: x.get("created_at", ""),
+    )
 
     await db.commit()
 

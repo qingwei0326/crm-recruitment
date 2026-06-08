@@ -22,11 +22,12 @@ import {
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useToast } from '../../components/Toast';
 import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import TimelineItem from '../../components/TimelineItem';
-import { formatDateTime } from '../../utils';
+import { formatDateTime, getApiErrorMessage } from '../../utils';
 
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 const TABS = [
@@ -39,15 +40,12 @@ const TABS = [
 const INTENT_TO_NUM = { A: 3, B: 2, C: 1, 无: 0 };
 const NUM_TO_INTENT = { 3: 'A', 2: 'B', 1: 'C', 0: '无' };
 
-function getApiErrorMessage(error) {
-  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
-}
-
 export default function StudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { dark } = useTheme();
+  const toast = useToast();
   const [tab, setTab] = useState('info');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -120,7 +118,8 @@ export default function StudentDetail() {
         date: formatDateTime(it.created_at || it.date),
         value: INTENT_TO_NUM[lvl] != null ? INTENT_TO_NUM[lvl] : 0,
         label: lvl,
-        agent: it.agent_name || '',
+        agent: it.agent_name || it.operator_name || '',
+        source: it.source || 'ai',
       };
     });
   }, [intentTimeline]);
@@ -133,7 +132,7 @@ export default function StudentDetail() {
       });
       loadDetail();
     } catch (e) {
-      alert('更新报名后状态失败: ' + getApiErrorMessage(e));
+      toast?.error('更新报名后状态失败: ' + getApiErrorMessage(e));
     } finally {
       setSubstageSaving(false);
     }
@@ -368,7 +367,9 @@ export default function StudentDetail() {
                       <IntentLevelBadge level={it.label} />
                       <span className="text-gray-700 dark:text-gray-300">{it.date}</span>
                       {it.agent && (
-                        <span className="text-xs text-gray-400">· {it.agent}</span>
+                        <span className="text-xs text-gray-400">
+                          · {it.source === 'manual' ? `${it.agent}（手动）` : it.agent}
+                        </span>
                       )}
                     </div>
                   ))}
