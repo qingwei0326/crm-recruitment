@@ -1,102 +1,124 @@
+/**
+ * 线索回收 — 按学校或区域分组，一键回收超时学员至未分配池
+ */
+
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
-import { formatDateTime } from '../../utils';
+import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
+import { getApiErrorMessage } from '../../utils';
 import {
-  CheckSquare,
-  Square,
-  Loader2,
-  LogOut,
-  Menu,
-  X,
-  Sun,
-  Moon,
-  RefreshCw,
-  ArrowRightLeft,
-  Inbox,
-  Users,
-  LayoutDashboard,
-  ListFilter,
-  BarChart3,
-  TrendingUp,
-  Search,
-  Settings,
+  Loader2, LogOut, Menu, X, Sun, Moon, RefreshCcw, RotateCcw,
+  ChevronDown, ChevronUp, Users, LayoutDashboard, ListFilter,
+  ArrowRightLeft, BarChart3, TrendingUp, Search, Settings,
+  School, MapPin,
 } from 'lucide-react';
-
-const inputCls =
-  'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
-
-function getApiErrorMessage(error) {
-  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
-}
 
 export default function LeadRecycle() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
+  const confirm = useConfirm();
+  const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [days, setDays] = useState(3);
-  const [loading, setLoading] = useState(false);
-  const [students, setStudents] = useState([]);
-  const [selected, setSelected] = useState(new Set());
-  const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchStudents = async () => {
+  const [days, setDays] = useState(3);
+  const [groupBy, setGroupBy] = useState('school_name'); // school_name | region
+  const [loading, setLoading] = useState(false);
+  const [groups, setGroups] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [expandedGroup, setExpandedGroup] = useState(null);
+  const [expandedStudents, setExpandedStudents] = useState([]);
+  const [expandedLoading, setExpandedLoading] = useState(false);
+  const [reclaiming, setReclaiming] = useState(null);
+
+  const fetchGroups = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin/stale-students', { params: { days } });
-      setStudents(res.data.data || []);
-      setSelected(new Set());
-    } catch {
-      setStudents([]);
+      const res = await api.get('/admin/stale-school-groups', {
+        params: { days, group_by: groupBy },
+      });
+      if (res.data.code === 0) {
+        setGroups(res.data.data?.groups || []);
+        setTotal(res.data.data?.total || 0);
+      } else {
+        toast?.error(res.data.msg || '加载失败');
+      }
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchStudents();
-  }, []);
-
-  const closeSidebar = () => setSidebarOpen(false);
-
-  const toggleSel = (id) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelected(next);
-  };
-
-  const toggleAll = () => {
-    if (selected.size === students.length) {
-      setSelected(new Set());
-      return;
-    }
-    setSelected(new Set(students.map((item) => item.student_id)));
-  };
-
-  const handleRecycle = async () => {
-    if (selected.size === 0) return;
-    setActionLoading(true);
+  const fetchGroupStudents = async (groupName) => {
+    setExpandedLoading(true);
     try {
-      const res = await api.post('/admin/stale-reassign', {
-        student_ids: [...selected],
-        mode: 'recycle',
-      });
+      const res = await api.get('/admin/stale-students', { params: { days } });
       if (res.data.code === 0) {
-        await fetchStudents();
-      } else {
-        alert(res.data.msg || '操作失败');
+        const all = res.data.data || [];
+        const filtered = all.filter((s) => {
+          const val = groupBy === 'school_name' ? s.school_name : s.region;
+          return (val || '未知') === groupName;
+        });
+        setExpandedStudents(filtered);
       }
     } catch (e) {
-      alert(getApiErrorMessage(e));
+      toast?.error(getApiErrorMessage(e));
     } finally {
-      setActionLoading(false);
+      setExpandedLoading(false);
     }
   };
+
+  useEffect(() => { fetchGroups(); }, [days, groupBy]);
+
+  const toggleExpand = async (groupName) => {
+    if (expandedGroup === groupName) {
+      setExpandedGroup(null);
+      setExpandedStudents([]);
+    } else {
+      setExpandedGroup(groupName);
+      await fetchGroupStudents(groupName);
+    }
+  };
+
+  const handleReclaim = async (groupName, count) => {
+    const label = groupBy === 'school_name' ? '学校' : '区域';
+    const ok = await confirm({
+      title: '线索回收',
+      message: `确定回收${label}「${groupName}」的 ${count} 名超时学员吗？\n\n回收后学员将进入未分配池（已超过 ${days} 天未跟进）。`,
+      confirmText: '确认回收',
+      tone: 'danger',
+    });
+    if (!ok) return;
+
+    setReclaiming(groupName);
+    try {
+      const res = await api.post('/admin/stale-reclaim-by-group', {
+        group_name: groupName,
+        group_by: groupBy,
+        days,
+      });
+      if (res.data.code === 0) {
+        toast?.success(`成功回收 ${res.data.data?.reclaimed_count ?? count} 名学员，已进入未分配池`);
+        setExpandedGroup(null);
+        setExpandedStudents([]);
+        fetchGroups();
+      } else {
+        toast?.error(res.data.msg || '回收失败');
+      }
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
+    } finally {
+      setReclaiming(null);
+    }
+  };
+
+  const closeSidebar = () => setSidebarOpen(false);
 
   const SidebarNav = () => (
     <>
@@ -126,6 +148,12 @@ export default function LeadRecycle() {
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
           <ArrowRightLeft className="w-4 h-4" /> 线索回收
         </div>
+        <Link to="/admin/invalid-reclaim" onClick={closeSidebar} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+          <RotateCcw className="w-4 h-4" /> 无效线索回收
+        </Link>
+        <Link to="/admin/distribute" onClick={closeSidebar} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+          <School className="w-4 h-4" /> 多学校分发
+        </Link>
         <Link to="/admin/agents" onClick={closeSidebar} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
           <Users className="w-4 h-4" /> 话务员管理
         </Link>
@@ -154,8 +182,6 @@ export default function LeadRecycle() {
     </>
   );
 
-  const selectedCount = selected.size;
-
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
       {isMobile && sidebarOpen && <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSidebar} />}
@@ -178,93 +204,110 @@ export default function LeadRecycle() {
         </header>
 
         <div className="p-4 lg:p-6 space-y-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4">
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-              <div>
-                <label className="block text-sm mb-1 text-gray-600 dark:text-gray-400">天数</label>
-                <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={inputCls}>
-                  {[3, 7, 14, 30].map((d) => (
-                    <option key={d} value={d}>
-                      {d}天
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button onClick={fetchStudents} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm">
-                <RefreshCw className="w-4 h-4" /> 查询
-              </button>
+          {/* 工具栏 */}
+          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 flex flex-col lg:flex-row lg:items-center gap-3">
+            <button onClick={fetchGroups} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+              <RefreshCcw className="w-4 h-4" /> 刷新
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">超时天数</span>
+              <input type="number" value={days} min={1} max={30}
+                onChange={(e) => setDays(Number(e.target.value) || 3)}
+                className="w-16 px-2 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 text-center" />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">分组</span>
+              <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}
+                className="px-3 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100">
+                <option value="school_name">按学校</option>
+                <option value="region">按区域</option>
+              </select>
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              共 <span className="font-bold text-red-600">{total}</span> 名超时学员，
+              涉及 <span className="font-bold">{groups.length}</span> 个{groupBy === 'school_name' ? '学校' : '区域'}
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden">
-            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <div className="text-sm text-gray-600 dark:text-gray-400">已分配且超过 {days} 天无回访记录的线索</div>
-              <button onClick={toggleAll} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                {selectedCount === students.length && students.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
-                全选
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3 w-10" />
-                    <th className="px-4 py-3 text-left">姓名</th>
-                    <th className="px-4 py-3 text-left">地区</th>
-                    <th className="px-4 py-3 text-left">意向</th>
-                    <th className="px-4 py-3 text-left">状态</th>
-                    <th className="px-4 py-3 text-left">坐席</th>
-                    <th className="px-4 py-3 text-left">分配时间</th>
-                    <th className="px-4 py-3 text-left">最后活动</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y dark:divide-gray-700">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={8} className="py-12 text-center">
-                        <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                      </td>
-                    </tr>
-                  ) : students.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="py-12 text-center text-gray-400">暂无数据</td>
-                    </tr>
-                  ) : (
-                    students.map((item) => (
-                      <tr key={item.student_id} className="hover:bg-gray-50 dark:hover:bg-gray-900/20">
-                        <td className="px-4 py-3">
-                          <button onClick={() => toggleSel(item.student_id)}>
-                            {selected.has(item.student_id) ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-gray-400" />}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-100">{item.name}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.region || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.intent_level || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.status || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{item.agent_name || '-'}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{formatDateTime(item.assigned_at)}</td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{formatDateTime(item.last_activity_at || item.assigned_at)}</td>
-                      </tr>
-                    ))
+          {/* 分组列表 */}
+          <div className="space-y-2">
+            {loading ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-12 text-center">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
+              </div>
+            ) : groups.length === 0 ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-12 text-center text-gray-400">
+                暂无超时学员
+              </div>
+            ) : (
+              groups.map((g) => (
+                <div key={g.name} className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => toggleExpand(g.name)}>
+                      {expandedGroup === g.name
+                        ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                        : <ChevronDown className="w-4 h-4 text-gray-400" />
+                      }
+                      {groupBy === 'school_name'
+                        ? <School className="w-4 h-4 text-blue-500" />
+                        : <MapPin className="w-4 h-4 text-amber-500" />
+                      }
+                      <span className="font-medium text-gray-800 dark:text-gray-100">{g.name}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 font-medium">
+                        {g.count} 人
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleReclaim(g.name, g.count); }}
+                      disabled={reclaiming === g.name}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {reclaiming === g.name
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <RotateCcw className="w-3.5 h-3.5" />
+                      }
+                      一键回收
+                    </button>
+                  </div>
+
+                  {expandedGroup === g.name && (
+                    <div className="border-t dark:border-gray-700">
+                      {expandedLoading ? (
+                        <div className="p-6 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" /></div>
+                      ) : expandedStudents.length === 0 ? (
+                        <div className="p-6 text-center text-gray-400 text-sm">暂无数据</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-500 text-xs">
+                              <tr>
+                                <th className="px-4 py-2 text-left">姓名</th>
+                                <th className="px-4 py-2 text-left">{groupBy === 'school_name' ? '区域' : '学校'}</th>
+                                <th className="px-4 py-2 text-left">意向</th>
+                                <th className="px-4 py-2 text-left">话务员</th>
+                                <th className="px-4 py-2 text-left">最后活动</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-gray-700/50">
+                              {expandedStudents.map((s) => (
+                                <tr key={s.student_id} className="hover:bg-gray-50 dark:hover:bg-gray-900/20">
+                                  <td className="px-4 py-2 font-medium text-gray-800 dark:text-gray-100">{s.name}</td>
+                                  <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{groupBy === 'school_name' ? (s.region || '-') : (s.school_name || '-')}</td>
+                                  <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{s.intent_level || '-'}</td>
+                                  <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{s.agent_name || '-'}</td>
+                                  <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{s.last_activity_at ? new Date(s.last_activity_at).toLocaleDateString() : '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              ))
+            )}
           </div>
-
-          {selectedCount > 0 && (
-            <div className="sticky bottom-4 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-lg p-4 flex flex-col lg:flex-row lg:items-center gap-3">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                已选 {selectedCount} 条
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                <button onClick={handleRecycle} disabled={actionLoading} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50">
-                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Inbox className="w-4 h-4" />}
-                  回收到总名单
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>

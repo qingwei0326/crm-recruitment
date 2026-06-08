@@ -4,7 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
-import { formatDateTime } from '../../utils';
+import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
+import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { statusLabel } from '../../labels';
 import {
   ArrowLeft,
@@ -33,10 +35,6 @@ import {
 const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 
-function getApiErrorMessage(error) {
-  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
-}
-
 function getStatusBadgeClass(status) {
   if (status === '已报名' || status === '已完成') {
     return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300';
@@ -54,6 +52,8 @@ export default function AgentManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const [agents, setAgents] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
@@ -87,7 +87,7 @@ export default function AgentManage() {
     api
       .get('/admin/agents')
       .then((res) => setAgents(res.data.data || []))
-      .catch(console.error)
+      .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
   };
   useEffect(() => {
@@ -225,40 +225,46 @@ export default function AgentManage() {
     fetchAgents();
   };
   const handleOffboard = async (agent) => {
-    if (
-      !confirm(
-        `确定为话务员「${agent.name}」办理离职吗？\n\n` +
-          `· 名下未结案的线索会被回收到池\n` +
-          `· 已报名/已过期等历史记录会保留并解绑\n` +
-          `· 账号会被禁用、已登录的会话立即失效\n\n` +
-          `账号会保留以便保留历史，如需彻底删除请联系开发者。`,
-      )
-    ) {
+    const ok = await confirm({
+      title: `为「${agent.name}」办理离职`,
+      message:
+        `· 名下未结案的线索会被回收到池\n` +
+        `· 已报名/已过期等历史记录会保留并解绑\n` +
+        `· 账号会被禁用、已登录的会话立即失效\n\n` +
+        `账号会保留以便保留历史，如需彻底删除请联系开发者。`,
+      confirmText: '办理离职',
+      tone: 'danger',
+    });
+    if (!ok) {
       return;
     }
     try {
       const res = await api.post(`/admin/users/${agent.id}/offboard`);
       const d = res.data?.data;
       if (d) {
-        alert(
-          `${agent.name} 已办理离职：\n` +
-            `回收线索 ${d.recycled_count} 条\n` +
-            `保留历史 ${d.preserved_count} 条`,
+        toast?.success(
+          `${agent.name} 已办理离职：回收线索 ${d.recycled_count} 条，保留历史 ${d.preserved_count} 条`,
         );
       }
       fetchAgents();
       if (selectedAgent?.id === agent.id) setSelectedAgent(null);
     } catch (err) {
-      alert(getApiErrorMessage(err));
+      toast?.error(getApiErrorMessage(err));
     }
   };
   const handleResetPassword = async (agent) => {
-    if (!confirm(`确定重置「${agent.name}」的密码吗？系统将生成一个随机临时密码。`)) return;
+    const ok = await confirm({
+      title: '重置密码',
+      message: `确定重置「${agent.name}」的密码吗？系统将生成一个随机临时密码。`,
+      confirmText: '重置密码',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       const res = await api.post(`/admin/users/${agent.id}/reset-password`);
-      alert(res.data.msg || '密码已重置');
+      toast?.success(res.data.msg || '密码已重置');
     } catch (err) {
-      alert(err.response?.data?.msg || '操作失败');
+      toast?.error(err.response?.data?.msg || '操作失败');
     }
   };
 
@@ -270,7 +276,7 @@ export default function AgentManage() {
       setRecycleSelected(new Set());
     } catch (error) {
       setRecycleStudents([]);
-      alert(getApiErrorMessage(error));
+      toast?.error(getApiErrorMessage(error));
     } finally {
       setRecycleLoading(false);
     }
@@ -327,10 +333,10 @@ export default function AgentManage() {
           viewAgentTasks(recycleAgent);
         }
       } else {
-        alert(res.data.msg || '操作失败');
+        toast?.error(res.data.msg || '操作失败');
       }
     } catch (error) {
-      alert(getApiErrorMessage(error));
+      toast?.error(getApiErrorMessage(error));
     } finally {
       setRecycleActionLoading(false);
     }

@@ -1,6 +1,5 @@
 """AI provider 可切换（DeepSeek / MiMo / 自定义）相关测试。"""
 
-import io
 import json
 
 import pytest
@@ -8,20 +7,6 @@ import pytest
 from app import ai_analyzer
 from app.models import SystemConfig
 from app.routers.calls import _resolve_ai_engine
-
-
-class _FakeResp(io.BytesIO):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-
-def _openai_reply(content: str):
-    """构造一个 OpenAI 兼容的 chat/completions 响应字节流。"""
-    body = {"choices": [{"message": {"content": content}}]}
-    return _FakeResp(json.dumps(body).encode("utf-8"))
 
 
 class TestChatEndpoint:
@@ -47,18 +32,49 @@ class TestChatEndpoint:
         assert ai_analyzer._chat_endpoint("").endswith("/v1/chat/completions")
 
 
+class _FakeAsyncClient:
+    """Mock httpx.AsyncClient — captures the request and returns a canned response."""
+    def __init__(self, content: str, captured: dict, timeout=None):
+        self._content = content
+        self._captured = captured
+        self._timeout = timeout
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, json=None, headers=None, **kw):
+        self._captured["url"] = url
+        self._captured["body"] = json
+        self._captured["headers"] = headers or {}
+        body = {"choices": [{"message": {"content": self._content}}]}
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return body
+
+        return _Resp()
+
+
+@pytest.mark.asyncio
 class TestCallLlm:
-    def test_builds_request_with_base_model_key(self, monkeypatch):
+    async def test_builds_request_with_base_model_key(self, monkeypatch):
         captured = {}
 
-        def fake_urlopen(req, timeout=None):
-            captured["url"] = req.full_url
-            captured["headers"] = req.headers
-            captured["body"] = json.loads(req.data.decode("utf-8"))
-            return _openai_reply('{"intent":"A","confidence":0.9,"summary":"s","reasons":"r"}')
+        def fake_client(timeout=None, **kw):
+            return _FakeAsyncClient(
+                '{"intent":"A","confidence":0.9,"summary":"s","reasons":"r"}',
+                captured,
+                timeout=timeout,
+            )
 
-        monkeypatch.setattr(ai_analyzer, "urlopen", fake_urlopen)
-        out = ai_analyzer._call_llm(
+        monkeypatch.setattr(ai_analyzer.httpx, "AsyncClient", fake_client)
+        out = await ai_analyzer._call_llm(
             "prompt",
             base="https://token-plan-sgp.xiaomimimo.com/v1",
             model="mimo-v2.5-pro",
@@ -66,42 +82,47 @@ class TestCallLlm:
         )
         assert captured["url"] == "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions"
         assert captured["body"]["model"] == "mimo-v2.5-pro"
-        # urllib 把 header 名首字母大写
         assert captured["headers"]["Authorization"] == "Bearer tp-secret"
         assert out["ai_intent"] == "A"
 
-    def test_strips_markdown_fence(self, monkeypatch):
+    async def test_strips_markdown_fence(self, monkeypatch):
         fenced = '```json\n{"intent":"B","confidence":0.5,"summary":"x","reasons":"y"}\n```'
-        monkeypatch.setattr(
-            ai_analyzer, "urlopen", lambda req, timeout=None: _openai_reply(fenced)
-        )
-        out = ai_analyzer._call_llm("p", base="https://x/v1", model="m", api_key="k")
+        captured = {}
+
+        def fake_client(timeout=None, **kw):
+            return _FakeAsyncClient(fenced, captured, timeout=timeout)
+
+        monkeypatch.setattr(ai_analyzer.httpx, "AsyncClient", fake_client)
+        out = await ai_analyzer._call_llm("p", base="https://x/v1", model="m", api_key="k")
         assert out["ai_intent"] == "B"
 
 
+@pytest.mark.asyncio
 class TestAnalyzeTranscript:
-    def test_no_key_falls_back_to_keyword(self, monkeypatch):
+    async def test_no_key_falls_back_to_keyword(self, monkeypatch):
         # 没 key 不应发起网络请求
-        def boom(*a, **k):
+        async def boom(*a, **k):
             raise AssertionError("不应调用网络")
 
-        monkeypatch.setattr(ai_analyzer, "urlopen", boom)
+        monkeypatch.setattr(ai_analyzer, "_call_llm", boom)
         monkeypatch.setattr(ai_analyzer, "DEEPSEEK_API_KEY", "")
-        out = ai_analyzer.analyze_transcript("我想报名", api_key="")
+        out = await ai_analyzer.analyze_transcript("我想报名", api_key="")
         assert out["ai_intent"] in ("A", "B", "C", "无")
 
-    def test_uses_provided_base_model(self, monkeypatch):
+    async def test_uses_provided_base_model(self, monkeypatch):
         captured = {}
 
-        def fake_urlopen(req, timeout=None):
-            captured["url"] = req.full_url
-            return _openai_reply('{"intent":"A","confidence":0.8,"summary":"s","reasons":"r"}')
+        async def fake_call_llm(prompt, base, model, api_key):
+            captured["base"] = base
+            captured["model"] = model
+            return {"ai_intent": "A", "ai_confidence": 0.8, "ai_summary": "s", "ai_reasons": "r"}
 
-        monkeypatch.setattr(ai_analyzer, "urlopen", fake_urlopen)
-        out = ai_analyzer.analyze_transcript(
+        monkeypatch.setattr(ai_analyzer, "_call_llm", fake_call_llm)
+        out = await ai_analyzer.analyze_transcript(
             "想了解报名", api_key="k", base="https://mimo.test/v1", model="mimo-v2.5-pro"
         )
-        assert captured["url"] == "https://mimo.test/v1/chat/completions"
+        assert captured["base"] == "https://mimo.test/v1"
+        assert captured["model"] == "mimo-v2.5-pro"
         assert out["ai_intent"] == "A"
 
 

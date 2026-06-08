@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -98,6 +99,11 @@ class User(Base):
 
 class Student(Base):
     __tablename__ = "students"
+    __table_args__ = (
+        Index("ix_students_assigned_status", "assigned_to", "status"),
+        Index("ix_students_status_school", "status", "school_name"),
+        Index("ix_students_guardian_phone", "guardian_phone"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), nullable=False)

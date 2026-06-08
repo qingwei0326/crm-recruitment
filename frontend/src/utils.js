@@ -41,3 +41,21 @@ export function formatDate(value) {
     return value;
   }
 }
+
+export function getApiErrorMessage(error) {
+  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
+}
+
+export function buildStudentPayload(form) {
+  const payload = { name: form.name.trim() };
+  [
+    'region', 'guardian_name', 'guardian_phone',
+    'guardian2_name', 'guardian2_phone',
+    'school_name', 'school_address', 'join_reasons',
+  ].forEach((key) => {
+    const value = form[key]?.trim();
+    if (value) payload[key] = value;
+  });
+  if (form.score !== '' && form.score != null) payload.score = Number(form.score);
+  return payload;
+}

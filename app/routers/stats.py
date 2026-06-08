@@ -643,8 +643,8 @@ async def prediction_distribution(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """活跃学生的转化概率分布统计"""
-    # 查询所有非终态学生
+    """活跃学生的转化概率分布统计 — 批量查询避免 N+1"""
+    # 1) 所有活跃学生 (一次查询)
     result = await db.execute(
         select(Student).where(
             Student.status.not_in([
@@ -656,35 +656,67 @@ async def prediction_distribution(
         )
     )
     students = result.scalars().all()
+    if not students:
+        return Response.ok({
+            "total": 0, "high": 0, "medium": 0, "low": 0,
+            "avg_probability": 0,
+            "distribution": [
+                {"name": "高概率 (>70%)", "value": 0, "color": "#22c55e"},
+                {"name": "中概率 (30-70%)", "value": 0, "color": "#eab308"},
+                {"name": "低概率 (<30%)", "value": 0, "color": "#ef4444"},
+            ],
+        })
 
-    high = 0   # 概率 > 0.7
-    medium = 0  # 0.3 ~ 0.7
-    low = 0     # < 0.3
+    student_ids = [s.id for s in students]
+
+    # 子查询：活跃学生 ID 集合（避免 IN 列表超 SQLite 变量限制）
+    active_ids = select(Student.id).where(
+        Student.status.not_in([
+            StudentStatus.enrolled,
+            StudentStatus.expired,
+            StudentStatus.rejected,
+            StudentStatus.invalid,
+        ])
+    ).scalar_subquery()
+
+    # 2) 批量查 notes 数
+    notes_r = await db.execute(
+        select(Note.student_id, func.count(Note.id).label("cnt"))
+        .where(Note.student_id.in_(active_ids))
+        .group_by(Note.student_id)
+    )
+    notes_map = {row.student_id: row.cnt for row in notes_r.all()}
+
+    # 3) 批量查 follow_up
+    fu_r = await db.execute(
+        select(func.distinct(FollowUp.student_id))
+        .where(FollowUp.student_id.in_(active_ids))
+    )
+    fu_set = {row[0] for row in fu_r.all()}
+
+    # 4) 批量查 completed visit
+    visit_r = await db.execute(
+        select(func.distinct(Visit.student_id))
+        .where(
+            Visit.student_id.in_(active_ids),
+            Visit.status == VisitStatus.completed,
+        )
+    )
+    visit_set = {row[0] for row in visit_r.all()}
+
+    # 5) 计算每个学生的概率
+    now = utcnow()
+    high = medium = low = 0
     total_prob = 0.0
 
     for s in students:
-        # 获取该学生的补充数据
-        notes_r = await db.execute(
-            select(func.count(Note.id)).where(Note.student_id == s.id)
-        )
-        total_notes = notes_r.scalar() or 0
-
-        fu_r = await db.execute(
-            select(FollowUp).where(FollowUp.student_id == s.id).limit(1)
-        )
-        has_follow_up = fu_r.scalar_one_or_none() is not None
-
-        visit_r = await db.execute(
-            select(Visit).where(
-                Visit.student_id == s.id, Visit.status == VisitStatus.completed
-            ).limit(1)
-        )
-        has_visit = visit_r.scalar_one_or_none() is not None
+        total_notes = notes_map.get(s.id, 0)
+        has_follow_up = s.id in fu_set
+        has_visit = s.id in visit_set
 
         days_since = 30
         if s.assigned_at:
-            delta = utcnow() - s.assigned_at
-            days_since = max(1, delta.days)
+            days_since = max(1, (now - s.assigned_at).days)
 
         intent_val = s.intent_level.value if s.intent_level else "无"
         stage_val = s.stage.value if s.stage else "初次联系"
@@ -698,7 +730,6 @@ async def prediction_distribution(
             days_since_assign=days_since,
         )
         total_prob += prob
-
         if prob > 0.7:
             high += 1
         elif prob >= 0.3:
@@ -707,7 +738,7 @@ async def prediction_distribution(
             low += 1
 
     total = len(students)
-    avg_prob = round(total_prob / total, 4) if total > 0 else 0
+    avg_prob = round(total_prob / total, 4) if total else 0
 
     return Response.ok({
         "total": total,

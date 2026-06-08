@@ -1,173 +1,43 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import {
-  Phone,
-  PhoneCall,
-  ClipboardPaste,
-  Sparkles,
-  ChevronUp,
-  ChevronDown,
-  LogOut,
-  Menu,
   X,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  ThumbsUp,
-  Target,
-  BarChart3,
-  Calendar,
-  CheckCheck,
-  UserX,
-  History,
-  StickyNote,
-  Sun,
-  Moon,
-  MapPin,
-  Home,
-  ChevronLeft,
-  ChevronRight,
   AlertTriangle,
-  Plus,
-  User,
-  BookOpen,
-  PhoneCall as PhoneIcon,
-  HelpCircle,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
-import { stageLabel, statusLabel } from '../../labels';
-import { formatDateTime } from '../../utils';
+import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
+import { getApiErrorMessage, buildStudentPayload } from '../../utils';
+import {
+  emptyStudentForm,
+} from './agentWorkUtils';
 
-const mask = (p) => (p ? p.slice(0, 3) + '****' + p.slice(-4) : '');
-const STATUS_STYLE = {
-  未联系: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-  已联系: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  待回访: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  已完成: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  已报名: 'bg-green-200 text-green-800 dark:bg-green-900/50 dark:text-green-200',
-  无效: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300',
-  拒绝接听: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  已过期: 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500',
-};
-const QUICK_STATUSES = [
-  { status: '已联系', icon: CheckCheck, color: 'bg-blue-600 hover:bg-blue-700' },
-  { status: '待回访', icon: Clock, color: 'bg-amber-600 hover:bg-amber-700' },
-  { status: '已报名', icon: CheckCircle2, color: 'bg-green-600 hover:bg-green-700' },
-  { status: '无效', icon: UserX, color: 'bg-red-500 hover:bg-red-600' },
-];
-const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
-const INTENT_BADGES = {
-  A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  C: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-  '无': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
-};
-const inputCls =
-  'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
-const emptyStudentForm = {
-  name: '',
-  region: '',
-  score: '',
-  guardian_name: '',
-  guardian_phone: '',
-  guardian2_name: '',
-  guardian2_phone: '',
-  school_name: '',
-  school_address: '',
-  join_reasons: '',
-};
-const createStudentFields = [
-  { key: 'name', label: '姓名', required: true },
-  { key: 'region', label: '地域' },
-  { key: 'score', label: '成绩', type: 'number' },
-  { key: 'guardian_name', label: '监护人姓名' },
-  { key: 'guardian_phone', label: '监护人电话' },
-  { key: 'guardian2_name', label: '监护人2姓名' },
-  { key: 'guardian2_phone', label: '监护人2电话' },
-  { key: 'school_name', label: '学校名称' },
-  { key: 'school_address', label: '学校地址' },
-  { key: 'join_reasons', label: '报名原因/备注', type: 'textarea' },
-];
-
-function buildStudentPayload(form) {
-  const payload = {
-    name: form.name.trim(),
-  };
-  [
-    'region',
-    'guardian_name',
-    'guardian_phone',
-    'guardian2_name',
-    'guardian2_phone',
-    'school_name',
-    'school_address',
-    'join_reasons',
-  ].forEach((key) => {
-    const value = form[key]?.trim();
-    if (value) payload[key] = value;
-  });
-  if (form.score !== '' && form.score != null) payload.score = Number(form.score);
-  return payload;
-}
-
-function getApiErrorMessage(error) {
-  return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
-}
-
-function AssignedDaysBadge({ days }) {
-  if (days == null) return null;
-  if (days === 0) {
-    return (
-      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
-        今日新分配
-      </span>
-    );
-  }
-  const cls =
-    days >= 7
-      ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-      : days >= 3
-        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
-  const label = days >= 7 ? `积压 ${days} 天` : `${days} 天前分配`;
-  return <span className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
-}
-
-function getContactOptions(student) {
-  if (!student) return [];
-  return [
-    {
-      key: 'guardian1',
-      label: '联系人1',
-      name: student.guardian_name || '联系人1',
-      phone: student.guardian_phone_raw || student.guardian_phone || '',
-    },
-    {
-      key: 'guardian2',
-      label: '联系人2',
-      name: student.guardian2_name || '联系人2',
-      phone: student.guardian2_phone_raw || student.guardian2_phone || '',
-    },
-  ].filter((item) => item.phone);
-}
+// Extracted components
+import AgentWorkDesktop from './AgentWorkDesktop';
+import AgentWorkMobile from './AgentWorkMobile';
+import StudentCreateModal from './StudentCreateModal';
+import SettingsModal from './desktop/SettingsModal';
+import DialResultModal from './desktop/DialResultModal';
 
 export default function AgentWork() {
   const { user, logout } = useAuth();
   const { dark, toggle: toggleTheme } = useTheme();
   const isMobile = useIsMobile();
+  const confirm = useConfirm();
+  const toast = useToast();
 
+  // ── State ──
   const [students, setStudents] = useState([]);
-  const [stats, setStats] = useState({
-    total: 0,
-    done: 0,
-    pending: 0,
-    follow_up: 0,
-    progress_pct: 0,
-  });
+  const [stats, setStats] = useState({ total: 0, done: 0, pending: 0, follow_up: 0, progress_pct: 0 });
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [selectedSchool, setSelectedSchool] = useState(null);
+  const [selectedStage, setSelectedStage] = useState(null);
+  const [selectedIntent, setSelectedIntent] = useState(null);
+  const [sortConfig, setSortConfig] = useState({ key: 'days', direction: 'desc' });
+  const [expandedId, setExpandedId] = useState(null);
   const [viewTab, setViewTab] = useState('today');
   const [showMenu, setShowMenu] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -178,8 +48,6 @@ export default function AgentWork() {
   const [showCreate, setShowCreate] = useState(false);
   const [newStudent, setNewStudent] = useState(emptyStudentForm);
   const [createErr, setCreateErr] = useState('');
-
-  // Detail & edit
   const [detailStudent, setDetailStudent] = useState(null);
   const [detailNotes, setDetailNotes] = useState([]);
   const [noteIdx, setNoteIdx] = useState(0);
@@ -187,27 +55,26 @@ export default function AgentWork() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [detailNotesError, setDetailNotesError] = useState('');
-
-  // Action states
   const [noteText, setNoteText] = useState('');
   const [actionMsg, setActionMsg] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [visitType, setVisitType] = useState('来校参观');
   const [visitDate, setVisitDate] = useState('');
   const [visitNotes, setVisitNotes] = useState('');
-
-  // Yesterday
-  const [yesterdayData, setYesterdayData] = useState(null);
-  const [yesterdayLoading, setYesterdayLoading] = useState(false);
-
-  // Prediction
+  const [followingData, setFollowingData] = useState(null);
+  const [followingLoading, setFollowingLoading] = useState(false);
   const [prediction, setPrediction] = useState(null);
-
-  // Follow-up lock after dial
   const [lockedStudentId, setLockedStudentId] = useState(null);
+  const [dialModal, setDialModal] = useState(null);
+  const [backlogAlert, setBacklogAlert] = useState(null);
+  const [activeStudent, setActiveStudent] = useState(null);
+  const [showAi, setShowAi] = useState(false);
+  const [hasAnalysis, setHasAnalysis] = useState(false);
+  const [dialCheckByStudent, setDialCheckByStudent] = useState({});
+  const [schoolGroups, setSchoolGroups] = useState([]);
+  const [scoreRange, setScoreRange] = useState({ min: '', max: '' });
 
-  // 拨号后弹窗：页面重载时从 sessionStorage 恢复拨号上下文
-  const [dialModal, setDialModal] = useState(null); // { studentId, studentName }
+  // ── Effects ──
   useEffect(() => {
     const raw = sessionStorage.getItem('pendingDial');
     if (raw) {
@@ -219,154 +86,110 @@ export default function AgentWork() {
     }
   }, []);
 
-  // Backlog alert (一天一次)
-  const [backlogAlert, setBacklogAlert] = useState(null);
-
-  // AI
-  const [activeStudent, setActiveStudent] = useState(null);
-  const [showAi, setShowAi] = useState(false);
-  const [hasAnalysis, setHasAnalysis] = useState(false);
-
-  // 拨号防撞：缓存每个学生的 24h 通话次数
-  const [dialCheckByStudent, setDialCheckByStudent] = useState({});
-
   useEffect(() => {
-    api
-      .get('/tasks/today')
-      .then((res) => {
-        if (res.data.code === 0) {
-          setStudents(res.data.data.list || []);
-          setStats(res.data.data.stats || {});
-        }
-      })
-      .catch(console.error);
+    api.get('/tasks/today').then((res) => {
+      if (res.data.code === 0) {
+        setStudents(res.data.data.list || []);
+        setStats(res.data.data.stats || {});
+        setSchoolGroups(res.data.data.schools || []);
+      }
+    }).catch(() => { toast?.error('数据加载失败'); });
   }, []);
-
-  const fetchToday = () => {
-    api
-      .get('/tasks/today')
-      .then((res) => {
-        if (res.data.code === 0) {
-          setStudents(res.data.data.list || []);
-          setStats(res.data.data.stats || {});
-          setCurrentIdx((idx) => Math.min(idx, Math.max((res.data.data.list || []).length - 1, 0)));
-        }
-      })
-      .catch(console.error);
-  };
-
-  useEffect(() => {
-    const c = students[currentIdx];
-    if (c) {
-      api
-        .get(`/stats/predict-conversion/${c.id}`)
-        .then((r) => {
-          if (r.data.code === 0) setPrediction(r.data.data);
-        })
-        .catch(() => setPrediction(null));
-      api
-        .get('/calls/check', { params: { student_id: c.id, within_hours: 24 } })
-        .then((r) => {
-          if (r.data.code === 0) {
-            setDialCheckByStudent((prev) => ({ ...prev, [c.id]: r.data.data }));
-          }
-        })
-        .catch(() => {});
-    }
-  }, [students, currentIdx]);
 
   useEffect(() => {
     if (!user?.id) return;
     const today = new Date().toISOString().slice(0, 10);
     const key = `crm_backlog_dismissed_${user.id}_${today}`;
     if (localStorage.getItem(key)) return;
-    api
-      .get('/tasks/backlog', { params: { days_threshold: 3 } })
-      .then((r) => {
-        if (r.data.code === 0 && r.data.data?.count > 0) {
-          setBacklogAlert(r.data.data);
-        }
-      })
-      .catch(() => {});
+    api.get('/tasks/backlog', { params: { days_threshold: 3 } }).then((r) => {
+      if (r.data.code === 0 && r.data.data?.count > 0) setBacklogAlert(r.data.data);
+    }).catch(() => {});
   }, [user?.id]);
 
-  const dismissBacklogAlert = () => {
-    if (user?.id) {
-      const today = new Date().toISOString().slice(0, 10);
-      localStorage.setItem(`crm_backlog_dismissed_${user.id}_${today}`, '1');
+  // Prediction + dial check for current student
+  useEffect(() => {
+    const c = filteredStudents[currentIdx];
+    if (c) {
+      api.get(`/stats/predict-conversion/${c.id}`).then((r) => {
+        if (r.data.code === 0) setPrediction(r.data.data);
+      }).catch(() => setPrediction(null));
+      api.get('/calls/check', { params: { student_id: c.id, within_hours: 24 } }).then((r) => {
+        if (r.data.code === 0) setDialCheckByStudent((prev) => ({ ...prev, [c.id]: r.data.data }));
+      }).catch(() => {});
     }
-    setBacklogAlert(null);
+  }, [students, currentIdx]);
+
+  useEffect(() => { setCurrentIdx(0); }, [selectedSchool, selectedStage, selectedIntent, scoreRange]);
+
+  // ── Derived data ──
+  const filteredStudents = useMemo(() => {
+    let result = students;
+    if (selectedSchool) result = result.filter((s) => (s.school_name || '未知学校') === selectedSchool);
+    if (selectedStage) result = result.filter((s) => s.stage === selectedStage);
+    if (selectedIntent) result = result.filter((s) => s.intent_level === selectedIntent);
+    if (scoreRange.min !== '' || scoreRange.max !== '') {
+      result = result.filter((s) => {
+        const sc = s.score;
+        if (sc == null || sc === '') return false;
+        const n = Number(sc);
+        if (scoreRange.min !== '' && n < Number(scoreRange.min)) return false;
+        if (scoreRange.max !== '' && n > Number(scoreRange.max)) return false;
+        return true;
+      });
+    }
+    return result;
+  }, [students, selectedSchool, selectedStage, selectedIntent, scoreRange]);
+
+  const filteredStats = useMemo(() => {
+    const hasScoreFilter = scoreRange.min !== '' || scoreRange.max !== '';
+    if (!selectedSchool && !selectedStage && !selectedIntent && !hasScoreFilter) return stats;
+    const list = filteredStudents;
+    const total = list.length;
+    const done = list.filter((s) => s.status === 'contacted').length;
+    const pending = list.filter((s) => s.status === 'not_contacted').length;
+    const follow_up = list.filter((s) => s.status === 'pending_visit').length;
+    const handled = done + follow_up;
+    return { total, done, pending, follow_up, progress_pct: total > 0 ? Math.round((handled / total) * 1000) / 10 : 0 };
+  }, [selectedSchool, selectedStage, selectedIntent, scoreRange, stats, filteredStudents]);
+
+  const current = filteredStudents[currentIdx];
+
+  // ── Handlers ──
+  const fetchToday = () => {
+    api.get('/tasks/today').then((res) => {
+      if (res.data.code === 0) {
+        setStudents(res.data.data.list || []);
+        setStats(res.data.data.stats || {});
+        setSchoolGroups(res.data.data.schools || []);
+        setCurrentIdx((idx) => Math.min(idx, Math.max((res.data.data.list || []).length - 1, 0)));
+      }
+    }).catch(() => { toast?.error('加载今日任务失败'); });
   };
 
-  const current = students[currentIdx];
+  const fetchFollowing = () => {
+    setFollowingLoading(true);
+    api.get('/tasks/following').then((r) => setFollowingData(r.data.data))
+      .catch(() => { toast?.error('加载跟进中数据失败'); }).finally(() => setFollowingLoading(false));
+  };
 
-  const backlogBanner = backlogAlert ? (
-    <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700 px-4 py-2.5 flex items-center gap-2">
-      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
-      <div className="flex-1 text-sm text-amber-800 dark:text-amber-200">
-        你有 <span className="font-bold">{backlogAlert.count}</span> 个学员积压超过{' '}
-        {backlogAlert.threshold_days} 天没动
-        {backlogAlert.oldest_days > 0 && `，最久 ${backlogAlert.oldest_days} 天`}
-      </div>
-      <button
-        onClick={() => {
-          setViewTab('yesterday');
-          fetchYesterday();
-          dismissBacklogAlert();
-        }}
-        className="text-xs text-amber-700 dark:text-amber-200 font-medium whitespace-nowrap"
-      >
-        去看看
-      </button>
-      <button
-        onClick={dismissBacklogAlert}
-        className="text-amber-600 dark:text-amber-300 hover:text-amber-800 shrink-0"
-        aria-label="关闭提醒"
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-  ) : null;
+  const flashMsg = (m) => { setActionMsg(m); setTimeout(() => setActionMsg(''), 2000); };
 
   const handleCreate = async () => {
-    if (!newStudent.name) {
-      setCreateErr('姓名和电话必填');
-      return;
-    }
+    if (!newStudent.name) { setCreateErr('姓名和电话必填'); return; }
     try {
       const res = await api.post('/students', buildStudentPayload(newStudent));
       if (res.data.code === 0) {
-        setShowCreate(false);
-        setNewStudent(emptyStudentForm);
-        setCreateErr('');
-        fetchToday();
-        flashMsg('学生已添加');
-      } else {
-        setCreateErr(res.data.msg || '创建失败');
-      }
-    } catch (e) {
-      setCreateErr(getApiErrorMessage(e));
-    }
-  };
-
-  const fetchYesterday = () => {
-    setYesterdayLoading(true);
-    api
-      .get('/tasks/yesterday')
-      .then((r) => setYesterdayData(r.data.data))
-      .catch(console.error)
-      .finally(() => setYesterdayLoading(false));
+        setShowCreate(false); setNewStudent(emptyStudentForm); setCreateErr('');
+        fetchToday(); flashMsg('学生已添加');
+      } else { setCreateErr(res.data.msg || '创建失败'); }
+    } catch (e) { setCreateErr(getApiErrorMessage(e)); }
   };
 
   const updateStatus = async (id, s) => {
     let payload = { status: s };
     if (s === '无效') {
-      const reason = window.prompt(
-        '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
-      );
-      if (!reason || !reason.trim()) {
-        return;
-      }
+      const reason = window.prompt('请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣');
+      if (!reason || !reason.trim()) return;
       payload.invalid_reason = reason.trim();
     }
     await api.put(`/students/${id}`, payload);
@@ -376,1699 +199,226 @@ export default function AgentWork() {
     flashMsg('状态已更新');
   };
 
-  // 拨号弹窗：选完状态后更新，已联系/待回访时展开意向等级，其余自动跳下一条
   const handleDialModalStatus = async (s) => {
     if (!dialModal) return;
     await updateStatus(dialModal.studentId, s);
     if (s === '已联系' || s === '待回访') {
-      // 更新状态但不关弹窗，展开意向评级
       setDialModal((p) => p ? { ...p, showIntent: true } : null);
-    } else {
-      setDialModal(null);
-      next();
-    }
+    } else { setDialModal(null); next(); }
   };
 
-  // 拨号弹窗：选完意向等级后更新并跳下一条
   const handleDialModalIntent = async (level) => {
     if (!dialModal) return;
     await updateDetailField('intent_level', level);
     flashMsg('意向等级已更新');
-    setDialModal(null);
-    next();
+    setDialModal(null); next();
   };
 
   const updateStage = async (id, stag) => {
     await api.put(`/students/${id}/stage`, { stage: stag });
-    setStudents((p) =>
-      p.map((t) =>
-        t.id === id ? { ...t, stage: stag, status: stag === '已报名' ? '已报名' : t.status } : t,
-      ),
-    );
+    setStudents((p) => p.map((t) => t.id === id ? { ...t, stage: stag, status: stag === '已报名' ? '已报名' : t.status } : t));
     flashMsg('阶段已更新');
   };
 
-  const addNote = async () => {
-    if (!noteText.trim() || !current) return;
-    await api.post('/notes', { student_id: current.id, content: noteText });
-    setNoteText('');
-    flashMsg('已记录');
-    loadDetail(current.id);
+  const addNote = async (targetId) => {
+    const id = targetId || current?.id;
+    if (!noteText.trim() || !id) return;
+    await api.post('/notes', { student_id: id, content: noteText });
+    setNoteText(''); flashMsg('已记录');
+    loadDetail(id);
   };
 
   const addFollowUp = async () => {
     if (!followUpDate || !current) return;
     await api.post('/follow-ups', { student_id: current.id, follow_up_date: followUpDate + ':00' });
-    setFollowUpDate('');
-    flashMsg('回访提醒已设置');
+    setFollowUpDate(''); flashMsg('回访提醒已设置');
   };
 
   const addVisit = async () => {
     if (!visitDate || !current) return;
-    await api.post('/visits', {
-      student_id: current.id,
-      visit_type: visitType,
-      scheduled_date: visitDate + ':00',
-      notes: visitNotes,
-    });
-    setVisitDate('');
-    setVisitNotes('');
-    flashMsg('到访已记录');
+    await api.post('/visits', { student_id: current.id, visit_type: visitType, scheduled_date: visitDate + ':00', notes: visitNotes });
+    setVisitDate(''); setVisitNotes(''); flashMsg('到访已记录');
   };
 
   const toggleNeedHelp = async () => {
     if (!current) return;
     const res = await api.post(`/students/${current.id}/need-help`);
-    setStudents((p) =>
-      p.map((t) => (t.id === current.id ? { ...t, need_help: res.data.data.need_help } : t)),
-    );
+    setStudents((p) => p.map((t) => (t.id === current.id ? { ...t, need_help: res.data.data.need_help } : t)));
     flashMsg(res.data.data.need_help ? '已标记需要协助' : '已取消协助标记');
-  };
-
-  const flashMsg = (m) => {
-    setActionMsg(m);
-    setTimeout(() => setActionMsg(''), 2000);
   };
 
   const refreshDialCheck = async (id) => {
     try {
       const r = await api.get('/calls/check', { params: { student_id: id, within_hours: 24 } });
-      if (r.data.code === 0) {
-        setDialCheckByStudent((prev) => ({ ...prev, [id]: r.data.data }));
-        return r.data.data;
-      }
-    } catch {}
-    return null;
+      if (r.data.code === 0) { setDialCheckByStudent((prev) => ({ ...prev, [id]: r.data.data })); return r.data.data; }
+    } catch {} return null;
   };
 
   const handleDial = async (contactKey, id) => {
-    // 1) 全局通话计数检查（任意坐席 24h 内）
     const check = await refreshDialCheck(id);
     const count = check?.count ?? 0;
     if (count >= 3) {
-      const ok = window.confirm(`该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`);
+      const ok = await confirm({ title: '拨号频次提醒', message: `该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`, confirmText: '仍要拨打', tone: 'danger' });
       if (!ok) return;
     }
-
-    // 2) 拿明文电话（后端会做拨号窗口 + 频次双重校验）
     let phone = '';
     try {
       const r = await api.get(`/students/phone/${id}`);
-      if (r.data.code === 0) {
-        phone = contactKey === 'guardian2'
-          ? r.data.data.guardian2_phone || ''
-          : r.data.data.guardian_phone || '';
-      }
+      if (r.data.code === 0) phone = contactKey === 'guardian2' ? r.data.data.guardian2_phone || '' : r.data.data.guardian_phone || '';
     } catch (err) {
-      if (err?.response?.status === 403) {
-        const msg = err.response.data?.detail || err.response.data?.msg || '当前不允许拨号';
-        alert(msg);
-        return;
-      }
-      const msg = err?.response?.data?.detail || err?.response?.data?.msg || '获取电话失败';
-      alert(msg);
-      return;
+      if (err?.response?.status === 403) { toast?.error(err.response.data?.detail || '当前不允许拨号'); return; }
+      toast?.error(err?.response?.data?.detail || '获取电话失败'); return;
     }
-    if (!phone) {
-      alert('该联系人没有电话');
-      return;
-    }
-    // 拨号前把学生信息存 sessionStorage，打完电话回来弹状态选择弹窗
+    if (!phone) { toast?.error('该联系人没有电话'); return; }
     const dialStudent = students.find((s) => s.id === id);
-    sessionStorage.setItem('pendingDial', JSON.stringify({
-      studentId: id,
-      studentName: dialStudent?.name || '未知',
-    }));
+    sessionStorage.setItem('pendingDial', JSON.stringify({ studentId: id, studentName: dialStudent?.name || '未知' }));
     window.location.href = `tel:${phone}`;
     setLockedStudentId(id);
-    // 后端已记一条 DialLog，刷新计数
     refreshDialCheck(id);
   };
 
   const loadDetail = async (id) => {
     const fallbackStudent = students.find((s) => s.id === id);
     if (fallbackStudent) setDetailStudent((prev) => (prev?.id === id ? prev : fallbackStudent));
-    setShowDetail(true);
-    setShowAi(false);
-    setDetailLoading(true);
-    setDetailError('');
-    setDetailNotesError('');
+    setShowDetail(true); setShowAi(false);
+    setDetailLoading(true); setDetailError(''); setDetailNotesError('');
     try {
       const [studentResult, notesResult, callsResult] = await Promise.allSettled([
-        api.get(`/students/${id}`),
-        api.get(`/notes?student_id=${id}`),
-        api.get(`/calls?student_id=${id}&page_size=5`),
+        api.get(`/students/${id}`), api.get(`/notes?student_id=${id}`), api.get(`/calls?student_id=${id}&page_size=5`),
       ]);
-
-      if (studentResult.status === 'fulfilled') {
-        setDetailStudent(studentResult.value.data.data);
-      } else {
-        setDetailError(getApiErrorMessage(studentResult.reason));
-      }
-
-      if (notesResult.status === 'fulfilled') {
-        setDetailNotes(notesResult.value.data.data || []);
-      } else {
-        setDetailNotes([]);
-        setDetailNotesError(getApiErrorMessage(notesResult.reason));
-      }
-
+      if (studentResult.status === 'fulfilled') setDetailStudent(studentResult.value.data.data);
+      else setDetailError(getApiErrorMessage(studentResult.reason));
+      if (notesResult.status === 'fulfilled') setDetailNotes(notesResult.value.data.data || []);
+      else { setDetailNotes([]); setDetailNotesError(getApiErrorMessage(notesResult.reason)); }
       setNoteIdx(0);
-
-      // Check if any call record has analyzed_at
-      if (callsResult.status === 'fulfilled') {
-        const calls = callsResult.value.data.data?.list || [];
-        setHasAnalysis(calls.some((c) => c.analyzed_at));
-      } else {
-        setHasAnalysis(false);
-      }
-    } finally {
-      setDetailLoading(false);
-    }
+      if (callsResult.status === 'fulfilled') setHasAnalysis(callsResult.value.data.data?.list?.some((c) => c.analyzed_at));
+      else setHasAnalysis(false);
+    } finally { setDetailLoading(false); }
   };
 
   const updateDetailField = async (field, value) => {
     if (!detailStudent) return;
     await api.put(`/students/${detailStudent.id}`, { [field]: value });
     setDetailStudent((p) => (p ? { ...p, [field]: value } : null));
-    setStudents((prev) =>
-      prev.map((t) => (t.id === detailStudent.id ? { ...t, [field]: value } : t)),
-    );
+    setStudents((prev) => prev.map((t) => (t.id === detailStudent.id ? { ...t, [field]: value } : t)));
   };
 
-  const openAiPanel = (s) => {
-    setActiveStudent(s);
-    setShowDetail(false);
-    setShowAi(true);
+  const openAiPanel = (s) => { setActiveStudent(s); setShowDetail(false); setShowAi(true); };
+
+  const updateScore = async (id, score) => {
+    await api.put(`/students/${id}`, { score });
+    setStudents((p) => p.map((t) => (t.id === id ? { ...t, score } : t)));
+    flashMsg('成绩已更新');
+  };
+  const prev = () => { if (currentIdx > 0) setCurrentIdx(currentIdx - 1); };
+  const next = () => { if (currentIdx < filteredStudents.length - 1) setCurrentIdx(currentIdx + 1); };
+
+  const dismissBacklogAlert = () => {
+    if (user?.id) { const today = new Date().toISOString().slice(0, 10); localStorage.setItem(`crm_backlog_dismissed_${user.id}_${today}`, '1'); }
+    setBacklogAlert(null);
   };
 
-  const prev = () => {
-    if (currentIdx > 0) setCurrentIdx(currentIdx - 1);
-  };
-  const next = () => {
-    if (currentIdx < students.length - 1) setCurrentIdx(currentIdx + 1);
-  };
+  const backlogBanner = backlogAlert ? (
+    <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700 px-4 py-2.5 flex items-center gap-2">
+      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
+      <div className="flex-1 text-sm text-amber-800 dark:text-amber-200">
+        你有 <span className="font-bold">{backlogAlert.count}</span> 个学员积压超过{' '}
+        {backlogAlert.threshold_days} 天没动
+        {backlogAlert.oldest_days > 0 && `，最久 ${backlogAlert.oldest_days} 天`}
+      </div>
+      <button onClick={() => { setViewTab('following'); fetchFollowing(); dismissBacklogAlert(); }}
+        className="text-xs text-amber-700 dark:text-amber-200 font-medium whitespace-nowrap">去看看</button>
+      <button onClick={dismissBacklogAlert} className="text-amber-600 dark:text-amber-300 hover:text-amber-800 shrink-0" aria-label="关闭提醒">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  ) : null;
 
-  const Sidebar = () => (
+  // ── Modals ──
+  const modals = (
     <>
-      <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-        <span className="font-semibold text-gray-800 dark:text-gray-100">菜单</span>
-        {isMobile && (
-          <button
-            onClick={() => setShowMenu(false)}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        )}
-      </div>
-      <div className="p-3 space-y-1">
-        <button
-          onClick={() => {
-            setShowMenu(false);
-            setViewTab('today');
-          }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${viewTab === 'today' ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-        >
-          <Target className="w-4 h-4" /> 今日任务
-        </button>
-        <button
-          onClick={() => {
-            setShowMenu(false);
-            setShowCreate(true);
-            setCreateErr('');
-          }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
-        >
-          <Plus className="w-4 h-4" /> 手动添加学生
-        </button>
-        <button
-          onClick={() => {
-            setShowMenu(false);
-            setViewTab('yesterday');
-            fetchYesterday();
-          }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${viewTab === 'yesterday' ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-        >
-          <History className="w-4 h-4" /> 昨日回顾
-        </button>
-      </div>
-      <div className="mt-auto p-3 border-t dark:border-gray-700">
-        <button
-          onClick={toggleTheme}
-          className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-        >
-          {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}{' '}
-          {dark ? '亮色模式' : '暗色模式'}
-        </button>
-        <button
-          onClick={() => {
-            setTokenInput(user?.pushplus_token || '');
-            setTokenMsg('');
-            setShowSettings(true);
-          }}
-          className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-        >
-          <Sparkles className="w-4 h-4" /> 推送设置
-        </button>
-        <button
-          onClick={logout}
-          className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-        >
-          <LogOut className="w-4 h-4" /> 退出登录
-        </button>
-      </div>
+      {showCreate && (
+        <StudentCreateModal student={newStudent} setStudent={setNewStudent} error={createErr}
+          onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
+      )}
+      <SettingsModal show={showSettings} onClose={() => setShowSettings(false)}
+        tokenInput={tokenInput} setTokenInput={setTokenInput}
+        tokenSaving={tokenSaving} setTokenSaving={setTokenSaving}
+        tokenMsg={tokenMsg} setTokenMsg={setTokenMsg} />
+      <DialResultModal dialModal={dialModal}
+        onStatusSelect={handleDialModalStatus} onIntentSelect={handleDialModalIntent}
+        onClose={() => setDialModal(null)} />
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </>
   );
 
-  // Mobile layout
-  const renderSettingsModal = () => {
-    if (!showSettings) return null;
-    const saveToken = async () => {
-      setTokenSaving(true);
-      setTokenMsg('');
-      try {
-        const res = await api.put('/auth/me/pushplus-token', { pushplus_token: tokenInput.trim() });
-        if (res.data.code === 0) {
-          setTokenMsg('保存成功，下次推送将使用此 token');
-          try {
-            const saved = JSON.parse(localStorage.getItem('crm_user') || '{}');
-            saved.pushplus_token = tokenInput.trim();
-            localStorage.setItem('crm_user', JSON.stringify(saved));
-          } catch {}
-        } else {
-          setTokenMsg(res.data.msg || '保存失败');
-        }
-      } catch (e) {
-        setTokenMsg(e?.response?.data?.msg || '保存失败');
-      } finally {
-        setTokenSaving(false);
-      }
-    };
-    return (
-      <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-5 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">个人推送设置</h3>
-            <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            在 pushplus.plus 注册并获取个人 token。设置后，回访提醒和过期告警会推送到你自己的微信，而不是管理员。
-          </p>
-          <input
-            type="text"
-            value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
-            placeholder="留空则使用全局 token"
-            className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
-            maxLength={64}
-          />
-          {tokenMsg && (
-            <div className="text-xs mt-2 text-blue-600 dark:text-blue-400">{tokenMsg}</div>
-          )}
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={() => setShowSettings(false)}
-              className="flex-1 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
-            >
-              取消
-            </button>
-            <button
-              onClick={saveToken}
-              disabled={tokenSaving}
-              className="flex-1 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
-            >
-              {tokenSaving ? '保存中…' : '保存'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // 拨号后弹窗：打完电话回到页面后，弹窗让话务员选状态
-  const renderDialModal = () => {
-    if (!dialModal) return null;
-    const colors = {
-      '已联系': 'bg-blue-600 hover:bg-blue-700',
-      '待回访': 'bg-amber-600 hover:bg-amber-700',
-      '已报名': 'bg-green-600 hover:bg-green-700',
-      '无效': 'bg-red-500 hover:bg-red-600',
-      '拒绝接听': 'bg-gray-500 hover:bg-gray-600',
-    };
-    // 只有已联系/待回访才需要选意向等级
-    const showIntent = dialModal.showIntent;
-    return (
-      <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6">
-          <div className="text-center mb-4">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
-              <PhoneCall className="w-6 h-6 text-green-600 dark:text-green-400" />
-            </div>
-            <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">
-              {dialModal.studentName}
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">通话已完成，请选择处理结果</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            {Object.keys(colors).map((s) => (
-              <button
-                key={s}
-                onClick={() => handleDialModalStatus(s)}
-                className={`px-4 py-3 rounded-xl text-sm font-medium text-white ${colors[s]}`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-          {/* Intent level：仅已联系/待回访时展开 */}
-          {showIntent && (
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 mb-3">
-              <div className="text-xs text-gray-500 mb-1.5 text-center">意向等级</div>
-              <div className="flex gap-2 justify-center">
-                {['A', 'B', 'C', '无'].map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => handleDialModalIntent(level)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      level === 'A'
-                        ? 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300 hover:bg-red-200'
-                        : level === 'B'
-                          ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300 hover:bg-amber-200'
-                          : level === 'C'
-                            ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200 hover:bg-gray-300'
-                            : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200'
-                    }`}
-                  >
-                    {level === '无' ? '无' : `${level}级`}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <button
-            onClick={() => setDialModal(null)}
-            className="mt-4 w-full py-2.5 rounded-xl border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
-          >
-            稍后处理
-          </button>
-        </div>
-      </div>
-    );
-  };
-
+  // ═══════════════════════════════════════════════
+  // MOBILE LAYOUT — delegates to AgentWorkMobile
+  // ═══════════════════════════════════════════════
   if (isMobile) {
     return (
-      <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-        <header className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <button onClick={() => setShowMenu(true)} className="p-2 -ml-2">
-              <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </button>
-            <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100">话务工作台</h1>
-            {viewTab === 'today' && (
-              <span className="text-xs text-gray-500">
-                {stats.done}/{stats.total}
-              </span>
-            )}
-          </div>
-          <button onClick={toggleTheme} className="p-2 rounded-lg">
-            {dark ? (
-              <Sun className="w-5 h-5 text-amber-400" />
-            ) : (
-              <Moon className="w-5 h-5 text-gray-500" />
-            )}
-          </button>
-          <button
-            onClick={() => {
-              setShowCreate(true);
-              setCreateErr('');
-            }}
-            className="p-2 rounded-lg text-gray-500"
-            title="手动添加学生"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </header>
-        {showMenu && (
-          <div className="fixed inset-0 z-30">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setShowMenu(false)} />
-            <div className="absolute left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-800 shadow-2xl flex flex-col">
-              <Sidebar />
-            </div>
-          </div>
-        )}
-        {showCreate && (
-          <StudentCreateModal
-            student={newStudent}
-            setStudent={setNewStudent}
-            error={createErr}
-            onClose={() => setShowCreate(false)}
-            onSubmit={handleCreate}
-          />
-        )}
-
-        {viewTab === 'today' ? (
-          <>
-            <div className="grid grid-cols-4 gap-px bg-gray-200 dark:bg-gray-700 shrink-0">
-              {[
-                { label: '总数', value: stats.total },
-                { label: '完成', value: stats.done },
-                { label: '待联', value: stats.pending },
-                { label: '回访', value: stats.follow_up },
-              ].map((s, i) => (
-                <div key={i} className="bg-white dark:bg-gray-800 px-2 py-3 text-center">
-                  <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                    {s.value}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{s.label}</div>
-                </div>
-              ))}
-            </div>
-            {backlogBanner}
-            {actionMsg && (
-              <div className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm px-4 py-2 text-center">
-                {actionMsg}
-              </div>
-            )}
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
-              {students.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                  <Target className="w-10 h-10 mb-3" />
-                  <p className="text-sm">暂无今日任务</p>
-                </div>
-              ) : (
-                <div className="p-4 space-y-4">
-                  {/* Student card */}
-                  {current && (
-                    <div
-                      className={`rounded-xl border dark:border-gray-700 p-4 ${current.need_help ? 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10' : 'border-gray-200'}`}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-lg text-gray-900 dark:text-gray-100">
-                              {current.name}
-                            </span>
-                            {current.need_help && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" />
-                                需协助
-                              </span>
-                            )}
-                            <AssignedDaysBadge days={current.days_since_assigned} />
-                          </div>
-                          <div className="text-sm text-gray-500 font-mono mt-0.5">
-                            {current.school_name || '未知学校'}
-                          </div>
-                          {prediction && (
-                            <div className="flex items-center gap-1.5 mt-1.5">
-                              <span className="text-xs text-gray-500">报名概率</span>
-                              <span
-                                className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                  prediction.conversion_probability >= 0.7
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                    : prediction.conversion_probability >= 0.4
-                                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                      : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
-                                }`}
-                              >
-                                {(prediction.conversion_probability * 100).toFixed(0)}%
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status] || STATUS_STYLE['未联系']}`}
-                        >
-                          {statusLabel(current.status)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 mb-3">
-                        {STAGES.map((s, i) => {
-                          const idx = STAGES.indexOf(current.stage);
-                          return (
-                            <button
-                              key={s}
-                              onClick={() => updateStage(current.id, s)}
-                              className={`flex-1 h-1.5 rounded-full transition-all ${i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'} ${s === current.stage ? 'ring-2 ring-blue-300' : ''}`}
-                              title={stageLabel(s)}
-                            />
-                          );
-                        })}
-                      </div>
-                      {/* Lock banner for follow-up after dial */}
-                      {lockedStudentId === current.id && (
-                        <div className="mb-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-lg text-center">
-                          <div className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-1">
-                            ⚠ 可继续拨联系人2，确认结果后再更新状态
-                          </div>
-                          <div className="text-xs text-orange-500">
-                            已联系 / 待回访 / 未接通 / 已报名
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex gap-2 mb-3">
-                        {QUICK_STATUSES.map((s) => (
-                          <button
-                            key={s.status}
-                            onClick={() => updateStatus(current.id, s.status)}
-                            className={`flex items-center gap-1 px-3 py-2 text-white rounded-lg text-xs font-medium ${s.color}`}
-                          >
-                            <s.icon className="w-3.5 h-3.5" />
-                            {statusLabel(s.status)}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                        {getContactOptions(current).map((contact) => {
-                          const dc = dialCheckByStudent[current.id];
-                          const cnt = dc?.count ?? 0;
-                          const warn = cnt >= 3;
-                          return (
-                            <button
-                              key={contact.key}
-                              onClick={() => handleDial(contact.key, current.id)}
-                              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium text-white ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`}
-                              title={contact.phone}
-                            >
-                              <Phone className="w-4 h-4" /> {contact.label} {contact.name}
-                              {dc && (
-                                <span className="text-[10px] opacity-90">(24h 已 {cnt} 次)</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                        {getContactOptions(current).length === 0 && (
-                          <button
-                            disabled
-                            className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm font-medium"
-                          >
-                            <Phone className="w-4 h-4" /> 无联系人电话
-                          </button>
-                        )}
-                        <button
-                          onClick={() => openAiPanel(current)}
-                          disabled={lockedStudentId === current.id}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Sparkles className="w-4 h-4" /> AI分析
-                        </button>
-                      </div>
-                      <div className="flex gap-2 relative">
-                        <input
-                          value={noteText}
-                          onChange={(e) => setNoteText(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && addNote()}
-                          placeholder="写备注…"
-                          className={`flex-1 ${inputCls}`}
-                        />
-                        <button
-                          onClick={addNote}
-                          className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
-                        >
-                          <StickyNote className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {/* Prev/Next + action buttons */}
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={prev}
-                      disabled={currentIdx === 0 || lockedStudentId !== null}
-                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 border dark:border-gray-700 disabled:opacity-30"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      上一条
-                    </button>
-                    <span className="text-xs text-gray-500">
-                      {currentIdx + 1}/{students.length}
-                    </span>
-                    <button
-                      onClick={next}
-                      disabled={currentIdx >= students.length - 1 || lockedStudentId !== null}
-                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 border dark:border-gray-700 disabled:opacity-30"
-                    >
-                      下一条
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => current && loadDetail(current.id)}
-                      disabled={lockedStudentId !== null}
-                      className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <User className="w-4 h-4" /> 学生详情
-                    </button>
-                    <button
-                      onClick={toggleNeedHelp}
-                      disabled={lockedStudentId !== null}
-                      className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed ${current?.need_help ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600'}`}
-                    >
-                      <AlertTriangle className="w-4 h-4" />{' '}
-                      {current?.need_help ? '取消协助' : '需要协助'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 overflow-y-auto p-4">
-            {yesterdayLoading ? (
-              <Loader2 className="w-6 h-6 mx-auto animate-spin" />
-            ) : yesterdayData ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
-                    <div className="text-2xl font-bold text-blue-600">
-                      {yesterdayData.yesterday_calls}
-                    </div>
-                    <div className="text-xs text-gray-500">昨日呼出</div>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
-                    <div className="text-2xl font-bold text-green-600">
-                      {yesterdayData.conversion_rate}%
-                    </div>
-                    <div className="text-xs text-gray-500">转化率</div>
-                  </div>
-                </div>
-                {yesterdayData.follow_up_list?.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                      今日待回访（{yesterdayData.follow_up_list.length}）
-                    </div>
-                    <div className="space-y-2">
-                      {yesterdayData.follow_up_list.map((item) => (
-                        <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl border p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                                {item.student_name}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {item.student_region || '-'} · {item.follow_up_date?.slice(11, 16) || '--:--'}
-                              </div>
-                            </div>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs font-medium ${INTENT_BADGES[item.intent_level] || INTENT_BADGES['无']}`}
-                            >
-                              {item.intent_level || '无'}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {yesterdayData.stale_unconcat?.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold text-red-600 dark:text-red-400 flex items-center gap-1.5">
-                        <AlertTriangle className="w-4 h-4" />
-                        昨日及之前未联系（{yesterdayData.stale_unconcat.length}）
-                      </div>
-                      <button
-                        onClick={() => {
-                          const ids = new Set(yesterdayData.stale_unconcat.map((s) => s.id));
-                          const idx = students.findIndex((s) => ids.has(s.id));
-                          if (idx >= 0) {
-                            setCurrentIdx(idx);
-                            setViewTab('today');
-                          }
-                        }}
-                        className="text-xs text-blue-600 dark:text-blue-400"
-                      >
-                        去处理 →
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {yesterdayData.stale_unconcat.map((item) => (
-                        <div
-                          key={item.id}
-                          className="bg-white dark:bg-gray-800 rounded-xl border border-red-100 dark:border-red-900/40 p-3"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                                {item.name}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1 truncate">
-                                {item.school_name || '未知学校'} · {item.region || '-'}
-                              </div>
-                            </div>
-                            <AssignedDaysBadge days={item.days_since_assigned} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center text-gray-400">加载失败</div>
-            )}
-          </div>
-        )}
-
-        {/* Detail slide-up */}
-        {showDetail && detailStudent && (
-          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col">
-            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <h3 className="font-semibold">{detailStudent.name}</h3>
-              <button onClick={() => setShowDetail(false)}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {detailLoading && (
-                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  加载学生详情...
-                </div>
-              )}
-              {detailError && (
-                <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span className="flex-1">{detailError}</span>
-                  <button onClick={() => loadDetail(detailStudent.id)} className="font-medium">
-                    重试
-                  </button>
-                </div>
-              )}
-              {/* Intent level rating */}
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-1.5">意向等级（手动评级）</div>
-                <div className="flex gap-2">
-                  {['A', 'B', 'C', '无'].map((level) => (
-                    <button
-                      key={level}
-                      onClick={() => updateDetailField('intent_level', level)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        detailStudent.intent_level === level
-                          ? level === 'A'
-                            ? 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300'
-                            : level === 'B'
-                              ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300'
-                              : level === 'C'
-                                ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200'
-                                : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400'
-                          : 'bg-white border dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      {level === '无' ? '无' : `${level}级`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* AI analysis status */}
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 flex items-center justify-between">
-                <span className="text-xs text-gray-500">AI分析状态</span>
-                <span
-                  className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    hasAnalysis
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                      : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                  }`}
-                >
-                  {hasAnalysis ? '✓ AI分析已完成' : '暂未分析'}
-                </span>
-              </div>
-              {[
-                ['score', '成绩'],
-                ['guardian_name', '监护人'],
-                ['guardian_phone', '监护人电话'],
-                ['guardian2_name', '监护人2'],
-                ['guardian2_phone', '监护人2电话'],
-                ['school_name', '学校'],
-              ].map(([k, label]) => (
-                <div
-                  key={k}
-                  className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3"
-                >
-                  <div className="text-xs text-gray-500">{label}</div>
-                  <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
-                </div>
-              ))}
-              {/* Timeline notes */}
-              <div className="pt-2 border-t dark:border-gray-700">
-                <div className="text-sm font-semibold mb-2">联系记录</div>
-                {detailNotesError && (
-                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
-                    联系记录加载失败：{detailNotesError}
-                  </div>
-                )}
-                {detailNotes.length === 0 ? (
-                  <div className="text-xs text-gray-400 py-4 text-center">暂无联系记录</div>
-                ) : (
-                  <>
-                    <div className="flex gap-3 py-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                        <User className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          {detailNotes[noteIdx].source === 'ai' && (
-                            <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
-                          )}
-                          <span className="text-xs font-medium">
-                            {detailNotes[noteIdx].agent_name}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            {formatDateTime(detailNotes[noteIdx].created_at)}
-                          </span>
-                        </div>
-                        <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                          {detailNotes[noteIdx].content}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <button
-                        onClick={() => setNoteIdx(noteIdx - 1)}
-                        disabled={noteIdx === 0}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                        上一条
-                      </button>
-                      <span className="text-xs text-gray-400">
-                        {noteIdx + 1}/{detailNotes.length}
-                      </span>
-                      <button
-                        onClick={() => setNoteIdx(noteIdx + 1)}
-                        disabled={noteIdx >= detailNotes.length - 1}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
-                      >
-                        下一条
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bottom nav */}
-        <nav className="shrink-0 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex safe-bottom">
-          <button
-            onClick={() => setViewTab('today')}
-            className={`flex-1 flex flex-col items-center py-2 gap-0.5 ${viewTab === 'today' ? 'text-green-600' : 'text-gray-400'}`}
-          >
-            <Target className="w-5 h-5" />
-            <span className="text-xs">今日任务</span>
-          </button>
-          <button
-            onClick={() => {
-              setViewTab('yesterday');
-              fetchYesterday();
-            }}
-            className={`flex-1 flex flex-col items-center py-2 gap-0.5 ${viewTab === 'yesterday' ? 'text-green-600' : 'text-gray-400'}`}
-          >
-            <History className="w-5 h-5" />
-            <span className="text-xs">昨日回顾</span>
-          </button>
-        </nav>
-        {showAi && (
-          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col">
-            <AiPanel
-              activeStudent={activeStudent}
-              onClose={() => setShowAi(false)}
-              onStatusUpdate={updateStatus}
-            />
-          </div>
-        )}
-                <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
-        {renderSettingsModal()}
-        {renderDialModal()}
-      </div>
+      <AgentWorkMobile
+        viewTab={viewTab} setViewTab={setViewTab}
+        students={students} filteredStudents={filteredStudents} filteredStats={filteredStats}
+        schoolGroups={schoolGroups} selectedSchool={selectedSchool} setSelectedSchool={setSelectedSchool}
+        currentIdx={currentIdx} setCurrentIdx={setCurrentIdx} current={current}
+        prediction={prediction} lockedStudentId={lockedStudentId}
+        showMenu={showMenu} setShowMenu={setShowMenu}
+        showCreate={showCreate} setShowCreate={setShowCreate} createErr={createErr} setCreateErr={setCreateErr}
+        showDetail={showDetail} setShowDetail={setShowDetail}
+        detailStudent={detailStudent} detailLoading={detailLoading} detailError={detailError}
+        detailNotes={detailNotes} detailNotesError={detailNotesError} noteIdx={noteIdx} setNoteIdx={setNoteIdx}
+        hasAnalysis={hasAnalysis}
+        showAi={showAi} setShowAi={setShowAi} activeStudent={activeStudent}
+        noteText={noteText} setNoteText={setNoteText}
+        actionMsg={actionMsg}
+        dialCheckByStudent={dialCheckByStudent}
+        toggleTheme={toggleTheme} dark={dark}
+        handleDial={handleDial} updateStatus={updateStatus} updateStage={updateStage}
+        addNote={addNote} openAiPanel={openAiPanel} updateScore={updateScore}
+        loadDetail={loadDetail} updateDetailField={updateDetailField}
+        prev={prev} next={next}
+        toggleNeedHelp={toggleNeedHelp}
+        fetchFollowing={fetchFollowing}
+        followingData={followingData} followingLoading={followingLoading}
+        modals={modals}
+        backlogBanner={backlogBanner}
+      />
     );
   }
 
-  // Desktop layout
+  // ═══════════════════════════════════════════════
+  // DESKTOP LAYOUT — delegates to AgentWorkDesktop
+  // ═══════════════════════════════════════════════
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      <aside className="w-60 shrink-0 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col">
-        <div className="flex items-center gap-3 px-4 h-14 border-b dark:border-gray-700">
-          <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center">
-            <Phone className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">话务工作台</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
-          </div>
-        </div>
-        <Sidebar />
-      </aside>
-      <div className="flex-1 flex min-w-0">
-        {showCreate && (
-          <StudentCreateModal
-            student={newStudent}
-            setStudent={setNewStudent}
-            error={createErr}
-            onClose={() => setShowCreate(false)}
-            onSubmit={handleCreate}
-          />
-        )}
-        <div className="flex-1 flex flex-col min-w-0 max-w-xl border-r dark:border-gray-700">
-          <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between shrink-0">
-            <h2 className="text-sm font-semibold">
-              {viewTab === 'today' ? '今日任务' : '昨日回顾'}
-            </h2>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setHelpOpen(true)}
-                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                title="使用说明"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => {
-                  setShowCreate(true);
-                  setCreateErr('');
-                }}
-                className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
-                title="手动添加学生"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            {viewTab === 'today' && (
-              <span className="text-xs text-gray-500">
-                {stats.done}/{stats.total}
-              </span>
-            )}
-            </div>
-          </header>
-          {viewTab === 'today' ? (
-            <>
-              <div className="bg-white dark:bg-gray-800 px-4 py-2 shrink-0 border-b dark:border-gray-700">
-                <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>完成进度</span>
-                  <span>{stats.progress_pct}%</span>
-                </div>
-                <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full">
-                  <div
-                    className="h-full bg-green-500 rounded-full"
-                    style={{ width: `${stats.progress_pct}%` }}
-                  />
-                </div>
-              </div>
-              {backlogBanner}
-              {actionMsg && (
-                <div className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm px-4 py-2 text-center">
-                  {actionMsg}
-                </div>
-              )}
-              <div className="flex-1 overflow-y-auto">
-                {students.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                    <Target className="w-10 h-10 mb-3" />
-                    <p className="text-sm">暂无今日任务</p>
-                  </div>
-                ) : (
-                  current && (
-                    <div className="p-4 space-y-4">
-                      <div
-                        className={`rounded-xl border p-4 ${current.need_help ? 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10' : 'bg-white dark:bg-gray-800 dark:border-gray-700'}`}
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-lg">{current.name}</span>
-                              {current.need_help && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 flex items-center gap-1">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  需协助
-                                </span>
-                              )}
-                              <AssignedDaysBadge days={current.days_since_assigned} />
-                            </div>
-                            <div className="text-sm text-gray-500 font-mono mt-0.5">
-                              {current.school_name || '未知学校'}
-                            </div>
-                            {prediction && (
-                              <div className="flex items-center gap-1.5 mt-1.5">
-                                <span className="text-xs text-gray-500">报名概率</span>
-                                <span
-                                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${prediction.conversion_probability >= 0.7 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : prediction.conversion_probability >= 0.4 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'}`}
-                                >
-                                  {(prediction.conversion_probability * 100).toFixed(0)}%
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status]}`}
-                          >
-                            {statusLabel(current.status)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 mb-3">
-                          {STAGES.map((s, i) => {
-                            const idx = STAGES.indexOf(current.stage);
-                            return (
-                              <button
-                                key={s}
-                                onClick={() => updateStage(current.id, s)}
-                                className={`flex-1 h-1.5 rounded-full transition-all ${i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'} ${s === current.stage ? 'ring-2 ring-blue-300' : ''}`}
-                                title={stageLabel(s)}
-                              />
-                            );
-                          })}
-                        </div>
-                        {/* Lock banner for follow-up after dial */}
-                        {lockedStudentId === current.id && (
-                          <div className="mb-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-lg text-center">
-                            <div className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-1">
-                              ⚠ 可继续拨联系人2，确认结果后再更新状态
-                            </div>
-                            <div className="text-xs text-orange-500">
-                              已联系 / 待回访 / 未接通 / 已报名
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex gap-2 mb-3">
-                          {QUICK_STATUSES.map((s) => (
-                            <button
-                              key={s.status}
-                              onClick={() => updateStatus(current.id, s.status)}
-                              className={`flex items-center gap-1 px-3 py-2 text-white rounded-lg text-xs font-medium ${s.color}`}
-                            >
-                              <s.icon className="w-3.5 h-3.5" />
-                              {statusLabel(s.status)}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                          {getContactOptions(current).map((contact) => {
-                            const dc = dialCheckByStudent[current.id];
-                            const cnt = dc?.count ?? 0;
-                            const warn = cnt >= 3;
-                            return (
-                              <button
-                                key={contact.key}
-                                onClick={() => handleDial(contact.key, current.id)}
-                                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm text-white ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`}
-                                title={contact.phone}
-                              >
-                                <Phone className="w-4 h-4" /> {contact.label} {contact.name}
-                                {dc && (
-                                  <span className="text-[10px] opacity-90">(24h 已 {cnt} 次)</span>
-                                )}
-                              </button>
-                            );
-                          })}
-                          {getContactOptions(current).length === 0 && (
-                            <button
-                              disabled
-                              className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm"
-                            >
-                              <Phone className="w-4 h-4" /> 无联系人电话
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openAiPanel(current)}
-                            disabled={lockedStudentId === current.id}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-purple-600 text-white rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            AI分析
-                          </button>
-                        </div>
-                        <div className="flex gap-2 relative">
-                          <input
-                            value={noteText}
-                            onChange={(e) => setNoteText(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && addNote()}
-                            placeholder="写备注，回车发送…"
-                            className={`flex-1 ${inputCls}`}
-                          />
-                          <button
-                            onClick={addNote}
-                            className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
-                          >
-                            <StickyNote className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <button
-                          onClick={prev}
-                          disabled={currentIdx === 0 || lockedStudentId !== null}
-                          className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 border dark:border-gray-700 disabled:opacity-30"
-                        >
-                          <ChevronLeft className="w-4 h-4" />
-                          上一条
-                        </button>
-                        <span className="text-xs text-gray-500">
-                          {currentIdx + 1}/{students.length}
-                        </span>
-                        <button
-                          onClick={next}
-                          disabled={currentIdx >= students.length - 1 || lockedStudentId !== null}
-                          className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 border dark:border-gray-700 disabled:opacity-30"
-                        >
-                          下一条
-                          <ChevronRight className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => current && loadDetail(current.id)}
-                          disabled={lockedStudentId !== null}
-                          className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <User className="w-4 h-4" /> 学生详情
-                        </button>
-                        <button
-                          onClick={toggleNeedHelp}
-                          disabled={lockedStudentId !== null}
-                          className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed ${current?.need_help ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600'}`}
-                        >
-                          <AlertTriangle className="w-4 h-4" />{' '}
-                          {current?.need_help ? '取消协助' : '需要协助'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 overflow-y-auto p-4">
-              {yesterdayLoading ? (
-                <Loader2 className="w-6 h-6 mx-auto animate-spin" />
-              ) : yesterdayData ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
-                      <div className="text-2xl font-bold text-blue-600">
-                        {yesterdayData.yesterday_calls}
-                      </div>
-                      <div className="text-xs text-gray-500">昨日呼出</div>
-                    </div>
-                    <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
-                      <div className="text-2xl font-bold text-green-600">
-                        {yesterdayData.conversion_rate}%
-                      </div>
-                      <div className="text-xs text-gray-500">转化率</div>
-                    </div>
-                  </div>
-                  {yesterdayData.follow_up_list?.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                        今日待回访（{yesterdayData.follow_up_list.length}）
-                      </div>
-                      <div className="space-y-2">
-                        {yesterdayData.follow_up_list.map((item) => (
-                          <div key={item.id} className="bg-white dark:bg-gray-800 rounded-xl border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {item.student_name}
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {item.student_region || '-'} · {item.follow_up_date?.slice(11, 16) || '--:--'}
-                                </div>
-                              </div>
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-xs font-medium ${INTENT_BADGES[item.intent_level] || INTENT_BADGES['无']}`}
-                              >
-                                {item.intent_level || '无'}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {yesterdayData.stale_unconcat?.length > 0 && (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm font-semibold text-red-600 dark:text-red-400 flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4" />
-                          昨日及之前未联系（{yesterdayData.stale_unconcat.length}）
-                        </div>
-                        <button
-                          onClick={() => {
-                            const ids = new Set(yesterdayData.stale_unconcat.map((s) => s.id));
-                            const idx = students.findIndex((s) => ids.has(s.id));
-                            if (idx >= 0) {
-                              setCurrentIdx(idx);
-                              setViewTab('today');
-                            }
-                          }}
-                          className="text-xs text-blue-600 dark:text-blue-400"
-                        >
-                          去处理 →
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {yesterdayData.stale_unconcat.map((item) => (
-                          <div
-                            key={item.id}
-                            className="bg-white dark:bg-gray-800 rounded-xl border border-red-100 dark:border-red-900/40 p-3"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {item.name}
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1 truncate">
-                                  {item.school_name || '未知学校'} · {item.region || '-'}
-                                </div>
-                              </div>
-                              <AssignedDaysBadge days={item.days_since_assigned} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center text-gray-400">加载失败</div>
-              )}
-            </div>
-          )}
-        </div>
-        {/* Right: detail panel + AI */}
-        <div className="flex-1 flex-col bg-white dark:bg-gray-800 hidden lg:flex">
-          {showDetail && detailStudent ? (
-            <div className="flex flex-col h-full">
-              <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-                <h3 className="font-semibold">{detailStudent.name} 详情</h3>
-                <button onClick={() => setShowDetail(false)}>
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {detailLoading && (
-                  <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    加载学生详情...
-                  </div>
-                )}
-                {detailError && (
-                  <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                    <span className="flex-1">{detailError}</span>
-                    <button onClick={() => loadDetail(detailStudent.id)} className="font-medium">
-                      重试
-                    </button>
-                  </div>
-                )}
-                {/* Intent level rating */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                  <div className="text-xs text-gray-500 mb-1.5">意向等级（手动评级）</div>
-                  <div className="flex gap-2">
-                    {['A', 'B', 'C', '无'].map((level) => (
-                      <button
-                        key={level}
-                        onClick={() => updateDetailField('intent_level', level)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          detailStudent.intent_level === level
-                            ? level === 'A'
-                              ? 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300'
-                              : level === 'B'
-                                ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300'
-                                : level === 'C'
-                                  ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200'
-                                  : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400'
-                            : 'bg-white border dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                        }`}
-                      >
-                        {level === '无' ? '无' : `${level}级`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* AI analysis status */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">AI分析状态</span>
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      hasAnalysis
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                        : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                    }`}
-                  >
-                    {hasAnalysis ? '✓ AI分析已完成' : '暂未分析'}
-                  </span>
-                </div>
-                {[
-                  ['score', '成绩'],
-                  ['guardian_name', '监护人'],
-                  ['guardian_phone', '监护人电话'],
-                  ['guardian2_name', '监护人2'],
-                  ['guardian2_phone', '监护人2电话'],
-                  ['school_name', '学校'],
-                ].map(([k, label]) => (
-                  <div
-                    key={k}
-                    className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3"
-                  >
-                    <div className="text-xs text-gray-500">{label}</div>
-                    <div className="font-medium mt-0.5">{detailStudent[k] || '-'}</div>
-                  </div>
-                ))}
-                <div className="pt-2 border-t dark:border-gray-700">
-                  <div className="text-sm font-semibold mb-2">联系记录</div>
-                  {detailNotesError && (
-                    <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
-                      联系记录加载失败：{detailNotesError}
-                    </div>
-                  )}
-                  {detailNotes.length === 0 ? (
-                    <div className="text-xs text-gray-400 py-4 text-center">暂无</div>
-                  ) : (
-                    <>
-                      <div className="flex gap-3 py-2">
-                        <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                          <User className="w-4 h-4 text-blue-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            {detailNotes[noteIdx].source === 'ai' && (
-                              <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
-                            )}
-                            <span className="text-xs font-medium">
-                              {detailNotes[noteIdx].agent_name}
-                            </span>
-                            <span className="text-xs text-gray-400">
-                              {formatDateTime(detailNotes[noteIdx].created_at)}
-                            </span>
-                          </div>
-                          <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                            {detailNotes[noteIdx].content}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <button
-                          onClick={() => setNoteIdx(noteIdx - 1)}
-                          disabled={noteIdx === 0}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                          上一条
-                        </button>
-                        <span className="text-xs text-gray-400">
-                          {noteIdx + 1}/{detailNotes.length}
-                        </span>
-                        <button
-                          onClick={() => setNoteIdx(noteIdx + 1)}
-                          disabled={noteIdx >= detailNotes.length - 1}
-                          className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
-                        >
-                          下一条
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : showAi ? (
-            <AiPanel
-              activeStudent={activeStudent}
-              onClose={() => setShowAi(false)}
-              onStatusUpdate={updateStatus}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600">
-              <Sparkles className="w-12 h-12 mb-3" />
-              <p>选择学生查看详情或AI分析</p>
-            </div>
-          )}
-        </div>
-        {showDetail && detailStudent && (
-          <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col lg:hidden">
-            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <h3 className="font-semibold">{detailStudent.name || '学生详情'}</h3>
-              <button onClick={() => setShowDetail(false)}>
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {detailLoading && (
-                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  加载学生详情...
-                </div>
-              )}
-              {detailError && (
-                <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span className="flex-1">{detailError}</span>
-                  <button onClick={() => loadDetail(detailStudent.id)} className="font-medium">
-                    重试
-                  </button>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  ['region', '地域'],
-                  ['status', '状态'],
-                  ['intent_level', '意向'],
-                  ['stage', '阶段'],
-                  ['score', '成绩'],
-                  ['guardian_name', '监护人'],
-                  ['guardian_phone', '监护人电话'],
-                  ['guardian2_name', '监护人2'],
-                  ['guardian2_phone', '监护人2电话'],
-                  ['school_name', '学校'],
-                ].map(([k, label]) => (
-                  <div key={k} className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-3 min-w-0">
-                    <div className="text-xs text-gray-500">{label}</div>
-                    <div className="font-medium mt-0.5 break-words">{detailStudent[k] || '-'}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="pt-2 border-t dark:border-gray-700">
-                <div className="text-sm font-semibold mb-2">联系记录</div>
-                {detailNotesError && (
-                  <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg mb-2">
-                    联系记录加载失败：{detailNotesError}
-                  </div>
-                )}
-                {detailNotes.length === 0 ? (
-                  <div className="text-xs text-gray-400 py-4 text-center">暂无联系记录</div>
-                ) : (
-                  <>
-                    <div className="flex gap-3 py-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                        <User className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          {detailNotes[noteIdx].source === 'ai' && (
-                            <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
-                          )}
-                          <span className="text-xs font-medium">{detailNotes[noteIdx].agent_name}</span>
-                          <span className="text-xs text-gray-400">{formatDateTime(detailNotes[noteIdx].created_at)}</span>
-                        </div>
-                        <div className="text-sm mt-1 text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                          {detailNotes[noteIdx].content}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <button
-                        onClick={() => setNoteIdx(noteIdx - 1)}
-                        disabled={noteIdx === 0}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                        上一条
-                      </button>
-                      <span className="text-xs text-gray-400">
-                        {noteIdx + 1}/{detailNotes.length}
-                      </span>
-                      <button
-                        onClick={() => setNoteIdx(noteIdx + 1)}
-                        disabled={noteIdx >= detailNotes.length - 1}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 disabled:opacity-30"
-                      >
-                        下一条
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-                <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />
-        {renderSettingsModal()}
-        {renderDialModal()}
-      </div>
-    </div>
-  );
-}
-
-function StudentCreateModal({ student, setStudent, error, onClose, onSubmit }) {
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4 sticky top-0 bg-white dark:bg-gray-800 z-10 pb-2">
-          <h3 className="text-lg font-semibold">手动添加学生</h3>
-          <button onClick={onClose}>
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {createStudentFields.map((field) => (
-            <div key={field.key} className={field.type === 'textarea' ? 'sm:col-span-2' : ''}>
-              <label className="block text-sm mb-1">
-                {field.label} {field.required && '*'}
-              </label>
-              {field.type === 'textarea' ? (
-                <textarea
-                  value={student[field.key] || ''}
-                  onChange={(e) => setStudent({ ...student, [field.key]: e.target.value })}
-                  className={`${inputCls} h-20 resize-none`}
-                  rows={3}
-                />
-              ) : (
-                <input
-                  value={student[field.key] || ''}
-                  onChange={(e) => setStudent({ ...student, [field.key]: e.target.value })}
-                  className={inputCls}
-                  type={field.type || 'text'}
-                />
-              )}
-            </div>
-          ))}
-          <div className="sm:col-span-2 text-xs text-gray-500 dark:text-gray-400">
-            添加后会自动分配到当前话务员，话务员不能删除学生。
-          </div>
-          {error && (
-            <div className="sm:col-span-2 text-sm text-red-500 bg-red-50 dark:bg-red-900/30 px-3 py-2 rounded-lg">
-              {error}
-            </div>
-          )}
-          <button onClick={onSubmit} className="sm:col-span-2 w-full py-2.5 bg-green-600 text-white rounded-lg text-sm">
-            创建
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AiPanel({ activeStudent, onClose, onStatusUpdate }) {
-  const { dark } = useTheme();
-  const [text, setText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
-  const bottomRef = useRef(null);
-
-  const handleAnalyzeLocal = async () => {
-    if (!text.trim() || !activeStudent) return;
-    setLoading(true);
-    setError('');
-    setResult(null);
-    try {
-      const res = await api.post('/calls/analyze', {
-        student_id: activeStudent.id,
-        transcript: text,
-      });
-      if (res.data.code === 0) {
-        setResult(res.data.data);
-        onStatusUpdate(activeStudent.id, '已联系');
-        setTimeout(
-          () => bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }),
-          100,
-        );
-      } else setError(res.data.msg || '分析失败');
-    } catch {
-      setError('网络错误');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const intentColors = {
-    A: 'bg-red-100 text-red-700 border-red-300',
-    B: 'bg-amber-100 text-amber-700 border-amber-300',
-    C: 'bg-gray-100 text-gray-600 border-gray-300',
-    无: 'bg-gray-50 text-gray-400 border-gray-200',
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-        <h3 className="font-semibold">AI 通话分析</h3>
-        <button onClick={onClose}>
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div>
-          <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">
-            通话转录文本
-          </label>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="w-full h-36 border dark:border-gray-600 rounded-lg p-3 text-sm bg-white dark:bg-gray-700 dark:text-gray-100 resize-none outline-none focus:ring-2 focus:ring-purple-500"
-            placeholder="粘贴通话内容或手动输入对话摘要…"
-          />
-        </div>
-        <button
-          onClick={handleAnalyzeLocal}
-          disabled={loading || !text.trim()}
-          className="w-full py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Sparkles className="w-4 h-4" />
-          )}
-          {loading ? '分析中…' : '开始分析'}
-        </button>
-        {error && (
-          <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-lg">
-            {error}
-          </div>
-        )}
-        {result && (
-          <div ref={bottomRef} className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <span className="text-xs text-gray-500">意向等级</span>
-              <span
-                className={`text-lg font-bold px-3 py-1 rounded-lg border ${intentColors[result.ai_intent] || intentColors['无']}`}
-              >
-                {result.ai_intent}级
-              </span>
-              <span className="text-xs text-gray-400 ml-auto">
-                置信度 {(result.ai_confidence * 100).toFixed(0)}%
-              </span>
-            </div>
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <div className="text-xs text-gray-500 mb-1">摘要</div>
-              <div className="text-sm text-gray-800 dark:text-gray-200">{result.ai_summary}</div>
-            </div>
-            <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <div className="text-xs text-gray-500 mb-1">判断依据</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">{result.ai_reasons}</div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+    <>
+      <AgentWorkDesktop
+        user={user} dark={dark} toggleTheme={toggleTheme} logout={logout}
+        viewTab={viewTab} setViewTab={setViewTab}
+        students={students} filteredStudents={filteredStudents} filteredStats={filteredStats}
+        schoolGroups={schoolGroups}
+        currentIdx={currentIdx} setCurrentIdx={setCurrentIdx} current={current}
+        expandedId={expandedId} setExpandedId={setExpandedId}
+        sortConfig={sortConfig} setSortConfig={setSortConfig}
+        selectedSchool={selectedSchool} setSelectedSchool={setSelectedSchool}
+        selectedStage={selectedStage} setSelectedStage={setSelectedStage}
+        selectedIntent={selectedIntent} setSelectedIntent={setSelectedIntent}
+        scoreRange={scoreRange} setScoreRange={setScoreRange}
+        backlogAlert={backlogAlert} dismissBacklogAlert={dismissBacklogAlert} backlogBanner={backlogBanner}
+        fetchFollowing={fetchFollowing} followingData={followingData} followingLoading={followingLoading}
+        onHelpOpen={() => setHelpOpen(true)}
+        onAddStudent={() => { setShowCreate(true); setCreateErr(''); }}
+        onShowSettings={() => setShowSettings(true)}
+        noteText={noteText} setNoteText={setNoteText}
+        dialCheckByStudent={dialCheckByStudent} lockedStudentId={lockedStudentId}
+        handleDial={handleDial} updateStatus={updateStatus} updateStage={updateStage}
+        addNote={addNote} openAiPanel={openAiPanel}
+        showDetail={showDetail} detailStudent={detailStudent}
+        showAi={showAi} activeStudent={activeStudent}
+        setShowDetail={setShowDetail} setShowAi={setShowAi}
+        loadDetail={loadDetail}
+      />
+      {modals}
+    </>
   );
 }

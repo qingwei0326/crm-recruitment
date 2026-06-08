@@ -209,9 +209,9 @@ class StudentResponse(BaseModel):
     need_help: bool = False
     score: float | None = None
     guardian_name: str = ""
-    guardian_phone: str = ""  # masked
+    guardian_phone: str = ""
     guardian2_name: str = ""
-    guardian2_phone: str = ""  # masked
+    guardian2_phone: str = ""
     school_name: str = ""
     school_address: str = ""
     enrolled_at: str | None = None
@@ -221,7 +221,7 @@ class StudentResponse(BaseModel):
     enrollment_substage: str | None = None
     created_at: str = ""
     updated_at: str = ""
-    guardian_phone_raw: str | None = None  # only when full_phone=True
-    guardian2_phone_raw: str | None = None  # only when full_phone=True
+    guardian_phone_raw: str | None = None
+    guardian2_phone_raw: str | None = None
 
     model_config = {'from_attributes': True}
