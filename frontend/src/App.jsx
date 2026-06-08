@@ -16,6 +16,7 @@ const TrendReport = lazy(() => import('./pages/admin/TrendReport'));
 const CallVolumeQuery = lazy(() => import('./pages/admin/CallVolumeQuery'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
+const DistributeBySchools = lazy(() => import('./pages/admin/DistributeBySchools'));
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazy(() => import('./pages/mobile/MobileStudentDetail'));
 const MobileCallForm = lazy(() => import('./pages/mobile/MobileCallForm'));
@@ -141,6 +142,14 @@ export default function App() {
           element={
             <Protected role="admin">
               <InvalidStudentReclaim />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/distribute"
+          element={
+            <Protected role="admin">
+              <DistributeBySchools />
             </Protected>
           }
         />

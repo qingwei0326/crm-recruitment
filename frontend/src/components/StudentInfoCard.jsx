@@ -1,14 +1,8 @@
 import { memo } from 'react';
-import { useAuth } from '../context/AuthContext';
 import StatusBadge from './StatusBadge';
 import IntentLevelBadge from './IntentLevelBadge';
 import { stageLabel } from '../labels';
 import { formatDateTime, formatDate } from '../utils';
-
-function maskPhone(p) {
-  if (!p || p.length < 7) return p;
-  return p.slice(0, 3) + '****' + p.slice(-4);
-}
 
 function Field({ label, children }) {
   return (
@@ -22,21 +16,15 @@ function Field({ label, children }) {
 }
 
 export default memo(function StudentInfoCard({ student }) {
-  const { user } = useAuth();
   if (!student) return null;
-  const isAdmin = user?.role === 'admin';
   const phone = (raw, masked) => {
-    const value = isAdmin ? raw || masked : masked;
+    const value = raw || masked;
     if (!value) return '-';
-    // Admin: 明文 + tel: 链接；坐席: 脱敏文本（拨号走 useDialFlow）
-    if (isAdmin) {
-      return (
-        <a href={`tel:${value}`} className="text-blue-600 dark:text-blue-400 hover:underline">
-          {value}
-        </a>
-      );
-    }
-    return <span>{value}</span>;  // backend already masked
+    return (
+      <a href={`tel:${value}`} className="text-blue-600 dark:text-blue-400 hover:underline">
+        {value}
+      </a>
+    );
   };
 
   return (

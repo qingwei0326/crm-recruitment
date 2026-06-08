@@ -151,7 +151,7 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
         "role": user.role,
         "tv": user.token_version,
     })
-    body = Response.ok(
+    response = Response.ok(
         {
             "access_token": token,
             "token_type": "bearer",
@@ -162,7 +162,6 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
             },
         }
     )
-    response = JSONResponse(content=body)
     response.set_cookie(
         key="access_token",
         value=token,
@@ -177,7 +176,7 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
 
 @router.post("/logout")
 async def logout():
-    response = JSONResponse(content=Response.ok(msg="已退出"))
+    response = Response.ok(msg="已退出")
     response.delete_cookie(key="access_token", path="/")
     return response
 

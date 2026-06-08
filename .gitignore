@@ -24,6 +24,7 @@ Thumbs.db
 
 # Logs
 *.log
+*.log.old
 *.out
 
 # PID files
