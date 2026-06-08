@@ -379,13 +379,12 @@ function MePanel({ onOpenSettings }) {
 export default function MobileHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { students, stats, schools, loading, error, refetch, search, setSearch, loadMore, hasMore } = useTodayTasks();
+  const { students, stats, schools, loading, error, refetch, search, setSearch, selectedSchool, setSelectedSchool, loadMore, hasMore } = useTodayTasks();
   const { dial, checkDup } = useDialFlow();
   const [dialCountMap, setDialCountMap] = useState({});
   const [dialingId, setDialingId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState('tasks');
-  const [selectedSchool, setSelectedSchool] = useState(null);
   const [dialMax, setDialMax] = useState(3);
 
   useEffect(() => {
@@ -397,29 +396,9 @@ export default function MobileHome() {
   // 学校分组：后端 SQL 聚合的全量结果（不受列表上限影响）
   const schoolGroups = schools;
 
-  // 按选中学校过滤当前已加载列表
-  const filteredStudents = useMemo(() => {
-    if (!selectedSchool) return students;
-    return students.filter((s) => (s.school_name || '未知学校') === selectedSchool);
-  }, [students, selectedSchool]);
-
-  // 统计：未选学校时直接用后端全量 stats；选了学校则从当前列表派生
-  const filteredStats = useMemo(() => {
-    if (!selectedSchool) return stats;
-    const list = filteredStudents;
-    const total = list.length;
-    const done = list.filter((s) => s.status === 'contacted').length;
-    const pending = list.filter((s) => s.status === 'not_contacted').length;
-    const follow_up = list.filter((s) => s.status === 'pending_visit').length;
-    const handled = done + follow_up;
-    return {
-      total,
-      done,
-      pending,
-      follow_up,
-      progress_pct: total > 0 ? Math.round((handled / total) * 1000) / 10 : 0,
-    };
-  }, [selectedSchool, stats, filteredStudents]);
+  // 列表已由服务端按学校过滤，stats 也是服务端按学校聚合的
+  const filteredStudents = students;
+  const filteredStats = stats;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

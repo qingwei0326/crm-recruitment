@@ -23,13 +23,15 @@ export default function useTodayTasks() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [selectedSchool, setSelectedSchool] = useState(null);
 
-  const fetchTasks = useCallback(async (searchQuery = '') => {
+  const fetchTasks = useCallback(async (searchQuery = '', schoolFilter = null) => {
     setLoading(true);
     setError('');
     try {
       const params = { limit: PAGE_SIZE, offset: 0 };
       if (searchQuery.trim()) params.search = searchQuery.trim();
+      if (schoolFilter) params.school_name = schoolFilter;
       const res = await api.get('/tasks/today', { params });
       if (res.data.code === 0) {
         setStudents(res.data.data.list || []);
@@ -54,18 +56,19 @@ export default function useTodayTasks() {
     fetchTasks();
   }, [fetchTasks]);
 
-  // Debounced search: when search changes, refetch from server
+  // Debounced search: when search or school changes, refetch from server
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchTasks(search);
+      fetchTasks(search, selectedSchool);
     }, 300);
     return () => clearTimeout(timer);
-  }, [search, fetchTasks]);
+  }, [search, selectedSchool, fetchTasks]);
 
   const loadMore = useCallback(async () => {
     try {
       const params = { limit: PAGE_SIZE, offset: students.length };
       if (search.trim()) params.search = search.trim();
+      if (selectedSchool) params.school_name = selectedSchool;
       const res = await api.get('/tasks/today', { params });
       if (res.data.code === 0) {
         setStudents(prev => [...prev, ...(res.data.data.list || [])]);
@@ -74,8 +77,8 @@ export default function useTodayTasks() {
     } catch (e) {
       // silently fail — existing list is still valid
     }
-  }, [students.length, search]);
+  }, [students.length, search, selectedSchool]);
 
   const hasMore = students.length < total;
-  return { students, rawStudents: students, stats, schools, truncated, loading, error, refetch: fetchTasks, search, setSearch, loadMore, hasMore, total };
+  return { students, rawStudents: students, stats, schools, truncated, loading, error, refetch: fetchTasks, search, setSearch, selectedSchool, setSelectedSchool, loadMore, hasMore, total };
 }
