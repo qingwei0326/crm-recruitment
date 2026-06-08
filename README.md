@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.1.3-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -64,16 +64,20 @@
 ### 数据统计看板
 
 - **全局统计** — 总线索数、分配数、跟进数、报名数
-- **话务员绩效** — 个人通话量、意向转化率、报名转化率
-- **趋势图表** — 日/周/月趋势，直观掌握招生节奏
-- **导出报表** — 关键数据一键导出 Excel
+- **话务员绩效** — 个人通话量、意向转化率、报名转化率、A→报名率
+- **趋势图表** — 日/周/月趋势，支持前周同期对比
+- **热力图** — 话务员 × 日期工作量矩阵
+- **转化概率预测** — 基于意向等级、跟进阶段、互动频率的概率分布
+- **导出报表** — 关键数据一键导出 Excel（BOM 前缀兼容）
 
 ### 系统管理
 
 - **定时自动备份** — 每日自动备份 SQLite 数据库，支持手动触发和文件下载
 - **操作日志** — 全操作审计追踪（登录、用户管理、备份等）
+- **通知重试** — PushPlus 推送失败自动记录，每 30 分钟扫描重试，管理员仪表盘实时提醒
 - **用户安全** — 禁止删除/停用最后一个管理员，删除用户时自动回收其名下学生
-- **IP 限流** — 跨进程共享的登录频率限制，防止暴力破解
+- **IP 限流** — 跨进程共享的登录频率限制，支持 Cloudflare Tunnel（读取 CF-Connecting-IP）
+- **运行时配置** — 呼叫限额、跟进提醒窗口等参数可通过管理后台实时调整
 - **一键部署脚本** — `start.bat` / `start.ps1` 一键拉起前后端
 
 ---
@@ -238,6 +242,24 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.2.0（2026-06-09）
+
+- **汇总报表性能优化** — `/stats/predictions` 接口 N+1 查询改为批量查询，57000+ 学生从挂死降至 1.5s
+- **RefreshCcw 图标修复** — 无效线索回收、线索回收、多学校分发三个页面图标导入错误导致崩溃
+- **报名转化率** — 汇总报表新增「报名率」和「A→报名」两列，CSV 导出同步支持
+- **通知重试机制** — PushPlus 推送失败自动记录到 OperationLog，每 30 分钟扫描重试
+- **通知失败提醒** — 管理员仪表盘顶部显示近 7 天通知失败数量
+- **服务端搜索** — 手机端任务列表搜索从客户端过滤改为服务端 SQL LIKE（支持姓名/电话）
+- **服务端分页** — 手机端任务列表支持分页加载（每页 30 条）
+- **前周对比** — 趋势报表新增上周同期虚线对比
+- **手动评级时间线** — 学员详情时间线合并手动评级操作记录，显示操作人
+- **呼叫限额配置化** — `dial_max_per_24h` 从硬编码改为 SystemConfig 可配置
+- **跟进提醒窗口配置化** — `follow_up_window_minutes` 从硬编码 15 分钟改为 SystemConfig 可配置（1-60）
+- **AI 分析引擎可切换** — 支持 DeepSeek / 小米 MiMo / 自定义
+- **IP 限流修复** — Cloudflare Tunnel 后改为读取 `CF-Connecting-IP` 实现 per-user 限流
+- **环境变量解析统一** — `TRUST_PROXY_HEADERS` 统一解析（支持 true/yes/on/1）
+- **测试覆盖** — 新增至 210 项后端测试 + 40 项前端测试
 
 ### v1.1.3（2026-05-31）
 
