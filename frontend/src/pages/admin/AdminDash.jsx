@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import { useToast } from '../../components/Toast';
 import {
   LayoutDashboard,
   Users,
@@ -25,12 +26,11 @@ import {
   Settings,
   ArrowRightLeft,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
 import FunnelChart from './FunnelChart';
-import { stageLabel } from '../../labels';
-
-const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
+import { stageLabel, STAGES } from '../../labels';
 
 const SidebarNav = memo(function SidebarNav({ user, dark, toggle, logout, isMobile, onClose }) {
   return (
@@ -143,6 +143,7 @@ export default function AdminDash() {
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [stats, setStats] = useState([]);
@@ -153,6 +154,7 @@ export default function AdminDash() {
   const [enrollmentData, setEnrollmentData] = useState(null);
   const [funnelData, setFunnelData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [notifyFails, setNotifyFails] = useState(0);
 
   useEffect(() => {
     Promise.all([
@@ -174,8 +176,14 @@ export default function AdminDash() {
         setEnrollmentData(eRes.data.data || null);
         setFunnelData(fRes.data.data || null);
       })
-      .catch(console.error)
+      .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    api.get('/admin/operation-logs?action=通知失败&days=7')
+      .then(r => setNotifyFails(r.data.data?.total ?? 0))
+      .catch(() => {});
   }, []);
 
   const totalA = useMemo(() => stats.reduce((s, i) => s + (i.a_count || 0), 0), [stats]);
@@ -286,6 +294,13 @@ export default function AdminDash() {
               </Link>
             ))}
           </div>
+
+          {notifyFails > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-3 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              近 7 天有 {notifyFails} 条推送通知失败，请检查 PushPlus Token 配置
+            </div>
+          )}
 
           {/* Stage distribution */}
           {Object.keys(stageStats).length > 0 && (

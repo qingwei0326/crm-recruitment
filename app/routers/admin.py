@@ -1402,3 +1402,19 @@ async def distribute_by_schools(
         "distribution": distribution,
         "schools": body.school_names,
     })
+
+
+@router.get("/operation-logs")
+async def count_operation_logs(
+    action: str | None = None,
+    days: int = 7,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """统计近 N 天 OperationLog 数量（按 action 过滤）。"""
+    cutoff = utcnow() - timedelta(days=days)
+    q = select(func.count()).select_from(OperationLog).where(OperationLog.created_at >= cutoff)
+    if action:
+        q = q.where(OperationLog.action == action)
+    total = (await db.execute(q)).scalar_one()
+    return Response.ok({"total": total})
