@@ -67,6 +67,7 @@ ALLOWED_CONFIG_KEYS = {
     "ai_custom_api_key",
     "ai_custom_base",
     "ai_custom_model",
+    "follow_up_window_minutes",
 }
 
 _AI_PROVIDERS = {"deepseek", "mimo", "custom"}
@@ -86,6 +87,14 @@ def _validate_config_value(key: str, value: str) -> tuple[str | None, str | None
             return None, "stale_days must be an integer between 1 and 30"
         if not 1 <= n <= 30:
             return None, "stale_days must be an integer between 1 and 30"
+        return str(n), None
+    if key == "follow_up_window_minutes":
+        try:
+            n = int(value)
+        except ValueError:
+            return None, "follow_up_window_minutes must be an integer between 1 and 60"
+        if not 1 <= n <= 60:
+            return None, "follow_up_window_minutes must be an integer between 1 and 60"
         return str(n), None
     if key == "dial_max_per_24h":
         try:
@@ -320,6 +329,98 @@ async def stale_students(
         )
 
     return Response.ok(data)
+
+
+@router.get("/stale-school-groups")
+async def stale_school_groups(
+    days: int = Query(3, ge=1, le=30),
+    group_by: str = Query("school_name"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校或区域聚合超时未跟进的学员数量"""
+    last_activity = build_last_activity_subquery()
+    last_activity_at = func.coalesce(
+        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
+    ).label("last_activity_at")
+    cutoff = utcnow() - timedelta(days=days)
+
+    group_col = Student.school_name if group_by == "school_name" else Student.region
+
+    result = await db.execute(
+        select(group_col, func.count())
+        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+        .where(
+            Student.assigned_to.isnot(None),
+            Student.status.not_in([
+                StudentStatus.enrolled, StudentStatus.expired,
+                StudentStatus.rejected, StudentStatus.invalid,
+            ]),
+            last_activity_at < cutoff,
+        )
+        .group_by(group_col)
+        .order_by(func.count().desc())
+    )
+    groups = [{"name": name or "未知", "count": cnt} for name, cnt in result.all()]
+    total = sum(g["count"] for g in groups)
+    return Response.ok({"groups": groups, "total": total})
+
+
+class StaleReclaimByGroupReq(BaseModel):
+    group_name: str
+    group_by: Literal["school_name", "region"] = "school_name"
+    days: int = 3
+
+
+@router.post("/stale-reclaim-by-group")
+async def stale_reclaim_by_group(
+    body: StaleReclaimByGroupReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校或区域一键回收超时学员 → assigned_to=null"""
+    last_activity = build_last_activity_subquery()
+    last_activity_at = func.coalesce(
+        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
+    ).label("last_activity_at")
+    cutoff = utcnow() - timedelta(days=body.days)
+
+    group_col = Student.school_name if body.group_by == "school_name" else Student.region
+
+    result = await db.execute(
+        select(Student)
+        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+        .where(
+            group_col == body.group_name,
+            Student.assigned_to.isnot(None),
+            Student.status.not_in([
+                StudentStatus.enrolled, StudentStatus.expired,
+                StudentStatus.rejected, StudentStatus.invalid,
+            ]),
+            last_activity_at < cutoff,
+        )
+    )
+    students = result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg="没有可回收的超时学员")
+
+    reclaimed_count = 0
+    for s in students:
+        old_agent_id = s.assigned_to
+        s.assigned_to = None
+        s.assigned_at = None
+        db.add(OperationLog(
+            operator_id=current_user.id,
+            operator_name=current_user.name,
+            target_student_id=s.id,
+            case_no=s.case_no or "",
+            action="线索回收",
+            content=f"按{('学校' if body.group_by == 'school_name' else '区域')}回收「{body.group_name}」，从话务员 {old_agent_id or '未分配'} 回收至未分配池",
+        ))
+        reclaimed_count += 1
+
+    await db.commit()
+    return Response.ok({"reclaimed_count": reclaimed_count, "group_name": body.group_name})
 
 
 @router.post("/stale-reassign")
@@ -973,15 +1074,20 @@ async def check_expired(
 @router.get("/invalid-students")
 async def list_invalid_students(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=200),
+    school_name: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     """列出所有标记为无效的线索，用于回收和重新分配"""
+    where = [Student.status == StudentStatus.invalid]
+    if school_name:
+        where.append(Student.school_name == school_name)
+
     query = (
         select(Student, User.name.label("agent_name"))
         .outerjoin(User, User.id == Student.assigned_to)
-        .where(Student.status == StudentStatus.invalid)
+        .where(*where)
         .order_by(Student.updated_at.desc())
     )
 
@@ -1016,7 +1122,7 @@ async def list_invalid_students(
             "name": s.name,
             "region": s.region,
             "school_name": s.school_name,
-            "guardian_phone": s.guardian_phone[-4:] if s.guardian_phone else "",
+            "guardian_phone": s.guardian_phone or "",
             "assigned_to": s.assigned_to,
             "agent_name": agent_name or "未分配",
             "invalid_reason": invalid_reasons.get(s.id, ""),
@@ -1099,4 +1205,200 @@ async def reclaim_invalid_students(
         "reclaimed_count": reclaimed_count,
         "agent_id": body.agent_id,
         "agent_name": agent.name,
+    })
+
+
+# ── 分学校回收 ──────────────────────────────────────────────
+
+
+class ReclaimBySchoolReq(BaseModel):
+    school_name: str
+
+
+@router.post("/reclaim-by-school")
+async def reclaim_by_school(
+    body: ReclaimBySchoolReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校一键回收无效线索 → assigned_to=null（未分配池）"""
+    if not body.school_name:
+        return Response.error(code=1, msg="school_name不能为空")
+
+    # 查出该校所有无效学员
+    result = await db.execute(
+        select(Student).where(
+            Student.school_name == body.school_name,
+            Student.status == StudentStatus.invalid,
+        )
+    )
+    students = result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg=f"学校「{body.school_name}」没有可回收的无效线索")
+
+    now = utcnow()
+    reclaimed_count = 0
+    for s in students:
+        old_agent_id = s.assigned_to
+        s.status = StudentStatus.not_contacted
+        s.assigned_to = None
+        s.assigned_at = None
+
+        db.add(
+            make_operation_log(
+                current_user,
+                s.id,
+                s.case_no or "",
+                "分学校回收",
+                content=f"从话务员 {old_agent_id or '未分配'} 回收，进入未分配池",
+                old_status="无效",
+                new_status="未联系",
+            )
+        )
+        reclaimed_count += 1
+
+    await db.commit()
+
+    return Response.ok({
+        "reclaimed_count": reclaimed_count,
+        "school_name": body.school_name,
+    })
+
+
+@router.get("/invalid-school-groups")
+async def invalid_school_groups(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校聚合无效线索数量"""
+    result = await db.execute(
+        select(Student.school_name, func.count())
+        .where(Student.status == StudentStatus.invalid)
+        .group_by(Student.school_name)
+        .order_by(func.count().desc())
+    )
+    groups = [{"name": name or "未知学校", "count": cnt} for name, cnt in result.all()]
+    return Response.ok({"groups": groups})
+
+
+# ── 多学校分发 ──────────────────────────────────────────────
+
+
+@router.get("/unassigned-school-groups")
+async def unassigned_school_groups(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校聚合未分配（assigned_to=null）且未完成的学员数量"""
+    result = await db.execute(
+        select(Student.school_name, func.count())
+        .where(
+            Student.assigned_to.is_(None),
+            Student.status.not_in([
+                StudentStatus.enrolled, StudentStatus.expired,
+                StudentStatus.rejected, StudentStatus.invalid,
+            ]),
+        )
+        .group_by(Student.school_name)
+        .order_by(func.count().desc())
+    )
+    groups = [{"name": name or "未知学校", "count": cnt} for name, cnt in result.all()]
+    total = sum(g["count"] for g in groups)
+    return Response.ok({"groups": groups, "total": total})
+
+
+class DistributeBySchoolsReq(BaseModel):
+    school_names: list[str]
+    mode: Literal["auto", "manual"] = "auto"
+    agent_id: int | None = None
+
+
+@router.post("/distribute-by-schools")
+async def distribute_by_schools(
+    body: DistributeBySchoolsReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校批量分发未分配学员给话务员"""
+    if not body.school_names:
+        return Response.error(code=1, msg="school_names不能为空")
+
+    # 查出所有目标学校的未分配学员
+    where = [
+        Student.school_name.in_(body.school_names),
+        Student.assigned_to.is_(None),
+        Student.status.not_in([
+            StudentStatus.enrolled, StudentStatus.expired,
+            StudentStatus.rejected, StudentStatus.invalid,
+        ]),
+    ]
+    result = await db.execute(select(Student).where(*where))
+    students = result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg="所选学校没有可分配的学员")
+
+    now = utcnow()
+    distribution: dict[str, int] = {}
+
+    if body.mode == "manual":
+        if body.agent_id is None:
+            return Response.error(code=1, msg="manual模式需要agent_id")
+        agent_result = await db.execute(
+            select(User).where(User.id == body.agent_id, User.is_active, User.role == UserRole.agent)
+        )
+        agent = agent_result.scalar_one_or_none()
+        if not agent:
+            return Response.error(code=1, msg="话务员不存在或已禁用")
+        for s in students:
+            s.assigned_to = agent.id
+            s.assigned_at = now
+        distribution[agent.name] = len(students)
+    else:
+        # auto: 按当前负载均匀分配
+        agent_result = await db.execute(
+            select(User).where(User.is_active, User.role == UserRole.agent).order_by(User.id)
+        )
+        agents = agent_result.scalars().all()
+        if not agents:
+            return Response.error(code=1, msg="没有可用的话务员")
+
+        load_r = await db.execute(
+            select(Student.assigned_to, func.count(Student.id))
+            .where(
+                Student.assigned_to.in_([a.id for a in agents]),
+                Student.status.not_in([
+                    StudentStatus.enrolled, StudentStatus.expired,
+                    StudentStatus.rejected, StudentStatus.invalid,
+                ]),
+            )
+            .group_by(Student.assigned_to)
+        )
+        load = {aid: cnt for aid, cnt in load_r.all()}
+        for agent in agents:
+            load.setdefault(agent.id, 0)
+            distribution[agent.name] = 0
+        agent_map = {agent.id: agent for agent in agents}
+
+        for s in sorted(students, key=lambda item: item.id):
+            agent_id = min(load, key=load.get)
+            s.assigned_to = agent_id
+            s.assigned_at = now
+            load[agent_id] += 1
+            distribution[agent_map[agent_id].name] += 1
+
+    for s in students:
+        db.add(OperationLog(
+            operator_id=current_user.id,
+            operator_name=current_user.name,
+            target_student_id=s.id,
+            case_no=s.case_no or "",
+            action="多学校分发",
+            content=f"从学校「{s.school_name}」分发给话务员",
+        ))
+
+    await db.commit()
+    return Response.ok({
+        "distributed_count": len(students),
+        "distribution": distribution,
+        "schools": body.school_names,
     })
