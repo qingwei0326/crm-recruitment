@@ -39,8 +39,20 @@ export default function SystemSettings() {
   const [showDsKey, setShowDsKey] = useState(false);
   const [dsKey, setDsKey] = useState('');
   const [dsKeyDirty, setDsKeyDirty] = useState(false);
-  const [dsKeyMessage, setDsKeyMessage] = useState(null);
-  const [savingDsKey, setSavingDsKey] = useState(false);
+  const [aiMessage, setAiMessage] = useState(null);
+  const [savingAi, setSavingAi] = useState(false);
+  // AI 引擎可切换：deepseek（默认）/ mimo / custom
+  const [aiProvider, setAiProvider] = useState('deepseek');
+  const [showMimoKey, setShowMimoKey] = useState(false);
+  const [mimoKey, setMimoKey] = useState('');
+  const [mimoKeyDirty, setMimoKeyDirty] = useState(false);
+  const [mimoBase, setMimoBase] = useState('https://token-plan-sgp.xiaomimimo.com/v1');
+  const [mimoModel, setMimoModel] = useState('mimo-v2.5-pro');
+  const [showCustomKey, setShowCustomKey] = useState(false);
+  const [customKey, setCustomKey] = useState('');
+  const [customKeyDirty, setCustomKeyDirty] = useState(false);
+  const [customBase, setCustomBase] = useState('');
+  const [customModel, setCustomModel] = useState('');
   const [staleDays, setStaleDays] = useState('3');
   const [tokenMessage, setTokenMessage] = useState(null);
   const [daysMessage, setDaysMessage] = useState(null);
@@ -96,6 +108,15 @@ export default function SystemSettings() {
       setTokenDirty(false);
       setDsKey(cfg.deepseek_api_key || '');
       setDsKeyDirty(false);
+      setAiProvider(cfg.ai_provider || 'deepseek');
+      setMimoKey(cfg.mimo_api_key || '');
+      setMimoKeyDirty(false);
+      setMimoBase(cfg.mimo_base || 'https://token-plan-sgp.xiaomimimo.com/v1');
+      setMimoModel(cfg.mimo_model || 'mimo-v2.5-pro');
+      setCustomKey(cfg.ai_custom_api_key || '');
+      setCustomKeyDirty(false);
+      setCustomBase(cfg.ai_custom_base || '');
+      setCustomModel(cfg.ai_custom_model || '');
       setStaleDays(cfg.stale_days || '3');
       setDialWindowStart(cfg.dial_window_start || '08:00');
       setDialWindowEnd(cfg.dial_window_end || '21:00');
@@ -129,22 +150,38 @@ export default function SystemSettings() {
     }
   };
 
-  const saveDsKey = async () => {
-    setDsKeyMessage(null);
-    if (!dsKeyDirty) {
-      setDsKeyMessage({ type: 'success', text: '未修改' });
-      return;
-    }
-    setSavingDsKey(true);
+  const saveAi = async () => {
+    setAiMessage(null);
+    setSavingAi(true);
     try {
-      const res = await api.put('/admin/config', { key: 'deepseek_api_key', value: dsKey });
-      setDsKey(res.data.data?.value ?? dsKey);
+      const puts = [api.put('/admin/config', { key: 'ai_provider', value: aiProvider })];
+      // key 字段回显是掩码（****xxxx），只在用户改过时才回写，避免把掩码存进去
+      if (aiProvider === 'deepseek' && dsKeyDirty) {
+        puts.push(api.put('/admin/config', { key: 'deepseek_api_key', value: dsKey }));
+      }
+      if (aiProvider === 'mimo') {
+        if (mimoKeyDirty) {
+          puts.push(api.put('/admin/config', { key: 'mimo_api_key', value: mimoKey }));
+        }
+        puts.push(api.put('/admin/config', { key: 'mimo_base', value: mimoBase }));
+        puts.push(api.put('/admin/config', { key: 'mimo_model', value: mimoModel }));
+      }
+      if (aiProvider === 'custom') {
+        if (customKeyDirty) {
+          puts.push(api.put('/admin/config', { key: 'ai_custom_api_key', value: customKey }));
+        }
+        puts.push(api.put('/admin/config', { key: 'ai_custom_base', value: customBase }));
+        puts.push(api.put('/admin/config', { key: 'ai_custom_model', value: customModel }));
+      }
+      await Promise.all(puts);
       setDsKeyDirty(false);
-      setDsKeyMessage({ type: 'success', text: '已保存（下次通话分析生效，无需重启）' });
+      setMimoKeyDirty(false);
+      setCustomKeyDirty(false);
+      setAiMessage({ type: 'success', text: '已保存（下次通话分析生效，无需重启）' });
     } catch (err) {
-      setDsKeyMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
+      setAiMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
     } finally {
-      setSavingDsKey(false);
+      setSavingAi(false);
     }
   };
 
@@ -313,48 +350,148 @@ export default function SystemSettings() {
               <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">AI 分析</h1>
             </div>
-            <div className="p-4 lg:p-6">
-              <SettingRow label="DeepSeek API Key">
+            <div className="p-4 lg:p-6 space-y-1">
+              <SettingRow label="分析引擎">
                 <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type={showDsKey ? 'text' : 'password'}
-                      className={inputCls}
-                      value={dsKey}
-                      onChange={(e) => { setDsKey(e.target.value); setDsKeyDirty(true); }}
-                      placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowDsKey((v) => !v)}
-                      className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                      {showDsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveDsKey}
-                      disabled={savingDsKey || loading}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-                    >
-                      <Save className="w-4 h-4" />
-                      保存
-                    </button>
-                  </div>
-                  <a
-                    href="https://platform.deepseek.com/api_keys"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                  <select
+                    className={inputCls}
+                    value={aiProvider}
+                    onChange={(e) => setAiProvider(e.target.value)}
                   >
-                    获取 API Key →
-                  </a>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="mimo">小米 MiMo</option>
+                    <option value="custom">自定义（OpenAI 兼容）</option>
+                  </select>
                   <div className="text-xs text-gray-500 dark:text-gray-400">
-                    通话 AI 分析所用密钥。留空时回退到关键词匹配模式。改完无需重启，下次分析即生效。
+                    选择通话分析使用的大模型。对应密钥留空时回退到关键词匹配模式。
                   </div>
-                  <RowMessage state={dsKeyMessage} />
                 </div>
               </SettingRow>
+
+              {aiProvider === 'deepseek' && (
+                <SettingRow label="DeepSeek API Key">
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        type={showDsKey ? 'text' : 'password'}
+                        className={inputCls}
+                        value={dsKey}
+                        onChange={(e) => { setDsKey(e.target.value); setDsKeyDirty(true); }}
+                        placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowDsKey((v) => !v)}
+                        className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        {showDsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <a
+                      href="https://platform.deepseek.com/api_keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      获取 API Key →
+                    </a>
+                  </div>
+                </SettingRow>
+              )}
+
+              {aiProvider === 'mimo' && (
+                <>
+                  <SettingRow label="MiMo API Key">
+                    <div className="flex gap-2">
+                      <input
+                        type={showMimoKey ? 'text' : 'password'}
+                        className={inputCls}
+                        value={mimoKey}
+                        onChange={(e) => { setMimoKey(e.target.value); setMimoKeyDirty(true); }}
+                        placeholder="tp-xxxxxxxxxxxxxxxx"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowMimoKey((v) => !v)}
+                        className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        {showMimoKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </SettingRow>
+                  <SettingRow label="接口地址">
+                    <input
+                      className={inputCls}
+                      value={mimoBase}
+                      onChange={(e) => setMimoBase(e.target.value)}
+                      placeholder="https://token-plan-sgp.xiaomimimo.com/v1"
+                    />
+                  </SettingRow>
+                  <SettingRow label="模型名">
+                    <input
+                      className={inputCls}
+                      value={mimoModel}
+                      onChange={(e) => setMimoModel(e.target.value)}
+                      placeholder="mimo-v2.5-pro"
+                    />
+                  </SettingRow>
+                </>
+              )}
+
+              {aiProvider === 'custom' && (
+                <>
+                  <SettingRow label="API Key">
+                    <div className="flex gap-2">
+                      <input
+                        type={showCustomKey ? 'text' : 'password'}
+                        className={inputCls}
+                        value={customKey}
+                        onChange={(e) => { setCustomKey(e.target.value); setCustomKeyDirty(true); }}
+                        placeholder="API Key"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomKey((v) => !v)}
+                        className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      >
+                        {showCustomKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </SettingRow>
+                  <SettingRow label="接口地址">
+                    <input
+                      className={inputCls}
+                      value={customBase}
+                      onChange={(e) => setCustomBase(e.target.value)}
+                      placeholder="https://api.example.com/v1"
+                    />
+                  </SettingRow>
+                  <SettingRow label="模型名">
+                    <input
+                      className={inputCls}
+                      value={customModel}
+                      onChange={(e) => setCustomModel(e.target.value)}
+                      placeholder="model-name"
+                    />
+                  </SettingRow>
+                </>
+              )}
+
+              <div className="flex items-center justify-between pt-4">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  改完无需重启，下次通话分析即生效。
+                </div>
+                <button
+                  type="button"
+                  onClick={saveAi}
+                  disabled={savingAi || loading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  保存
+                </button>
+              </div>
+              <RowMessage state={aiMessage} />
             </div>
           </div>
 

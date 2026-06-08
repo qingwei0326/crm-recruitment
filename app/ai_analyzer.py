@@ -1,4 +1,4 @@
-"""AI intent analysis - DeepSeek API engine + keyword fallback (UTF-8)"""
+"""AI intent analysis - OpenAI-compatible LLM engine (DeepSeek/MiMo/自定义) + keyword fallback (UTF-8)"""
 
 import json
 import logging
@@ -36,8 +36,20 @@ ABANDON_KEYWORDS = _KW["abandon"]
 VISIT_KEYWORDS = _KW["visit"]
 
 MAX_TRANSCRIPT_LENGTH = 2000  # [optimization: input length limit]
-API_TIMEOUT = 20
+API_TIMEOUT = 30
 API_RETRIES = 2
+# 推理模型（如 MiMo v2.5-pro）会先消耗 reasoning tokens 再吐 JSON，留足余量避免 JSON 被截断
+MAX_TOKENS = 1024
+
+DEFAULT_MODEL = "deepseek-chat"
+
+
+def _chat_endpoint(base: str) -> str:
+    """从 base 拼出 chat/completions 端点。base 以 /v1 结尾就不重复拼 /v1。"""
+    b = (base or DEEPSEEK_BASE).strip().rstrip("/")
+    if b.endswith("/v1"):
+        return f"{b}/chat/completions"
+    return f"{b}/v1/chat/completions"
 
 # LLM JSON uses English "none"; DB / keyword path use Chinese "无" (IntentLevel.none)
 _NONE_SENTINELS = frozenset({"", "none", "null", "unknown", "n/a", "无"})
@@ -139,16 +151,16 @@ def _keyword_analyze(transcript: str) -> dict:
     }
 
 
-async def _call_deepseek(prompt: str, api_key: str) -> dict | None:
-    """Async DeepSeek API call via httpx"""
+async def _call_llm(prompt: str, base: str, model: str, api_key: str) -> dict | None:
+    """Async OpenAI-compatible chat/completions call (DeepSeek / MiMo / 自定义)."""
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         resp = await client.post(
-            f"{DEEPSEEK_BASE}/v1/chat/completions",
+            _chat_endpoint(base),
             json={
-                "model": "deepseek-chat",
+                "model": model or DEFAULT_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.1,
-                "max_tokens": 300,
+                "max_tokens": MAX_TOKENS,
             },
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -171,10 +183,13 @@ async def _call_deepseek(prompt: str, api_key: str) -> dict | None:
     }
 
 
-async def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict | None:
-    """Call DeepSeek API with retry & timeout protection (async)"""
-    import asyncio
-
+async def _llm_analyze(
+    transcript: str,
+    base: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+) -> dict | None:
+    """Async call to an OpenAI-compatible LLM with retry & timeout protection."""
     key = (api_key or DEEPSEEK_API_KEY or "").strip()
     if not key or not transcript or not transcript.strip():
         return None
@@ -199,26 +214,31 @@ async def _deepseek_analyze(transcript: str, api_key: str | None = None) -> dict
 
     for attempt in range(API_RETRIES + 1):
         try:
-            return await _call_deepseek(prompt, key)
+            return await _call_llm(prompt, base or DEEPSEEK_BASE, model or DEFAULT_MODEL, key)
         except httpx.HTTPError as e:
-            logger.warning(f"DeepSeek API attempt {attempt + 1}/{API_RETRIES + 1} failed: {e}")
+            logger.warning(f"LLM API attempt {attempt + 1}/{API_RETRIES + 1} failed: {e}")
             if attempt < API_RETRIES:
                 await asyncio.sleep(1 * (attempt + 1))
             else:
-                logger.error("DeepSeek API all retries exhausted, falling back to keyword")
+                logger.error("LLM API all retries exhausted, falling back to keyword")
         except Exception as e:
-            logger.warning(f"DeepSeek API error, falling back to keyword: {e}")
+            logger.warning(f"LLM API error, falling back to keyword: {e}")
             return None
     return None
 
 
-async def analyze_transcript(transcript: str, api_key: str | None = None) -> dict:
-    """Analyze transcript: prefer DeepSeek API, fall back to keyword matching.
+async def analyze_transcript(
+    transcript: str,
+    api_key: str | None = None,
+    base: str | None = None,
+    model: str | None = None,
+) -> dict:
+    """Analyze transcript: prefer an LLM (DeepSeek/MiMo/自定义), fall back to keyword matching.
 
-    api_key 优先用调用方传入（来自 SystemConfig）；为空则 fallback 到模块加载时
-    读取的 DEEPSEEK_API_KEY env 变量。
+    base/model/api_key 优先用调用方传入（来自 SystemConfig 的 provider 配置）；
+    为空则回退到模块加载时读取的 DEEPSEEK_* env 变量。api_key 为空时直接走关键词匹配。
     """
-    result = await _deepseek_analyze(transcript, api_key)
+    result = await _llm_analyze(transcript, base, model, api_key)
     if result:
         result = {**result, "ai_intent": normalize_ai_intent(result.get("ai_intent"))}
         return result
