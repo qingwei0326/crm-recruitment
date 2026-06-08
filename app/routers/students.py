@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user, require_admin, require_agent
 from app.database import get_db
 from app.models import (
     Call,
@@ -42,7 +42,7 @@ from app.permissions import (
 from app.pushplus import notify_a_level_change
 from app.region_extractor import extract_region
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
-from app.utils import make_operation_log, mask_phone, utcnow
+from app.utils import make_operation_log, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
 
@@ -125,7 +125,7 @@ ADMIN_STUDENT_UPDATE_FIELDS = {
     "school_address",
     "need_help",
 }
-AGENT_STUDENT_UPDATE_FIELDS = {"status", "intent_level", "join_reasons", "stage", "need_help"}
+AGENT_STUDENT_UPDATE_FIELDS = {"status", "intent_level", "join_reasons", "stage", "need_help", "score"}
 
 
 def next_stage(current: str) -> str | None:
@@ -143,7 +143,7 @@ def _enum_or_error(enum_cls, value: str, label: str):
         raise ValueError(f"无效的{label}: {value}")
 
 
-def _student_payload(student: Student, full_phone: bool = False) -> dict:
+def _student_payload(student: Student) -> dict:
     status = student.status.value
     intent_level = student.intent_level.value
     stage = student.stage.value
@@ -160,9 +160,11 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
         "need_help": student.need_help,
         "score": student.score,
         "guardian_name": student.guardian_name,
-        "guardian_phone": mask_phone(student.guardian_phone),
+        "guardian_phone": student.guardian_phone,
+        "guardian_phone_raw": student.guardian_phone,
         "guardian2_name": student.guardian2_name,
-        "guardian2_phone": mask_phone(student.guardian2_phone),
+        "guardian2_phone": student.guardian2_phone,
+        "guardian2_phone_raw": student.guardian2_phone,
         "school_name": student.school_name,
         "school_address": student.school_address,
         "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
@@ -173,9 +175,6 @@ def _student_payload(student: Student, full_phone: bool = False) -> dict:
         "created_at": str(student.created_at),
         "updated_at": str(student.updated_at),
     }
-    if full_phone:
-        payload["guardian_phone_raw"] = student.guardian_phone
-        payload["guardian2_phone_raw"] = student.guardian2_phone
     return payload
 
 
@@ -652,7 +651,7 @@ async def create_student(
     await db.refresh(student)
     if student.intent_level == IntentLevel.A:
         await notify_a_level_change(db, student, current_user, "create")
-    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
+    return Response.ok(_student_payload(student))
 
 
 @router.get("")
@@ -667,6 +666,7 @@ async def list_students(
     region: str = Query(""),
     stage: str = Query(""),
     need_help: str = Query(""),
+    school_name: str = Query(""),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -716,6 +716,8 @@ async def list_students(
         query = query.where(Student.assigned_to == assigned_to)
     if region:
         query = query.where(Student.region == region)
+    if school_name:
+        query = query.where(Student.school_name == school_name)
     if stage:
         try:
             stage_enum = StudentStage(stage)
@@ -739,7 +741,7 @@ async def list_students(
             "total": total,
             "page": page,
             "page_size": page_size,
-            "list": [_student_payload(s, full_phone=is_admin(current_user)) for s in students],
+            "list": [_student_payload(s) for s in students],
         }
     )
 
@@ -1026,7 +1028,7 @@ async def get_student_detail(
     db.add(log)
 
     # 学生基本信息
-    payload = _student_payload(student, full_phone=is_admin(current_user))
+    payload = _student_payload(student)
     payload["enrollment_substage"] = (
         str(student.enrollment_substage) if student.enrollment_substage else None
     )
@@ -1161,7 +1163,7 @@ async def get_student(
     db.add(log)
     await db.commit()
 
-    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
+    return Response.ok(_student_payload(student))
 
 
 @router.put("/{student_id}")
@@ -1176,7 +1178,7 @@ async def update_student(
     # invalid_reason 不写入 Student 表，仅用于在状态改为"无效"时附加到操作日志，作为审计依据
     invalid_reason = (raw.pop("invalid_reason", None) or "").strip()
     if not raw:
-        return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
+        return Response.ok(_student_payload(student))
 
     allowed_fields = (
         ADMIN_STUDENT_UPDATE_FIELDS if is_admin(current_user) else AGENT_STUDENT_UPDATE_FIELDS
@@ -1261,7 +1263,7 @@ async def update_student(
     await db.refresh(student)
     if intent_changed and student.intent_level == IntentLevel.A:
         await notify_a_level_change(db, student, current_user, "manual")
-    return Response.ok(_student_payload(student, full_phone=is_admin(current_user)))
+    return Response.ok(_student_payload(student))
 
 
 @router.put("/{student_id}/stage")
@@ -1623,4 +1625,18 @@ async def delete_student(
     await db.commit()
     return Response.ok(msg="删除成功")
 
+
+@router.get("/agent/settings")
+async def agent_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_agent),
+):
+    """返回话务员端需要的非敏感系统配置。"""
+    from app.routers.admin import get_config_value
+    dial_max_str = await get_config_value(db, "dial_max_per_24h", "3")
+    try:
+        dial_max = max(1, int(dial_max_str))
+    except (ValueError, TypeError):
+        dial_max = 3
+    return Response.ok({"dial_max_per_24h": dial_max})
 

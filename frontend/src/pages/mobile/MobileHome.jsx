@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Phone,
@@ -48,8 +48,8 @@ function ProgressBar({ pct }) {
   );
 }
 
-function StudentRow({ s, dialCount, onDial, onDetail, dialing }) {
-  const overLimit = (dialCount ?? 0) >= 3;
+function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
+  const overLimit = (dialCount ?? 0) >= dialMax;
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
       <button
@@ -377,12 +377,47 @@ function MePanel({ onOpenSettings }) {
 export default function MobileHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { students, stats, loading, error, refetch } = useTodayTasks();
+  const { students, stats, schools, loading, error, refetch } = useTodayTasks();
   const { dial, checkDup } = useDialFlow();
   const [dialCountMap, setDialCountMap] = useState({});
   const [dialingId, setDialingId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState('tasks');
+  const [selectedSchool, setSelectedSchool] = useState(null);
+  const [dialMax, setDialMax] = useState(3);
+
+  useEffect(() => {
+    api.get('/students/agent/settings')
+      .then(r => { if (r.data?.data?.dial_max_per_24h) setDialMax(r.data.data.dial_max_per_24h); })
+      .catch(() => {});
+  }, []);
+
+  // 学校分组：后端 SQL 聚合的全量结果（不受列表上限影响）
+  const schoolGroups = schools;
+
+  // 按选中学校过滤当前已加载列表
+  const filteredStudents = useMemo(() => {
+    if (!selectedSchool) return students;
+    return students.filter((s) => (s.school_name || '未知学校') === selectedSchool);
+  }, [students, selectedSchool]);
+
+  // 统计：未选学校时直接用后端全量 stats；选了学校则从当前列表派生
+  const filteredStats = useMemo(() => {
+    if (!selectedSchool) return stats;
+    const list = filteredStudents;
+    const total = list.length;
+    const done = list.filter((s) => s.status === 'contacted').length;
+    const pending = list.filter((s) => s.status === 'not_contacted').length;
+    const follow_up = list.filter((s) => s.status === 'pending_visit').length;
+    const handled = done + follow_up;
+    return {
+      total,
+      done,
+      pending,
+      follow_up,
+      progress_pct: total > 0 ? Math.round((handled / total) * 1000) / 10 : 0,
+    };
+  }, [selectedSchool, stats, filteredStudents]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -464,17 +499,46 @@ export default function MobileHome() {
                   今日进度
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {stats.progress_pct ?? 0}%
+                  {filteredStats.progress_pct ?? 0}%
                 </div>
               </div>
-              <ProgressBar pct={stats.progress_pct} />
+              <ProgressBar pct={filteredStats.progress_pct} />
               <div className="flex gap-2">
-                <StatCard label="总数" value={stats.total ?? 0} color="gray" />
-                <StatCard label="已完成" value={stats.done ?? 0} color="green" />
-                <StatCard label="待回访" value={stats.follow_up ?? 0} color="amber" />
-                <StatCard label="未联系" value={stats.pending ?? 0} color="blue" />
+                <StatCard label="总数" value={filteredStats.total ?? 0} color="gray" />
+                <StatCard label="已完成" value={filteredStats.done ?? 0} color="green" />
+                <StatCard label="待回访" value={filteredStats.follow_up ?? 0} color="amber" />
+                <StatCard label="未联系" value={filteredStats.pending ?? 0} color="blue" />
               </div>
             </div>
+
+            {/* 学校筛选标签 */}
+            {schoolGroups.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  onClick={() => setSelectedSchool(null)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                    !selectedSchool
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+                  }`}
+                >
+                  全部 {students.length}
+                </button>
+                {schoolGroups.map((g) => (
+                  <button
+                    key={g.name}
+                    onClick={() => setSelectedSchool(selectedSchool === g.name ? null : g.name)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      selectedSchool === g.name
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+                    }`}
+                  >
+                    {g.name} {g.count}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Student list */}
             {loading ? (
@@ -483,15 +547,18 @@ export default function MobileHome() {
               </div>
             ) : error ? (
               <div className="text-center text-sm text-red-500 py-10">{error}</div>
-            ) : students.length === 0 ? (
-              <div className="text-center text-sm text-gray-400 py-12">今日暂无任务</div>
+            ) : filteredStudents.length === 0 ? (
+              <div className="text-center text-sm text-gray-400 py-12">
+                {selectedSchool ? '该学校暂无任务' : '今日暂无任务'}
+              </div>
             ) : (
               <div className="space-y-3">
-                {students.map((s) => (
+                {filteredStudents.map((s) => (
                   <StudentRow
                     key={s.id}
                     s={s}
                     dialCount={dialCountMap[s.id]}
+                    dialMax={dialMax}
                     dialing={dialingId === s.id}
                     onDial={handleDial}
                     onDetail={handleDetail}
