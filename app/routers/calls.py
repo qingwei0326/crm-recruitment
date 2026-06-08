@@ -18,13 +18,35 @@ from app.utils import make_operation_log, today_cst_as_utc, utcnow
 router = APIRouter(prefix="/api/calls", tags=["通话"])
 
 
-async def _get_deepseek_key(db: AsyncSession) -> str:
-    """优先用 SystemConfig 里 admin 设置的 key，未设置时 fallback 到 env 变量。"""
-    result = await db.execute(select(SystemConfig).where(SystemConfig.key == "deepseek_api_key"))
+async def _get_config(db: AsyncSession, key: str) -> str:
+    result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
     config = result.scalar_one_or_none()
-    if config and config.value:
-        return config.value.strip()
-    return os.getenv("DEEPSEEK_API_KEY", "").strip()
+    return config.value.strip() if config and config.value else ""
+
+
+async def _resolve_ai_engine(db: AsyncSession) -> tuple[str | None, str | None, str]:
+    """根据 SystemConfig 的 ai_provider 返回 (base, model, api_key)。
+
+    deepseek（默认）/ mimo / custom 三套配置分开存，切换不丢。各自缺 key 时
+    analyze_transcript 会回退到关键词匹配。
+    """
+    provider = (await _get_config(db, "ai_provider")) or "deepseek"
+
+    if provider == "mimo":
+        key = await _get_config(db, "mimo_api_key") or os.getenv("MIMO_API_KEY", "").strip()
+        base = await _get_config(db, "mimo_base") or os.getenv("MIMO_BASE", "").strip()
+        model = await _get_config(db, "mimo_model") or os.getenv("MIMO_MODEL", "").strip()
+        return (base or None, model or None, key)
+
+    if provider == "custom":
+        key = await _get_config(db, "ai_custom_api_key")
+        base = await _get_config(db, "ai_custom_base")
+        model = await _get_config(db, "ai_custom_model")
+        return (base or None, model or None, key)
+
+    # deepseek（默认）
+    key = await _get_config(db, "deepseek_api_key") or os.getenv("DEEPSEEK_API_KEY", "").strip()
+    return (None, None, key)
 
 
 def _agent_can_access_student(student: Student, user: User) -> bool:
@@ -85,7 +107,8 @@ async def create_call(
     if not _agent_can_access_student(student, current_user):
         raise HTTPException(status_code=403, detail="无权对该学员进行通话分析")
 
-    result = await analyze_transcript(body.transcript, await _get_deepseek_key(db))
+    base, model, api_key = await _resolve_ai_engine(db)
+    result = await analyze_transcript(body.transcript, api_key, base, model)
 
     call = Call(
         student_id=body.student_id,
