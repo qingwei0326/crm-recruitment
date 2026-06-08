@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 
 const PAGE_SIZE = 30;
 
 /**
  * 封装 GET /api/tasks/today。
- * 返回 { students, stats, schools, truncated, loading, error, refetch }
+ * 搜索在服务端执行（SQL LIKE），支持按姓名/电话筛选。
+ * 返回 { students, stats, schools, truncated, loading, error, refetch, search, setSearch, loadMore, hasMore, total }
  */
 export default function useTodayTasks() {
   const [students, setStudents] = useState([]);
@@ -21,12 +22,15 @@ export default function useTodayTasks() {
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (searchQuery = '') => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get('/tasks/today', { params: { limit: PAGE_SIZE, offset: 0 } });
+      const params = { limit: PAGE_SIZE, offset: 0 };
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+      const res = await api.get('/tasks/today', { params });
       if (res.data.code === 0) {
         setStudents(res.data.data.list || []);
         setTotal(res.data.data.total || 0);
@@ -50,11 +54,19 @@ export default function useTodayTasks() {
     fetchTasks();
   }, [fetchTasks]);
 
-  const [search, setSearch] = useState('');
+  // Debounced search: when search changes, refetch from server
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchTasks(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, fetchTasks]);
 
   const loadMore = useCallback(async () => {
     try {
-      const res = await api.get('/tasks/today', { params: { limit: PAGE_SIZE, offset: students.length } });
+      const params = { limit: PAGE_SIZE, offset: students.length };
+      if (search.trim()) params.search = search.trim();
+      const res = await api.get('/tasks/today', { params });
       if (res.data.code === 0) {
         setStudents(prev => [...prev, ...(res.data.data.list || [])]);
         setTotal(res.data.data.total || 0);
@@ -62,18 +74,8 @@ export default function useTodayTasks() {
     } catch (e) {
       // silently fail — existing list is still valid
     }
-  }, [students.length]);
-
-  const filteredStudents = useMemo(() => {
-    if (!search.trim()) return students;
-    const q = search.trim().toLowerCase();
-    return students.filter(s =>
-      s.name?.toLowerCase().includes(q) ||
-      s.guardian_phone?.includes(q) ||
-      s.guardian2_phone?.includes(q)
-    );
-  }, [students, search]);
+  }, [students.length, search]);
 
   const hasMore = students.length < total;
-  return { students: filteredStudents, rawStudents: students, stats, schools, truncated, loading, error, refetch: fetchTasks, search, setSearch, loadMore, hasMore, total };
+  return { students, rawStudents: students, stats, schools, truncated, loading, error, refetch: fetchTasks, search, setSearch, loadMore, hasMore, total };
 }
