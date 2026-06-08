@@ -28,6 +28,7 @@ async def today_tasks(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     search: str = Query(None),
+    school_name: str = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -46,6 +47,8 @@ async def today_tasks(
                 Student.guardian2_phone.ilike(f"%{q}%"),
             )
         )
+    if school_name and school_name.strip():
+        filters.append(Student.school_name == school_name.strip())
 
     # 统计走 SQL 聚合：与列表是否截断无关，始终全量准确
     counts_r = await db.execute(
