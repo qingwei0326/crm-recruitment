@@ -1,29 +1,29 @@
 """Shared API rate limiter using slowapi.
 
-Behind Cloudflare Tunnel, ``request.client.host`` is always ``127.0.0.1`` (the
-tunnel's local connection).  We read ``CF-Connecting-IP`` — written at the
+Behind Cloudflare Tunnel, `request.client.host` is always `127.0.0.1` (the
+tunnel's local connection).  We read `CF-Connecting-IP` — written at the
 Cloudflare edge and impossible for clients to forge — so that rate limits
 are per-user, not per-tunnel.
 """
 
-import os
-
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from starlette.requests import Request
+
+from app.config import TRUST_PROXY_HEADERS
 
 
-def _get_real_ip(request) -> str:
+def _get_real_ip(request: Request) -> str:
     """Return the real client IP for rate-limit keying.
 
-    When ``TRUST_PROXY_HEADERS=1`` (production behind Cloudflare Tunnel),
-    prefer ``CF-Connecting-IP`` which is injected by the edge and cannot be
-    spoofed.  Fall back to the raw ASGI client host otherwise.
+    When ``TRUST_PROXY_HEADERS`` is enabled (production behind Cloudflare
+    Tunnel), prefer ``CF-Connecting-IP`` which is injected by the edge and
+    cannot be spoofed.  Fall back to the raw ASGI client host otherwise.
     """
-    if os.getenv("TRUST_PROXY_HEADERS") == "1":
+    if TRUST_PROXY_HEADERS:
         cf_ip = request.headers.get("CF-Connecting-IP")
         if cf_ip:
             return cf_ip.strip()
-    # request.client.host may be None if the transport has no peer info
     return get_remote_address(request)
 
 
