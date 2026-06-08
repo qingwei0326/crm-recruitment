@@ -55,6 +55,19 @@ async def scan_follow_up_reminders():
                 except Exception as e:
                     logger.warning("follow_up notify commit failed: %s", e)
                     await db.rollback()
+            else:
+                # 推送失败，记录但不标记 is_notified，下次扫描会自动重试
+                db.add(OperationLog(
+                    operator_id=None,
+                    operator_name="scheduler",
+                    action="通知失败",
+                    content=f"CRM 回访提醒|||agent_id={agent.id}|||follow_up_id={follow_up.id}|||" + content,
+                ))
+                try:
+                    await db.commit()
+                except Exception as e:
+                    logger.warning("follow_up notify_fail log commit failed: %s", e)
+                    await db.rollback()
 
 
 async def scan_expired_students():
@@ -89,7 +102,7 @@ async def scan_expired_students():
                     operator_id=None,
                     operator_name="scheduler",
                     action="通知失败",
-                    content=f"expired_student alert failed for agent_id={agent_id}, {len(students)} students",
+                    content=f"CRM 学生过期告警|||agent_id={agent_id}|||{len(students)} students|||" + "\n".join(lines),
                 ))
                 try:
                     await db.commit()
@@ -127,4 +140,77 @@ async def expired_student_scheduler():
         except Exception as e:
             logger.error("scan_expired_students failed: %s", e)
             await asyncio.sleep(3600)  # 失败后 1h 重试
+
+
+async def retry_failed_notifications():
+    """重试最近 24h 内的通知失败记录。"""
+    async with async_session() as db:
+        from datetime import timedelta
+        cutoff = utcnow() - timedelta(hours=24)
+
+        # 查找最近 24h 的通知失败记录
+        result = await db.execute(
+            select(OperationLog)
+            .where(
+                OperationLog.action == "通知失败",
+                OperationLog.created_at >= cutoff,
+            )
+            .order_by(OperationLog.created_at.asc())
+            .limit(50)  # 每次最多重试 50 条
+        )
+        logs = result.scalars().all()
+
+        retried = 0
+        for log in logs:
+            # 解析 content: "title|||metadata|||actual_content"
+            parts = log.content.split("|||", 2)
+            if len(parts) < 3:
+                # 无法解析，删除旧记录
+                await db.delete(log)
+                continue
+
+            title = parts[0]
+            metadata = parts[1]
+            content = parts[2]
+
+            # 从 metadata 提取 agent_id
+            agent_id = None
+            for segment in metadata.split(","):
+                segment = segment.strip()
+                if segment.startswith("agent_id="):
+                    try:
+                        agent_id = int(segment.split("=")[1])
+                    except (ValueError, IndexError):
+                        pass
+
+            if not agent_id:
+                await db.delete(log)
+                continue
+
+            # 重试发送
+            ok = await send_pushplus_to_user(db, agent_id, title, content)
+            if ok:
+                await db.delete(log)
+                retried += 1
+                logger.info("retry succeeded: %s to agent_id=%s", title, agent_id)
+            else:
+                logger.info("retry still failed: %s to agent_id=%s", title, agent_id)
+
+        if retried > 0:
+            try:
+                await db.commit()
+                logger.info("retry sweep: %d/%d succeeded", retried, len(logs))
+            except Exception as e:
+                logger.warning("retry sweep commit failed: %s", e)
+                await db.rollback()
+
+
+async def notification_retry_scheduler():
+    """每 10 分钟重试失败的通知。"""
+    while True:
+        try:
+            await retry_failed_notifications()
+        except Exception as e:
+            logger.error("retry_failed_notifications failed: %s", e)
+        await asyncio.sleep(600)
 
