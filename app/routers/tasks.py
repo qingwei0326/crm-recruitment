@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
@@ -27,6 +27,7 @@ _ACTIVE_TASK_STATUSES = [
 async def today_tasks(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    search: str = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -35,10 +36,21 @@ async def today_tasks(
         Student.status.in_(_ACTIVE_TASK_STATUSES),
     )
 
+    filters = list(base_where)
+    if search and search.strip():
+        q = search.strip()
+        filters.append(
+            or_(
+                Student.name.ilike(f"%{q}%"),
+                Student.guardian_phone.ilike(f"%{q}%"),
+                Student.guardian2_phone.ilike(f"%{q}%"),
+            )
+        )
+
     # 统计走 SQL 聚合：与列表是否截断无关，始终全量准确
     counts_r = await db.execute(
         select(Student.status, func.count())
-        .where(*base_where)
+        .where(*filters)
         .group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
@@ -53,7 +65,7 @@ async def today_tasks(
     # 学校分组走 SQL 聚合：与列表是否截断无关，前端筛选标签始终准确
     schools_r = await db.execute(
         select(Student.school_name, func.count())
-        .where(*base_where)
+        .where(*filters)
         .group_by(Student.school_name)
     )
     schools = sorted(
@@ -64,7 +76,7 @@ async def today_tasks(
 
     result = await db.execute(
         select(Student)
-        .where(*base_where)
+        .where(*filters)
         .order_by(Student.updated_at.desc())
         .offset(offset)
         .limit(limit)
