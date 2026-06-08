@@ -68,7 +68,7 @@ describe('useTodayTasks', () => {
     expect(result.current.stats).toEqual(mockData.data.stats);
     expect(result.current.schools).toEqual(['School A', 'School B']);
     expect(result.current.error).toBe('');
-    expect(api.get).toHaveBeenCalledWith('/tasks/today');
+    expect(api.get).toHaveBeenCalledWith('/tasks/today', { params: { limit: 30, offset: 0 } });
   });
 
   it('sets error when API returns non-zero code', async () => {
