@@ -1,5 +1,6 @@
-"""AI intent analysis - OpenAI-compatible LLM engine (DeepSeek/MiMo/自定义) + keyword fallback (UTF-8)"""
+"""AI intent analysis with OpenAI-compatible LLMs and keyword fallback."""
 
+import asyncio
 import json
 import logging
 import os
@@ -50,6 +51,7 @@ def _chat_endpoint(base: str) -> str:
     if b.endswith("/v1"):
         return f"{b}/chat/completions"
     return f"{b}/v1/chat/completions"
+
 
 # LLM JSON uses English "none"; DB / keyword path use Chinese "无" (IntentLevel.none)
 _NONE_SENTINELS = frozenset({"", "none", "null", "unknown", "n/a", "无"})

@@ -11,9 +11,7 @@ import pytest
 
 @pytest.mark.asyncio
 class TestTokenRevocation:
-    async def test_token_works_before_revocation(
-        self, client, agent_headers
-    ):
+    async def test_token_works_before_revocation(self, client, agent_headers):
         """对照组：撤销前 token 能正常用。"""
         resp = await client.get("/api/me", headers=agent_headers)
         assert resp.status_code == 200
@@ -62,16 +60,17 @@ class TestTokenRevocation:
         resp = await client.get("/api/me", headers=agent_headers)
         assert resp.status_code == 401, "改密码后旧 token 仍可用"
 
-    async def test_legacy_token_without_tv_is_rejected(
-        self, client, agent_user
-    ):
+    async def test_legacy_token_without_tv_is_rejected(self, client, agent_user):
         """没有 tv 字段的老 token（迁移前签发的）必须被拒绝。"""
         from app.auth import create_access_token
-        legacy_token = create_access_token({
-            "sub": str(agent_user.id),
-            "role": agent_user.role,
-            # 故意不带 tv
-        })
+
+        legacy_token = create_access_token(
+            {
+                "sub": str(agent_user.id),
+                "role": agent_user.role,
+                # 故意不带 tv
+            }
+        )
         headers = {"Authorization": f"Bearer {legacy_token}"}
         resp = await client.get("/api/me", headers=headers)
         assert resp.status_code == 401, "缺少 tv 的旧 token 未被拒绝"
@@ -79,18 +78,19 @@ class TestTokenRevocation:
     async def test_wrong_tv_value_is_rejected(self, client, agent_user):
         """伪造的 tv 值必须被拒绝。"""
         from app.auth import create_access_token
-        bad_token = create_access_token({
-            "sub": str(agent_user.id),
-            "role": agent_user.role,
-            "tv": 9999,  # 数据库里实际是 1
-        })
+
+        bad_token = create_access_token(
+            {
+                "sub": str(agent_user.id),
+                "role": agent_user.role,
+                "tv": 9999,  # 数据库里实际是 1
+            }
+        )
         headers = {"Authorization": f"Bearer {bad_token}"}
         resp = await client.get("/api/me", headers=headers)
         assert resp.status_code == 401, "tv 不匹配的 token 未被拒绝"
 
-    async def test_re_login_after_revocation_works(
-        self, client, admin_headers, agent_user
-    ):
+    async def test_re_login_after_revocation_works(self, client, admin_headers, agent_user):
         """撤销后重新登录，新 token 应该正常工作。"""
         # 改密码触发撤销
         new_pwd = "freshpass123"
@@ -110,7 +110,5 @@ class TestTokenRevocation:
         new_token = resp.json()["data"]["access_token"]
 
         # 新 token 应该能用
-        resp = await client.get(
-            "/api/me", headers={"Authorization": f"Bearer {new_token}"}
-        )
+        resp = await client.get("/api/me", headers={"Authorization": f"Bearer {new_token}"})
         assert resp.status_code == 200

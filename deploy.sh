@@ -36,7 +36,7 @@ fi
 if [ ! -f "crm.db" ]; then
     echo "[4/5] 初始化数据库..."
     export SECRET_KEY=$(cat .secret_key)
-    .venv/bin/python scripts/init_db.py
+    .venv/bin/python init_db.py
 else
     echo "[4/5] 数据库已存在，执行迁移..."
     export SECRET_KEY=$(cat .secret_key)

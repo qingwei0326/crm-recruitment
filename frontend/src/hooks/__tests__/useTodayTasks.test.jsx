@@ -160,6 +160,31 @@ describe('useTodayTasks', () => {
     expect(api.get).toHaveBeenCalledTimes(2);
   });
 
+  it('refetch preserves current search and school filters by default', async () => {
+    api.get.mockResolvedValue({
+      data: { code: 0, data: { list: [], stats: {}, total: 0 } },
+    });
+
+    const { result } = renderHook(() => useTodayTasks());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      result.current.setSearch('Alice');
+      result.current.setSelectedSchool('School A');
+    });
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(api.get).toHaveBeenLastCalledWith('/tasks/today', {
+      params: { limit: 30, offset: 0, search: 'Alice', school_name: 'School A' },
+    });
+  });
+
   it('handles response with missing list field', async () => {
     api.get.mockResolvedValue({
       data: { code: 0, data: { stats: { total: 5 } } },

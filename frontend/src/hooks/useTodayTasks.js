@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../api';
 
 const PAGE_SIZE = 30;
@@ -51,13 +51,15 @@ export default function useTodayTasks() {
     }
   }, []);
 
+  // 单一数据源：首屏立即拉取，之后随搜索/学校变化防抖拉取。
+  // （此前还另有一个挂载 effect，会让首屏并发两次相同请求、产生竞态，已合并。）
+  const firstRun = useRef(true);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard data-fetching pattern
-    fetchTasks();
-  }, [fetchTasks]);
-
-  // Debounced search: when search or school changes, refetch from server
-  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      fetchTasks(search, selectedSchool); // 首屏立即加载，无 300ms 延迟
+      return undefined;
+    }
     const timer = setTimeout(() => {
       fetchTasks(search, selectedSchool);
     }, 300);
@@ -74,11 +76,17 @@ export default function useTodayTasks() {
         setStudents(prev => [...prev, ...(res.data.data.list || [])]);
         setTotal(res.data.data.total || 0);
       }
-    } catch (e) {
+    } catch {
       // silently fail — existing list is still valid
     }
   }, [students.length, search, selectedSchool]);
 
   const hasMore = students.length < total;
-  return { students, rawStudents: students, stats, schools, truncated, loading, error, refetch: fetchTasks, search, setSearch, selectedSchool, setSelectedSchool, loadMore, hasMore, total };
+  const refetch = useCallback((searchQuery, schoolFilter) => {
+    const nextSearch = searchQuery === undefined ? search : searchQuery;
+    const nextSchool = schoolFilter === undefined ? selectedSchool : schoolFilter;
+    return fetchTasks(nextSearch, nextSchool);
+  }, [fetchTasks, search, selectedSchool]);
+
+  return { students, rawStudents: students, stats, schools, truncated, loading, error, refetch, search, setSearch, selectedSchool, setSelectedSchool, loadMore, hasMore, total };
 }

@@ -22,7 +22,9 @@ export default function Login() {
     setError('');
     try {
       const user = await login(username, password);
-      if (user.role === 'admin') {
+      if (user.must_change_password) {
+        navigate('/change-password');
+      } else if (user.role === 'admin') {
         navigate('/admin');
       } else if (user.role === 'agent') {
         navigate(isMobile ? '/mobile' : '/agent');

@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import (
     Boolean,
@@ -83,6 +83,8 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
+    # 首次登录 / 管理员重置密码后置 True，强制用户登录后自行设置新密码
+    must_change_password = Column(Boolean, default=False, nullable=False)
     # 递增式 token 版本号：改密码 / 禁用用户时 +1，旧 JWT 立即失效
     token_version = Column(Integer, default=1, nullable=False)
     service_regions = Column(String(512), default="", nullable=False)
@@ -138,7 +140,7 @@ class Student(Base):
 
     @staticmethod
     def default_expired_at():
-        return (datetime.now(timezone.utc) + timedelta(days=30)).date()
+        return (datetime.now(UTC) + timedelta(days=30)).date()
 
 
 class Call(Base):

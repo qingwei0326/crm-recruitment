@@ -95,7 +95,7 @@ class TestKeywordAnalyze:
         assert result["ai_intent"] in ("C", "无")
 
     def test_abandon_keywords_override(self):
-        """abandon keywords → a_score=0 → """
+        """abandon keywords → a_score=0 →"""
         result = _keyword_analyze("孩子去别的学校了，不需要了。")
         # "别的学校" matches ABANDON_KEYWORDS "别的学校"
         # "不需要了" doesn't match "不需要" ... wait: "不需要了" contains "不需要"?
@@ -139,8 +139,11 @@ class TestPredictConversion:
 
     def test_high_conversion(self):
         prob = predict_conversion(
-            intent_level="A", stage="已来访",
-            total_notes=5, has_follow_up=True, has_visit=True,
+            intent_level="A",
+            stage="已来访",
+            total_notes=5,
+            has_follow_up=True,
+            has_visit=True,
             days_since_assign=3,
         )
         # 0.90*0.40 + 0.85*0.30 + min(5,5)*0.02*0.10 + 0.12*0.10 + 0.15*0.10 + 0.02
@@ -149,8 +152,11 @@ class TestPredictConversion:
 
     def test_low_conversion(self):
         prob = predict_conversion(
-            intent_level="无", stage="初次联系",
-            total_notes=0, has_follow_up=False, has_visit=False,
+            intent_level="无",
+            stage="初次联系",
+            total_notes=0,
+            has_follow_up=False,
+            has_visit=False,
             days_since_assign=30,
         )
         # 0.05*0.40 + 0.15*0.30 + 0 + 0 + 0 + 0.02 = 0.020 + 0.045 + 0.020 = 0.085
@@ -158,16 +164,22 @@ class TestPredictConversion:
 
     def test_low_conversion_with_english_none(self):
         prob = predict_conversion(
-            intent_level="none", stage="初次联系",
-            total_notes=0, has_follow_up=False, has_visit=False,
+            intent_level="none",
+            stage="初次联系",
+            total_notes=0,
+            has_follow_up=False,
+            has_visit=False,
             days_since_assign=30,
         )
         assert prob == pytest.approx(0.085, abs=0.01)
 
     def test_mid_conversion(self):
         prob = predict_conversion(
-            intent_level="B", stage="有意向",
-            total_notes=2, has_follow_up=True, has_visit=False,
+            intent_level="B",
+            stage="有意向",
+            total_notes=2,
+            has_follow_up=True,
+            has_visit=False,
             days_since_assign=1,
         )
         # 0.50*0.40 + 0.35*0.30 + min(2,5)*0.02*0.10 + 0.12*0.10 + 0 + 0.02
@@ -176,8 +188,11 @@ class TestPredictConversion:
 
     def test_enrolled_100pct(self):
         prob = predict_conversion(
-            intent_level="A", stage="已报名",
-            total_notes=5, has_follow_up=True, has_visit=True,
+            intent_level="A",
+            stage="已报名",
+            total_notes=5,
+            has_follow_up=True,
+            has_visit=True,
         )
         # 0.90*0.40 + 1.00*0.30 + 0.010 + 0.012 + 0.015 + 0.02
         # = 0.360 + 0.300 + 0.010 + 0.012 + 0.015 + 0.020 = 0.717
