@@ -106,18 +106,8 @@ export default function AgentWork() {
     }).catch(() => {});
   }, [user?.id]);
 
-  // Prediction + dial check for current student
-  useEffect(() => {
-    const c = filteredStudents[currentIdx];
-    if (c) {
-      api.get(`/stats/predict-conversion/${c.id}`).then((r) => {
-        if (r.data.code === 0) setPrediction(r.data.data);
-      }).catch(() => setPrediction(null));
-      api.get('/calls/check', { params: { student_id: c.id, within_hours: 24 } }).then((r) => {
-        if (r.data.code === 0) setDialCheckByStudent((prev) => ({ ...prev, [c.id]: r.data.data }));
-      }).catch(() => {});
-    }
-  }, [students, currentIdx]);
+  // Prediction + dial check effect moved below `current` declaration so it can
+  // depend on the *displayed* student id and re-run whenever filters change.
 
   useEffect(() => { setCurrentIdx(0); }, [selectedSchool, selectedStage, selectedIntent, scoreRange]);
 
@@ -145,14 +135,33 @@ export default function AgentWork() {
     if (!selectedSchool && !selectedStage && !selectedIntent && !hasScoreFilter) return stats;
     const list = filteredStudents;
     const total = list.length;
-    const done = list.filter((s) => s.status === 'contacted').length;
-    const pending = list.filter((s) => s.status === 'not_contacted').length;
-    const follow_up = list.filter((s) => s.status === 'pending_visit').length;
+    const done = list.filter((s) => s.status === '已联系').length;
+    const pending = list.filter((s) => s.status === '未联系').length;
+    const follow_up = list.filter((s) => s.status === '待回访').length;
     const handled = done + follow_up;
     return { total, done, pending, follow_up, progress_pct: total > 0 ? Math.round((handled / total) * 1000) / 10 : 0 };
   }, [selectedSchool, selectedStage, selectedIntent, scoreRange, stats, filteredStudents]);
 
   const current = filteredStudents[currentIdx];
+
+  // Prediction + dial check for the currently displayed student.
+  // Keyed on `current?.id` so it re-fires whenever the shown student changes —
+  // including filter changes (which old `[students, currentIdx]` deps missed,
+  // leaving prediction/dial-count bound to a different student).
+  useEffect(() => {
+    const c = current;
+    if (c) {
+      api.get(`/stats/predict-conversion/${c.id}`).then((r) => {
+        if (r.data.code === 0) setPrediction(r.data.data);
+      }).catch(() => setPrediction(null));
+      api.get('/calls/check', { params: { student_id: c.id, within_hours: 24 } }).then((r) => {
+        if (r.data.code === 0) setDialCheckByStudent((prev) => ({ ...prev, [c.id]: r.data.data }));
+      }).catch(() => {});
+    } else {
+      setPrediction(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
 
   // ── Handlers ──
   const fetchToday = () => {
@@ -199,18 +208,44 @@ export default function AgentWork() {
     flashMsg('状态已更新');
   };
 
+  // 按学生 id 更新意向，避免依赖 detailStudent（拨号弹窗里可能没开详情面板）
+  const updateIntentById = async (id, level) => {
+    await api.put(`/students/${id}`, { intent_level: level });
+    setStudents((prev) => prev.map((t) => (t.id === id ? { ...t, intent_level: level } : t)));
+    if (detailStudent?.id === id) setDetailStudent((p) => (p ? { ...p, intent_level: level } : null));
+  };
+
   const handleDialModalStatus = async (s) => {
     if (!dialModal) return;
     await updateStatus(dialModal.studentId, s);
     if (s === '已联系' || s === '待回访') {
-      setDialModal((p) => p ? { ...p, showIntent: true } : null);
+      setDialModal((p) => p ? { ...p, status: s, showIntent: true } : null);
     } else { setDialModal(null); next(); }
   };
 
   const handleDialModalIntent = async (level) => {
     if (!dialModal) return;
-    await updateDetailField('intent_level', level);
+    await updateIntentById(dialModal.studentId, level);
     flashMsg('意向等级已更新');
+    // 待回访：接着收集回访日期落 /follow-ups；其他状态：结束
+    if (dialModal.status === '待回访') {
+      setDialModal((p) => p ? { ...p, showIntent: false, showFollowUp: true } : null);
+    } else {
+      setDialModal(null); next();
+    }
+  };
+
+  const handleDialModalFollowUp = async (date) => {
+    if (!dialModal) return;
+    if (date) {
+      try {
+        await api.post('/follow-ups', {
+          student_id: dialModal.studentId,
+          follow_up_date: date.length === 16 ? date + ':00' : date,
+        });
+        flashMsg('回访提醒已设置');
+      } catch (e) { toast?.error(getApiErrorMessage(e)); }
+    }
     setDialModal(null); next();
   };
 
@@ -347,6 +382,7 @@ export default function AgentWork() {
         tokenMsg={tokenMsg} setTokenMsg={setTokenMsg} />
       <DialResultModal dialModal={dialModal}
         onStatusSelect={handleDialModalStatus} onIntentSelect={handleDialModalIntent}
+        onFollowUpSelect={handleDialModalFollowUp}
         onClose={() => setDialModal(null)} />
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     </>

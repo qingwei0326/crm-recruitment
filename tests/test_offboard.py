@@ -28,11 +28,13 @@ async def departing_agent(db):
 
 @pytest_asyncio.fixture
 async def departing_token(departing_agent):
-    token = create_access_token({
-        "sub": str(departing_agent.id),
-        "role": departing_agent.role,
-        "tv": departing_agent.token_version,
-    })
+    token = create_access_token(
+        {
+            "sub": str(departing_agent.id),
+            "role": departing_agent.role,
+            "tv": departing_agent.token_version,
+        }
+    )
     return token
 
 
@@ -119,7 +121,11 @@ class TestOffboard:
         assert departing_agent.is_active is False
 
     async def test_offboard_invalidates_existing_token(
-        self, client, admin_headers, departing_headers, departing_agent,
+        self,
+        client,
+        admin_headers,
+        departing_headers,
+        departing_agent,
         students_under_departing,
     ):
         """离职后旧 token 立即失效，正在使用系统的离职员工被踢下线。"""
@@ -138,7 +144,11 @@ class TestOffboard:
         assert resp.status_code == 401
 
     async def test_offboard_recycles_non_terminal_students(
-        self, client, admin_headers, db, departing_agent,
+        self,
+        client,
+        admin_headers,
+        db,
+        departing_agent,
         students_under_departing,
     ):
         """非终态学生回到池：assigned_to 清空、状态重置到 not_contacted、阶段重置。"""
@@ -151,15 +161,16 @@ class TestOffboard:
         for student in students_under_departing[:3]:
             await db.refresh(student)
             assert student.assigned_to is None, f"{student.name} 未解绑"
-            assert student.status == StudentStatus.not_contacted, \
-                f"{student.name} 状态未重置"
-            assert student.intent_level == IntentLevel.none, \
-                f"{student.name} 意向未重置"
-            assert student.stage == StudentStage.initial_contact, \
-                f"{student.name} 阶段未重置"
+            assert student.status == StudentStatus.not_contacted, f"{student.name} 状态未重置"
+            assert student.intent_level == IntentLevel.none, f"{student.name} 意向未重置"
+            assert student.stage == StudentStage.initial_contact, f"{student.name} 阶段未重置"
 
     async def test_offboard_preserves_terminal_students(
-        self, client, admin_headers, db, departing_agent,
+        self,
+        client,
+        admin_headers,
+        db,
+        departing_agent,
         students_under_departing,
     ):
         """终态学生解绑但状态保留——报名/过期记录不能丢。"""
@@ -189,12 +200,11 @@ class TestOffboard:
         assert resp.json()["code"] == 1
         assert "自己" in resp.json()["msg"]
 
-    async def test_cannot_offboard_last_admin(
-        self, client, admin_headers, admin_user, db
-    ):
+    async def test_cannot_offboard_last_admin(self, client, admin_headers, admin_user, db):
         """系统至少要留一个 active admin。"""
         # 创建第二个 admin 来当操作者
         from app.auth import create_access_token, hash_password
+
         other_admin = User(
             username="other_admin",
             hashed_password=hash_password("pwd"),
@@ -206,11 +216,13 @@ class TestOffboard:
         await db.commit()
         await db.refresh(other_admin)
 
-        other_token = create_access_token({
-            "sub": str(other_admin.id),
-            "role": other_admin.role,
-            "tv": other_admin.token_version,
-        })
+        other_token = create_access_token(
+            {
+                "sub": str(other_admin.id),
+                "role": other_admin.role,
+                "tv": other_admin.token_version,
+            }
+        )
         other_headers = {"Authorization": f"Bearer {other_token}"}
 
         # other_admin 离职 admin_user：还剩 other_admin，应该成功
@@ -225,9 +237,7 @@ class TestOffboard:
         # 简化：直接验证"最后一个 admin" guard 通过反向场景已涵盖
         # 真正的"只剩一个 admin"场景下，唯一的 admin 也无法操作（自身离职被 self-guard 挡住）
 
-    async def test_offboard_requires_admin(
-        self, client, agent_headers, departing_agent
-    ):
+    async def test_offboard_requires_admin(self, client, agent_headers, departing_agent):
         """话务员不能调离职接口。"""
         resp = await client.post(
             f"/api/admin/users/{departing_agent.id}/offboard",

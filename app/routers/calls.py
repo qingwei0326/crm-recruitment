@@ -6,14 +6,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_analyzer import analyze_transcript
-from app.limiter import limiter
 from app.auth import get_current_user
 from app.database import get_db
+from app.limiter import limiter
 from app.models import Call, IntentLevel, Note, Student, SystemConfig, User, UserRole
 from app.permissions import can_access_student
 from app.pushplus import notify_a_level_change
 from app.schemas import CallCreate, Response
-from app.utils import make_operation_log, today_cst_as_utc, utcnow
+from app.utils import make_operation_log, utcnow
 
 router = APIRouter(prefix="/api/calls", tags=["通话"])
 
@@ -140,13 +140,11 @@ async def create_call(
         )
     )
 
-    ai_note_lines = [f"【AI 通话摘要】"]
+    ai_note_lines = ["【AI 通话摘要】"]
     if result.get("ai_summary"):
         ai_note_lines.append(result["ai_summary"])
     ai_note_lines.append("")
-    ai_note_lines.append(
-        f"意向 {result['ai_intent']}（置信度 {result['ai_confidence']}）"
-    )
+    ai_note_lines.append(f"意向 {result['ai_intent']}（置信度 {result['ai_confidence']}）")
     if result.get("ai_reasons"):
         ai_note_lines.append(f"依据：{result['ai_reasons']}")
     db.add(

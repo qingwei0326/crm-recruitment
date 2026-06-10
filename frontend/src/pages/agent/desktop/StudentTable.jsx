@@ -108,6 +108,7 @@ export default function StudentTable({
                 onUpdateStage={(stage) => onUpdateStage(s.id, stage)}
                 onAddNote={() => onAddNote(s.id)}
                 onOpenAi={() => onOpenAi(s)}
+                onScoreChange={onScoreChange}
                 noteText={expandedId === s.id ? noteText : ''}
                 onNoteTextChange={onNoteTextChange}
                 getSortValue={getSortValue}

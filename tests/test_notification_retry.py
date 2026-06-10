@@ -1,7 +1,9 @@
 """Tests for notification retry mechanism."""
-import pytest
-from unittest.mock import patch, AsyncMock
+
 from datetime import timedelta
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.models import OperationLog
 from app.utils import utcnow
@@ -30,9 +32,10 @@ async def test_retry_sends_and_deletes_log(db):
 
     # Log should be deleted
     from sqlalchemy import select
-    remaining = (await db.execute(
-        select(OperationLog).where(OperationLog.id == log_id)
-    )).scalars().all()
+
+    remaining = (
+        (await db.execute(select(OperationLog).where(OperationLog.id == log_id))).scalars().all()
+    )
     assert len(remaining) == 0
 
 
@@ -58,9 +61,10 @@ async def test_retry_keeps_log_on_failure(db):
 
     # Log should still exist
     from sqlalchemy import select
-    remaining = (await db.execute(
-        select(OperationLog).where(OperationLog.id == log_id)
-    )).scalars().all()
+
+    remaining = (
+        (await db.execute(select(OperationLog).where(OperationLog.id == log_id))).scalars().all()
+    )
     assert len(remaining) == 1
 
 
@@ -85,7 +89,8 @@ async def test_retry_skips_old_logs(db):
 
     # Old log should NOT be touched (not within 24h window)
     from sqlalchemy import select
-    remaining = (await db.execute(
-        select(OperationLog).where(OperationLog.id == log_id)
-    )).scalars().all()
+
+    remaining = (
+        (await db.execute(select(OperationLog).where(OperationLog.id == log_id))).scalars().all()
+    )
     assert len(remaining) == 1

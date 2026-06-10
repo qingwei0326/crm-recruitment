@@ -41,9 +41,7 @@ async def source_stats(
             func.sum(
                 case(
                     (
-                        Student.status.not_in(
-                            [StudentStatus.not_contacted, StudentStatus.invalid]
-                        ),
+                        Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid]),
                         1,
                     ),
                     else_=0,
@@ -116,7 +114,9 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     # 合并 Call 统计：today_calls + month_calls + avg_duration 一次查询
     calls_r = await db.execute(
         select(
-            func.count().filter(Call.created_at >= today, Call.created_at < tomorrow).label("today_calls"),
+            func.count()
+            .filter(Call.created_at >= today, Call.created_at < tomorrow)
+            .label("today_calls"),
             func.count().label("month_calls"),
             func.avg(Call.duration_seconds).label("avg_duration"),
         ).where(Call.agent_id == agent_id, Call.created_at >= month_start)
@@ -129,9 +129,9 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     # 合并意向统计：total_contacted + all_a 一次查询
     student_r = await db.execute(
         select(
-            func.count().filter(
-                Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
-            ).label("total_contacted"),
+            func.count()
+            .filter(Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid]))
+            .label("total_contacted"),
             func.count().filter(Student.intent_level == IntentLevel.A).label("all_a"),
         ).where(Student.assigned_to == agent_id)
     )
@@ -143,9 +143,9 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     # 合并"今日/本月新转 A"：基于 OperationLog 中意向变化记录
     a_log_r = await db.execute(
         select(
-            func.count(func.distinct(OperationLog.target_student_id)).filter(
-                OperationLog.created_at >= today, OperationLog.created_at < tomorrow
-            ).label("today_a"),
+            func.count(func.distinct(OperationLog.target_student_id))
+            .filter(OperationLog.created_at >= today, OperationLog.created_at < tomorrow)
+            .label("today_a"),
             func.count(func.distinct(OperationLog.target_student_id)).label("month_a"),
         )
         .select_from(OperationLog)
@@ -174,6 +174,7 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
         }
     )
 
+
 @router.get("/agent-ranking")
 async def agent_ranking(
     db: AsyncSession = Depends(get_db),
@@ -196,9 +197,7 @@ async def agent_ranking(
             func.sum(
                 case(
                     (
-                        Student.status.not_in(
-                            [StudentStatus.not_contacted, StudentStatus.invalid]
-                        ),
+                        Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid]),
                         1,
                     ),
                     else_=0,
@@ -266,24 +265,26 @@ async def agent_ranking(
         conversion = round(a_count / contacted * 100, 1) if contacted > 0 else 0
         enroll_rate = round(enrolled / contacted * 100, 1) if contacted > 0 else 0
         a_to_enroll = round(enrolled / a_count * 100, 1) if a_count > 0 else 0
-        ranking.append({
-            "id": a.id,
-            "name": a.name,
-            "is_active": a.is_active,
-            "total_leads": total_leads,
-            "contacted": contacted,
-            "a_count": a_count,
-            "enrolled": enrolled,
-            "total_visits": v.get("total_visits", 0),
-            "visits_done": v.get("visits_done", 0),
-            "campus_visits": v.get("campus_visits", 0),
-            "home_visits": v.get("home_visits", 0),
-            "today_calls": int(today_calls_map.get(a.id, 0)),
-            "month_calls": int(month_calls_map.get(a.id, 0)),
-            "conversion_rate": conversion,
-            "enroll_rate": enroll_rate,
-            "a_to_enroll": a_to_enroll,
-        })
+        ranking.append(
+            {
+                "id": a.id,
+                "name": a.name,
+                "is_active": a.is_active,
+                "total_leads": total_leads,
+                "contacted": contacted,
+                "a_count": a_count,
+                "enrolled": enrolled,
+                "total_visits": v.get("total_visits", 0),
+                "visits_done": v.get("visits_done", 0),
+                "campus_visits": v.get("campus_visits", 0),
+                "home_visits": v.get("home_visits", 0),
+                "today_calls": int(today_calls_map.get(a.id, 0)),
+                "month_calls": int(month_calls_map.get(a.id, 0)),
+                "conversion_rate": conversion,
+                "enroll_rate": enroll_rate,
+                "a_to_enroll": a_to_enroll,
+            }
+        )
 
     ranking.sort(
         key=lambda x: x["a_count"] * 2 + x["enrolled"] * 5 + x["visits_done"] * 3 + x["contacted"],
@@ -311,9 +312,7 @@ async def enrollment_conversion(
             func.sum(
                 case(
                     (
-                        Student.status.not_in(
-                            [StudentStatus.not_contacted, StudentStatus.invalid]
-                        ),
+                        Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid]),
                         1,
                     ),
                     else_=0,
@@ -333,15 +332,17 @@ async def enrollment_conversion(
         a_count = int(a_count)
         enroll_rate = round(enrolled / total * 100, 1) if total > 0 else 0
         a_to_enroll = round(enrolled / a_count * 100, 1) if a_count > 0 else 0
-        data.append({
-            "name": agent_name_map.get(aid, ""),
-            "total": total,
-            "contacted": int(contacted),
-            "a_count": a_count,
-            "enrolled": enrolled,
-            "enroll_rate": enroll_rate,
-            "a_to_enroll_rate": a_to_enroll,
-        })
+        data.append(
+            {
+                "name": agent_name_map.get(aid, ""),
+                "total": total,
+                "contacted": int(contacted),
+                "a_count": a_count,
+                "enrolled": enrolled,
+                "enroll_rate": enroll_rate,
+                "a_to_enroll_rate": a_to_enroll,
+            }
+        )
 
     data.sort(key=lambda x: x["enrolled"], reverse=True)
     return Response.ok(data)
@@ -424,12 +425,14 @@ async def trend_data(
         day_str = str(d)
         day_agents = calls_by_date_agent.get(day_str, {})
         agent_calls = {name: day_agents.get(name, 0) for name in agent_name_of.values()}
-        daily.append({
-            "date": day_str,
-            "calls": calls_total_by_date.get(day_str, 0),
-            "enrolled": enrolled_by_date.get(day_str, 0),
-            "agent_calls": agent_calls,
-        })
+        daily.append(
+            {
+                "date": day_str,
+                "calls": calls_total_by_date.get(day_str, 0),
+                "enrolled": enrolled_by_date.get(day_str, 0),
+                "agent_calls": agent_calls,
+            }
+        )
 
     return Response.ok({"daily": daily, "start": str(start), "end": str(end)})
 
@@ -562,16 +565,18 @@ async def funnel_data(
     )
     enrolled = enrolled_r.scalar() or 0
 
-    return Response.ok({
-        "stages": [
-            {"name": "总线索", "value": total},
-            {"name": "已分配", "value": assigned},
-            {"name": "已联系", "value": contacted},
-            {"name": "A意向", "value": a_level},
-            {"name": "已到访", "value": visited},
-            {"name": "已报名", "value": enrolled},
-        ]
-    })
+    return Response.ok(
+        {
+            "stages": [
+                {"name": "总线索", "value": total},
+                {"name": "已分配", "value": assigned},
+                {"name": "已联系", "value": contacted},
+                {"name": "A意向", "value": a_level},
+                {"name": "已到访", "value": visited},
+                {"name": "已报名", "value": enrolled},
+            ]
+        }
+    )
 
 
 @router.get("/heatmap")
@@ -631,11 +636,13 @@ async def heatmap_data(
         if agent_id in agent_id_to_idx and day_str in date_to_idx:
             matrix[agent_id_to_idx[agent_id]][date_to_idx[day_str]] = int(cnt)
 
-    return Response.ok({
-        "agents": [a["name"] for a in agents],
-        "dates": date_strs,
-        "data": matrix,
-    })
+    return Response.ok(
+        {
+            "agents": [a["name"] for a in agents],
+            "dates": date_strs,
+            "data": matrix,
+        }
+    )
 
 
 @router.get("/predictions")
@@ -647,37 +654,48 @@ async def prediction_distribution(
     # 1) 所有活跃学生 (一次查询)
     result = await db.execute(
         select(Student).where(
-            Student.status.not_in([
-                StudentStatus.enrolled,
-                StudentStatus.expired,
-                StudentStatus.rejected,
-                StudentStatus.invalid,
-            ])
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            )
         )
     )
     students = result.scalars().all()
     if not students:
-        return Response.ok({
-            "total": 0, "high": 0, "medium": 0, "low": 0,
-            "avg_probability": 0,
-            "distribution": [
-                {"name": "高概率 (>70%)", "value": 0, "color": "#22c55e"},
-                {"name": "中概率 (30-70%)", "value": 0, "color": "#eab308"},
-                {"name": "低概率 (<30%)", "value": 0, "color": "#ef4444"},
-            ],
-        })
-
-    student_ids = [s.id for s in students]
+        return Response.ok(
+            {
+                "total": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "avg_probability": 0,
+                "distribution": [
+                    {"name": "高概率 (>70%)", "value": 0, "color": "#22c55e"},
+                    {"name": "中概率 (30-70%)", "value": 0, "color": "#eab308"},
+                    {"name": "低概率 (<30%)", "value": 0, "color": "#ef4444"},
+                ],
+            }
+        )
 
     # 子查询：活跃学生 ID 集合（避免 IN 列表超 SQLite 变量限制）
-    active_ids = select(Student.id).where(
-        Student.status.not_in([
-            StudentStatus.enrolled,
-            StudentStatus.expired,
-            StudentStatus.rejected,
-            StudentStatus.invalid,
-        ])
-    ).scalar_subquery()
+    active_ids = (
+        select(Student.id)
+        .where(
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            )
+        )
+        .scalar_subquery()
+    )
 
     # 2) 批量查 notes 数
     notes_r = await db.execute(
@@ -689,15 +707,13 @@ async def prediction_distribution(
 
     # 3) 批量查 follow_up
     fu_r = await db.execute(
-        select(func.distinct(FollowUp.student_id))
-        .where(FollowUp.student_id.in_(active_ids))
+        select(func.distinct(FollowUp.student_id)).where(FollowUp.student_id.in_(active_ids))
     )
     fu_set = {row[0] for row in fu_r.all()}
 
     # 4) 批量查 completed visit
     visit_r = await db.execute(
-        select(func.distinct(Visit.student_id))
-        .where(
+        select(func.distinct(Visit.student_id)).where(
             Visit.student_id.in_(active_ids),
             Visit.status == VisitStatus.completed,
         )
@@ -740,15 +756,17 @@ async def prediction_distribution(
     total = len(students)
     avg_prob = round(total_prob / total, 4) if total else 0
 
-    return Response.ok({
-        "total": total,
-        "high": high,
-        "medium": medium,
-        "low": low,
-        "avg_probability": avg_prob,
-        "distribution": [
-            {"name": "高概率 (>70%)", "value": high, "color": "#22c55e"},
-            {"name": "中概率 (30-70%)", "value": medium, "color": "#eab308"},
-            {"name": "低概率 (<30%)", "value": low, "color": "#ef4444"},
-        ],
-    })
+    return Response.ok(
+        {
+            "total": total,
+            "high": high,
+            "medium": medium,
+            "low": low,
+            "avg_probability": avg_prob,
+            "distribution": [
+                {"name": "高概率 (>70%)", "value": high, "color": "#22c55e"},
+                {"name": "中概率 (30-70%)", "value": medium, "color": "#eab308"},
+                {"name": "低概率 (<30%)", "value": low, "color": "#ef4444"},
+            ],
+        }
+    )

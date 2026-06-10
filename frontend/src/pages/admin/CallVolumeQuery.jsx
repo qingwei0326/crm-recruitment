@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
 import { formatDateTime } from '../../utils';
 import {
@@ -53,6 +54,13 @@ export default function CallVolumeQuery() {
   }, []);
 
   const fetchLogs = (p = 1) => {
+    // 话务员已加载、却一个都没选 → 明确返回空，而不是发空 agent_ids
+    // （后端把空 agent_ids 当作「不过滤」会返回全部，造成「取消全选反而显示所有人」）。
+    if (agents.length > 0 && selectedAgents.length === 0) {
+      setLogs([]);
+      setTotal(0);
+      return;
+    }
     setLoading(true);
     const params = {
       start_date: startDate,
@@ -80,11 +88,45 @@ export default function CallVolumeQuery() {
     setSelectedAgents((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   };
 
-  const exportExcel = () => {
+  // CSV 字段转义：含逗号/引号/换行时用双引号包裹并转义内部引号，
+  // 否则自由文本（操作内容/备注）里的逗号会把整行列错位。
+  const csvEscape = (v) => {
+    const s = String(v ?? '');
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const exportExcel = async () => {
+    if (agents.length > 0 && selectedAgents.length === 0) {
+      toast?.error('请至少选择一个话务员');
+      return;
+    }
+    // 导出全部筛选结果（逐页拉取），而非仅当前页 50 条
+    const allLogs = [];
+    const EXPORT_PAGE_SIZE = 200; // 后端 page_size 上限
+    try {
+      for (let p = 1; ; p += 1) {
+        const res = await api.get('/operation-logs/call-volume', {
+          params: {
+            start_date: startDate,
+            end_date: endDate,
+            agent_ids: selectedAgents.join(','),
+            page: p,
+            page_size: EXPORT_PAGE_SIZE,
+          },
+        });
+        const list = res.data.data?.list || [];
+        allLogs.push(...list);
+        const t = res.data.data?.total || 0;
+        if (list.length === 0 || allLogs.length >= t) break;
+      }
+    } catch {
+      toast?.error('导出失败');
+      return;
+    }
     const rows = [
       ['序号', '话务员', '操作', '档案号', '操作内容', '原状态', '新状态', '备注内容', '时间'],
     ];
-    logs.forEach((l) =>
+    allLogs.forEach((l) =>
       rows.push([
         l.seq,
         l.operator_name,
@@ -97,12 +139,12 @@ export default function CallVolumeQuery() {
         formatDateTime(l.created_at, true),
       ]),
     );
-    const csv = '﻿' + rows.map((r) => r.join(',')).join('\n');
+    const csv = '﻿' + rows.map((r) => r.map(csvEscape).join(',')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `通电量_${startDate}.csv`;
+    a.download = `通电量_${startDate}_${endDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -110,86 +152,7 @@ export default function CallVolumeQuery() {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-20" onClick={closeSidebar} />
-      )}
-      <aside
-        className={`${isMobile ? 'fixed inset-y-0 left-0 z-30 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
-      >
-        <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Phone className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-gray-900 dark:text-gray-100">CRM 管理后台</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
-            </div>
-          </div>
-          {isMobile && (
-            <button onClick={closeSidebar}>
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-        <nav className="p-3 space-y-1">
-          <Link
-            to="/admin"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <LayoutDashboard className="w-4 h-4" /> 仪表盘
-          </Link>
-          <Link
-            to="/admin/leads"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <ListFilter className="w-4 h-4" /> 学生管理
-          </Link>
-          <Link
-            to="/admin/agents"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <Users className="w-4 h-4" /> 话务员管理
-          </Link>
-          <Link
-            to="/admin/report"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <BarChart3 className="w-4 h-4" /> 汇总报表
-          </Link>
-          <Link
-            to="/admin/trend"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <TrendingUp className="w-4 h-4" /> 趋势报表
-          </Link>
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
-            <Search className="w-4 h-4" /> 通电量查询
-          </div>
-        </nav>
-        <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
-          <button
-            onClick={toggle}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-          >
-            {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-            {dark ? '亮色模式' : '暗色模式'}
-          </button>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-          >
-            <LogOut className="w-4 h-4" />
-            退出登录
-          </button>
-        </div>
-      </aside>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
 
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
@@ -338,6 +301,6 @@ export default function CallVolumeQuery() {
           </div>
         </div>
       </main>
-    </div>
+    </AdminLayout>
   );
 }

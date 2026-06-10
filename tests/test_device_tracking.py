@@ -1,4 +1,5 @@
 """测试设备追踪和无效线索回收功能"""
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -30,7 +31,9 @@ async def test_device_tracking_on_login(client: AsyncClient, db, agent_user):
     response = await client.post(
         "/api/auth/login",
         json={"username": "testagent", "password": "agent123"},
-        headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Safari/604.1"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Safari/604.1"
+        },
     )
     assert response.status_code == 200
 
@@ -45,7 +48,9 @@ async def test_device_tracking_on_login(client: AsyncClient, db, agent_user):
 
 
 @pytest.mark.asyncio
-async def test_list_invalid_students(client: AsyncClient, db, admin_user, agent_user, admin_headers):
+async def test_list_invalid_students(
+    client: AsyncClient, db, admin_user, agent_user, admin_headers
+):
     """测试列出无效线索"""
     # 创建一些无效线索
     student1 = Student(
@@ -72,7 +77,9 @@ async def test_list_invalid_students(client: AsyncClient, db, admin_user, agent_
 
 
 @pytest.mark.asyncio
-async def test_reclaim_invalid_students(client: AsyncClient, db, admin_user, agent_user, admin_headers):
+async def test_reclaim_invalid_students(
+    client: AsyncClient, db, admin_user, agent_user, admin_headers
+):
     """测试回收无效线索"""
     # 创建无效线索
     student = Student(
@@ -106,7 +113,9 @@ async def test_reclaim_invalid_students(client: AsyncClient, db, admin_user, age
 
 
 @pytest.mark.asyncio
-async def test_reclaim_non_invalid_students_fails(client: AsyncClient, db, admin_user, admin_headers):
+async def test_reclaim_non_invalid_students_fails(
+    client: AsyncClient, db, admin_user, admin_headers
+):
     """测试回收非无效状态的线索应该失败"""
     # 创建正常状态的线索
     student = Student(

@@ -4,10 +4,11 @@
 
     python migrate_backfill.py
 
-做三件事：
+做两件事：
 1. 备份 crm.db 到 backups/
 2. 对所有 region 为空、school_name 非空 的学生，按 app.region_extractor.extract_region 提取 region
-3. 把仅匹配到「漳州市/漳州」前缀的学校，按 app.region_extractor.subdivide_zz 细分到 芗城区 / 龙文区 / 常山开发区
+   （需要细分到 芗城区/龙文区/常山开发区 等的具体学校，已在 region_extractor.SPECIAL_SCHOOLS
+    里人工归类，extract_region 会优先命中，无需单独的细分阶段。）
 
 只动 region 字段，不会动 assigned_to / status / 任何业务字段。
 """
@@ -20,7 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.region_extractor import extract_region, subdivide_zz
+from app.region_extractor import extract_region
 
 
 def main():
@@ -56,7 +57,8 @@ def main():
             unmapped.append(s)
             continue
         c.execute(
-            "UPDATE students SET region = ? WHERE school_name = ? AND (region IS NULL OR region = '')",
+            "UPDATE students SET region = ? "
+            "WHERE school_name = ? AND (region IS NULL OR region = '')",
             (r, s),
         )
         stage1_count += c.rowcount
@@ -71,22 +73,13 @@ def main():
 
     c.execute("SELECT DISTINCT school_name FROM students WHERE region IN ('漳州市', '漳州')")
     zz_schools = [r[0] for r in c.fetchall()]
-    print(f'\n阶段2：细分"漳州市"桶 —— 涉及 {len(zz_schools)} 个学校')
-    stage2_count = 0
-    stage2_dist = {}
-    for s in zz_schools:
-        target = subdivide_zz(s)
-        c.execute(
-            "UPDATE students SET region = ? WHERE school_name = ? AND region IN ('漳州市', '漳州')",
-            (target, s),
+    if zz_schools:
+        print(
+            f'\n提示：仍有 {len(zz_schools)} 个学校只识别到"漳州市/漳州"，无法细分到区县。'
+            '\n      如需细分，请在 SPECIAL_SCHOOLS 里补充人工归类后重跑。'
         )
-        n = c.rowcount
-        stage2_count += n
-        stage2_dist[target] = stage2_dist.get(target, 0) + n
-    conn.commit()
-    print(f'  改动 {stage2_count} 条')
-    for r, n in sorted(stage2_dist.items(), key=lambda x: -x[1]):
-        print(f'    {n:>5}人 → {r}')
+        for s in zz_schools[:20]:
+            print(f'    - {s}')
 
     print('\n=== 当前未分配学生的区县分布 ===')
     c.execute(

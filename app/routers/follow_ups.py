@@ -1,8 +1,9 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.auth import get_current_user
 from app.database import get_db
@@ -36,18 +37,60 @@ async def create_follow_up(
 
 @router.get("")
 async def list_follow_ups(
-    student_id: int = Query(...),
+    student_id: int | None = Query(None),
+    agent_id: int | None = Query(None),
+    is_completed: bool | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await get_accessible_student(db, student_id, current_user)
+    if student_id is not None:
+        await get_accessible_student(db, student_id, current_user)
+        result = await db.execute(
+            select(FollowUp)
+            .where(FollowUp.student_id == student_id)
+            .order_by(FollowUp.follow_up_date.desc())
+        )
+        fus = result.scalars().all()
+        return Response.ok([_fu_payload(f) for f in fus])
+
+    if current_user.role != UserRole.admin:
+        agent_id = current_user.id
+
+    conditions = []
+    if agent_id is not None:
+        conditions.append(FollowUp.agent_id == agent_id)
+    if is_completed is not None:
+        conditions.append(FollowUp.is_completed.is_(is_completed))
+
+    count_stmt = select(func.count(FollowUp.id))
+    query = select(FollowUp).options(joinedload(FollowUp.student), joinedload(FollowUp.agent))
+    if conditions:
+        count_stmt = count_stmt.where(*conditions)
+        query = query.where(*conditions)
+
+    total = (await db.execute(count_stmt)).scalar() or 0
     result = await db.execute(
-        select(FollowUp)
-        .where(FollowUp.student_id == student_id)
-        .order_by(FollowUp.follow_up_date.desc())
+        query.order_by(FollowUp.follow_up_date.asc()).offset((page - 1) * page_size).limit(page_size)
     )
-    fus = result.scalars().all()
-    return Response.ok([_fu_payload(f) for f in fus])
+    items = []
+    for f in result.scalars().unique().all():
+        student = f.student
+        agent = f.agent
+        items.append(
+            {
+                **_fu_payload(f),
+                "student_id": f.student_id,
+                "student_name": student.name if student else "",
+                "student_region": student.region if student else "",
+                "student_status": str(student.status) if student else "",
+                "agent_id": f.agent_id,
+                "agent_name": agent.name if agent else "",
+            }
+        )
+
+    return Response.ok({"total": total, "page": page, "page_size": page_size, "list": items})
 
 
 @router.get("/my-pending")

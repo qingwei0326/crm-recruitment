@@ -1,24 +1,23 @@
 import os
 import re
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select, union_all, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, invalidate_user_tokens, require_admin
-from app.backup import BACKUP_DIR, do_backup_async, _get_backup_extension
-from app.utils import make_operation_log, today_cst_as_utc, utcnow
+from app.backup import BACKUP_DIR, _get_backup_extension, do_backup_async
 from app.database import get_db
+from app.expiry import build_last_activity_subquery, mark_expired_students
 from app.models import (
     Call,
     IntentLevel,
     LeadViewLog,
-    Note,
     OperationLog,
     Student,
     StudentStage,
@@ -28,6 +27,7 @@ from app.models import (
     UserRole,
 )
 from app.schemas import Response, StaleReassignReq
+from app.utils import make_operation_log, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -150,28 +150,16 @@ def to_datetime(value):
 
 
 def mask_config_value(key: str, value: str) -> str:
-    if key in ("pushplus_token", "deepseek_api_key", "mimo_api_key", "ai_custom_api_key") and len(value) > 4:
+    if (
+        key in ("pushplus_token", "deepseek_api_key", "mimo_api_key", "ai_custom_api_key")
+        and len(value) > 4
+    ):
         return "****" + value[-4:]
     return value
 
 
-def build_last_activity_subquery():
-    activity_events = union_all(
-        select(Call.student_id.label("student_id"), Call.created_at.label("created_at")),
-        select(Note.student_id.label("student_id"), Note.created_at.label("created_at")),
-    ).subquery()
-    return (
-        select(
-            activity_events.c.student_id,
-            func.max(activity_events.c.created_at).label("last_activity_at"),
-        )
-        .group_by(activity_events.c.student_id)
-        .subquery()
-    )
-
-
 async def get_config_value(db: AsyncSession, key: str, fallback: str = "") -> str:
-    """Read a single SystemConfig value, fall back to env var of same name uppercased, then to fallback."""
+    """Read SystemConfig, then same-name uppercase env var, then fallback."""
     result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
     item = result.scalar_one_or_none()
     if item and item.value:
@@ -352,10 +340,14 @@ async def stale_school_groups(
         .outerjoin(last_activity, last_activity.c.student_id == Student.id)
         .where(
             Student.assigned_to.isnot(None),
-            Student.status.not_in([
-                StudentStatus.enrolled, StudentStatus.expired,
-                StudentStatus.rejected, StudentStatus.invalid,
-            ]),
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            ),
             last_activity_at < cutoff,
         )
         .group_by(group_col)
@@ -393,10 +385,14 @@ async def stale_reclaim_by_group(
         .where(
             group_col == body.group_name,
             Student.assigned_to.isnot(None),
-            Student.status.not_in([
-                StudentStatus.enrolled, StudentStatus.expired,
-                StudentStatus.rejected, StudentStatus.invalid,
-            ]),
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            ),
             last_activity_at < cutoff,
         )
     )
@@ -409,14 +405,20 @@ async def stale_reclaim_by_group(
         old_agent_id = s.assigned_to
         s.assigned_to = None
         s.assigned_at = None
-        db.add(OperationLog(
-            operator_id=current_user.id,
-            operator_name=current_user.name,
-            target_student_id=s.id,
-            case_no=s.case_no or "",
-            action="线索回收",
-            content=f"按{('学校' if body.group_by == 'school_name' else '区域')}回收「{body.group_name}」，从话务员 {old_agent_id or '未分配'} 回收至未分配池",
-        ))
+        db.add(
+            OperationLog(
+                operator_id=current_user.id,
+                operator_name=current_user.name,
+                target_student_id=s.id,
+                case_no=s.case_no or "",
+                action="线索回收",
+                content=(
+                    f"按{('学校' if body.group_by == 'school_name' else '区域')}"
+                    f"回收「{body.group_name}」，从话务员 "
+                    f"{old_agent_id or '未分配'} 回收至未分配池"
+                ),
+            )
+        )
         reclaimed_count += 1
 
     await db.commit()
@@ -476,10 +478,14 @@ async def stale_reassign(
             select(Student.assigned_to, func.count(Student.id))
             .where(
                 Student.assigned_to.in_([a.id for a in agents]),
-                Student.status.not_in([
-                    StudentStatus.enrolled, StudentStatus.expired,
-                    StudentStatus.rejected, StudentStatus.invalid,
-                ]),
+                Student.status.not_in(
+                    [
+                        StudentStatus.enrolled,
+                        StudentStatus.expired,
+                        StudentStatus.rejected,
+                        StudentStatus.invalid,
+                    ]
+                ),
             )
             .group_by(Student.assigned_to)
         )
@@ -532,9 +538,9 @@ async def list_agents(
         select(
             Student.assigned_to,
             func.count().label("total"),
-            func.count().filter(
-                Student.status.in_([StudentStatus.completed, StudentStatus.enrolled])
-            ).label("done"),
+            func.count()
+            .filter(Student.status.in_([StudentStatus.completed, StudentStatus.enrolled]))
+            .label("done"),
             func.count().filter(Student.status == StudentStatus.not_contacted).label("pending"),
         )
         .where(Student.assigned_to.in_(agent_ids))
@@ -553,20 +559,22 @@ async def list_agents(
     data = []
     for a in agents:
         s = stats_map.get(a.id)
-        data.append({
-            "id": a.id,
-            "name": a.name,
-            "username": a.username,
-            "is_active": a.is_active,
-            "service_regions": a.service_regions,
-            "total_tasks": int(s.total if s else 0),
-            "done_tasks": int(s.done if s else 0),
-            "pending_tasks": int(s.pending if s else 0),
-            "today_calls": int(today_calls_map.get(a.id, 0)),
-            "created_at": str(a.created_at),
-        })
-
-    return Response.ok(data)
+        data.append(
+            {
+                "id": a.id,
+                "name": a.name,
+                "username": a.username,
+                "is_active": a.is_active,
+                "service_regions": a.service_regions,
+                "total_tasks": int(s.total if s else 0),
+                "done_tasks": int(s.done if s else 0),
+                "pending_tasks": int(s.pending if s else 0),
+                "today_calls": int(today_calls_map.get(a.id, 0)),
+                "locked_until": str(a.locked_until) if a.locked_until else None,
+                "failed_login_attempts": a.failed_login_attempts,
+                "created_at": str(a.created_at),
+            }
+        )
 
     return Response.ok(data)
 
@@ -647,6 +655,8 @@ async def create_user(
         role=UserRole(body.role),
         service_regions=body.service_regions,
         is_active=True,
+        # 新建话务员：首次登录强制本人改密；管理员账号不强制
+        must_change_password=(UserRole(body.role) == UserRole.agent),
     )
     db.add(user)
     await db.flush()
@@ -687,11 +697,13 @@ async def update_user(
         if new_role != user.role:
             # 防止把唯一一个 admin 降级
             if user.role == UserRole.admin and new_role != UserRole.admin:
-                admin_count = (await db.execute(
-                    select(func.count(User.id)).where(
-                        User.role == UserRole.admin, User.is_active
+                admin_count = (
+                    await db.execute(
+                        select(func.count(User.id)).where(
+                            User.role == UserRole.admin, User.is_active
+                        )
                     )
-                )).scalar() or 0
+                ).scalar() or 0
                 if admin_count <= 1:
                     return Response.error(code=1, msg="系统至少需要保留一个管理员")
             changes.append(f"角色 {user.role}→{new_role}")
@@ -699,11 +711,11 @@ async def update_user(
     if body.is_active is not None and body.is_active != user.is_active:
         # 防止把唯一一个 admin 停用
         if user.role == UserRole.admin and user.is_active and not body.is_active:
-            admin_count = (await db.execute(
-                select(func.count(User.id)).where(
-                    User.role == UserRole.admin, User.is_active
+            admin_count = (
+                await db.execute(
+                    select(func.count(User.id)).where(User.role == UserRole.admin, User.is_active)
                 )
-            )).scalar() or 0
+            ).scalar() or 0
             if admin_count <= 1:
                 return Response.error(code=1, msg="不能停用最后一个管理员")
         changes.append("启用" if body.is_active else "停用")
@@ -749,11 +761,11 @@ async def delete_user(
         return Response.error(code=1, msg="用户不存在")
     # 防止删除最后一个 admin
     if user.role == UserRole.admin:
-        admin_count = (await db.execute(
-            select(func.count(User.id)).where(
-                User.role == UserRole.admin, User.is_active
+        admin_count = (
+            await db.execute(
+                select(func.count(User.id)).where(User.role == UserRole.admin, User.is_active)
             )
-        )).scalar() or 0
+        ).scalar() or 0
         if admin_count <= 1:
             return Response.error(code=1, msg="不能删除最后一个管理员")
     # 1) 先处理终态学员：只解绑话务员，保留状态作为历史归档
@@ -822,11 +834,11 @@ async def offboard_user(
 
     # 防止把最后一个 admin 离职
     if user.role == UserRole.admin and user.is_active:
-        admin_count = (await db.execute(
-            select(func.count(User.id)).where(
-                User.role == UserRole.admin, User.is_active
+        admin_count = (
+            await db.execute(
+                select(func.count(User.id)).where(User.role == UserRole.admin, User.is_active)
             )
-        )).scalar() or 0
+        ).scalar() or 0
         if admin_count <= 1:
             return Response.error(code=1, msg="不能离职最后一个管理员")
 
@@ -892,13 +904,15 @@ async def offboard_user(
         )
     )
     await db.commit()
-    return Response.ok({
-        "user_id": user.id,
-        "username": user.username,
-        "recycled_count": recycled_count,
-        "preserved_count": preserved_count,
-        "was_already_disabled": not was_active,
-    })
+    return Response.ok(
+        {
+            "user_id": user.id,
+            "username": user.username,
+            "recycled_count": recycled_count,
+            "preserved_count": preserved_count,
+            "was_already_disabled": not was_active,
+        }
+    )
 
 
 @router.post("/users/{user_id}/unlock")
@@ -940,6 +954,8 @@ async def reset_user_password(
     user.hashed_password = hash_password(new_password)
     user.failed_login_attempts = 0
     user.locked_until = None
+    # 重置后强制本人下次登录改密
+    user.must_change_password = True
     invalidate_user_tokens(user)
     db.add(
         make_operation_log(
@@ -1034,39 +1050,11 @@ async def check_expired(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """标记过期学生：expired_at 已到期且最后活动早于到期日，且不在终态。"""
-    today = date.today()
-    today_dt = datetime(today.year, today.month, today.day)
+    """标记过期学生：expired_at 已到期且最后活动早于到期日，且不在终态。
 
-    last_activity = build_last_activity_subquery()
-    latest_activity_at = func.coalesce(
-        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
-    )
-
-    result = await db.execute(
-        select(Student, latest_activity_at.label("activity_at"))
-        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
-        .where(
-            Student.expired_at.isnot(None),
-            Student.expired_at < today,
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.invalid,
-                ]
-            ),
-            # 距离最后活动也已超出 expired_at；纯日期与 datetime 混比，
-            # 用 today_dt 作为活动上限（即活动早于今天 00:00 视为不活跃）。
-            latest_activity_at < today_dt,
-        )
-    )
-    rows = result.all()
-    count = 0
-    for student, _activity_at in rows:
-        student.status = StudentStatus.expired
-        count += 1
+    判定逻辑抽到 app.expiry.mark_expired_students，与 scheduler 自动标记共用。
+    """
+    count = await mark_expired_students(db)
     await db.commit()
     return Response.ok({"expired_count": count})
 
@@ -1104,7 +1092,9 @@ async def list_invalid_students(
     if student_ids:
         # 查询最近一次标记为无效的操作日志
         logs_result = await db.execute(
-            select(OperationLog.target_student_id, OperationLog.note_content, OperationLog.created_at)
+            select(
+                OperationLog.target_student_id, OperationLog.note_content, OperationLog.created_at
+            )
             .where(
                 OperationLog.target_student_id.in_(student_ids),
                 OperationLog.action == "修改状态",
@@ -1132,12 +1122,14 @@ async def list_invalid_students(
         for s, agent_name in rows
     ]
 
-    return Response.ok({
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "list": data,
-    })
+    return Response.ok(
+        {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "list": data,
+        }
+    )
 
 
 class ReclaimStudentsReq(BaseModel):
@@ -1162,9 +1154,7 @@ async def reclaim_invalid_students(
         return Response.error(code=1, msg="话务员不存在或已禁用")
 
     # 查询要回收的学生，确保都是无效状态
-    students_result = await db.execute(
-        select(Student).where(Student.id.in_(body.student_ids))
-    )
+    students_result = await db.execute(select(Student).where(Student.id.in_(body.student_ids)))
     students = students_result.scalars().all()
 
     if not students:
@@ -1182,6 +1172,12 @@ async def reclaim_invalid_students(
     for student in students:
         old_agent_id = student.assigned_to
         student.status = StudentStatus.not_contacted
+        # 与 delete_user/offboard 的回收契约保持一致：重置意向/阶段/求助，
+        # 否则新话务员会看到旧的意向 A、阶段「已来访」，误以为是自己跟出来的，
+        # 同时污染漏斗/转化统计。
+        student.intent_level = IntentLevel.none
+        student.stage = StudentStage.initial_contact
+        student.need_help = False
         student.assigned_to = body.agent_id
         student.assigned_at = now
 
@@ -1192,7 +1188,10 @@ async def reclaim_invalid_students(
                 student.id,
                 student.case_no or "",
                 "回收无效线索",
-                content=f"从话务员 {old_agent_id or '未分配'} 回收，重新分配给 {agent.name}（ID:{body.agent_id}）",
+                content=(
+                    f"从话务员 {old_agent_id or '未分配'} 回收，"
+                    f"重新分配给 {agent.name}（ID:{body.agent_id}）"
+                ),
                 old_status="无效",
                 new_status="未联系",
             )
@@ -1201,11 +1200,13 @@ async def reclaim_invalid_students(
 
     await db.commit()
 
-    return Response.ok({
-        "reclaimed_count": reclaimed_count,
-        "agent_id": body.agent_id,
-        "agent_name": agent.name,
-    })
+    return Response.ok(
+        {
+            "reclaimed_count": reclaimed_count,
+            "agent_id": body.agent_id,
+            "agent_name": agent.name,
+        }
+    )
 
 
 # ── 分学校回收 ──────────────────────────────────────────────
@@ -1236,11 +1237,14 @@ async def reclaim_by_school(
     if not students:
         return Response.error(code=1, msg=f"学校「{body.school_name}」没有可回收的无效线索")
 
-    now = utcnow()
     reclaimed_count = 0
     for s in students:
         old_agent_id = s.assigned_to
         s.status = StudentStatus.not_contacted
+        # 与回收契约一致：进池前清除意向/阶段/求助
+        s.intent_level = IntentLevel.none
+        s.stage = StudentStage.initial_contact
+        s.need_help = False
         s.assigned_to = None
         s.assigned_at = None
 
@@ -1259,10 +1263,12 @@ async def reclaim_by_school(
 
     await db.commit()
 
-    return Response.ok({
-        "reclaimed_count": reclaimed_count,
-        "school_name": body.school_name,
-    })
+    return Response.ok(
+        {
+            "reclaimed_count": reclaimed_count,
+            "school_name": body.school_name,
+        }
+    )
 
 
 @router.get("/invalid-school-groups")
@@ -1294,10 +1300,14 @@ async def unassigned_school_groups(
         select(Student.school_name, func.count())
         .where(
             Student.assigned_to.is_(None),
-            Student.status.not_in([
-                StudentStatus.enrolled, StudentStatus.expired,
-                StudentStatus.rejected, StudentStatus.invalid,
-            ]),
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            ),
         )
         .group_by(Student.school_name)
         .order_by(func.count().desc())
@@ -1327,10 +1337,14 @@ async def distribute_by_schools(
     where = [
         Student.school_name.in_(body.school_names),
         Student.assigned_to.is_(None),
-        Student.status.not_in([
-            StudentStatus.enrolled, StudentStatus.expired,
-            StudentStatus.rejected, StudentStatus.invalid,
-        ]),
+        Student.status.not_in(
+            [
+                StudentStatus.enrolled,
+                StudentStatus.expired,
+                StudentStatus.rejected,
+                StudentStatus.invalid,
+            ]
+        ),
     ]
     result = await db.execute(select(Student).where(*where))
     students = result.scalars().all()
@@ -1344,7 +1358,9 @@ async def distribute_by_schools(
         if body.agent_id is None:
             return Response.error(code=1, msg="manual模式需要agent_id")
         agent_result = await db.execute(
-            select(User).where(User.id == body.agent_id, User.is_active, User.role == UserRole.agent)
+            select(User).where(
+                User.id == body.agent_id, User.is_active, User.role == UserRole.agent
+            )
         )
         agent = agent_result.scalar_one_or_none()
         if not agent:
@@ -1366,10 +1382,14 @@ async def distribute_by_schools(
             select(Student.assigned_to, func.count(Student.id))
             .where(
                 Student.assigned_to.in_([a.id for a in agents]),
-                Student.status.not_in([
-                    StudentStatus.enrolled, StudentStatus.expired,
-                    StudentStatus.rejected, StudentStatus.invalid,
-                ]),
+                Student.status.not_in(
+                    [
+                        StudentStatus.enrolled,
+                        StudentStatus.expired,
+                        StudentStatus.rejected,
+                        StudentStatus.invalid,
+                    ]
+                ),
             )
             .group_by(Student.assigned_to)
         )
@@ -1387,21 +1407,25 @@ async def distribute_by_schools(
             distribution[agent_map[agent_id].name] += 1
 
     for s in students:
-        db.add(OperationLog(
-            operator_id=current_user.id,
-            operator_name=current_user.name,
-            target_student_id=s.id,
-            case_no=s.case_no or "",
-            action="多学校分发",
-            content=f"从学校「{s.school_name}」分发给话务员",
-        ))
+        db.add(
+            OperationLog(
+                operator_id=current_user.id,
+                operator_name=current_user.name,
+                target_student_id=s.id,
+                case_no=s.case_no or "",
+                action="多学校分发",
+                content=f"从学校「{s.school_name}」分发给话务员",
+            )
+        )
 
     await db.commit()
-    return Response.ok({
-        "distributed_count": len(students),
-        "distribution": distribution,
-        "schools": body.school_names,
-    })
+    return Response.ok(
+        {
+            "distributed_count": len(students),
+            "distribution": distribution,
+            "schools": body.school_names,
+        }
+    )
 
 
 @router.get("/operation-logs")

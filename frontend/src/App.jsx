@@ -5,9 +5,12 @@ import useIsMobile from './hooks/useIsMobile';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const Login = lazy(() => import('./pages/Login'));
+const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 const AdminDash = lazy(() => import('./pages/admin/AdminDash'));
+const AdminWorkCenter = lazy(() => import('./pages/admin/AdminWorkCenter'));
 const LeadsManage = lazy(() => import('./pages/admin/LeadsManage'));
 const StudentDetail = lazy(() => import('./pages/admin/StudentDetail'));
+const LeadGovernance = lazy(() => import('./pages/admin/LeadGovernance'));
 const LeadRecycle = lazy(() => import('./pages/admin/LeadRecycle'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
@@ -36,6 +39,8 @@ function Protected({ children, role }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   if (!user) return <Navigate to="/login" replace />;
+  // 首次登录 / 被重置密码：强制先改密，任何受保护页都先拦到改密页
+  if (user.must_change_password) return <Navigate to="/change-password" replace />;
   if (role && user.role !== role) {
     return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
   }
@@ -46,6 +51,13 @@ function Guest({ children }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   if (user) return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
+  return children;
+}
+
+// 已登录即可访问（改密页本身不能用 Protected，否则强制改密会自我重定向死循环）
+function LoggedIn({ children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
@@ -66,10 +78,26 @@ export default function App() {
           }
         />
         <Route
+          path="/change-password"
+          element={
+            <LoggedIn>
+              <ChangePassword />
+            </LoggedIn>
+          }
+        />
+        <Route
           path="/admin"
           element={
             <Protected role="admin">
               <AdminDash />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/work-center"
+          element={
+            <Protected role="admin">
+              <AdminWorkCenter />
             </Protected>
           }
         />
@@ -86,6 +114,14 @@ export default function App() {
           element={
             <Protected role="admin">
               <StudentDetail />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/governance"
+          element={
+            <Protected role="admin">
+              <LeadGovernance />
             </Protected>
           }
         />
