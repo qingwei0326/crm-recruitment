@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
 import {
   LayoutDashboard,
@@ -192,15 +193,7 @@ export default function AdminDash() {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSidebar} />
-      )}
-      <aside
-        className={`${isMobile ? 'fixed inset-y-0 left-0 z-50 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
-      >
-        <SidebarNav user={user} dark={dark} toggle={toggle} logout={logout} isMobile={isMobile} onClose={closeSidebar} />
-      </aside>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -509,6 +502,6 @@ export default function AdminDash() {
         </div>
       </main>
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="admin" />
-    </div>
+    </AdminLayout>
   );
 }

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
 import {
   ArrowLeft,
@@ -90,13 +91,18 @@ export default function Report() {
 
   const exportRanking = () => {
     if (!ranking.length) return;
+    // CSV 字段转义：话务员姓名等自由文本可能含逗号，不转义会列错位
+    const esc = (v) => {
+      const s = String(v ?? '');
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
     const header = ['排名', '话务员', '总线索', '已联系', 'A级', '已报名', '转化率', '报名率', 'A→报名', '到访', '参观', '家访', '本月呼出'];
     const rows = ranking.map((a, i) => [
       i + 1, a.name, a.total_leads, a.contacted, a.a_count, a.enrolled,
       a.conversion_rate + '%', a.enroll_rate + '%', a.a_to_enroll + '%',
       a.total_visits, a.campus_visits, a.home_visits, a.month_calls,
     ]);
-    const csv = [header, ...rows].map(r => r.join(',')).join('\n');
+    const csv = [header, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -187,15 +193,7 @@ export default function Report() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-20" onClick={closeSidebar} />
-      )}
-      <aside
-        className={`${isMobile ? 'fixed inset-y-0 left-0 z-30 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
-      >
-        <SidebarNav />
-      </aside>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
 
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
@@ -583,6 +581,6 @@ export default function Report() {
           )}
         </div>
       </main>
-    </div>
+    </AdminLayout>
   );
 }

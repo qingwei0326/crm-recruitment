@@ -195,8 +195,10 @@ class VisitUpdate(BaseModel):
 
 # ── Student Response (API payload) ─────────────────────────
 
+
 class StudentResponse(BaseModel):
     """学生信息 API 响应体，替代 _student_payload 的 dict。"""
+
     id: int
     name: str
     region: str = ""
@@ -224,4 +226,4 @@ class StudentResponse(BaseModel):
     guardian_phone_raw: str | None = None
     guardian2_phone_raw: str | None = None
 
-    model_config = {'from_attributes': True}
+    model_config = {"from_attributes": True}

@@ -3,18 +3,18 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from app.limiter import limiter
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from app.backup import backup_scheduler, do_backup_async
 from app.config import CORS_ORIGINS
 from app.database import async_session, init_db
+from app.limiter import limiter
 from app.routers import (
     admin,
     auth,
@@ -27,7 +27,11 @@ from app.routers import (
     tasks,
     visits,
 )
-from app.scheduler import expired_student_scheduler, follow_up_reminder_scheduler, notification_retry_scheduler
+from app.scheduler import (
+    expired_student_scheduler,
+    follow_up_reminder_scheduler,
+    notification_retry_scheduler,
+)
 
 FRONTEND_DIR = os.getenv(
     "FRONTEND_DIR",
@@ -104,6 +108,7 @@ if os.path.isdir(FRONTEND_DIR):
     async def spa_fallback(path: str):
         if path.startswith("api/"):
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404)
         file_path = os.path.join(FRONTEND_DIR, path)
         if os.path.isfile(file_path):

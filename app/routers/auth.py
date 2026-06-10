@@ -2,22 +2,23 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from pydantic import BaseModel, Field
 
 from app.auth import (
     create_access_token,
     get_current_user,
+    hash_password,
+    invalidate_user_tokens,
     verify_password,
 )
-from app.utils import utcnow
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
 from app.database import get_db
 from app.models import LoginAttempt, OperationLog, User
 from app.pushplus import send_pushplus_to_user
 from app.schemas import LoginReq, Response
+from app.utils import utcnow
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 api_router = APIRouter(tags=["通用"])
@@ -136,21 +137,22 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
 - **新IP**: {client_ip}
 - **旧设备**: {old_device[:100] if old_device != "首次登录" else old_device}
 - **旧IP**: {old_ip}
-- **时间**: {utcnow().strftime('%Y-%m-%d %H:%M:%S')}
+- **时间**: {utcnow().strftime("%Y-%m-%d %H:%M:%S")}
 
 如非本人操作，请立即联系管理员修改密码。"""
 
         # 异步发送推送，不阻塞登录流程
         import asyncio
-        asyncio.create_task(
-            send_pushplus_to_user(db, user.id, "新设备登录提醒", content)
-        )
 
-    token = create_access_token({
-        "sub": str(user.id),
-        "role": user.role,
-        "tv": user.token_version,
-    })
+        asyncio.create_task(send_pushplus_to_user(db, user.id, "新设备登录提醒", content))
+
+    token = create_access_token(
+        {
+            "sub": str(user.id),
+            "role": user.role,
+            "tv": user.token_version,
+        }
+    )
     response = Response.ok(
         {
             "access_token": token,
@@ -159,6 +161,7 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
                 "id": user.id,
                 "name": user.name,
                 "role": user.role,
+                "must_change_password": user.must_change_password,
             },
         }
     )
@@ -192,6 +195,7 @@ async def me(current_user: User = Depends(get_current_user)):
             "role": current_user.role,
             "is_active": current_user.is_active,
             "pushplus_token": current_user.pushplus_token,
+            "must_change_password": current_user.must_change_password,
             "created_at": str(current_user.created_at),
         }
     )
@@ -211,3 +215,60 @@ async def update_my_pushplus_token(
     db.add(current_user)
     await db.commit()
     return Response.ok({"pushplus_token": current_user.pushplus_token})
+
+
+class ChangePasswordReq(BaseModel):
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """用户自助修改密码：校验旧密码 → 设新密码 → 清除「需改密」标记。
+
+    主要用于话务员首次登录 / 管理员重置密码后强制本人设置新密码。
+    """
+    if not verify_password(body.old_password, current_user.hashed_password):
+        return Response.error(code=1, msg="当前密码不正确")
+    if verify_password(body.new_password, current_user.hashed_password):
+        return Response.error(code=1, msg="新密码不能与当前密码相同")
+
+    current_user.hashed_password = hash_password(body.new_password)
+    current_user.must_change_password = False
+    current_user.failed_login_attempts = 0
+    current_user.locked_until = None
+    # 改密后让其它会话失效，并为当前会话签发新 token（避免本次请求后被登出）
+    invalidate_user_tokens(current_user)
+    db.add(
+        OperationLog(
+            operator_id=current_user.id,
+            operator_name=current_user.name,
+            action="修改密码",
+            content="用户自助修改密码",
+        )
+    )
+    await db.commit()
+    await db.refresh(current_user)
+
+    token = create_access_token(
+        {
+            "sub": str(current_user.id),
+            "role": current_user.role,
+            "tv": current_user.token_version,
+        }
+    )
+    response = Response.ok({"msg": "密码已修改"})
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        path="/",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="strict",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    return response

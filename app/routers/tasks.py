@@ -38,23 +38,23 @@ async def today_tasks(
     )
 
     filters = list(base_where)
+    # search 条件单独留存，便于学校分组聚合复用（学校分组必须排除 school_name 过滤，
+    # 否则一旦选中某学校，分组结果只剩该校，前端学校切换条就塌缩成单个，无法切换）。
+    search_pred = None
     if search and search.strip():
         q = search.strip()
-        filters.append(
-            or_(
-                Student.name.ilike(f"%{q}%"),
-                Student.guardian_phone.ilike(f"%{q}%"),
-                Student.guardian2_phone.ilike(f"%{q}%"),
-            )
+        search_pred = or_(
+            Student.name.ilike(f"%{q}%"),
+            Student.guardian_phone.ilike(f"%{q}%"),
+            Student.guardian2_phone.ilike(f"%{q}%"),
         )
+        filters.append(search_pred)
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
 
     # 统计走 SQL 聚合：与列表是否截断无关，始终全量准确
     counts_r = await db.execute(
-        select(Student.status, func.count())
-        .where(*filters)
-        .group_by(Student.status)
+        select(Student.status, func.count()).where(*filters).group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
     done = counts.get(StudentStatus.contacted, 0)
@@ -65,10 +65,14 @@ async def today_tasks(
     handled = done + follow_up
     progress_pct = round(handled / total * 100, 1) if total > 0 else 0
 
-    # 学校分组走 SQL 聚合：与列表是否截断无关，前端筛选标签始终准确
+    # 学校分组走 SQL 聚合：只用 base_where(+search)，刻意排除 school_name 过滤，
+    # 保证前端学校切换标签始终是全部学校（不受当前选中学校影响）。
+    school_group_filters = list(base_where)
+    if search_pred is not None:
+        school_group_filters.append(search_pred)
     schools_r = await db.execute(
         select(Student.school_name, func.count())
-        .where(*filters)
+        .where(*school_group_filters)
         .group_by(Student.school_name)
     )
     schools = sorted(
@@ -175,9 +179,7 @@ async def yesterday_review(
         )
     )
     yesterday_contacted = contacted_yday_r.scalar() or 0
-    conversion = (
-        round(yesterday_a / yesterday_contacted * 100, 1) if yesterday_contacted > 0 else 0
-    )
+    conversion = round(yesterday_a / yesterday_contacted * 100, 1) if yesterday_contacted > 0 else 0
 
     assigned_result = await db.execute(
         select(Student)
@@ -269,12 +271,14 @@ async def following_students(
         .where(
             Student.assigned_to == current_user.id,
             Student.intent_level != IntentLevel.none,
-            Student.status.not_in([
-                StudentStatus.enrolled,
-                StudentStatus.expired,
-                StudentStatus.rejected,
-                StudentStatus.invalid,
-            ]),
+            Student.status.not_in(
+                [
+                    StudentStatus.enrolled,
+                    StudentStatus.expired,
+                    StudentStatus.rejected,
+                    StudentStatus.invalid,
+                ]
+            ),
         )
         .order_by(Student.updated_at.desc())
     )
@@ -284,30 +288,34 @@ async def following_students(
     items = []
     for s in students:
         days = (now - s.assigned_at).days if s.assigned_at else None
-        items.append({
-            "id": s.id,
-            "name": s.name,
-            "region": s.region,
-            "school_name": s.school_name,
-            "stage": s.stage,
-            "intent_level": s.intent_level,
-            "status": s.status,
-            "guardian_name": s.guardian_name,
-            "guardian_phone": s.guardian_phone,
-            "days_since_assigned": days,
-        })
+        items.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "region": s.region,
+                "school_name": s.school_name,
+                "stage": s.stage,
+                "intent_level": s.intent_level,
+                "status": s.status,
+                "guardian_name": s.guardian_name,
+                "guardian_phone": s.guardian_phone,
+                "days_since_assigned": days,
+            }
+        )
 
     # 按意向等级统计
     intent_counts = {}
     for s in students:
-        level = s.intent_level.value if hasattr(s.intent_level, 'value') else str(s.intent_level)
+        level = s.intent_level.value if hasattr(s.intent_level, "value") else str(s.intent_level)
         intent_counts[level] = intent_counts.get(level, 0) + 1
 
-    return Response.ok({
-        "total": len(items),
-        "intent_counts": intent_counts,
-        "list": items,
-    })
+    return Response.ok(
+        {
+            "total": len(items),
+            "intent_counts": intent_counts,
+            "list": items,
+        }
+    )
 
 
 @router.get("/backlog")

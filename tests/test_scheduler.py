@@ -1,6 +1,7 @@
 """Tests for scheduler helpers."""
 
 import pytest
+
 from app.scheduler import scan_expired_students, scan_follow_up_reminders
 
 

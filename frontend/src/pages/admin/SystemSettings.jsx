@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Download, Eye, EyeOff, Phone, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
+import { Download, Eye, EyeOff, Menu, Phone, RefreshCw, Save, Sparkles } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import AdminLayout from '../../components/AdminLayout';
 
 function SettingRow({ label, children }) {
   return (
@@ -28,7 +27,6 @@ const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100';
 
 export default function SystemSettings() {
-  const { user } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -216,53 +214,21 @@ export default function SystemSettings() {
     }
   };
 
-  const SidebarNav = () => (
-    <>
-      <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-            <Settings2 className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">系统设置</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
-          </div>
-        </div>
-      </div>
-      <nav className="p-3 space-y-1">
-        <Link
-          to="/admin"
-          onClick={closeSidebar}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <Settings2 className="w-4 h-4" /> 返回仪表盘
-        </Link>
-      </nav>
-      <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
-        <button
-          onClick={toggle}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-        >
-          {dark ? <span className="w-4 h-4">☀</span> : <span className="w-4 h-4">☾</span>}
-          {dark ? '浅色模式' : '深色模式'}
-        </button>
-      </div>
-    </>
-  );
-
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSidebar} />
-      )}
-      <aside
-        className={`${isMobile ? 'fixed inset-y-0 left-0 z-50 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
-      >
-        <SidebarNav />
-      </aside>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">系统设置</div>
+          <div className="flex items-center gap-3">
+            {isMobile && (
+              <button
+                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            )}
+            <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">系统设置</div>
+          </div>
           <button
             onClick={toggle}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -595,6 +561,6 @@ export default function SystemSettings() {
           </div>
         </div>
       </main>
-    </div>
+    </AdminLayout>
   );
 }

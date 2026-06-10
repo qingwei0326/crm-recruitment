@@ -52,10 +52,12 @@ export function buildStudentPayload(form) {
     'region', 'guardian_name', 'guardian_phone',
     'guardian2_name', 'guardian2_phone',
     'school_name', 'school_address', 'join_reasons',
+    'program', 'enrolled_at',
   ].forEach((key) => {
     const value = form[key]?.trim();
     if (value) payload[key] = value;
   });
   if (form.score !== '' && form.score != null) payload.score = Number(form.score);
+  if (form.deposit !== '' && form.deposit != null) payload.deposit = Number(form.deposit);
   return payload;
 }

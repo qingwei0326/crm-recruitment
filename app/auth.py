@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Cookie, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -26,13 +26,15 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({
-        "exp": expire,
-        "iat": now,
-        "jti": secrets.token_hex(16),
-    })
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": now,
+            "jti": secrets.token_hex(16),
+        }
+    )
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 

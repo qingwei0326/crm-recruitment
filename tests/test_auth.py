@@ -50,10 +50,13 @@ class TestJWTToken:
 @pytest.mark.asyncio
 class TestLoginEndpoint:
     async def test_login_success(self, client, admin_user):
-        resp = await client.post("/api/auth/login", json={
-            "username": "testadmin",
-            "password": "admin123",
-        })
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "testadmin",
+                "password": "admin123",
+            },
+        )
         body = resp.json()
         assert body["code"] == 0
         assert "access_token" in body["data"]
@@ -61,10 +64,13 @@ class TestLoginEndpoint:
         assert body["data"]["user"]["role"] == "admin"
 
     async def test_login_cookie_authenticates_business_routes(self, client, admin_user):
-        resp = await client.post("/api/auth/login", json={
-            "username": "testadmin",
-            "password": "admin123",
-        })
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "testadmin",
+                "password": "admin123",
+            },
+        )
         assert resp.json()["code"] == 0
         assert resp.cookies.get("access_token")
 
@@ -73,10 +79,13 @@ class TestLoginEndpoint:
         assert students_resp.json()["code"] == 0
 
     async def test_logout_clears_auth_cookie(self, client, admin_user):
-        login_resp = await client.post("/api/auth/login", json={
-            "username": "testadmin",
-            "password": "admin123",
-        })
+        login_resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "testadmin",
+                "password": "admin123",
+            },
+        )
         assert login_resp.cookies.get("access_token")
 
         logout_resp = await client.post("/api/auth/logout")
@@ -87,19 +96,25 @@ class TestLoginEndpoint:
         assert me_resp.status_code == 401
 
     async def test_login_wrong_password(self, client, admin_user):
-        resp = await client.post("/api/auth/login", json={
-            "username": "testadmin",
-            "password": "wrongpass",
-        })
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "testadmin",
+                "password": "wrongpass",
+            },
+        )
         body = resp.json()
         assert body["code"] == 1
         assert "错误" in body["msg"]
 
     async def test_login_nonexistent_user(self, client):
-        resp = await client.post("/api/auth/login", json={
-            "username": "nobody",
-            "password": "x",
-        })
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "nobody",
+                "password": "x",
+            },
+        )
         body = resp.json()
         assert body["code"] == 1
 
@@ -122,23 +137,35 @@ class TestLoginEndpoint:
     async def test_login_rate_limiting(self, client, admin_user):
         """3 failed attempts lock the account."""
         for _ in range(3):
-            resp = await client.post("/api/auth/login", json={
-                "username": "testadmin", "password": "wrong",
-            })
+            resp = await client.post(
+                "/api/auth/login",
+                json={
+                    "username": "testadmin",
+                    "password": "wrong",
+                },
+            )
             assert resp.json()["code"] == 1
 
         # 4th attempt - account should be locked
-        resp = await client.post("/api/auth/login", json={
-            "username": "testadmin", "password": "admin123",
-        })
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "testadmin",
+                "password": "admin123",
+            },
+        )
         body = resp.json()
         assert body["code"] == 1
         assert "锁定" in body["msg"]
 
     async def test_login_case_sensitive_username(self, client, admin_user):
-        resp = await client.post("/api/auth/login", json={
-            "username": "TESTADMIN", "password": "admin123",
-        })
+        resp = await client.post(
+            "/api/auth/login",
+            json={
+                "username": "TESTADMIN",
+                "password": "admin123",
+            },
+        )
         assert resp.json()["code"] == 1  # case-sensitive
 
 
@@ -156,16 +183,12 @@ class TestCurrentUserEndpoint:
         assert resp.status_code == 401
 
     async def test_me_invalid_token(self, client):
-        resp = await client.get("/api/auth/me", headers={
-            "Authorization": "Bearer invalidtoken"
-        })
+        resp = await client.get("/api/auth/me", headers={"Authorization": "Bearer invalidtoken"})
         assert resp.status_code == 401
 
     async def test_me_expired_token(self, client):
         token = create_access_token({"sub": "1", "role": "admin", "exp": 0})
-        resp = await client.get("/api/auth/me", headers={
-            "Authorization": f"Bearer {token}"
-        })
+        resp = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 401
 
     async def test_me_disabled_user(self, client, db, admin_headers, admin_user):
@@ -177,7 +200,5 @@ class TestCurrentUserEndpoint:
     async def test_me_wrong_token_sub(self, client):
         """Historical bug: non-integer sub now returns 401."""
         token = create_access_token({"sub": "not-a-number", "role": "admin"})
-        resp = await client.get("/api/auth/me", headers={
-            "Authorization": f"Bearer {token}"
-        })
+        resp = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 401

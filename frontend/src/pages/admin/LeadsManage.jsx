@@ -4,7 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
+import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
+import { useConfirm } from '../../components/ConfirmDialog';
 import { stageLabel, statusLabel, STAGES } from '../../labels';
 import { formatDateTime, buildStudentPayload, getApiErrorMessage } from '../../utils';
 import {
@@ -37,6 +39,7 @@ import {
   ChevronDown,
   Edit3,
   ExternalLink,
+  Wand2,
 } from 'lucide-react';
 
 const STATUS_OPTS = ['', '未联系', '已联系', '待回访', '已完成', '无效', '已报名', '拒绝接听', '已过期'];
@@ -92,8 +95,10 @@ export default function LeadsManage() {
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const toast = useToast();
+  const confirm = useConfirm();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const [autoAssigning, setAutoAssigning] = useState(false);
 
   const [students, setStudents] = useState([]);
   const [total, setTotal] = useState(0);
@@ -324,6 +329,40 @@ export default function LeadsManage() {
     setShowAssign(false);
     fetchStudents(page);
     refreshExpand();
+  };
+
+  const handleAutoAssign = async () => {
+    const ok = await confirm({
+      title: '自动均摊未分配线索',
+      message:
+        '把当前所有「未分配」的学生，按各话务员现有在跟数量从少到多自动均摊。\n' +
+        '只影响未分配的线索，不会动已分配的。',
+      confirmText: '开始均摊',
+    });
+    if (!ok) return;
+    setAutoAssigning(true);
+    try {
+      const res = await api.post('/students/auto-assign');
+      if (res.data.code === 0) {
+        const d = res.data.data;
+        if (!d.total_assigned) {
+          toast?.info(d.message || '没有未分配的学生');
+        } else {
+          const detail = (d.distribution || [])
+            .map((x) => `${x.name} +${x.count}`)
+            .join('、');
+          toast?.success(`已自动分配 ${d.total_assigned} 名：${detail}`);
+          fetchStudents(page);
+          refreshExpand();
+        }
+      } else {
+        toast?.error(res.data.msg || '自动分配失败');
+      }
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
+    } finally {
+      setAutoAssigning(false);
+    }
   };
 
   const handleRegionAssign = async () => {
@@ -926,7 +965,7 @@ export default function LeadsManage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(-4px); }
@@ -936,85 +975,7 @@ export default function LeadsManage() {
       `}</style>
 
       {/* ── Mobile sidebar overlay ── */}
-      {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40" onClick={closeSidebar} />
-      )}
-
       {/* ── Sidebar ── */}
-      <aside
-        className={`${
-          isMobile
-            ? 'fixed inset-y-0 left-0 z-50 shadow-2xl transform transition-transform ' +
-              (sidebarOpen ? 'translate-x-0' : '-translate-x-full')
-            : ''
-        } w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
-      >
-        <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Phone className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <div className="text-sm font-bold text-gray-900 dark:text-gray-100">CRM 管理后台</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
-            </div>
-          </div>
-          {isMobile && (
-            <button onClick={closeSidebar}>
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-        <nav className="p-3 space-y-1">
-          <Link
-            to="/admin"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <ArrowLeft className="w-4 h-4" /> 仪表盘
-          </Link>
-          <Link
-            to="/admin/agents"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <Users className="w-4 h-4" /> 话务员管理
-          </Link>
-          <Link
-            to="/admin/report"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <BarChart3 className="w-4 h-4" /> 汇总报表
-          </Link>
-          <Link
-            to="/admin/trend"
-            onClick={closeSidebar}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm"
-          >
-            <TrendingUp className="w-4 h-4" /> 趋势报表
-          </Link>
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
-            <Search className="w-4 h-4" /> 学生管理
-          </div>
-        </nav>
-        <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
-          <button
-            onClick={toggle}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-          >
-            {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}{' '}
-            {dark ? '亮色模式' : '暗色模式'}
-          </button>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-          >
-            <LogOut className="w-4 h-4" /> 退出登录
-          </button>
-        </div>
-      </aside>
-
       {/* ── Main ── */}
       <main className="flex-1 min-w-0">
         <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
@@ -1070,6 +1031,14 @@ export default function LeadsManage() {
             >
               <MapPin className="w-4 h-4" />
               {!isMobile && '学校分发'}
+            </button>
+            <button
+              onClick={handleAutoAssign}
+              disabled={autoAssigning}
+              className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50"
+            >
+              {autoAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              {!isMobile && '自动均摊'}
             </button>
             <button
               onClick={() => navigate('/admin/leads?assignment=unassigned')}
@@ -1557,6 +1526,6 @@ export default function LeadsManage() {
         </div>
       )}
 
-    </div>
+    </AdminLayout>
   );
 }

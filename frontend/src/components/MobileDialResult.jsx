@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { PhoneCall, X, Loader2 } from 'lucide-react';
+import { PhoneCall, X, Loader2, CalendarClock } from 'lucide-react';
 import api from '../api';
+
+// 默认回访时间：明天上午 9 点，<input type="datetime-local"> 格式
+function defaultFollowUp() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 // 与桌面 AgentWork.renderDialModal 一致的处理结果
 const STATUS_BUTTONS = [
@@ -42,6 +51,9 @@ function getMsg(e) {
 export default function MobileDialResult({ onUpdated }) {
   const [pending, setPending] = useState(null); // { studentId, studentName }
   const [showIntent, setShowIntent] = useState(false);
+  const [flowStatus, setFlowStatus] = useState(null); // 记住本次选的联系状况
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
   const [invalidMode, setInvalidMode] = useState(false);
   const [invalidReason, setInvalidReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -62,6 +74,9 @@ export default function MobileDialResult({ onUpdated }) {
       sessionStorage.removeItem('pendingDial');
       if (data && data.studentId) {
         setShowIntent(false);
+        setFlowStatus(null);
+        setShowFollowUp(false);
+        setFollowUpDate(defaultFollowUp());
         setInvalidMode(false);
         setInvalidReason('');
         setErr('');
@@ -94,6 +109,8 @@ export default function MobileDialResult({ onUpdated }) {
   const close = () => {
     setPending(null);
     setShowIntent(false);
+    setFlowStatus(null);
+    setShowFollowUp(false);
     setInvalidMode(false);
     setInvalidReason('');
     setErr('');
@@ -116,6 +133,7 @@ export default function MobileDialResult({ onUpdated }) {
       onUpdated && onUpdated(pending.studentId, status);
       if (status === '已联系' || status === '待回访') {
         // 状态已落库，但不关弹窗——继续让选意向等级（可跳过）
+        setFlowStatus(status);
         setShowIntent(true);
       } else {
         close();
@@ -133,6 +151,34 @@ export default function MobileDialResult({ onUpdated }) {
     setErr('');
     try {
       await putField({ intent_level: level });
+      onUpdated && onUpdated(pending.studentId, null);
+      // 待回访：接着收集回访时间落 /follow-ups；其他：完成
+      if (flowStatus === '待回访') {
+        setShowIntent(false);
+        setShowFollowUp(true);
+      } else {
+        close();
+      }
+    } catch (e) {
+      setErr(getMsg(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const saveFollowUp = async () => {
+    if (submitting) return;
+    if (!followUpDate) {
+      close();
+      return;
+    }
+    setSubmitting(true);
+    setErr('');
+    try {
+      await api.post('/follow-ups', {
+        student_id: pending.studentId,
+        follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
+      });
       onUpdated && onUpdated(pending.studentId, null);
       close();
     } catch (e) {
@@ -190,7 +236,39 @@ export default function MobileDialResult({ onUpdated }) {
           </div>
         )}
 
-        {invalidMode ? (
+        {showFollowUp ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+              <CalendarClock className="w-4 h-4" />
+              设置回访时间，到点会提醒你
+            </div>
+            <input
+              type="datetime-local"
+              value={followUpDate}
+              onChange={(e) => setFollowUpDate(e.target.value)}
+              className="w-full border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={close}
+                disabled={submitting}
+                className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
+              >
+                跳过
+              </button>
+              <button
+                type="button"
+                onClick={saveFollowUp}
+                disabled={submitting || !followUpDate}
+                className="flex-1 min-h-[48px] rounded-xl bg-amber-600 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
+              >
+                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                保存回访提醒
+              </button>
+            </div>
+          </div>
+        ) : invalidMode ? (
           <div className="space-y-3">
             <textarea
               value={invalidReason}

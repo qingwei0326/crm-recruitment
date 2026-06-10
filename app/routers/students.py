@@ -126,7 +126,14 @@ ADMIN_STUDENT_UPDATE_FIELDS = {
     "school_address",
     "need_help",
 }
-AGENT_STUDENT_UPDATE_FIELDS = {"status", "intent_level", "join_reasons", "stage", "need_help", "score"}
+AGENT_STUDENT_UPDATE_FIELDS = {
+    "status",
+    "intent_level",
+    "join_reasons",
+    "stage",
+    "need_help",
+    "score",
+}
 
 
 def next_stage(current: str) -> str | None:
@@ -172,7 +179,9 @@ def _student_payload(student: Student) -> dict:
         "program": student.program,
         "deposit": student.deposit,
         "expired_at": str(student.expired_at) if student.expired_at else None,
-        "enrollment_substage": student.enrollment_substage.value if student.enrollment_substage else None,
+        "enrollment_substage": student.enrollment_substage.value
+        if student.enrollment_substage
+        else None,
         "created_at": str(student.created_at),
         "updated_at": str(student.updated_at),
     }
@@ -325,9 +334,7 @@ def _infer_import_row(row) -> dict:
             inferred["school_address"] = value
         else:
             inferred["join_reasons"] = (
-                f"{inferred['join_reasons']} {value}".strip()
-                if inferred["join_reasons"]
-                else value
+                f"{inferred['join_reasons']} {value}".strip() if inferred["join_reasons"] else value
             )
 
     return inferred
@@ -456,11 +463,15 @@ async def import_students_excel(
 
             dup_db = next((p for p in row_phones if p in existing_phones), None)
             if dup_db:
-                skipped_rows.append({"row": row_idx, "reason": f"手机号已存在（库中已有该学员）: {dup_db}"})
+                skipped_rows.append(
+                    {"row": row_idx, "reason": f"手机号已存在（库中已有该学员）: {dup_db}"}
+                )
                 continue
             dup_file = next((p for p in row_phones if p in seen_in_file), None)
             if dup_file:
-                skipped_rows.append({"row": row_idx, "reason": f"手机号在本次导入中重复: {dup_file}"})
+                skipped_rows.append(
+                    {"row": row_idx, "reason": f"手机号在本次导入中重复: {dup_file}"}
+                )
                 continue
             seen_in_file.update(row_phones)
 
@@ -534,7 +545,17 @@ async def download_import_template():
     ws = wb.active
     ws.title = "导入模板"
 
-    headers = ["姓名", "成绩", "监护人姓名", "监护人电话", "监护人2姓名", "监护人2电话", "学校名称", "学校地址", "地域"]
+    headers = [
+        "姓名",
+        "成绩",
+        "监护人姓名",
+        "监护人电话",
+        "监护人2姓名",
+        "监护人2电话",
+        "学校名称",
+        "学校地址",
+        "地域",
+    ]
     ws.append(headers)
 
     # Example data
@@ -611,7 +632,9 @@ async def create_student(
 
     assigned_to = body.assigned_to if is_admin(current_user) else current_user.id
     if assigned_to:
-        agent_result = await db.execute(select(User.id).where(User.id == assigned_to, User.is_active))
+        agent_result = await db.execute(
+            select(User.id).where(User.id == assigned_to, User.is_active)
+        )
         if not agent_result.scalar_one_or_none():
             return Response.error(code=1, msg="话务员不存在或已禁用")
 
@@ -771,9 +794,7 @@ async def enrolled_students(
     agent_ids = list({s.assigned_to for s in students if s.assigned_to})
     agent_map = {}
     if agent_ids:
-        agent_r = await db.execute(
-            select(User.id, User.name).where(User.id.in_(agent_ids))
-        )
+        agent_r = await db.execute(select(User.id, User.name).where(User.id.in_(agent_ids)))
         agent_map = dict(agent_r.all())
 
     data = [
@@ -924,10 +945,12 @@ async def get_student_phone(
         )
     )
     await db.commit()
-    return Response.ok({
-        "guardian_phone": student.guardian_phone,
-        "guardian2_phone": student.guardian2_phone,
-    })
+    return Response.ok(
+        {
+            "guardian_phone": student.guardian_phone,
+            "guardian2_phone": student.guardian2_phone,
+        }
+    )
 
 
 @router.get("/{student_id}/intent-timeline")
@@ -1281,7 +1304,9 @@ async def update_student(
                 content="; ".join(parts),
                 old_status=str(old_status) if status_changed else "",
                 new_status=str(student.status) if status_changed else "",
-                note_content=invalid_reason if (status_changed and student.status == StudentStatus.invalid) else "",
+                note_content=invalid_reason
+                if (status_changed and student.status == StudentStatus.invalid)
+                else "",
             )
         )
 
@@ -1343,7 +1368,9 @@ async def set_enroll_info(
             "enrolled_at": str(student.enrolled_at),
             "program": student.program,
             "deposit": student.deposit,
-            "enrollment_substage": str(student.enrollment_substage) if student.enrollment_substage else None,
+            "enrollment_substage": str(student.enrollment_substage)
+            if student.enrollment_substage
+            else None,
         }
     )
 
@@ -1446,15 +1473,16 @@ async def auto_assign(
         if not ids:
             continue
         await db.execute(
-            update(Student)
-            .where(Student.id.in_(ids))
-            .values(assigned_to=agent_id, assigned_at=now)
+            update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
         )
 
     await db.commit()
-    result = {}
-    for a in agents:
-        result[a.name] = distribution.get(a.id, 0)
+    # 按 agent_id 聚合返回，避免重名话务员被合并（name 非唯一）
+    result = [
+        {"agent_id": a.id, "name": a.name, "count": distribution.get(a.id, 0)}
+        for a in agents
+        if distribution.get(a.id, 0) > 0
+    ]
 
     return Response.ok({"total_assigned": len(unassigned_ids), "distribution": result})
 
@@ -1528,9 +1556,7 @@ async def region_assign(
         if not ids:
             continue
         await db.execute(
-            update(Student)
-            .where(Student.id.in_(ids))
-            .values(assigned_to=agent_id, assigned_at=now)
+            update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
         )
 
     await db.commit()
@@ -1580,7 +1606,10 @@ async def school_assign(
     )
     students = students_result.scalars().all()
     if not students:
-        return Response.error(code=1, msg="该学校在所选区县下没有未分配的学生" if regions else "该学校没有未分配的学生")
+        return Response.error(
+            code=1,
+            msg="该学校在所选区县下没有未分配的学生" if regions else "该学校没有未分配的学生",
+        )
 
     now = utcnow()
     by_agent: dict[int, list[int]] = {}
@@ -1595,17 +1624,16 @@ async def school_assign(
 
     for agent_id, ids in by_agent.items():
         await db.execute(
-            update(Student)
-            .where(Student.id.in_(ids))
-            .values(assigned_to=agent_id, assigned_at=now)
+            update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
         )
 
     await db.commit()
-    return Response.ok({
-        "total_assigned": len(students),
-        "distribution": {f"agent_{a_id}": len(ids) for a_id, ids in by_agent.items()},
-    })
-
+    return Response.ok(
+        {
+            "total_assigned": len(students),
+            "distribution": {f"agent_{a_id}": len(ids) for a_id, ids in by_agent.items()},
+        }
+    )
 
 
 @router.post("/{student_id}/need-help")
@@ -1659,10 +1687,10 @@ async def agent_settings(
 ):
     """返回话务员端需要的非敏感系统配置。"""
     from app.routers.admin import get_config_value
+
     dial_max_str = await get_config_value(db, "dial_max_per_24h", "3")
     try:
         dial_max = max(1, int(dial_max_str))
     except (ValueError, TypeError):
         dial_max = 3
     return Response.ok({"dial_max_per_24h": dial_max})
-

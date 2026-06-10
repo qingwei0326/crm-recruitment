@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Phone,
   ChevronRight,
@@ -379,6 +379,7 @@ function MePanel({ onOpenSettings }) {
 export default function MobileHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { students, stats, schools, loading, error, refetch, search, setSearch, selectedSchool, setSelectedSchool, loadMore, hasMore } = useTodayTasks();
   const { dial, checkDup } = useDialFlow();
   const [dialCountMap, setDialCountMap] = useState({});
@@ -400,12 +401,14 @@ export default function MobileHome() {
   const filteredStudents = students;
   const filteredStats = stats;
 
+  // 从 URL ?tab= 驱动当前标签。依赖 location.search：TabBar 用 <Link> 切换 URL 时
+  // （同路由、不重新挂载）也能重新解析，否则点底部标签视图不会切换。
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     const t = params.get('tab');
     if (t === 'pending' || t === 'me') setTab(t);
     else setTab('tasks');
-  }, []);
+  }, [location.search]);
 
   // 预查每个学生的 24h 拨打次数（拉一次即可，新增量靠拨号后刷新）
   useEffect(() => {
@@ -453,7 +456,7 @@ export default function MobileHome() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={refetch}
+            onClick={() => refetch(search, selectedSchool)}
             className="w-10 h-10 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
             aria-label="刷新"
           >

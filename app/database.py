@@ -46,6 +46,7 @@ async def init_db():
         await conn.run_sync(_ensure_student_indexes)
         await conn.run_sync(_migrate_user_token_version)
         await conn.run_sync(_migrate_user_device_tracking)
+        await conn.run_sync(_migrate_user_must_change_password)
         await conn.run_sync(_migrate_operation_log_nullable)
 
 
@@ -57,7 +58,10 @@ def _migrate_user_token_version(sync_connection):
     if "token_version" not in columns:
         if DB_ENGINE == "postgresql":
             sync_connection.execute(
-                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1")
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version "
+                    "INTEGER NOT NULL DEFAULT 1"
+                )
             )
         else:
             sync_connection.execute(
@@ -73,21 +77,53 @@ def _migrate_user_device_tracking(sync_connection):
     if "last_login_device" not in columns:
         if DB_ENGINE == "postgresql":
             sync_connection.execute(
-                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_device VARCHAR(512) DEFAULT '' NOT NULL")
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_device "
+                    "VARCHAR(512) DEFAULT '' NOT NULL"
+                )
             )
         else:
             sync_connection.execute(
-                text("ALTER TABLE users ADD COLUMN last_login_device VARCHAR(512) DEFAULT '' NOT NULL")
+                text(
+                    "ALTER TABLE users ADD COLUMN last_login_device "
+                    "VARCHAR(512) DEFAULT '' NOT NULL"
+                )
             )
     if "last_login_ip" not in columns:
         if DB_ENGINE == "postgresql":
             sync_connection.execute(
-                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(64) DEFAULT '' NOT NULL")
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_ip "
+                    "VARCHAR(64) DEFAULT '' NOT NULL"
+                )
             )
         else:
             sync_connection.execute(
                 text("ALTER TABLE users ADD COLUMN last_login_ip VARCHAR(64) DEFAULT '' NOT NULL")
             )
+
+
+def _migrate_user_must_change_password(sync_connection):
+    inspector = inspect(sync_connection)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "must_change_password" in columns:
+        return
+    if DB_ENGINE == "postgresql":
+        sync_connection.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+    else:
+        sync_connection.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN must_change_password "
+                "BOOLEAN NOT NULL DEFAULT 0"
+            )
+        )
 
 
 def _migrate_operation_log_nullable(sync_connection):
@@ -104,9 +140,9 @@ def _migrate_operation_log_nullable(sync_connection):
 
     if DB_ENGINE == "postgresql":
         # PostgreSQL 直接 ALTER COLUMN
-        sync_connection.execute(text(
-            "ALTER TABLE operation_logs ALTER COLUMN operator_id DROP NOT NULL"
-        ))
+        sync_connection.execute(
+            text("ALTER TABLE operation_logs ALTER COLUMN operator_id DROP NOT NULL")
+        )
     else:
         # SQLite 不支持 ALTER COLUMN，需要重建表
         # 动态获取当前列，只修改 operator_id 为 nullable
@@ -135,30 +171,38 @@ def _migrate_operation_log_nullable(sync_connection):
         sync_connection.execute(text(create_sql))
 
         cols_str = ", ".join(col_names)
-        sync_connection.execute(text(
-            f"INSERT INTO operation_logs_new ({cols_str}) SELECT {cols_str} FROM operation_logs"
-        ))
+        sync_connection.execute(
+            text(
+                f"INSERT INTO operation_logs_new ({cols_str}) SELECT {cols_str} FROM operation_logs"
+            )
+        )
 
         sync_connection.execute(text("DROP TABLE operation_logs"))
         sync_connection.execute(text("ALTER TABLE operation_logs_new RENAME TO operation_logs"))
 
         # 重建索引
-        sync_connection.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_operation_logs_created_at ON operation_logs(created_at)"
-        ))
-        sync_connection.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_operation_logs_target_student_id ON operation_logs(target_student_id)"
-        ))
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_operation_logs_created_at "
+                "ON operation_logs(created_at)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_operation_logs_target_student_id "
+                "ON operation_logs(target_student_id)"
+            )
+        )
 
 
 def _ensure_student_indexes(sync_connection):
     # CREATE INDEX IF NOT EXISTS 在 SQLite 和 PostgreSQL 中都支持
-    sync_connection.execute(text(
-        "CREATE INDEX IF NOT EXISTS ix_students_region ON students(region)"
-    ))
-    sync_connection.execute(text(
-        "CREATE INDEX IF NOT EXISTS ix_students_school_name ON students(school_name)"
-    ))
+    sync_connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_students_region ON students(region)")
+    )
+    sync_connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_students_school_name ON students(school_name)")
+    )
 
 
 def _migrate_follow_up_columns(sync_connection):
@@ -170,20 +214,25 @@ def _migrate_follow_up_columns(sync_connection):
     if DB_ENGINE == "postgresql":
         # PostgreSQL 支持 IF NOT EXISTS
         if "follow_up_type" not in columns:
-            sync_connection.execute(text(
-                "ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS follow_up_type VARCHAR(16)"
-            ))
+            sync_connection.execute(
+                text("ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS follow_up_type VARCHAR(16)")
+            )
         if "notes" not in columns:
-            sync_connection.execute(text(
-                "ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''"
-            ))
+            sync_connection.execute(
+                text("ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''")
+            )
         if "is_completed" not in columns:
-            sync_connection.execute(text(
-                "ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS is_completed BOOLEAN NOT NULL DEFAULT FALSE"
-            ))
+            sync_connection.execute(
+                text(
+                    "ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS is_completed "
+                    "BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            )
     else:
         if "follow_up_type" not in columns:
-            sync_connection.execute(text("ALTER TABLE follow_ups ADD COLUMN follow_up_type VARCHAR(16)"))
+            sync_connection.execute(
+                text("ALTER TABLE follow_ups ADD COLUMN follow_up_type VARCHAR(16)")
+            )
         if "notes" not in columns:
             sync_connection.execute(text("ALTER TABLE follow_ups ADD COLUMN notes TEXT DEFAULT ''"))
         if "is_completed" not in columns:
@@ -219,4 +268,3 @@ def _drop_message_templates_table(sync_connection):
             sync_connection.execute(text("DROP TABLE IF EXISTS message_templates CASCADE"))
         else:
             sync_connection.execute(text("DROP TABLE message_templates"))
-

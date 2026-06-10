@@ -66,7 +66,7 @@ curl http://localhost:8000
 ```bash
 # 如果数据库已存在，自动执行迁移
 if [ ! -f "crm.db" ]; then
-    .venv/bin/python scripts/init_db.py
+    .venv/bin/python init_db.py
 else
     .venv/bin/python scripts/migrate_db_schema.py  # 自动迁移
 fi

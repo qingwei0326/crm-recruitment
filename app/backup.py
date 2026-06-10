@@ -1,20 +1,20 @@
 import asyncio
-import getpass
 import hashlib
 import logging
 import os
 import random
-import shutil
 import sqlite3
 import subprocess
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from app.config import DB_ENGINE, DATABASE_URL, DB_PATH
+from app.config import DATABASE_URL, DB_ENGINE, DB_PATH
 
 BACKUP_ENCRYPTION_KEY = os.getenv("BACKUP_ENCRYPTION_KEY", "")
-BACKUP_REMOTE_UPLOAD = os.getenv("BACKUP_REMOTE_UPLOAD", "")  # e.g. "s3://bucket/path" or "scp://user@host:/path"
+BACKUP_REMOTE_UPLOAD = os.getenv(
+    "BACKUP_REMOTE_UPLOAD", ""
+)  # e.g. "s3://bucket/path" or "scp://user@host:/path"
 BACKUP_REMOTE_SCRIPT = os.getenv("BACKUP_REMOTE_SCRIPT", "")  # custom script path
 
 
@@ -36,7 +36,9 @@ def _upload_remote(filepath: str) -> None:
         try:
             subprocess.run(
                 [BACKUP_REMOTE_SCRIPT, filepath],
-                capture_output=True, timeout=120, check=True,
+                capture_output=True,
+                timeout=120,
+                check=True,
             )
             logger.info("Remote upload via script: %s", filepath)
         except Exception as e:
@@ -49,7 +51,9 @@ def _upload_remote(filepath: str) -> None:
         try:
             subprocess.run(
                 ["aws", "s3", "cp", filepath, url],
-                capture_output=True, timeout=300, check=True,
+                capture_output=True,
+                timeout=300,
+                check=True,
             )
             logger.info("Uploaded to S3: %s", url)
         except Exception as e:
@@ -60,11 +64,14 @@ def _upload_remote(filepath: str) -> None:
         try:
             subprocess.run(
                 ["scp", filepath, target],
-                capture_output=True, timeout=300, check=True,
+                capture_output=True,
+                timeout=300,
+                check=True,
             )
             logger.info("Uploaded via SCP: %s", target)
         except Exception as e:
             logger.error("SCP upload failed: %s", e)
+
 
 logger = logging.getLogger("backup")
 
@@ -106,12 +113,17 @@ def _backup_postgresql():
     try:
         cmd = [
             "pg_dump",
-            "-h", host,
-            "-p", port,
-            "-U", user,
-            "-d", dbname,
+            "-h",
+            host,
+            "-p",
+            port,
+            "-U",
+            user,
+            "-d",
+            dbname,
             "-Fc",  # custom format，可 pg_restore
-            "-f", dest,
+            "-f",
+            dest,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
         if result.returncode != 0:

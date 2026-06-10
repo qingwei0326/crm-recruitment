@@ -1,5 +1,3 @@
-from app.utils import utcnow
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +8,7 @@ from app.database import get_db
 from app.models import Student, User, Visit, VisitStatus, VisitType
 from app.permissions import get_accessible_student, is_admin
 from app.schemas import Response, VisitCreate, VisitUpdate
-from app.utils import make_operation_log
+from app.utils import make_operation_log, utcnow
 
 router = APIRouter(prefix="/api/visits", tags=["到访"])
 
@@ -22,7 +20,13 @@ def _visit_filters(student_id: int | None, agent_id: int | None, status: str):
     if agent_id is not None:
         parts.append(Visit.agent_id == agent_id)
     if status:
-        parts.append(Visit.status == status)
+        # status 以中文枚举值（如「已确认」）传入，但 SAEnum 列在 DB 存的是枚举名
+        # （如 confirmed）。必须先转成枚举成员再比较，否则恒不匹配 → 永远空结果。
+        try:
+            parts.append(Visit.status == VisitStatus(status))
+        except ValueError:
+            # 非法状态值：保留一个永不命中的条件，返回空结果而非忽略过滤
+            parts.append(Visit.status == status)
     return parts
 
 

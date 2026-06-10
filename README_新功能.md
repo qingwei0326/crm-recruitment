@@ -8,8 +8,8 @@
 | `app/models.py` | 添加设备追踪字段 | ✅ 已完成 |
 | `app/routers/auth.py` | 登录设备检测和推送 | ✅ 已完成 |
 | `app/routers/admin.py` | 无效线索回收接口 | ✅ 已完成 |
-| `scripts/add_device_tracking.py` | 数据库迁移脚本 | ✅ 已完成 |
-| `scripts/deploy_new_features.py` | 一键部署脚本 | ✅ 已完成 |
+| `scripts/migrate_db_schema.py` | 数据库迁移脚本 | ✅ 已完成 |
+| `deploy.sh` / `start.ps1` | 部署 / 启动脚本 | ✅ 已完成 |
 
 ### ✅ 前端代码（3个文件）
 | 文件 | 说明 | 状态 |

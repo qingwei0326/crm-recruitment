@@ -1,7 +1,5 @@
 """AI provider 可切换（DeepSeek / MiMo / 自定义）相关测试。"""
 
-import json
-
 import pytest
 
 from app import ai_analyzer
@@ -24,8 +22,7 @@ class TestChatEndpoint:
 
     def test_trailing_slash_stripped(self):
         assert (
-            ai_analyzer._chat_endpoint("https://x.com/v1/")
-            == "https://x.com/v1/chat/completions"
+            ai_analyzer._chat_endpoint("https://x.com/v1/") == "https://x.com/v1/chat/completions"
         )
 
     def test_empty_base_defaults_to_deepseek(self):
@@ -34,6 +31,7 @@ class TestChatEndpoint:
 
 class _FakeAsyncClient:
     """Mock httpx.AsyncClient — captures the request and returns a canned response."""
+
     def __init__(self, content: str, captured: dict, timeout=None):
         self._content = content
         self._captured = captured
@@ -173,7 +171,9 @@ class TestConfigValidation:
 
     async def test_mimo_base_must_be_http(self, client, admin_headers):
         bad = await client.put(
-            "/api/admin/config", json={"key": "mimo_base", "value": "ftp://x"}, headers=admin_headers
+            "/api/admin/config",
+            json={"key": "mimo_base", "value": "ftp://x"},
+            headers=admin_headers,
         )
         assert bad.json()["code"] == 1
         ok = await client.put(

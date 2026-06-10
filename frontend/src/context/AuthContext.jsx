@@ -55,8 +55,19 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // 改密成功后更新本地 user（清除 must_change_password 标记）
+  const updateUser = (patch) => {
+    setUser((prev) => {
+      const next = { ...(prev || {}), ...patch };
+      localStorage.setItem('crm_user', JSON.stringify(next));
+      return next;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ user, login, logout, loading, updateUser }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

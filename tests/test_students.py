@@ -1,4 +1,4 @@
-﻿"""Tests for student CRUD, stage management, assignment, and import."""
+"""Tests for student CRUD, stage management, assignment, and import."""
 
 from io import BytesIO
 
@@ -9,18 +9,27 @@ from openpyxl import Workbook
 @pytest.mark.asyncio
 class TestCreateStudent:
     async def test_create_success(self, client, admin_headers):
-        resp = await client.post("/api/students", json={
-            "name": "李四", "region": "湖里区",
-        }, headers=admin_headers)
+        resp = await client.post(
+            "/api/students",
+            json={
+                "name": "李四",
+                "region": "湖里区",
+            },
+            headers=admin_headers,
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["code"] == 0
         assert body["data"]["name"] == "李四"
 
     async def test_create_no_region(self, client, admin_headers):
-        resp = await client.post("/api/students", json={
-            "name": "王五",
-        }, headers=admin_headers)
+        resp = await client.post(
+            "/api/students",
+            json={
+                "name": "王五",
+            },
+            headers=admin_headers,
+        )
         assert resp.status_code == 200
 
     async def test_create_missing_name(self, client, admin_headers):
@@ -44,21 +53,34 @@ class TestCreateStudent:
         assert resp.status_code == 401
 
     async def test_create_unicode_name(self, client, admin_headers):
-        resp = await client.post("/api/students", json={
-            "name": "𩷶测试", "region": "𩸽区",
-        }, headers=admin_headers)
+        resp = await client.post(
+            "/api/students",
+            json={
+                "name": "𩷶测试",
+                "region": "𩸽区",
+            },
+            headers=admin_headers,
+        )
         assert resp.status_code == 200
 
     async def test_create_same_name_allowed_without_phone(self, client, admin_headers):
         """Students no longer require phone-based uniqueness."""
-        resp1 = await client.post("/api/students", json={
-            "name": "重复电话",
-        }, headers=admin_headers)
+        resp1 = await client.post(
+            "/api/students",
+            json={
+                "name": "重复电话",
+            },
+            headers=admin_headers,
+        )
         assert resp1.json()["code"] == 0
 
-        resp2 = await client.post("/api/students", json={
-            "name": "重复电话2",
-        }, headers=admin_headers)
+        resp2 = await client.post(
+            "/api/students",
+            json={
+                "name": "重复电话2",
+            },
+            headers=admin_headers,
+        )
         assert resp2.json()["code"] == 0
 
 
@@ -79,6 +101,7 @@ class TestListStudents:
 
     async def test_list_pagination(self, client, admin_headers, db):
         from app.models import Student
+
         for i in range(15):
             db.add(Student(name=f"学生{i}", region="测试"))
         await db.commit()
@@ -93,6 +116,7 @@ class TestListStudents:
 
     async def test_list_filter_by_region(self, client, admin_headers, db):
         from app.models import Student
+
         db.add(Student(name="A", region="思明区"))
         db.add(Student(name="B", region="湖里区"))
         db.add(Student(name="C", region="思明区"))
@@ -214,9 +238,13 @@ class TestGetStudent:
 @pytest.mark.asyncio
 class TestUpdateStudent:
     async def test_update_status(self, client, admin_headers, sample_student):
-        resp = await client.put(f"/api/students/{sample_student.id}", json={
-            "status": "已联系",
-        }, headers=admin_headers)
+        resp = await client.put(
+            f"/api/students/{sample_student.id}",
+            json={
+                "status": "已联系",
+            },
+            headers=admin_headers,
+        )
         assert resp.json()["code"] == 0
 
     async def test_manual_intent_writes_operation_log(
@@ -252,17 +280,25 @@ class TestUpdateStudent:
 
     async def test_update_stage(self, client, admin_headers, sample_student):
         """Historical bug: stage enum serialization."""
-        resp = await client.put(f"/api/students/{sample_student.id}/stage", json={
-            "stage": "有意向",
-        }, headers=admin_headers)
+        resp = await client.put(
+            f"/api/students/{sample_student.id}/stage",
+            json={
+                "stage": "有意向",
+            },
+            headers=admin_headers,
+        )
         assert resp.json()["code"] == 0
         assert resp.json()["data"]["stage"] == "有意向"
 
     async def test_update_invalid_stage(self, client, admin_headers, sample_student):
         """Historical bug: invalid stage crashed with 500. Now returns code=1."""
-        resp = await client.put(f"/api/students/{sample_student.id}/stage", json={
-            "stage": "无效阶段",
-        }, headers=admin_headers)
+        resp = await client.put(
+            f"/api/students/{sample_student.id}/stage",
+            json={
+                "stage": "无效阶段",
+            },
+            headers=admin_headers,
+        )
         assert resp.status_code == 200
         assert resp.json()["code"] == 1
         assert "无效" in resp.json()["msg"]
