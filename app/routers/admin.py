@@ -1526,3 +1526,35 @@ async def count_operation_logs(
         q = q.where(OperationLog.action == action)
     total = (await db.execute(q)).scalar_one()
     return Response.ok({"total": total})
+
+
+class ErrorReport(BaseModel):
+    type: str
+    message: str
+    stack: str = ""
+    url: str = ""
+    user_agent: str = ""
+
+
+@router.post("/error-report")
+async def report_frontend_error(
+    body: ErrorReport,
+    db: AsyncSession = Depends(get_db),
+):
+    """接收前端错误报告，记录到 OperationLog。"""
+    content = f"[{body.type}] {body.message}"
+    if body.stack:
+        content += f"\n{body.stack[:500]}"
+    if body.url:
+        content += f"\nURL: {body.url}"
+
+    db.add(
+        OperationLog(
+            operator_id=None,
+            operator_name="前端",
+            action="前端错误",
+            content=content[:1000],
+        )
+    )
+    await db.commit()
+    return Response.ok({"msg": "已记录"})
