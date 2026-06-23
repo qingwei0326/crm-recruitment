@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Phone, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import AgentSidebar from './desktop/AgentSidebar';
@@ -6,6 +7,7 @@ import StatsBar from './desktop/StatsBar';
 import StudentTable from './desktop/StudentTable';
 import PaginationBar from './desktop/PaginationBar';
 import FollowingView from './desktop/FollowingView';
+import HandledView from './desktop/HandledView';
 import AiPanel from './AiPanel';
 
 export default function AgentWorkDesktop({
@@ -19,6 +21,8 @@ export default function AgentWorkDesktop({
   selectedStage, setSelectedStage,
   selectedIntent, setSelectedIntent,
   scoreRange, setScoreRange,
+  selectedStatus, setSelectedStatus,
+  searchQuery, setSearchQuery,
   backlogAlert, dismissBacklogAlert, backlogBanner,
   fetchFollowing, followingData, followingLoading,
   onHelpOpen, onAddStudent, onShowSettings,
@@ -35,26 +39,28 @@ export default function AgentWorkDesktop({
     }));
   };
 
-  const sortedStudents = [...filteredStudents].sort((a, b) => {
-    const { key, direction } = sortConfig;
-    if (!key) return 0;
-    const getVal = (s) => {
-      switch (key) {
-        case 'name': return s.name || '';
-        case 'school_name': return s.school_name || '';
-        case 'stage': return ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'].indexOf(s.stage);
-        case 'intent_level': return s.intent_level === '无' ? -1 : (s.intent_level === 'A' ? 0 : s.intent_level === 'B' ? 1 : 2);
-        case 'status': return s.status || '';
-        case 'days': return s.days_since_assigned ?? 999;
-        default: return '';
-      }
-    };
-    const aVal = getVal(a);
-    const bVal = getVal(b);
-    if (aVal < bVal) return direction === 'asc' ? -1 : 1;
-    if (aVal > bVal) return direction === 'asc' ? 1 : -1;
-    return 0;
-  });
+  const sortedStudents = useMemo(() => {
+    return [...filteredStudents].sort((a, b) => {
+      const { key, direction } = sortConfig;
+      if (!key) return 0;
+      const getVal = (s) => {
+        switch (key) {
+          case 'name': return s.name || '';
+          case 'school_name': return s.school_name || '';
+          case 'stage': return ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'].indexOf(s.stage);
+          case 'intent_level': return s.intent_level === '无' ? -1 : (s.intent_level === 'A' ? 0 : s.intent_level === 'B' ? 1 : 2);
+          case 'status': return s.status || '';
+          case 'days': return s.days_since_assigned ?? 999;
+          default: return '';
+        }
+      };
+      const aVal = getVal(a);
+      const bVal = getVal(b);
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredStudents, sortConfig]);
 
   const handleGoToStudent = (idx) => {
     setCurrentIdx(idx);
@@ -90,7 +96,7 @@ export default function AgentWorkDesktop({
         {/* Toolbar */}
         <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between shrink-0">
           <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-            {viewTab === 'today' ? '今日任务' : '跟进中'}
+            {viewTab === 'today' ? '今日任务' : viewTab === 'handled' ? '待办' : '跟进中'}
           </h2>
           <div className="flex items-center gap-1">
             <button
@@ -122,6 +128,7 @@ export default function AgentWorkDesktop({
           <>
             {/* Filter panel */}
             <FilterPanel
+              students={students}
               schoolGroups={schoolGroups}
               selectedSchool={selectedSchool}
               onSchoolChange={setSelectedSchool}
@@ -131,6 +138,10 @@ export default function AgentWorkDesktop({
               onIntentChange={setSelectedIntent}
               scoreRange={scoreRange}
               onScoreRangeChange={setScoreRange}
+              selectedStatus={selectedStatus}
+              onStatusChange={setSelectedStatus}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
               totalCount={filteredStudents.length}
             />
 
@@ -145,7 +156,6 @@ export default function AgentWorkDesktop({
               sortConfig={sortConfig}
               onSort={handleSort}
               onDial={handleDial}
-              onQuickStatus={updateStatus}
               onUpdateStage={updateStage}
               onAddNote={addNote}
               onOpenAi={openAiPanel}
@@ -164,6 +174,10 @@ export default function AgentWorkDesktop({
               onNext={() => currentIdx < filteredStudents.length - 1 && setCurrentIdx(currentIdx + 1)}
             />
           </>
+        ) : viewTab === 'handled' ? (
+          <HandledView
+            onOpenDetail={async (id) => { await loadDetail(id); setShowDetail(true); }}
+          />
         ) : (
           <FollowingView
             followingData={followingData}
