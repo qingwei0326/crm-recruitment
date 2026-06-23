@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -246,6 +246,15 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.4.0（2026-06-23）
+
+- **前端性能优化** — 移除未使用的 antd 依赖（减少 ~200KB），Vite 构建添加 manualChunks 分割 vendor
+- **AgentWork 重构** — 39 个 useState 重构为 useReducer + 自定义 hooks，提升可维护性和渲染性能
+- **代码清理** — 移除 FunnelChart/Report 死代码、LeadsManage 内联 style 迁移至 CSS
+- **控制台警告修复** — 修复 meta 标签弃用警告、/auth/me 401 错误静默处理、密码字段 form 包裹
+- **渲染优化** — memoize sortedStudents，避免每次渲染重复排序
+- **构建产物优化** — vendor-react/vendor-recharts/vendor-lucide 独立 chunk，提升缓存命中率
 
 ### v1.3.0（2026-06-10）
 
