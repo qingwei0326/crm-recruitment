@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Download, Eye, EyeOff, Menu, Phone, RefreshCw, Save, Sparkles } from 'lucide-react';
+import { Download, Eye, EyeOff, Phone, RefreshCw, Save, Sparkles } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 
 function SettingRow({ label, children }) {
   return (
@@ -217,26 +218,19 @@ export default function SystemSettings() {
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">系统设置</div>
-          </div>
+        <PageHeader
+          title="系统设置"
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+        >
           <button
             onClick={toggle}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
           >
             {dark ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
-        </header>
-        <div className="p-4 lg:p-6 max-w-4xl mx-auto">
+        </PageHeader>
+        <form onSubmit={(e) => e.preventDefault()} className="p-4 lg:p-6 max-w-4xl mx-auto">
           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm">
             <div className="px-4 py-4 border-b dark:border-gray-700">
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">推送配置</h1>
@@ -559,7 +553,7 @@ export default function SystemSettings() {
               )}
             </div>
           </div>
-        </div>
+        </form>
       </main>
     </AdminLayout>
   );

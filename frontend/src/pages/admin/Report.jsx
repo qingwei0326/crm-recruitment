@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
+import useLazyLoad from '../../hooks/useLazyLoad';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -45,11 +46,36 @@ import {
 import HeatmapChart from './HeatmapChart';
 import PredictionChart from './PredictionChart';
 
+/** Skeleton placeholder shown while a chart section has not scrolled into view. */
+function ChartSkeleton({ height = 260 }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3" style={{ minHeight: height }}>
+      <Loader2 className="w-6 h-6 animate-spin text-gray-300 dark:text-gray-600" />
+      <span className="text-xs text-gray-400 dark:text-gray-500">加载图表中...</span>
+    </div>
+  );
+}
+
+/**
+ * Lazy wrapper that defers rendering its children until the container
+ * scrolls into the viewport (with a 200px margin).
+ * Once visible, the children are kept mounted.
+ */
+function LazyChart({ children, height = 260 }) {
+  const { ref, visible } = useLazyLoad({ rootMargin: '200px' });
+  return (
+    <div ref={ref}>
+      {visible ? children : <ChartSkeleton height={height} />}
+    </div>
+  );
+}
+
 const rankColors = [
   'bg-amber-400 text-amber-900',
   'bg-gray-300 text-gray-700',
   'bg-amber-600 text-amber-100',
 ];
+
 export default function Report() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -112,78 +138,6 @@ export default function Report() {
     URL.revokeObjectURL(url);
   };
 
-  const SidebarNav = () => (
-    <>
-      <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-            <Trophy className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">CRM 管理后台</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
-          </div>
-        </div>
-        {isMobile && (
-          <button
-            onClick={closeSidebar}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        )}
-      </div>
-      <nav className="p-3 space-y-1">
-        <Link
-          to="/admin"
-          onClick={closeSidebar}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <LayoutDashboard className="w-4 h-4" /> 仪表盘
-        </Link>
-        <Link
-          to="/admin/leads"
-          onClick={closeSidebar}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <ListFilter className="w-4 h-4" /> 线索池管理
-        </Link>
-        <Link
-          to="/admin/agents"
-          onClick={closeSidebar}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <Users className="w-4 h-4" /> 话务员管理
-        </Link>
-        <Link
-          to="/admin/trend"
-          onClick={closeSidebar}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <TrendingUp className="w-4 h-4" /> 趋势报表
-        </Link>
-        <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium">
-          <BarChart3 className="w-4 h-4" /> 汇总报表
-        </div>
-      </nav>
-      <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
-        <button
-          onClick={toggle}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-        >
-          {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}{' '}
-          {dark ? '亮色模式' : '暗色模式'}
-        </button>
-        <button
-          onClick={logout}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-        >
-          <LogOut className="w-4 h-4" /> 退出登录
-        </button>
-      </div>
-    </>
-  );
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -196,7 +150,7 @@ export default function Report() {
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
 
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
+        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pt-[env(safe-area-inset-top)] h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {isMobile && (
               <button
@@ -225,86 +179,88 @@ export default function Report() {
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-6">
           {/* ── Section 0: 报名后生命周期分布 + 流失率 ── */}
           {substageData && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
-              <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
-                <TrendingDown className="w-5 h-5 text-red-500" />
-                <h3 className="font-semibold text-gray-800 dark:text-gray-100">报名后生命周期</h3>
-              </div>
-              <div className="p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 border dark:border-gray-700">
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">总报名数</div>
-                    <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-                      {substageData.total_enrolled}
-                    </div>
-                  </div>
-                  <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-700">
-                    <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 mb-1">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      报名后流失率
-                    </div>
-                    <div className="text-4xl font-bold text-red-600 dark:text-red-400">
-                      {substageData.churn_rate}%
-                    </div>
-                    <div className="text-xs text-red-500 dark:text-red-300 mt-1">
-                      已流失 {substageData.churned} 人 / 共 {substageData.total_enrolled} 人
-                    </div>
-                  </div>
+            <LazyChart height={340}>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+                <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                  <TrendingDown className="w-5 h-5 text-red-500" />
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">报名后生命周期</h3>
                 </div>
-                <div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                    报名后各阶段分布
+                <div className="p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-4 border dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">总报名数</div>
+                      <div className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                        {substageData.total_enrolled}
+                      </div>
+                    </div>
+                    <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-700">
+                      <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 mb-1">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        报名后流失率
+                      </div>
+                      <div className="text-4xl font-bold text-red-600 dark:text-red-400">
+                        {substageData.churn_rate}%
+                      </div>
+                      <div className="text-xs text-red-500 dark:text-red-300 mt-1">
+                        已流失 {substageData.churned} 人 / 共 {substageData.total_enrolled} 人
+                      </div>
+                    </div>
                   </div>
-                  {(() => {
-                    const COLORS = {
-                      定金待缴: '#f59e0b',
-                      全款待缴: '#3b82f6',
-                      已缴全款: '#10b981',
-                      入学注册: '#22c55e',
-                      流失: '#ef4444',
-                      未设置: '#9ca3af',
-                    };
-                    const data = Object.entries(substageData.distribution || {})
-                      .filter(([, v]) => v > 0)
-                      .map(([name, value]) => ({ name, value }));
-                    if (data.length === 0) {
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                      报名后各阶段分布
+                    </div>
+                    {(() => {
+                      const COLORS = {
+                        定金待缴: '#f59e0b',
+                        全款待缴: '#3b82f6',
+                        已缴全款: '#10b981',
+                        入学注册: '#22c55e',
+                        流失: '#ef4444',
+                        未设置: '#9ca3af',
+                      };
+                      const data = Object.entries(substageData.distribution || {})
+                        .filter(([, v]) => v > 0)
+                        .map(([name, value]) => ({ name, value }));
+                      if (data.length === 0) {
+                        return (
+                          <div className="text-sm text-gray-400 py-10 text-center">暂无数据</div>
+                        );
+                      }
                       return (
-                        <div className="text-sm text-gray-400 py-10 text-center">暂无数据</div>
+                        <ResponsiveContainer width="100%" height={isMobile ? 220 : 260}>
+                          <PieChart>
+                            <Pie
+                              data={data}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={isMobile ? 45 : 60}
+                              outerRadius={isMobile ? 75 : 95}
+                              label={({ name, value }) => `${name} ${value}`}
+                            >
+                              {data.map((entry) => (
+                                <Cell key={entry.name} fill={COLORS[entry.name] || '#9ca3af'} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: dark ? '#1f2937' : '#fff',
+                                border: `1px solid ${dark ? '#374151' : '#e5e7eb'}`,
+                                borderRadius: 8,
+                                fontSize: 12,
+                              }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 12 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
                       );
-                    }
-                    return (
-                      <ResponsiveContainer width="100%" height={isMobile ? 220 : 260}>
-                        <PieChart>
-                          <Pie
-                            data={data}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={isMobile ? 45 : 60}
-                            outerRadius={isMobile ? 75 : 95}
-                            label={({ name, value }) => `${name} ${value}`}
-                          >
-                            {data.map((entry) => (
-                              <Cell key={entry.name} fill={COLORS[entry.name] || '#9ca3af'} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: dark ? '#1f2937' : '#fff',
-                              border: `1px solid ${dark ? '#374151' : '#e5e7eb'}`,
-                              borderRadius: 8,
-                              fontSize: 12,
-                            }}
-                          />
-                          <Legend wrapperStyle={{ fontSize: 12 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    );
-                  })()}
+                    })()}
+                  </div>
                 </div>
               </div>
-            </div>
+            </LazyChart>
           )}
 
           {/* ── Section 1: Agent ranking ── */}
@@ -555,29 +511,33 @@ export default function Report() {
 
           {/* ── Section 3: 坐席工作量热力图 ── */}
           {heatmapData && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
-              <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-blue-500" />
-                <h3 className="font-semibold text-gray-800 dark:text-gray-100">坐席工作量热力图</h3>
-                <span className="text-xs text-gray-400 ml-2">近30天通话分布</span>
+            <LazyChart height={320}>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+                <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-blue-500" />
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">坐席工作量热力图</h3>
+                  <span className="text-xs text-gray-400 ml-2">近30天通话分布</span>
+                </div>
+                <div className="p-4 lg:p-6">
+                  <HeatmapChart data={heatmapData} />
+                </div>
               </div>
-              <div className="p-4 lg:p-6">
-                <HeatmapChart data={heatmapData} />
-              </div>
-            </div>
+            </LazyChart>
           )}
 
           {/* ── Section 4: 转化预测分布 ── */}
           {predictionData && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
-              <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
-                <Target className="w-5 h-5 text-purple-500" />
-                <h3 className="font-semibold text-gray-800 dark:text-gray-100">转化预测分析</h3>
+            <LazyChart height={320}>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+                <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-purple-500" />
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">转化预测分析</h3>
+                </div>
+                <div className="p-4 lg:p-6">
+                  <PredictionChart data={predictionData} />
+                </div>
               </div>
-              <div className="p-4 lg:p-6">
-                <PredictionChart data={predictionData} />
-              </div>
-            </div>
+            </LazyChart>
           )}
         </div>
       </main>
