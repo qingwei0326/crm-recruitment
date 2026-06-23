@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import api from '../api';
+import logger from '../utils/logger';
 
 /**
  * 管理跟进中数据和积压提醒
@@ -29,7 +30,7 @@ export default function useAgentFollowing({ state, actions, user, toast }) {
       if (r.data.code === 0 && r.data.data?.count > 0) {
         actions.setBacklogAlert(r.data.data);
       }
-    }).catch(() => {});
+    }).catch((e) => logger.error('加载积压提醒失败:', e));
   }, [user?.id, actions]);
 
   // 关闭积压提醒

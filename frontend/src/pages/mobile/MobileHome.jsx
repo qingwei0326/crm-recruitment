@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import logger from '../../utils/logger';
 import {
   Phone,
   ChevronRight,
@@ -22,6 +23,8 @@ import MobileDialResult from '../../components/MobileDialResult';
 import useTodayTasks from '../../hooks/useTodayTasks';
 import useDialFlow from '../../hooks/useDialFlow';
 import { formatDateTime } from '../../utils';
+import { useToast } from '../../components/Toast';
+import HelpModal from '../../components/HelpModal';
 
 function StatCard({ label, value, color = 'blue' }) {
   const colorMap = {
@@ -131,7 +134,7 @@ function TabBar({ active }) {
           <Link
             key={it.key}
             to={it.to}
-            className={`flex-1 flex flex-col items-center justify-center py-2 min-h-[56px] text-xs ${
+            className={`flex-1 flex flex-col items-center justify-center py-2.5 min-h-[64px] text-xs ${
               isActive
                 ? 'text-blue-600 dark:text-blue-300'
                 : 'text-gray-500 dark:text-gray-400'
@@ -162,7 +165,7 @@ function SettingsSheet({ open, onClose }) {
       .then((r) => {
         if (r.data.code === 0) setToken(r.data.data?.pushplus_token || '');
       })
-      .catch(() => {})
+      .catch((e) => logger.error('加载推送设置失败:', e))
       .finally(() => setLoadingToken(false));
   }, [open]);
 
@@ -260,10 +263,12 @@ function PendingList() {
     setLoading(true);
     setError('');
     api
-      .get('/follow-ups/my-pending')
+      .get('/tasks/handled', { params: { limit: 100 } })
       .then((r) => {
-        if (r.data.code === 0) setItems(r.data.data || []);
-        else setError(r.data.msg || '加载失败');
+        if (r.data.code === 0) {
+          const d = r.data.data;
+          setItems(d?.list ?? (Array.isArray(d) ? d : []));
+        } else setError(r.data.msg || '加载失败');
       })
       .catch((e) =>
         setError(e?.response?.data?.detail || e?.response?.data?.msg || '加载失败'),
@@ -282,7 +287,7 @@ function PendingList() {
     return <div className="text-center text-sm text-red-500 py-10">{error}</div>;
   }
   if (items.length === 0) {
-    return <div className="text-center text-sm text-gray-400 py-10">暂无待办回访</div>;
+    return <div className="text-center text-sm text-gray-400 py-10">暂无待办</div>;
   }
   return (
     <div className="space-y-3">
@@ -290,27 +295,18 @@ function PendingList() {
         <button
           key={it.id}
           type="button"
-          onClick={() => navigate(`/mobile/student/${it.student_id}`)}
-          className={`w-full text-left bg-white dark:bg-gray-800 rounded-2xl border p-4 ${
-            it.overdue
-              ? 'border-red-200 dark:border-red-800'
-              : 'dark:border-gray-700'
-          }`}
+          onClick={() => navigate(`/mobile/student/${it.id}`)}
+          className={`w-full text-left bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4`}
         >
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
-              {it.student_name}
+              {it.name}
             </span>
             <StatusBadge status={it.status} />
             <IntentLevelBadge level={it.intent_level} />
-            {it.overdue && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 font-semibold">
-                逾期
-              </span>
-            )}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {formatDateTime(it.follow_up_date)} · {it.follow_up_type || '电话'}
+            {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
           </div>
           {it.notes && (
             <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 break-words">
@@ -326,6 +322,35 @@ function PendingList() {
 function MePanel({ onOpenSettings }) {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
+  const toast = useToast();
+  const [showPwd, setShowPwd] = useState(false);
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [newPwd2, setNewPwd2] = useState('');
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  const handleChangePwd = async () => {
+    if (!oldPwd || !newPwd) { toast?.error('请填写完整'); return; }
+    if (newPwd.length < 6) { toast?.error('新密码至少6位'); return; }
+    if (newPwd !== newPwd2) { toast?.error('两次密码不一致'); return; }
+    setPwdLoading(true);
+    try {
+      const res = await api.post('/auth/change-password', { old_password: oldPwd, new_password: newPwd });
+      if (res.data.code === 0) {
+        toast?.success('密码修改成功');
+        setShowPwd(false);
+        setOldPwd(''); setNewPwd(''); setNewPwd2('');
+      } else {
+        toast?.error(res.data.msg || '修改失败');
+      }
+    } catch (e) {
+      toast?.error(e?.response?.data?.detail || '修改失败');
+    } finally {
+      setPwdLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
@@ -346,6 +371,38 @@ function MePanel({ onOpenSettings }) {
 
       <button
         type="button"
+        onClick={() => setShowPwd(!showPwd)}
+        className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
+      >
+        <span>修改密码</span>
+        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showPwd ? 'rotate-90' : ''}`} />
+      </button>
+      {showPwd && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">当前密码</label>
+            <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} placeholder="请输入当前密码"
+              className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">新密码</label>
+            <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="至少6位"
+              className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">确认新密码</label>
+            <input type="password" value={newPwd2} onChange={e => setNewPwd2(e.target.value)} placeholder="再次输入新密码"
+              className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100" />
+          </div>
+          <button type="button" onClick={handleChangePwd} disabled={pwdLoading}
+            className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+            {pwdLoading ? '提交中...' : '确认修改'}
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
         onClick={onOpenSettings}
         className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
       >
@@ -361,6 +418,17 @@ function MePanel({ onOpenSettings }) {
         <span>主题模式</span>
         <span className="text-gray-500 dark:text-gray-400">{dark ? '深色' : '浅色'}</span>
       </button>
+
+      <button
+        type="button"
+        onClick={() => setHelpOpen(true)}
+        className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
+      >
+        <span>使用说明</span>
+        <ChevronRight className="w-4 h-4 text-gray-400" />
+      </button>
+
+      {helpOpen && <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="agent" />}
 
       <button
         type="button"
@@ -391,7 +459,7 @@ export default function MobileHome() {
   useEffect(() => {
     api.get('/students/agent/settings')
       .then(r => { if (r.data?.data?.dial_max_per_24h) setDialMax(r.data.data.dial_max_per_24h); })
-      .catch(() => {});
+      .catch((e) => logger.error('加载拨号设置失败:', e));
   }, []);
 
   // 学校分组：后端 SQL 聚合的全量结果（不受列表上限影响）
@@ -444,9 +512,9 @@ export default function MobileHome() {
   const handleDetail = (id) => navigate(`/mobile/student/${id}`);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-[calc(env(safe-area-inset-bottom)+72px)]">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-[calc(env(safe-area-inset-bottom)+80px)]">
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-3 flex items-center justify-between">
+      <header className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pt-[calc(env(safe-area-inset-top)+12px)] pb-3 flex items-center justify-between">
         <div>
           <div className="text-xs text-gray-500 dark:text-gray-400">你好，</div>
           <div className="text-base font-semibold text-gray-900 dark:text-gray-100">

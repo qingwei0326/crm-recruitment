@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../api';
 import { buildStudentPayload, getApiErrorMessage } from '../utils';
 import { STAGES } from '../labels';
+import logger from '../utils/logger';
 
 const STATUS_OPTS = ['', '新线索', '非常有意向', '意向了解加微', '未接', '高分段', '无意向', '孩子不想读', '已报名'];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
@@ -111,8 +112,8 @@ export default function useLeadsManage({ toast, confirm }) {
   }, [status, region, stage, assignment, needHelp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch(() => {});
-    api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch(() => {});
+    api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch((e) => logger.error('加载话务员列表失败:', e));
+    api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch((e) => logger.error('加载阶段统计失败:', e));
   }, []);
 
   // Load expand data
