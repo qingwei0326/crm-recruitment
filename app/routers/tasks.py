@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
@@ -16,9 +16,14 @@ router = APIRouter(prefix="/api/tasks", tags=["任务"])
 # 即使列表被截断也始终是全量准确值。超过此数会置 truncated=True 提示前端。
 TODAY_TASK_LIMIT = 1000
 
+# 任务列表只展示「还需要打电话」的状态：
+#   未联系 — 新分配的，还没打
+#   未接   — 打了没人接，需要重试
+#   待回访 — 约好了回访时间，需要跟进
+# 已联系/非常有意向/意向了解加微/高分段/无意向/孩子不想读/已报名 → 移到待办或终态，不占任务列表
 _ACTIVE_TASK_STATUSES = [
     StudentStatus.not_contacted,
-    StudentStatus.contacted,
+    StudentStatus.not_reached,
     StudentStatus.pending_visit,
 ]
 
@@ -32,9 +37,23 @@ async def today_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # 统计范围与列表一致：活跃状态 + 有电话，数字对得上
+    stats_where = (
+        Student.assigned_to == current_user.id,
+        Student.status.in_(_ACTIVE_TASK_STATUSES),
+        or_(
+            and_(Student.guardian_phone.isnot(None), Student.guardian_phone != ''),
+            and_(Student.guardian2_phone.isnot(None), Student.guardian2_phone != ''),
+        ),
+    )
+    # 列表范围：同上
     base_where = (
         Student.assigned_to == current_user.id,
         Student.status.in_(_ACTIVE_TASK_STATUSES),
+        or_(
+            and_(Student.guardian_phone.isnot(None), Student.guardian_phone != ''),
+            and_(Student.guardian2_phone.isnot(None), Student.guardian2_phone != ''),
+        ),
     )
 
     filters = list(base_where)
@@ -52,22 +71,21 @@ async def today_tasks(
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
 
-    # 统计走 SQL 聚合：与列表是否截断无关，始终全量准确
+    # 统计走 SQL 聚合：基于 stats_where（该话务员全部学生），与列表截断无关
     counts_r = await db.execute(
-        select(Student.status, func.count()).where(*filters).group_by(Student.status)
+        select(Student.status, func.count()).where(*stats_where).group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
-    done = counts.get(StudentStatus.contacted, 0)
-    pending = counts.get(StudentStatus.not_contacted, 0)
-    follow_up = counts.get(StudentStatus.pending_visit, 0)
-    total = done + pending + follow_up
-    # 进度 = 已处理（已联系 + 待回访）/ 总数
-    handled = done + follow_up
+    total = sum(counts.values())
+    # 待联系 = 未联系 + 未接（需要打电话的）
+    pending = counts.get(StudentStatus.not_contacted, 0) + counts.get(StudentStatus.not_reached, 0)
+    # 已处理 = 总数 - 待联系（已联系/待回访等都算已处理）
+    handled = total - pending
     progress_pct = round(handled / total * 100, 1) if total > 0 else 0
 
-    # 学校分组走 SQL 聚合：只用 base_where(+search)，刻意排除 school_name 过滤，
+    # 学校分组走 SQL 聚合：基于 stats_where（全部学生），排除 school_name 过滤，
     # 保证前端学校切换标签始终是全部学校（不受当前选中学校影响）。
-    school_group_filters = list(base_where)
+    school_group_filters = list(stats_where)
     if search_pred is not None:
         school_group_filters.append(search_pred)
     schools_r = await db.execute(
@@ -104,9 +122,9 @@ async def today_tasks(
             "total": total,
             "stats": {
                 "total": total,
-                "done": done,
+                "done": handled,
                 "pending": pending,
-                "follow_up": follow_up,
+                "follow_up": 0,
                 "progress_pct": progress_pct,
             },
             "schools": schools,
@@ -138,6 +156,79 @@ async def today_tasks(
             ],
         }
     )
+
+
+@router.get("/handled")
+async def handled_students(
+    status: str = Query(None),
+    search: str = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """待办学生列表（已联系但无明确意向，需要再次跟进确认的）"""
+    handled_statuses = [
+        StudentStatus.contacted,
+    ]
+    base_where = (
+        Student.assigned_to == current_user.id,
+        Student.status.in_(handled_statuses),
+    )
+    filters = list(base_where)
+
+    if status:
+        try:
+            status_enum = StudentStatus(status)
+            filters.append(Student.status == status_enum)
+        except ValueError:
+            pass
+
+    if search and search.strip():
+        q = search.strip()
+        filters.append(or_(
+            Student.name.ilike(f"%{q}%"),
+            Student.guardian_phone.ilike(f"%{q}%"),
+            Student.guardian2_phone.ilike(f"%{q}%"),
+        ))
+
+    # 统计各状态数量
+    counts_r = await db.execute(
+        select(Student.status, func.count())
+        .where(Student.assigned_to == current_user.id, Student.status.in_(handled_statuses))
+        .group_by(Student.status)
+    )
+    counts = {status: cnt for status, cnt in counts_r.all()}
+    total = sum(counts.values())
+
+    result = await db.execute(
+        select(Student)
+        .where(*filters)
+        .order_by(Student.updated_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    students = result.scalars().all()
+
+    return Response.ok({
+        "total": total,
+        "counts": {str(s): c for s, c in counts.items()},
+        "list": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "region": s.region,
+                "score": s.score,
+                "guardian_name": s.guardian_name,
+                "guardian_phone": s.guardian_phone,
+                "school_name": s.school_name,
+                "status": s.status,
+                "stage": s.stage,
+                "intent_level": s.intent_level,
+            }
+            for s in students
+        ],
+    })
 
 
 @router.get("/yesterday")
@@ -294,9 +385,9 @@ async def following_students(
                 "name": s.name,
                 "region": s.region,
                 "school_name": s.school_name,
-                "stage": s.stage,
-                "intent_level": s.intent_level,
-                "status": s.status,
+                "stage": s.stage.value,
+                "intent_level": s.intent_level.value,
+                "status": s.status.value,
                 "guardian_name": s.guardian_name,
                 "guardian_phone": s.guardian_phone,
                 "days_since_assigned": days,
