@@ -26,6 +26,7 @@ class UserRole(enum.StrEnum):
 
 
 class StudentStatus(enum.StrEnum):
+    new_lead = "新线索"
     not_contacted = "未联系"
     contacted = "已联系"
     pending_visit = "待回访"
@@ -34,6 +35,12 @@ class StudentStatus(enum.StrEnum):
     enrolled = "已报名"
     rejected = "拒绝接听"
     expired = "已过期"
+    very_interested = "非常有意向"
+    interested_add_wechat = "意向了解加微"
+    not_reached = "未接"
+    high_score = "高分段"
+    not_interested = "无意向"
+    child_not_want_study = "孩子不想读"
 
 
 class IntentLevel(enum.StrEnum):
@@ -145,6 +152,11 @@ class Student(Base):
 
 class Call(Base):
     __tablename__ = "calls"
+    __table_args__ = (
+        Index("ix_calls_student_id", "student_id"),
+        Index("ix_calls_agent_id", "agent_id"),
+        Index("ix_calls_created_at", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
@@ -165,6 +177,9 @@ class Call(Base):
 
 class Note(Base):
     __tablename__ = "notes"
+    __table_args__ = (
+        Index("ix_notes_student_id", "student_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
@@ -180,6 +195,10 @@ class Note(Base):
 
 class FollowUp(Base):
     __tablename__ = "follow_ups"
+    __table_args__ = (
+        Index("ix_follow_ups_student_id", "student_id"),
+        Index("ix_follow_ups_agent_id", "agent_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
@@ -197,6 +216,9 @@ class FollowUp(Base):
 
 class LeadViewLog(Base):
     __tablename__ = "lead_view_logs"
+    __table_args__ = (
+        Index("ix_lead_view_logs_student_id", "student_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
@@ -206,6 +228,10 @@ class LeadViewLog(Base):
 
 class Visit(Base):
     __tablename__ = "visits"
+    __table_args__ = (
+        Index("ix_visits_student_id", "student_id"),
+        Index("ix_visits_agent_id", "agent_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
@@ -223,6 +249,10 @@ class Visit(Base):
 
 class OperationLog(Base):
     __tablename__ = "operation_logs"
+    __table_args__ = (
+        Index("ix_operation_logs_target_student_id", "target_student_id"),
+        Index("ix_operation_logs_action", "action"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     operator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -266,3 +296,4 @@ class DialLog(Base):
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False, index=True)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     dialed_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    duration_seconds = Column(Integer, default=0)
