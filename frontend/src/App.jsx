@@ -2,7 +2,11 @@ import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import useIsMobile from './hooks/useIsMobile';
+import useSyncManager from './hooks/useSyncManager';
 import ErrorBoundary from './components/ErrorBoundary';
+import ConnectionStatus from './components/ConnectionStatus';
+import { setGlobalToast } from './api';
+import { useEffect } from 'react';
 
 const Login = lazy(() => import('./pages/Login'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
@@ -19,6 +23,8 @@ const TrendReport = lazy(() => import('./pages/admin/TrendReport'));
 const CallVolumeQuery = lazy(() => import('./pages/admin/CallVolumeQuery'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
+const RecycleCenter = lazy(() => import('./pages/admin/RecycleCenter'));
+const ReportCenter = lazy(() => import('./pages/admin/ReportCenter'));
 const DistributeBySchools = lazy(() => import('./pages/admin/DistributeBySchools'));
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazy(() => import('./pages/mobile/MobileStudentDetail'));
@@ -26,6 +32,11 @@ const MobileCallForm = lazy(() => import('./pages/mobile/MobileCallForm'));
 
 function LoadingScreen() {
   return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>;
+}
+
+// Per-route ErrorBoundary wrapper - 单页面崩溃不影响其他页面
+function RouteError({ children }) {
+  return <ErrorBoundary>{children}</ErrorBoundary>;
 }
 
 function defaultRouteFor(user, isMobile) {
@@ -63,17 +74,31 @@ function LoggedIn({ children }) {
 
 export default function App() {
   const { loading } = useAuth();
+  const { isOnline } = useSyncManager();
+
+  // 设置全局 toast 用于 API 错误提示
+  useEffect(() => {
+    // 延迟获取 toast 函数，避免循环依赖
+    const toastEl = document.querySelector('[data-toast]');
+    if (toastEl) {
+      setGlobalToast((msg) => {
+        toastEl.dispatchEvent(new CustomEvent('toast-error', { detail: msg }));
+      });
+    }
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
     <ErrorBoundary>
+    <ConnectionStatus isOnline={isOnline} />
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
         <Route
           path="/login"
           element={
             <Guest>
-              <Login />
+              <RouteError><Login /></RouteError>
             </Guest>
           }
         />
@@ -81,7 +106,7 @@ export default function App() {
           path="/change-password"
           element={
             <LoggedIn>
-              <ChangePassword />
+              <RouteError><ChangePassword /></RouteError>
             </LoggedIn>
           }
         />
@@ -89,7 +114,7 @@ export default function App() {
           path="/admin"
           element={
             <Protected role="admin">
-              <AdminDash />
+              <RouteError><AdminDash /></RouteError>
             </Protected>
           }
         />
@@ -97,7 +122,7 @@ export default function App() {
           path="/admin/work-center"
           element={
             <Protected role="admin">
-              <AdminWorkCenter />
+              <RouteError><AdminWorkCenter /></RouteError>
             </Protected>
           }
         />
@@ -105,7 +130,7 @@ export default function App() {
           path="/admin/leads"
           element={
             <Protected role="admin">
-              <LeadsManage />
+              <RouteError><LeadsManage /></RouteError>
             </Protected>
           }
         />
@@ -113,7 +138,7 @@ export default function App() {
           path="/admin/leads/:id"
           element={
             <Protected role="admin">
-              <StudentDetail />
+              <RouteError><StudentDetail /></RouteError>
             </Protected>
           }
         />
@@ -121,15 +146,15 @@ export default function App() {
           path="/admin/governance"
           element={
             <Protected role="admin">
-              <LeadGovernance />
+              <RouteError><LeadGovernance /></RouteError>
             </Protected>
           }
         />
         <Route
-          path="/admin/recycle"
+          path="/admin/recycle-center"
           element={
             <Protected role="admin">
-              <LeadRecycle />
+              <RouteError><RecycleCenter /></RouteError>
             </Protected>
           }
         />
@@ -137,7 +162,15 @@ export default function App() {
           path="/admin/agents"
           element={
             <Protected role="admin">
-              <AgentManage />
+              <RouteError><AgentManage /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/report-center"
+          element={
+            <Protected role="admin">
+              <RouteError><ReportCenter /></RouteError>
             </Protected>
           }
         />
@@ -145,7 +178,7 @@ export default function App() {
           path="/admin/report"
           element={
             <Protected role="admin">
-              <Report />
+              <RouteError><Report /></RouteError>
             </Protected>
           }
         />
@@ -153,7 +186,7 @@ export default function App() {
           path="/admin/trend"
           element={
             <Protected role="admin">
-              <TrendReport />
+              <RouteError><TrendReport /></RouteError>
             </Protected>
           }
         />
@@ -161,7 +194,7 @@ export default function App() {
           path="/admin/call-volume"
           element={
             <Protected role="admin">
-              <CallVolumeQuery />
+              <RouteError><CallVolumeQuery /></RouteError>
             </Protected>
           }
         />
@@ -169,7 +202,7 @@ export default function App() {
           path="/admin/settings"
           element={
             <Protected role="admin">
-              <SystemSettings />
+              <RouteError><SystemSettings /></RouteError>
             </Protected>
           }
         />
@@ -177,7 +210,7 @@ export default function App() {
           path="/admin/invalid-reclaim"
           element={
             <Protected role="admin">
-              <InvalidStudentReclaim />
+              <RouteError><RecycleCenter /></RouteError>
             </Protected>
           }
         />
@@ -185,7 +218,7 @@ export default function App() {
           path="/admin/distribute"
           element={
             <Protected role="admin">
-              <DistributeBySchools />
+              <RouteError><DistributeBySchools /></RouteError>
             </Protected>
           }
         />
@@ -193,7 +226,7 @@ export default function App() {
           path="/agent"
           element={
             <Protected role="agent">
-              <AgentWork />
+              <RouteError><AgentWork /></RouteError>
             </Protected>
           }
         />
@@ -201,7 +234,7 @@ export default function App() {
           path="/mobile"
           element={
             <Protected role="agent">
-              <MobileHome />
+              <RouteError><MobileHome /></RouteError>
             </Protected>
           }
         />
@@ -209,7 +242,7 @@ export default function App() {
           path="/mobile/student/:id"
           element={
             <Protected role="agent">
-              <MobileStudentDetail />
+              <RouteError><MobileStudentDetail /></RouteError>
             </Protected>
           }
         />
@@ -217,7 +250,7 @@ export default function App() {
           path="/mobile/call/:id"
           element={
             <Protected role="agent">
-              <MobileCallForm />
+              <RouteError><MobileCallForm /></RouteError>
             </Protected>
           }
         />

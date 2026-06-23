@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, invalidate_user_tokens, require_admin
@@ -16,8 +16,11 @@ from app.database import get_db
 from app.expiry import build_last_activity_subquery, mark_expired_students
 from app.models import (
     Call,
+    DialLog,
+    FollowUp,
     IntentLevel,
     LeadViewLog,
+    Note,
     OperationLog,
     Student,
     StudentStage,
@@ -25,6 +28,7 @@ from app.models import (
     SystemConfig,
     User,
     UserRole,
+    Visit,
 )
 from app.schemas import Response, StaleReassignReq
 from app.utils import make_operation_log, today_cst_as_utc, utcnow
@@ -246,9 +250,9 @@ async def stale_a_students(
                 "id": student.id,
                 "name": student.name,
                 "region": student.region,
-                "status": student.status,
-                "stage": student.stage,
-                "intent_level": student.intent_level,
+                "status": student.status.value,
+                "stage": student.stage.value,
+                "intent_level": student.intent_level.value,
                 "assigned_to": student.assigned_to,
                 "agent_name": agent_name,
                 "last_activity_at": last_activity_at.isoformat() if last_activity_at else None,
@@ -308,8 +312,8 @@ async def stale_students(
                 "student_id": student.id,
                 "name": student.name,
                 "region": student.region,
-                "intent_level": student.intent_level,
-                "status": student.status,
+                "intent_level": student.intent_level.value,
+                "status": student.status.value,
                 "agent_name": agent_name,
                 "assigned_at": student.assigned_at.isoformat() if student.assigned_at else None,
                 "last_activity_at": activity_at.isoformat() if activity_at else None,
@@ -534,12 +538,23 @@ async def list_agents(
     today = today_cst_as_utc()
 
     # 合并学生统计：total + done + pending 一次查询
+    _DONE_STATUSES = [
+        StudentStatus.contacted,
+        StudentStatus.pending_visit,
+        StudentStatus.completed,
+        StudentStatus.enrolled,
+        StudentStatus.very_interested,
+        StudentStatus.interested_add_wechat,
+        StudentStatus.high_score,
+        StudentStatus.not_interested,
+        StudentStatus.child_not_want_study,
+    ]
     stats_r = await db.execute(
         select(
             Student.assigned_to,
             func.count().label("total"),
             func.count()
-            .filter(Student.status.in_([StudentStatus.completed, StudentStatus.enrolled]))
+            .filter(Student.status.in_(_DONE_STATUSES))
             .label("done"),
             func.count().filter(Student.status == StudentStatus.not_contacted).label("pending"),
         )
@@ -590,17 +605,40 @@ async def agent_tasks(
     if not agent:
         return Response.error(code=1, msg="话务员不存在")
 
+    # 使用 SQL 聚合查询替代 Python 内存计算
+    stats_r = await db.execute(
+        select(
+            func.count(Student.id).label("total"),
+            func.count(Student.id).filter(
+                Student.status.in_([StudentStatus.completed, StudentStatus.enrolled])
+            ).label("done"),
+            func.count(Student.id).filter(
+                Student.status == StudentStatus.not_contacted
+            ).label("pending"),
+            func.count(Student.id).filter(
+                Student.status == StudentStatus.pending_visit
+            ).label("follow_up"),
+            func.count(Student.id).filter(
+                Student.intent_level == IntentLevel.A
+            ).label("a_level"),
+        ).where(Student.assigned_to == agent_id)
+    )
+    stats = stats_r.one()
+    total, done, pending, follow_up, a_level = (
+        int(stats.total or 0),
+        int(stats.done or 0),
+        int(stats.pending or 0),
+        int(stats.follow_up or 0),
+        int(stats.a_level or 0),
+    )
+
+    # 获取学生列表（仍需用于返回）
     students_r = await db.execute(
         select(Student).where(Student.assigned_to == agent_id).order_by(Student.updated_at.desc())
     )
     students = students_r.scalars().all()
 
-    total = len(students)
-    done = sum(1 for s in students if s.status in (StudentStatus.completed, StudentStatus.enrolled))
-    pending = sum(1 for s in students if s.status == StudentStatus.not_contacted)
-    follow_up = sum(1 for s in students if s.status == StudentStatus.pending_visit)
-    a_level = sum(1 for s in students if s.intent_level == IntentLevel.A)
-
+    # 批量查询 view_count
     student_ids = [s.id for s in students]
     view_count = 0
     if student_ids:
@@ -626,9 +664,9 @@ async def agent_tasks(
                     "id": s.id,
                     "name": s.name,
                     "region": s.region,
-                    "status": s.status,
-                    "stage": s.stage,
-                    "intent_level": s.intent_level,
+                    "status": s.status.value,
+                    "stage": s.stage.value,
+                    "intent_level": s.intent_level.value,
                     "join_reasons": s.join_reasons,
                     "assigned_at": str(s.assigned_at) if s.assigned_at else None,
                     "updated_at": str(s.updated_at),
@@ -1266,6 +1304,52 @@ async def reclaim_by_school(
     return Response.ok(
         {
             "reclaimed_count": reclaimed_count,
+            "school_name": body.school_name,
+        }
+    )
+
+
+@router.post("/delete-by-school")
+async def delete_by_school(
+    body: ReclaimBySchoolReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """按学校批量删除无效线索（含关联的通话/备注/回访/到访/日志）"""
+    if not body.school_name:
+        return Response.error(code=1, msg="school_name不能为空")
+
+    result = await db.execute(
+        select(Student).where(
+            Student.school_name == body.school_name,
+            Student.status == StudentStatus.invalid,
+        )
+    )
+    students = result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg=f"学校「{body.school_name}」没有可删除的无效线索")
+
+    deleted_count = 0
+    for s in students:
+        db.add(
+            make_operation_log(
+                current_user,
+                s.id,
+                s.case_no or "",
+                "批量删除无效线索",
+                content=f"删除学生 {s.name}（含通话/备注/回访/到访/日志）",
+            )
+        )
+        for model in (Call, Note, FollowUp, LeadViewLog, Visit, DialLog):
+            await db.execute(delete(model).where(model.student_id == s.id))
+        await db.delete(s)
+        deleted_count += 1
+
+    await db.commit()
+
+    return Response.ok(
+        {
+            "deleted_count": deleted_count,
             "school_name": body.school_name,
         }
     )

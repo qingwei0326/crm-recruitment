@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from 'react';
+import { useReducer, useCallback, useMemo } from 'react';
 
 // 初始状态
 const initialState = {
@@ -321,60 +321,60 @@ function agentWorkReducer(state, action) {
 export default function useAgentWorkState() {
   const [state, dispatch] = useReducer(agentWorkReducer, initialState);
 
-  // Action creators
-  const actions = {
-    setStudents: useCallback((p) => dispatch({ type: ActionTypes.SET_STUDENTS, payload: p }), []),
-    setStats: useCallback((p) => dispatch({ type: ActionTypes.SET_STATS, payload: p }), []),
-    setSchoolGroups: useCallback((p) => dispatch({ type: ActionTypes.SET_SCHOOL_GROUPS, payload: p }), []),
-    setCurrentIdx: useCallback((p) => dispatch({ type: ActionTypes.SET_CURRENT_IDX, payload: p }), []),
+  // Action creators - 用 useMemo 包裹整个 actions 对象，避免每次渲染创建新引用
+  const actions = useMemo(() => ({
+    setStudents: (p) => dispatch({ type: ActionTypes.SET_STUDENTS, payload: p }),
+    setStats: (p) => dispatch({ type: ActionTypes.SET_STATS, payload: p }),
+    setSchoolGroups: (p) => dispatch({ type: ActionTypes.SET_SCHOOL_GROUPS, payload: p }),
+    setCurrentIdx: (p) => dispatch({ type: ActionTypes.SET_CURRENT_IDX, payload: p }),
 
-    setFilter: useCallback((key, value) => dispatch({ type: ActionTypes.SET_FILTER, key, value }), []),
-    resetFilters: useCallback(() => dispatch({ type: ActionTypes.RESET_FILTERS }), []),
-    setSortConfig: useCallback((p) => dispatch({ type: ActionTypes.SET_SORT_CONFIG, payload: p }), []),
-    setExpandedId: useCallback((p) => dispatch({ type: ActionTypes.SET_EXPANDED_ID, payload: p }), []),
+    setFilter: (key, value) => dispatch({ type: ActionTypes.SET_FILTER, key, value }),
+    resetFilters: () => dispatch({ type: ActionTypes.RESET_FILTERS }),
+    setSortConfig: (p) => dispatch({ type: ActionTypes.SET_SORT_CONFIG, payload: p }),
+    setExpandedId: (p) => dispatch({ type: ActionTypes.SET_EXPANDED_ID, payload: p }),
 
-    setDetail: useCallback((p) => dispatch({ type: ActionTypes.SET_DETAIL, payload: p }), []),
-    setDetailLoading: useCallback((p) => dispatch({ type: ActionTypes.SET_DETAIL_LOADING, payload: p }), []),
-    setDetailError: useCallback((p) => dispatch({ type: ActionTypes.SET_DETAIL_ERROR, payload: p }), []),
-    setDetailNotes: useCallback((p) => dispatch({ type: ActionTypes.SET_DETAIL_NOTES, payload: p }), []),
-    setDetailNotesError: useCallback((p) => dispatch({ type: ActionTypes.SET_DETAIL_NOTES_ERROR, payload: p }), []),
-    setNoteIdx: useCallback((p) => dispatch({ type: ActionTypes.SET_NOTE_IDX, payload: p }), []),
-    setHasAnalysis: useCallback((p) => dispatch({ type: ActionTypes.SET_HAS_ANALYSIS, payload: p }), []),
-    toggleDetail: useCallback((p) => dispatch({ type: ActionTypes.TOGGLE_DETAIL, payload: p }), []),
+    setDetail: (p) => dispatch({ type: ActionTypes.SET_DETAIL, payload: p }),
+    setDetailLoading: (p) => dispatch({ type: ActionTypes.SET_DETAIL_LOADING, payload: p }),
+    setDetailError: (p) => dispatch({ type: ActionTypes.SET_DETAIL_ERROR, payload: p }),
+    setDetailNotes: (p) => dispatch({ type: ActionTypes.SET_DETAIL_NOTES, payload: p }),
+    setDetailNotesError: (p) => dispatch({ type: ActionTypes.SET_DETAIL_NOTES_ERROR, payload: p }),
+    setNoteIdx: (p) => dispatch({ type: ActionTypes.SET_NOTE_IDX, payload: p }),
+    setHasAnalysis: (p) => dispatch({ type: ActionTypes.SET_HAS_ANALYSIS, payload: p }),
+    toggleDetail: (p) => dispatch({ type: ActionTypes.TOGGLE_DETAIL, payload: p }),
 
-    setAi: useCallback((p) => dispatch({ type: ActionTypes.SET_AI, payload: p }), []),
-    toggleAi: useCallback((p) => dispatch({ type: ActionTypes.TOGGLE_AI, payload: p }), []),
+    setAi: (p) => dispatch({ type: ActionTypes.SET_AI, payload: p }),
+    toggleAi: (p) => dispatch({ type: ActionTypes.TOGGLE_AI, payload: p }),
 
-    setDialModal: useCallback((p) => dispatch({ type: ActionTypes.SET_DIAL_MODAL, payload: p }), []),
-    setLockedStudent: useCallback((p) => dispatch({ type: ActionTypes.SET_LOCKED_STUDENT, payload: p }), []),
-    setDialCheck: useCallback((id, data) => dispatch({ type: ActionTypes.SET_DIAL_CHECK, id, data }), []),
+    setDialModal: (p) => dispatch({ type: ActionTypes.SET_DIAL_MODAL, payload: p }),
+    setLockedStudent: (p) => dispatch({ type: ActionTypes.SET_LOCKED_STUDENT, payload: p }),
+    setDialCheck: (id, data) => dispatch({ type: ActionTypes.SET_DIAL_CHECK, id, data }),
 
-    setFollowing: useCallback((p) => dispatch({ type: ActionTypes.SET_FOLLOWING, payload: p }), []),
-    setFollowingLoading: useCallback((p) => dispatch({ type: ActionTypes.SET_FOLLOWING_LOADING, payload: p }), []),
+    setFollowing: (p) => dispatch({ type: ActionTypes.SET_FOLLOWING, payload: p }),
+    setFollowingLoading: (p) => dispatch({ type: ActionTypes.SET_FOLLOWING_LOADING, payload: p }),
 
-    setPrediction: useCallback((p) => dispatch({ type: ActionTypes.SET_PREDICTION, payload: p }), []),
+    setPrediction: (p) => dispatch({ type: ActionTypes.SET_PREDICTION, payload: p }),
 
-    setNoteText: useCallback((p) => dispatch({ type: ActionTypes.SET_NOTE_TEXT, payload: p }), []),
-    setFollowUpDate: useCallback((p) => dispatch({ type: ActionTypes.SET_FOLLOW_UP_DATE, payload: p }), []),
-    setVisit: useCallback((p) => dispatch({ type: ActionTypes.SET_VISIT, payload: p }), []),
+    setNoteText: (p) => dispatch({ type: ActionTypes.SET_NOTE_TEXT, payload: p }),
+    setFollowUpDate: (p) => dispatch({ type: ActionTypes.SET_FOLLOW_UP_DATE, payload: p }),
+    setVisit: (p) => dispatch({ type: ActionTypes.SET_VISIT, payload: p }),
 
-    setCreate: useCallback((p) => dispatch({ type: ActionTypes.SET_CREATE, payload: p }), []),
-    toggleCreate: useCallback((p) => dispatch({ type: ActionTypes.TOGGLE_CREATE, payload: p }), []),
+    setCreate: (p) => dispatch({ type: ActionTypes.SET_CREATE, payload: p }),
+    toggleCreate: (p) => dispatch({ type: ActionTypes.TOGGLE_CREATE, payload: p }),
 
-    setSettings: useCallback((p) => dispatch({ type: ActionTypes.SET_SETTINGS, payload: p }), []),
-    toggleSettings: useCallback((p) => dispatch({ type: ActionTypes.TOGGLE_SETTINGS, payload: p }), []),
+    setSettings: (p) => dispatch({ type: ActionTypes.SET_SETTINGS, payload: p }),
+    toggleSettings: (p) => dispatch({ type: ActionTypes.TOGGLE_SETTINGS, payload: p }),
 
-    setUi: useCallback((p) => dispatch({ type: ActionTypes.SET_UI, payload: p }), []),
-    setViewTab: useCallback((p) => dispatch({ type: ActionTypes.SET_VIEW_TAB, payload: p }), []),
-    toggleMenu: useCallback((p) => dispatch({ type: ActionTypes.TOGGLE_MENU, payload: p }), []),
-    toggleHelp: useCallback((p) => dispatch({ type: ActionTypes.TOGGLE_HELP, payload: p }), []),
-    setActionMsg: useCallback((p) => dispatch({ type: ActionTypes.SET_ACTION_MSG, payload: p }), []),
+    setUi: (p) => dispatch({ type: ActionTypes.SET_UI, payload: p }),
+    setViewTab: (p) => dispatch({ type: ActionTypes.SET_VIEW_TAB, payload: p }),
+    toggleMenu: (p) => dispatch({ type: ActionTypes.TOGGLE_MENU, payload: p }),
+    toggleHelp: (p) => dispatch({ type: ActionTypes.TOGGLE_HELP, payload: p }),
+    setActionMsg: (p) => dispatch({ type: ActionTypes.SET_ACTION_MSG, payload: p }),
 
-    setBacklogAlert: useCallback((p) => dispatch({ type: ActionTypes.SET_BACKLOG_ALERT, payload: p }), []),
+    setBacklogAlert: (p) => dispatch({ type: ActionTypes.SET_BACKLOG_ALERT, payload: p }),
 
-    updateStudent: useCallback((id, fields) => dispatch({ type: ActionTypes.UPDATE_STUDENT, id, fields }), []),
-    updateStudentField: useCallback((id, field, value) => dispatch({ type: ActionTypes.UPDATE_STUDENT_FIELD, id, field, value }), []),
-  };
+    updateStudent: (id, fields) => dispatch({ type: ActionTypes.UPDATE_STUDENT, id, fields }),
+    updateStudentField: (id, field, value) => dispatch({ type: ActionTypes.UPDATE_STUDENT_FIELD, id, field, value }),
+  }), []); // dispatch 是稳定的，所以依赖数组为空
 
   return { state, actions };
 }
