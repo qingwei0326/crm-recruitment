@@ -12,8 +12,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@ant-design/icons": "^6.2.5",
-    "antd": "^6.4.3",
+    "@tanstack/react-virtual": "^3.14.3",
     "axios": "^1.6.2",
     "lucide-react": "^0.300.0",
     "react": "^18.2.0",

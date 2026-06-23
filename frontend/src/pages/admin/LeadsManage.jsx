@@ -42,7 +42,7 @@ import {
   Wand2,
 } from 'lucide-react';
 
-const STATUS_OPTS = ['', '未联系', '已联系', '待回访', '已完成', '无效', '已报名', '拒绝接听', '已过期'];
+const STATUS_OPTS = ['', '新线索', '非常有意向', '意向了解加微', '未接', '高分段', '无意向', '孩子不想读', '已报名'];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGE_STAT_KEYS = ['未分配', ...STAGES];
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
@@ -966,19 +966,11 @@ export default function LeadsManage() {
 
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
-      `}</style>
-
       {/* ── Mobile sidebar overlay ── */}
       {/* ── Sidebar ── */}
       {/* ── Main ── */}
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
+        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pt-[env(safe-area-inset-top)] h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
           {isMobile && (
             <button
@@ -1064,7 +1056,8 @@ export default function LeadsManage() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="????/??/??..."
+                  placeholder="搜索姓名/电话/学校..."
+                  aria-label="搜索学生"
                   className={`pl-9 ${inputCls}`}
                 />
               </div>
