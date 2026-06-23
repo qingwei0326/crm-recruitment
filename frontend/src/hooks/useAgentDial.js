@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import api from '../api';
 import { getApiErrorMessage } from '../utils';
+import logger from '../utils/logger';
 
 /**
  * 管理拨号相关逻辑
@@ -17,7 +18,7 @@ export default function useAgentDial({ state, actions, current, students, toast,
         actions.setDialCheck(id, r.data.data);
         return r.data.data;
       }
-    } catch { /* ignore */ }
+    } catch (e) { logger.error('拨号检查失败:', e); }
     return null;
   }, [actions]);
 
@@ -29,11 +30,11 @@ export default function useAgentDial({ state, actions, current, students, toast,
 
     api.get(`/stats/predict-conversion/${studentId}`).then((r) => {
       if (r.data.code === 0) actions.setPrediction(r.data.data);
-    }).catch(() => actions.setPrediction(null));
+    }).catch((e) => { logger.error('转化预测失败:', e); actions.setPrediction(null); });
 
     api.get('/calls/check', { params: { student_id: studentId, within_hours: 24 } }).then((r) => {
       if (r.data.code === 0) actions.setDialCheck(studentId, r.data.data);
-    }).catch(() => {});
+    }).catch((e) => logger.error('拨号检查失败:', e));
   }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 处理拨号

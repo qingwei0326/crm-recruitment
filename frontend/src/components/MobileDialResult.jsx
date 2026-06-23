@@ -1,6 +1,38 @@
 import { useCallback, useEffect, useState } from 'react';
-import { PhoneCall, X, Loader2, CalendarClock } from 'lucide-react';
+import { PhoneCall, X, Loader2, CalendarClock, MessageSquare } from 'lucide-react';
 import api from '../api';
+import logger from '../utils/logger';
+
+/**
+ * 手机端"打完电话选结果"底部弹窗。
+ *
+ * 工作原理：useDialFlow 在唤起 tel: 前把 { studentId, studentName, dialStartedAt }
+ * 写入 sessionStorage('pendingDial')。话务员从系统拨号界面返回 App 时，
+ * 本组件读取该标记并弹出，让其选联系状况（+意向等级），PUT /students/{id} 落库。
+ *
+ * 自动记录通话时长（visibilitychange 时间差）和备注。
+ *
+ * @param {Object} props
+ * @param {function} props.onUpdated - 落库成功后回调 (studentId, status) => void
+ */
+
+/**
+ * 记录通话时长和备注（拨号后静默同步）
+ * @param {number} studentId - 学生ID
+ * @param {number} dialStartedAt - 拨号开始时间戳
+ * @param {string} noteText - 备注内容
+ */
+function recordCallResult(studentId, dialStartedAt, noteText) {
+  const duration = dialStartedAt ? Math.round((Date.now() - dialStartedAt) / 1000) : 0;
+  if (duration > 0) {
+    api.put(`/students/dial-duration?student_id=${studentId}&duration_seconds=${duration}`)
+      .catch((e) => logger.error('记录通话时长失败:', e));
+  }
+  if (noteText?.trim()) {
+    api.post('/notes', { student_id: studentId, content: noteText.trim() })
+      .catch((e) => logger.error('记录备注失败:', e));
+  }
+}
 
 // 默认回访时间：明天上午 9 点，<input type="datetime-local"> 格式
 function defaultFollowUp() {
@@ -12,12 +44,22 @@ function defaultFollowUp() {
 }
 
 // 与桌面 AgentWork.renderDialModal 一致的处理结果
+// 无效按钮点击后弹出原因选择，而非直接标记
 const STATUS_BUTTONS = [
-  { label: '已联系', cls: 'bg-blue-600 hover:bg-blue-700' },
-  { label: '待回访', cls: 'bg-amber-600 hover:bg-amber-700' },
-  { label: '拒绝接听', cls: 'bg-gray-500 hover:bg-gray-600' },
+  { label: '新线索', cls: 'bg-sky-500 hover:bg-sky-600' },
+  { label: '非常有意向', cls: 'bg-red-600 hover:bg-red-700' },
+  { label: '意向了解加微', cls: 'bg-amber-600 hover:bg-amber-700' },
+  { label: '未接', cls: 'bg-gray-500 hover:bg-gray-600' },
+  { label: '无效', cls: 'bg-gray-400 hover:bg-gray-500', isInvalid: true },
   { label: '已报名', cls: 'bg-green-600 hover:bg-green-700' },
-  { label: '无效', cls: 'bg-red-500 hover:bg-red-600' },
+];
+
+const INVALID_REASONS = [
+  { label: '空号', value: '空号' },
+  { label: '高分段', value: '高分段' },
+  { label: '无意向', value: '无意向' },
+  { label: '孩子不想读', value: '孩子不想读' },
+  { label: '其他', value: '' },
 ];
 
 const INTENT_BUTTONS = [
@@ -49,15 +91,17 @@ function getMsg(e) {
  * props.onUpdated(studentId, status) — 落库成功后回调，宿主页据此刷新列表/详情。
  */
 export default function MobileDialResult({ onUpdated }) {
-  const [pending, setPending] = useState(null); // { studentId, studentName }
+  const [pending, setPending] = useState(null); // { studentId, studentName, dialStartedAt }
   const [showIntent, setShowIntent] = useState(false);
   const [flowStatus, setFlowStatus] = useState(null); // 记住本次选的联系状况
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
   const [invalidMode, setInvalidMode] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState(false);
   const [invalidReason, setInvalidReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
+  const [noteText, setNoteText] = useState('');
 
   const tryLoadPending = useCallback(() => {
     // 正在处理一通的结果时，别被新的 visibilitychange 覆盖
@@ -78,6 +122,7 @@ export default function MobileDialResult({ onUpdated }) {
         setShowFollowUp(false);
         setFollowUpDate(defaultFollowUp());
         setInvalidMode(false);
+        setShowCustomInput(false);
         setInvalidReason('');
         setErr('');
         setPending(data);
@@ -112,58 +157,79 @@ export default function MobileDialResult({ onUpdated }) {
     setFlowStatus(null);
     setShowFollowUp(false);
     setInvalidMode(false);
+    setShowCustomInput(false);
     setInvalidReason('');
     setErr('');
     setSubmitting(false);
+    setNoteText('');
   };
 
   const putField = (payload) => api.put(`/students/${pending.studentId}`, payload);
 
-  const pickStatus = async (status) => {
+  const pickStatus = async (btn) => {
     if (submitting) return;
-    if (status === '无效') {
-      setErr('');
+    // "无效" 按钮 → 弹出原因选择
+    if (btn.isInvalid) {
       setInvalidMode(true);
+      setShowCustomInput(false);
+      setInvalidReason('');
+      setErr('');
       return;
     }
-    setSubmitting(true);
-    setErr('');
-    try {
-      await putField({ status });
-      onUpdated && onUpdated(pending.studentId, status);
-      if (status === '已联系' || status === '待回访') {
-        // 状态已落库，但不关弹窗——继续让选意向等级（可跳过）
-        setFlowStatus(status);
-        setShowIntent(true);
-      } else {
-        close();
-      }
-    } catch (e) {
-      setErr(getMsg(e));
-    } finally {
-      setSubmitting(false);
+    const status = btn.label;
+    // 乐观更新：先更新 UI，后台同步
+    onUpdated && onUpdated(pending.studentId, status);
+    // 后台静默同步
+    putField({ status }).catch((e) => {
+      logger.error('状态同步失败:', e);
+      onUpdated && onUpdated(pending.studentId, null);
+    });
+    // 记录通话时长和备注
+    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
+
+    // 意向步骤：非常有意向、意向了解加微、未接 需要选意向等级
+    if (status === '非常有意向' || status === '意向了解加微' || status === '未接') {
+      setFlowStatus(status);
+      setShowIntent(true);
+      return; // Don't close yet, show intent step
     }
+
+    close();
+  };
+
+  const pickInvalidReason = async (reason) => {
+    if (submitting) return;
+    // 快速原因：直接提交
+    if (reason) {
+      onUpdated && onUpdated(pending.studentId, '无效');
+      close();
+      putField({ status: '无效', invalid_reason: reason }).catch((e) => {
+        logger.error('无效状态同步失败:', e);
+        onUpdated && onUpdated(pending.studentId, null);
+      });
+      recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
+      return;
+    }
+    // "其他" → 切到手动输入模式
+    setShowCustomInput(true);
+    setInvalidReason('');
   };
 
   const pickIntent = async (level) => {
     if (submitting) return;
-    setSubmitting(true);
-    setErr('');
-    try {
-      await putField({ intent_level: level });
-      onUpdated && onUpdated(pending.studentId, null);
-      // 待回访：接着收集回访时间落 /follow-ups；其他：完成
-      if (flowStatus === '待回访') {
-        setShowIntent(false);
-        setShowFollowUp(true);
-      } else {
-        close();
-      }
-    } catch (e) {
-      setErr(getMsg(e));
-    } finally {
-      setSubmitting(false);
+    // 乐观更新：先更新 UI
+    onUpdated && onUpdated(pending.studentId, null);
+    // 待回访：接着收集回访时间落 /follow-ups；其他：完成
+    if (flowStatus === '待回访') {
+      setShowIntent(false);
+      setShowFollowUp(true);
+    } else {
+      close();
     }
+    // 后台静默同步
+    putField({ intent_level: level }).catch((e) => {
+      logger.error('意向等级同步失败:', e);
+    });
   };
 
   const saveFollowUp = async () => {
@@ -172,20 +238,18 @@ export default function MobileDialResult({ onUpdated }) {
       close();
       return;
     }
-    setSubmitting(true);
-    setErr('');
-    try {
-      await api.post('/follow-ups', {
-        student_id: pending.studentId,
-        follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
-      });
-      onUpdated && onUpdated(pending.studentId, null);
-      close();
-    } catch (e) {
-      setErr(getMsg(e));
-    } finally {
-      setSubmitting(false);
-    }
+    // 乐观更新：先更新 UI
+    onUpdated && onUpdated(pending.studentId, null);
+    close();
+    // 后台静默同步
+    api.post('/follow-ups', {
+      student_id: pending.studentId,
+      follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
+    }).catch((e) => {
+      logger.error('回访记录同步失败:', e);
+    });
+    // 记录通话时长和备注
+    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
   };
 
   const submitInvalid = async () => {
@@ -194,17 +258,15 @@ export default function MobileDialResult({ onUpdated }) {
       setErr('请填写无效原因');
       return;
     }
-    setSubmitting(true);
-    setErr('');
-    try {
-      await putField({ status: '无效', invalid_reason: invalidReason.trim() });
-      onUpdated && onUpdated(pending.studentId, '无效');
-      close();
-    } catch (e) {
-      setErr(getMsg(e));
-    } finally {
-      setSubmitting(false);
-    }
+    // 乐观更新：先更新 UI
+    onUpdated && onUpdated(pending.studentId, '无效');
+    close();
+    // 后台静默同步
+    putField({ status: '无效', invalid_reason: invalidReason.trim() }).catch((e) => {
+      logger.error('无效状态同步失败:', e);
+    });
+    // 记录通话时长和备注
+    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
   };
 
   return (
@@ -242,6 +304,30 @@ export default function MobileDialResult({ onUpdated }) {
               <CalendarClock className="w-4 h-4" />
               设置回访时间，到点会提醒你
             </div>
+            {/* 快捷时间 */}
+            <div className="flex gap-2 flex-wrap">
+              {[
+                { label: '明天上午', offset: { days: 1, hours: 9 } },
+                { label: '后天上午', offset: { days: 2, hours: 9 } },
+                { label: '3天后', offset: { days: 3, hours: 9 } },
+                { label: '1周后', offset: { days: 7, hours: 9 } },
+              ].map((q) => (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + q.offset.days);
+                    d.setHours(q.offset.hours, 0, 0, 0);
+                    const pad = (n) => String(n).padStart(2, '0');
+                    setFollowUpDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95"
+                >
+                  {q.label}
+                </button>
+              ))}
+            </div>
             <input
               type="datetime-local"
               value={followUpDate}
@@ -270,17 +356,36 @@ export default function MobileDialResult({ onUpdated }) {
           </div>
         ) : invalidMode ? (
           <div className="space-y-3">
-            <textarea
-              value={invalidReason}
-              onChange={(e) => setInvalidReason(e.target.value)}
-              placeholder="请简要说明无效原因，例如：空号 / 明确拒绝 / 已报他校"
-              className="w-full h-24 border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-red-500 resize-none"
-            />
+            <div className="text-xs text-gray-500 dark:text-gray-400 text-center">选择无效原因</div>
+            <div className="grid grid-cols-2 gap-2">
+              {INVALID_REASONS.map((r) => (
+                <button
+                  key={r.label}
+                  type="button"
+                  onClick={() => pickInvalidReason(r.value)}
+                  disabled={submitting}
+                  className="min-h-[48px] rounded-xl text-sm font-medium border dark:border-gray-600 text-gray-700 dark:text-gray-200 active:scale-95 disabled:opacity-60"
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {/* "其他" 展开手动输入 */}
+            {showCustomInput && (
+              <textarea
+                value={invalidReason}
+                onChange={(e) => setInvalidReason(e.target.value)}
+                placeholder="请填写无效原因"
+                className="w-full h-20 border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              />
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setInvalidMode(false);
+                  setShowCustomInput(false);
+                  setInvalidReason('');
                   setErr('');
                 }}
                 disabled={submitting}
@@ -288,31 +393,45 @@ export default function MobileDialResult({ onUpdated }) {
               >
                 返回
               </button>
-              <button
-                type="button"
-                onClick={submitInvalid}
-                disabled={submitting || !invalidReason.trim()}
-                className="flex-1 min-h-[48px] rounded-xl bg-red-500 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                确认无效
-              </button>
+              {invalidReason !== '' && (
+                <button
+                  type="button"
+                  onClick={submitInvalid}
+                  disabled={submitting || !invalidReason.trim()}
+                  className="flex-1 min-h-[48px] rounded-xl bg-red-500 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  确认无效
+                </button>
+              )}
             </div>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-3 gap-2">
               {STATUS_BUTTONS.map((b) => (
                 <button
                   key={b.label}
                   type="button"
-                  onClick={() => pickStatus(b.label)}
+                  onClick={() => pickStatus(b)}
                   disabled={submitting}
-                  className={`min-h-[52px] rounded-xl text-base font-medium text-white ${b.cls} active:scale-95 disabled:opacity-60`}
+                  className={`min-h-[52px] rounded-xl text-sm font-medium text-white ${b.cls} active:scale-95 disabled:opacity-60`}
                 >
                   {b.label}
                 </button>
               ))}
+            </div>
+
+            {/* 备注输入 */}
+            <div className="relative">
+              <MessageSquare className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+              <textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="添加备注（可选）"
+                rows={2}
+                className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
+              />
             </div>
 
             {showIntent && (

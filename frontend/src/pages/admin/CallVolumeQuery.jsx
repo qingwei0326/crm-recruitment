@@ -5,11 +5,13 @@ import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import { formatDateTime } from '../../utils';
+import logger from '../../utils/logger';
 import {
   LogOut,
-  Menu,
+
   X,
   Users,
   ListFilter,
@@ -50,7 +52,7 @@ export default function CallVolumeQuery() {
         setAgents(a);
         setSelectedAgents(a.map((x) => x.id));
       })
-      .catch(() => {});
+      .catch((e) => logger.error('加载话务员列表失败:', e));
   }, []);
 
   const fetchLogs = (p = 1) => {
@@ -155,15 +157,11 @@ export default function CallVolumeQuery() {
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
 
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button className="p-2 -ml-2" onClick={() => setSidebarOpen(true)}>
-                <Menu className="w-5 h-5" />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">通电量查询</h2>
-          </div>
+        <PageHeader
+          title="通电量查询"
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+        >
           <button
             onClick={exportExcel}
             className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
@@ -171,7 +169,7 @@ export default function CallVolumeQuery() {
             <Download className="w-4 h-4" />
             导出
           </button>
-        </header>
+        </PageHeader>
 
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 space-y-3">
