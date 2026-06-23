@@ -1,7 +1,8 @@
+import asyncio
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Date, case, cast, func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_analyzer import predict_conversion
@@ -9,6 +10,7 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
     Call,
+    DialLog,
     EnrollmentSubStage,
     FollowUp,
     IntentLevel,
@@ -111,20 +113,23 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     tomorrow = today + timedelta(days=1)
     month_start = month_start_cst_as_utc()
 
-    # 合并 Call 统计：today_calls + month_calls + avg_duration 一次查询
-    calls_r = await db.execute(
+    # DialLog 统计：合并 today_calls + month_calls + avg_duration 为一次查询
+    dial_r = await db.execute(
         select(
-            func.count()
-            .filter(Call.created_at >= today, Call.created_at < tomorrow)
-            .label("today_calls"),
-            func.count().label("month_calls"),
-            func.avg(Call.duration_seconds).label("avg_duration"),
-        ).where(Call.agent_id == agent_id, Call.created_at >= month_start)
+            func.count(DialLog.id).filter(
+                DialLog.dialed_at >= today, DialLog.dialed_at < tomorrow
+            ).label("today_calls"),
+            func.count(DialLog.id).label("month_calls"),
+            func.avg(DialLog.duration_seconds).label("avg_duration"),
+        ).where(
+            DialLog.agent_id == agent_id,
+            DialLog.dialed_at >= month_start,
+        )
     )
-    row = calls_r.one()
-    today_calls = row.today_calls or 0
-    month_calls = row.month_calls or 0
-    avg_duration = round(row.avg_duration or 0, 1)
+    dial_row = dial_r.one()
+    today_calls = int(dial_row.today_calls or 0)
+    month_calls = int(dial_row.month_calls or 0)
+    avg_duration = round(dial_row.avg_duration or 0, 1)
 
     # 合并意向统计：total_contacted + all_a 一次查询
     student_r = await db.execute(
@@ -241,16 +246,16 @@ async def agent_ranking(
 
     # Call stats per agent (today, month)
     today_calls_r = await db.execute(
-        select(Call.agent_id, func.count(Call.id))
-        .where(Call.agent_id.in_(agent_ids), Call.created_at >= today)
-        .group_by(Call.agent_id)
+        select(DialLog.agent_id, func.count(DialLog.id))
+        .where(DialLog.agent_id.in_(agent_ids), DialLog.dialed_at >= today)
+        .group_by(DialLog.agent_id)
     )
     today_calls_map = dict(today_calls_r.all())
 
     month_calls_r = await db.execute(
-        select(Call.agent_id, func.count(Call.id))
-        .where(Call.agent_id.in_(agent_ids), Call.created_at >= month_start)
-        .group_by(Call.agent_id)
+        select(DialLog.agent_id, func.count(DialLog.id))
+        .where(DialLog.agent_id.in_(agent_ids), DialLog.dialed_at >= month_start)
+        .group_by(DialLog.agent_id)
     )
     month_calls_map = dict(month_calls_r.all())
 
@@ -380,12 +385,12 @@ async def trend_data(
 
     calls_raw = await db.execute(
         select(
-            cast(Call.created_at, Date),
-            Call.agent_id,
-            func.count(Call.id),
+            func.date(DialLog.dialed_at),
+            DialLog.agent_id,
+            func.count(DialLog.id),
         )
-        .where(Call.created_at >= first_day, Call.created_at < last_day_end)
-        .group_by(cast(Call.created_at, Date), Call.agent_id)
+        .where(DialLog.dialed_at >= first_day, DialLog.dialed_at < last_day_end)
+        .group_by(func.date(DialLog.dialed_at), DialLog.agent_id)
     )
     for day_str, agent_id, cnt in calls_raw.all():
         calls_by_date_agent.setdefault(day_str, {})[agent_name_of.get(agent_id, "")] = int(cnt)
@@ -411,11 +416,11 @@ async def trend_data(
     calls_total_by_date = {}
     calls_raw_total = await db.execute(
         select(
-            cast(Call.created_at, Date),
-            func.count(Call.id),
+            func.date(DialLog.dialed_at),
+            func.count(DialLog.id),
         )
-        .where(Call.created_at >= first_day, Call.created_at < last_day_end)
-        .group_by(cast(Call.created_at, Date))
+        .where(DialLog.dialed_at >= first_day, DialLog.dialed_at < last_day_end)
+        .group_by(func.date(DialLog.dialed_at))
     )
     for day_str, cnt in calls_raw_total.all():
         calls_total_by_date[day_str] = int(cnt)
@@ -617,12 +622,12 @@ async def heatmap_data(
     # 查询坐席 × 日期的通话次数
     calls_r = await db.execute(
         select(
-            Call.agent_id,
-            cast(Call.created_at, Date),
-            func.count(Call.id),
+            DialLog.agent_id,
+            func.date(DialLog.dialed_at),
+            func.count(DialLog.id),
         )
-        .where(Call.created_at >= first_day, Call.created_at < last_day_end)
-        .group_by(Call.agent_id, cast(Call.created_at, Date))
+        .where(DialLog.dialed_at >= first_day, DialLog.dialed_at < last_day_end)
+        .group_by(DialLog.agent_id, func.date(DialLog.dialed_at))
     )
 
     # 构建矩阵
@@ -768,5 +773,238 @@ async def prediction_distribution(
                 {"name": "中概率 (30-70%)", "value": medium, "color": "#eab308"},
                 {"name": "低概率 (<30%)", "value": low, "color": "#ef4444"},
             ],
+        }
+    )
+
+
+@router.get("/dashboard-summary")
+async def dashboard_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """仪表盘首屏统计数字，一个接口替代多个独立请求。"""
+    today = today_cst_as_utc()
+
+    # 总学生数
+    total_students = (await db.execute(select(func.count(Student.id)))).scalar() or 0
+
+    # 已联系（排除未联系和无效）
+    contacted = (
+        await db.execute(
+            select(func.count(Student.id)).where(
+                Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
+            )
+        )
+    ).scalar() or 0
+
+    # A 级意向
+    a_level = (
+        await db.execute(
+            select(func.count(Student.id)).where(Student.intent_level == IntentLevel.A)
+        )
+    ).scalar() or 0
+
+    # 今日呼出（直接统计通话记录，不拉话务员列表）
+    today_calls = (
+        await db.execute(
+            select(func.count(DialLog.id)).where(DialLog.dialed_at >= today)
+        )
+    ).scalar() or 0
+
+    # 已报名汇总
+    enrolled_r = await db.execute(
+        select(
+            func.count(Student.id),
+            func.coalesce(func.sum(Student.deposit), 0),
+        ).where(Student.status == StudentStatus.enrolled)
+    )
+    enrolled_row = enrolled_r.one()
+    enrolled_total = enrolled_row[0] or 0
+    enrolled_deposit = int(enrolled_row[1] or 0)
+
+    return Response.ok(
+        {
+            "total_students": total_students,
+            "contacted": contacted,
+            "a_level": a_level,
+            "today_calls": today_calls,
+            "enrolled_total": enrolled_total,
+            "enrolled_deposit": enrolled_deposit,
+        }
+    )
+
+
+@router.get("/dashboard-all")
+async def dashboard_all(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """聚合仪表盘全部数据，单次请求替代多个独立接口。"""
+    today = today_cst_as_utc()
+
+    # ---- 定义各子查询协程 ----
+
+    async def _summary():
+        total_students = (await db.execute(select(func.count(Student.id)))).scalar() or 0
+        contacted = (
+            await db.execute(
+                select(func.count(Student.id)).where(
+                    Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
+                )
+            )
+        ).scalar() or 0
+        a_level = (
+            await db.execute(
+                select(func.count(Student.id)).where(Student.intent_level == IntentLevel.A)
+            )
+        ).scalar() or 0
+        today_calls = (
+            await db.execute(select(func.count(DialLog.id)).where(DialLog.dialed_at >= today))
+        ).scalar() or 0
+        enrolled_r = await db.execute(
+            select(
+                func.count(Student.id),
+                func.coalesce(func.sum(Student.deposit), 0),
+            ).where(Student.status == StudentStatus.enrolled)
+        )
+        enrolled_row = enrolled_r.one()
+        return {
+            "total_students": total_students,
+            "contacted": contacted,
+            "a_level": a_level,
+            "today_calls": today_calls,
+            "enrolled_total": enrolled_row[0] or 0,
+            "enrolled_deposit": int(enrolled_row[1] or 0),
+        }
+
+    async def _sources():
+        rows = await db.execute(
+            select(
+                Student.region,
+                func.count(Student.id),
+                func.sum(
+                    case(
+                        (
+                            Student.status.not_in(
+                                [StudentStatus.not_contacted, StudentStatus.invalid]
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ),
+                func.sum(case((Student.intent_level == IntentLevel.A, 1), else_=0)),
+            )
+            .where(Student.region != "")
+            .group_by(Student.region)
+        )
+        return [
+            {
+                "source": region,
+                "total": total,
+                "contacted": int(contacted),
+                "a_count": int(a_count),
+                "conversion_rate": round(int(a_count) / total * 100, 1) if total > 0 else 0,
+            }
+            for region, total, contacted, a_count in rows.all()
+        ]
+
+    async def _stages():
+        result = await db.execute(
+            select(Student.stage, func.count(Student.id))
+            .where(
+                Student.assigned_to.is_not(None),
+                Student.status != StudentStatus.invalid,
+            )
+            .group_by(Student.stage)
+        )
+        by_stage = {row[0]: row[1] for row in result.all()}
+        unassigned = (
+            await db.execute(
+                select(func.count(Student.id)).where(Student.assigned_to.is_(None))
+            )
+        ).scalar() or 0
+        by_stage["未分配"] = unassigned
+        return by_stage
+
+    async def _funnel():
+        total = (await db.execute(select(func.count(Student.id)))).scalar() or 0
+        assigned = (
+            await db.execute(
+                select(func.count(Student.id)).where(Student.assigned_to.is_not(None))
+            )
+        ).scalar() or 0
+        contacted = (
+            await db.execute(
+                select(func.count(Student.id)).where(
+                    Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
+                )
+            )
+        ).scalar() or 0
+        a_level = (
+            await db.execute(
+                select(func.count(Student.id)).where(Student.intent_level == IntentLevel.A)
+            )
+        ).scalar() or 0
+        visited = (
+            await db.execute(
+                select(func.count(func.distinct(Visit.student_id))).where(
+                    Visit.status == VisitStatus.completed
+                )
+            )
+        ).scalar() or 0
+        enrolled = (
+            await db.execute(
+                select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
+            )
+        ).scalar() or 0
+        return [
+            {"name": "总线索", "value": total},
+            {"name": "已分配", "value": assigned},
+            {"name": "已联系", "value": contacted},
+            {"name": "A意向", "value": a_level},
+            {"name": "已到访", "value": visited},
+            {"name": "已报名", "value": enrolled},
+        ]
+
+    async def _notify_fails():
+        result = await db.execute(
+            select(func.count(OperationLog.id)).where(OperationLog.action == "通知失败")
+        )
+        return result.scalar() or 0
+
+    async def _visits_summary():
+        type_result = await db.execute(
+            select(Visit.visit_type, func.count(Visit.id)).group_by(Visit.visit_type)
+        )
+        by_type = {row[0]: row[1] for row in type_result.all()}
+
+        status_result = await db.execute(
+            select(Visit.status, func.count(Visit.id)).group_by(Visit.status)
+        )
+        by_status = {row[0]: row[1] for row in status_result.all()}
+
+        region_result = await db.execute(
+            select(Student.region, func.count(Visit.id))
+            .join(Visit, Visit.student_id == Student.id)
+            .group_by(Student.region)
+        )
+        by_region = {row[0] or "未知": row[1] for row in region_result.all()}
+
+        return {"by_type": by_type, "by_status": by_status, "by_region": by_region}
+
+    # ---- 并发执行所有查询 ----
+    summary, sources, stages, funnel, notify_fails, visits = await asyncio.gather(
+        _summary(), _sources(), _stages(), _funnel(), _notify_fails(), _visits_summary()
+    )
+
+    return Response.ok(
+        {
+            "summary": summary,
+            "sources": sources,
+            "stages": stages,
+            "funnel": funnel,
+            "notify_fails": notify_fails,
+            "visits": visits,
         }
     )

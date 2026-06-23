@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import api from '../api';
 import { getApiErrorMessage } from '../utils';
 
@@ -6,6 +6,9 @@ import { getApiErrorMessage } from '../utils';
  * 管理拨号相关逻辑
  */
 export default function useAgentDial({ state, actions, current, students, toast, confirm, prompt }) {
+  // 用 ref 缓存 lastFetchedId 防止重复请求
+  const lastFetchedIdRef = useRef(null);
+
   // 加载拨号检查
   const refreshDialCheck = useCallback(async (id) => {
     try {
@@ -18,20 +21,20 @@ export default function useAgentDial({ state, actions, current, students, toast,
     return null;
   }, [actions]);
 
-  // 预测和拨号检查
+  // 预测和拨号检查 - 用 ref 防止重复请求
   useEffect(() => {
-    if (current) {
-      api.get(`/stats/predict-conversion/${current.id}`).then((r) => {
-        if (r.data.code === 0) actions.setPrediction(r.data.data);
-      }).catch(() => actions.setPrediction(null));
+    const studentId = current?.id;
+    if (!studentId || studentId === lastFetchedIdRef.current) return;
+    lastFetchedIdRef.current = studentId;
 
-      api.get('/calls/check', { params: { student_id: current.id, within_hours: 24 } }).then((r) => {
-        if (r.data.code === 0) actions.setDialCheck(current.id, r.data.data);
-      }).catch(() => {});
-    } else {
-      actions.setPrediction(null);
-    }
-  }, [current?.id, actions]);
+    api.get(`/stats/predict-conversion/${studentId}`).then((r) => {
+      if (r.data.code === 0) actions.setPrediction(r.data.data);
+    }).catch(() => actions.setPrediction(null));
+
+    api.get('/calls/check', { params: { student_id: studentId, within_hours: 24 } }).then((r) => {
+      if (r.data.code === 0) actions.setDialCheck(studentId, r.data.data);
+    }).catch(() => {});
+  }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 处理拨号
   const handleDial = useCallback(async (contactKey, id) => {
