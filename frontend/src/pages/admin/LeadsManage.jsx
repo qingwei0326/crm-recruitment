@@ -3,6 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
+import logger from '../../utils/logger';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
@@ -191,8 +192,8 @@ export default function LeadsManage() {
   }, [status, region, stage, assignment, needHelp]);
 
   useEffect(() => {
-    api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch(() => {});
-    api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch(() => {});
+    api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch((e) => logger.error('加载话务员列表失败:', e));
+    api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch((e) => logger.error('加载阶段统计失败:', e));
   }, []);
 
   useEffect(() => {

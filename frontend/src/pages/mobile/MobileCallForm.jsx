@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import api from '../../api';
 import { getApiErrorMessage } from '../../utils';
+import logger from '../../utils/logger';
 
 const intentColors = {
   A: 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700',
@@ -28,7 +29,7 @@ export default function MobileCallForm() {
       .then((r) => {
         if (r.data.code === 0) setStudentName(r.data.data?.name || '');
       })
-      .catch(() => {});
+      .catch((e) => logger.error('加载学生信息失败:', e));
   }, [id]);
 
   const submit = async () => {
