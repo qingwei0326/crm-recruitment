@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import useIsMobile from './hooks/useIsMobile';
 import useSyncManager from './hooks/useSyncManager';
+import useErrorMonitor from './hooks/useErrorMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionStatus from './components/ConnectionStatus';
 import { setGlobalToast } from './api';
@@ -75,6 +76,9 @@ function LoggedIn({ children }) {
 export default function App() {
   const { loading } = useAuth();
   const { isOnline } = useSyncManager();
+
+  // 启动全局错误监控
+  useErrorMonitor();
 
   // 设置全局 toast 用于 API 错误提示
   useEffect(() => {
