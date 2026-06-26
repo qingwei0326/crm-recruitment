@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowRightLeft, ListFilter, Menu, RefreshCcw, School, Sun, Moon } from 'lucide-react';
+import { ArrowRight, ListFilter, Menu, RefreshCcw, School, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import AdminLayout from '../../components/AdminLayout';
@@ -12,13 +12,6 @@ const workflows = [
     to: '/admin/leads',
     icon: ListFilter,
     tone: 'blue',
-  },
-  {
-    title: '超时线索回收',
-    description: '按学校或区域查看超时未跟进线索，一键回收到未分配池。',
-    to: '/admin/recycle',
-    icon: ArrowRightLeft,
-    tone: 'amber',
   },
   {
     title: '无效线索回收',
@@ -77,7 +70,7 @@ export default function LeadGovernance() {
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
             <div className="text-sm text-gray-500 dark:text-gray-400">
-              统一处理线索分配、回收、无效回收和学校分发，旧入口仍保留用于直接访问。
+              统一处理线索分配、无效回收和学校分发。
             </div>
           </div>
 

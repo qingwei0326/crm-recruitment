@@ -51,7 +51,7 @@ export function buildStudentPayload(form) {
   [
     'region', 'guardian_name', 'guardian_phone',
     'guardian2_name', 'guardian2_phone',
-    'school_name', 'school_address', 'join_reasons',
+    'school_name',
     'program', 'enrolled_at',
   ].forEach((key) => {
     const value = form[key]?.trim();

@@ -1,4 +1,4 @@
-import { Target, BarChart3, Plus, Sun, Moon, LogOut, X, Settings } from 'lucide-react';
+import { Target, CalendarClock, BarChart3, Plus, Sun, Moon, LogOut, X, Settings } from 'lucide-react';
 // Note: Settings icon is from lucide-react
 
 export default function AgentSidebar({
@@ -27,7 +27,17 @@ export default function AgentSidebar({
               : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         >
-          <Target className="w-4 h-4" /> 今日任务
+          <Target className="w-4 h-4" /> 待拨打
+        </button>
+        <button
+          onClick={() => { onCloseMenu?.(); onTabChange('handled'); }}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
+            viewTab === 'handled'
+              ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+          }`}
+        >
+          <CalendarClock className="w-4 h-4" /> 待处理
         </button>
         <button
           onClick={() => { onCloseMenu?.(); onTabChange('following'); }}

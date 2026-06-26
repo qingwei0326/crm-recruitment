@@ -10,6 +10,7 @@ from sqlalchemy import func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Call, Note, Student, StudentStatus
+from app.task_stats import TERMINAL_STUDENT_STATUSES
 
 
 def build_last_activity_subquery():
@@ -31,7 +32,7 @@ async def mark_expired_students(db: AsyncSession) -> int:
     """把已到期且最后活动早于今日的非终态学生标记为 expired，返回标记数量。
 
     判定：expired_at < 今天 且 最后活动（通话/备注，退化到分配时间/创建时间）
-    早于今天 00:00，且当前不在终态（已报名/已过期/拒绝/无效）。
+    早于今天 00:00，且当前不在终态（已报名/无效及旧无效类状态）。
     调用方负责 commit。
     """
     today = date.today()
@@ -48,19 +49,13 @@ async def mark_expired_students(db: AsyncSession) -> int:
         .where(
             Student.expired_at.isnot(None),
             Student.expired_at < today,
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.invalid,
-                ]
-            ),
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
             latest_activity_at < today_dt,
         )
     )
     count = 0
     for student in result.scalars().all():
         student.status = StudentStatus.expired
+        student.status_detail = ""
         count += 1
     return count

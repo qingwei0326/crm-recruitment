@@ -4,7 +4,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.models import Student, StudentStatus, User
+from app.models import IntentLevel, Student, StudentStatus, User
 
 
 @pytest.mark.asyncio
@@ -77,6 +77,61 @@ async def test_list_invalid_students(
 
 
 @pytest.mark.asyncio
+async def test_list_invalid_students_filters_by_reason(
+    client: AsyncClient, db, agent_user, admin_headers
+):
+    """无效线索列表支持按持久化原因筛选。"""
+    high_score = Student(
+        name="高分段学生",
+        status=StudentStatus.invalid,
+        status_detail="高分段",
+        assigned_to=agent_user.id,
+        guardian_phone="13800138011",
+    )
+    child_not_want = Student(
+        name="孩子不想读学生",
+        status=StudentStatus.invalid,
+        status_detail="孩子不想读",
+        assigned_to=agent_user.id,
+        guardian_phone="13800138012",
+    )
+    db.add_all([high_score, child_not_want])
+    await db.commit()
+
+    response = await client.get(
+        "/api/admin/invalid-students?invalid_reason=高分段",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    names = {item["name"] for item in data["data"]["list"]}
+    assert "高分段学生" in names
+    assert "孩子不想读学生" not in names
+
+
+@pytest.mark.asyncio
+async def test_funnel_includes_invalid_count(client: AsyncClient, db, agent_user, admin_headers):
+    """线索流转漏斗包含无效线索统计。"""
+    invalid_student = Student(
+        name="漏斗无效学生",
+        status=StudentStatus.invalid,
+        status_detail="高分段",
+        assigned_to=agent_user.id,
+        guardian_phone="13800138015",
+    )
+    db.add(invalid_student)
+    await db.commit()
+
+    response = await client.get("/api/stats/funnel", headers=admin_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    stages = {item["name"]: item["value"] for item in data["data"]["stages"]}
+    assert stages["无效线索"] >= 1
+
+
+@pytest.mark.asyncio
 async def test_reclaim_invalid_students(
     client: AsyncClient, db, admin_user, agent_user, admin_headers
 ):
@@ -110,6 +165,71 @@ async def test_reclaim_invalid_students(
     await db.refresh(student)
     assert student.status == StudentStatus.not_contacted
     assert student.assigned_to == admin_user.id
+
+
+@pytest.mark.asyncio
+async def test_reclaim_invalid_students_to_unassigned_pool(
+    client: AsyncClient, db, agent_user, admin_headers
+):
+    """选中的无效线索可以回收到未分配池。"""
+    student = Student(
+        name="回收到池学生",
+        status=StudentStatus.invalid,
+        status_detail="高分段",
+        assigned_to=agent_user.id,
+        guardian_phone="13800138013",
+        intent_level=IntentLevel.A,
+    )
+    db.add(student)
+    await db.commit()
+    await db.refresh(student)
+
+    response = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={"student_ids": [student.id]},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == 0
+    assert data["data"]["reclaimed_count"] == 1
+
+    await db.refresh(student)
+    assert student.status == StudentStatus.not_contacted
+    assert student.status_detail == ""
+    assert student.assigned_to is None
+
+
+@pytest.mark.asyncio
+async def test_delete_invalid_students_selected(client: AsyncClient, db, agent_user, admin_headers):
+    """选中的无效线索可以批量删除。"""
+    student = Student(
+        name="待删除无效学生",
+        status=StudentStatus.invalid,
+        status_detail="孩子不想读",
+        assigned_to=agent_user.id,
+        guardian_phone="13800138014",
+    )
+    db.add(student)
+    await db.commit()
+    await db.refresh(student)
+    student_id = student.id
+
+    response = await client.post(
+        "/api/admin/invalid-students/delete",
+        json={"student_ids": [student_id]},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == 0
+    assert data["data"]["deleted_count"] == 1
+
+    db.expire_all()
+    deleted = await db.get(Student, student_id)
+    assert deleted is None
 
 
 @pytest.mark.asyncio

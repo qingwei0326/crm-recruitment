@@ -35,7 +35,7 @@ describe('ErrorBoundary', () => {
 
     expect(screen.getByText('页面出了点问题')).toBeInTheDocument();
     expect(screen.getByText('刷新页面')).toBeInTheDocument();
-    expect(screen.getByText('返回登录')).toBeInTheDocument();
+    expect(screen.queryByText('返回登录')).not.toBeInTheDocument();
   });
 
   it('should show error message', () => {

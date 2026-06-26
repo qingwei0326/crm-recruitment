@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronUp, ChevronDown, Phone, StickyNote, Sparkles, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { STAGES } from '../../../labels';
-import { stageLabel, statusLabel } from '../../../labels';
+import { INTENT_BADGES, stageLabel, statusLabel } from '../../../labels';
 import { STATUS_STYLE, getContactOptions } from '../agentWorkUtils';
 import AssignedDaysBadge from '../shared/AssignedDaysBadge';
 import StageProgress from '../shared/StageProgress';
@@ -71,6 +71,11 @@ export default function StudentTable({
                 checked={selectedIds.size === students.length && students.length > 0}
                 onChange={toggleSelectAll}
                 className="rounded"
+                aria-label={
+                  selectedIds.size === students.length && students.length > 0
+                    ? '取消选择全部学生'
+                    : '选择全部学生'
+                }
               />
             </th>
             {COLUMNS.map((col) => (
@@ -142,6 +147,7 @@ function StudentRow({
             checked={isSelected}
             onChange={onSelect}
             className="rounded"
+            aria-label={`${isSelected ? '取消选择' : '选择'} ${s.name || '学生'}`}
           />
         </td>
         <td className="px-3 py-2">
@@ -160,20 +166,21 @@ function StudentRow({
           <StageProgress currentStage={s.stage} onStageClick={(stg) => onUpdateStage(stg)} compact />
         </td>
         <td className="px-3 py-2">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-            { A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-              B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-              C: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-              '无': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
-            }[s.intent_level] || 'bg-gray-100 text-gray-500'
-          }`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${INTENT_BADGES[s.intent_level] || INTENT_BADGES['无']}`}>
             {s.intent_level === '无' ? '无' : `${s.intent_level}级`}
           </span>
         </td>
         <td className="px-3 py-2">
-          <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[s.status] || ''}`}>
-            {statusLabel(s.status)}
-          </span>
+          <div className="flex flex-col items-start gap-1">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[s.status] || ''}`}>
+              {statusLabel(s.status)}
+            </span>
+            {s.status_detail && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+                {s.status_detail}
+              </span>
+            )}
+          </div>
         </td>
         <td className="px-3 py-2 text-xs text-gray-500">
           {s.days_since_assigned != null ? `${s.days_since_assigned}天` : '-'}
@@ -183,24 +190,27 @@ function StudentRow({
             {contacts.length > 0 && (
               <button
                 onClick={() => onDial(contacts[0].key)}
-                className="p-1.5 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600"
+                className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600"
                 title={`拨打 ${contacts[0].name}`}
+                aria-label={`拨打 ${contacts[0].name}`}
               >
                 <Phone className="w-4 h-4" />
               </button>
             )}
             <button
               onClick={onAddNote}
-              className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600"
+              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600"
               title="写备注"
+              aria-label={`给 ${s.name || '学生'} 写备注`}
             >
               <StickyNote className="w-4 h-4" />
             </button>
             <button
               onClick={onOpenAi}
               disabled={isLocked}
-              className="p-1.5 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 disabled:opacity-30"
+              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 disabled:opacity-30"
               title="AI分析"
+              aria-label={`分析 ${s.name || '学生'}`}
             >
               <Sparkles className="w-4 h-4" />
             </button>

@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../api';
 import { buildStudentPayload, getApiErrorMessage } from '../utils';
 import { STAGES } from '../labels';
 import logger from '../utils/logger';
 
-const STATUS_OPTS = ['', '新线索', '非常有意向', '意向了解加微', '未接', '高分段', '无意向', '孩子不想读', '已报名'];
+const STATUS_OPTS = ['', '未联系', '已联系', '未接', '待回访', '已报名', '无效'];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGE_STAT_KEYS = ['未分配', ...STAGES];
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
@@ -18,7 +18,7 @@ const emptyStudentForm = {
   deposit: '', enrolled_at: '', assigned_to: '', need_help: false,
 };
 
-export default function useLeadsManage({ toast, confirm }) {
+export default function useLeadsManage({ toast }) {
   const [searchParams] = useSearchParams();
   const [autoAssigning, setAutoAssigning] = useState(false);
 
@@ -70,7 +70,6 @@ export default function useLeadsManage({ toast, confirm }) {
   const [schoolAssignAgents, setSchoolAssignAgents] = useState([]);
   const [schoolAssignLoading, setSchoolAssignLoading] = useState(false);
   const [schoolListLoading, setSchoolListLoading] = useState(false);
-  const schoolsReqIdRef = useRef(0);
 
   // Inline note
   const [noteText, setNoteText] = useState({});
@@ -107,8 +106,11 @@ export default function useLeadsManage({ toast, confirm }) {
   );
 
   useEffect(() => {
-    fetchStudents(1);
-    setPage(1);
+    const timer = setTimeout(() => {
+      fetchStudents(1);
+      setPage(1);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [status, region, stage, assignment, needHelp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

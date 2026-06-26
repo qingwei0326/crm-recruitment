@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import api from '../api';
 import { getApiErrorMessage } from '../utils';
+import { useConfirm } from '../components/ConfirmDialog';
 
 /**
  * 管理学生列表数据和筛选逻辑
  */
 export default function useAgentStudents({ state, actions, toast }) {
+  const confirm = useConfirm();
   const { students, filters, sortConfig, currentIdx } = state;
   const {
     searchQuery, selectedSchool, selectedStage,
     selectedIntent, selectedStatus, scoreRange,
   } = filters;
 
-  // 加载今日任务
+  // 加载待拨打任务
   const fetchToday = useCallback(async () => {
     try {
       const res = await api.get('/tasks/today');
@@ -25,7 +27,7 @@ export default function useAgentStudents({ state, actions, toast }) {
         );
       }
     } catch {
-      toast?.error('加载今日任务失败');
+      toast?.error('加载待拨打任务失败');
     }
   }, [actions, toast]);
 
@@ -77,8 +79,8 @@ export default function useAgentStudents({ state, actions, toast }) {
     }
     const list = filteredStudents;
     const total = list.length;
-    const pending = list.filter((s) => s.status === '新线索').length;
-    const handledStatuses = ['非常有意向', '意向了解加微', '未接', '高分段', '无意向', '孩子不想读', '已报名'];
+    const pending = list.filter((s) => s.status === '未联系').length;
+    const handledStatuses = ['已联系', '未接', '待回访', '已报名', '无效'];
     const handled = list.filter((s) => handledStatuses.includes(s.status)).length;
     return {
       total,
@@ -119,13 +121,35 @@ export default function useAgentStudents({ state, actions, toast }) {
   // 更新学生状态
   const updateStatus = useCallback(async (id, s) => {
     const status = typeof s === 'string' ? s : s.status;
+    const fallbackStatusByDetail = {
+      非常有意向: '已联系',
+      意向了解加微: '待回访',
+      高分段: '无效',
+      无意向: '无效',
+      孩子不想读: '无效',
+      空号: '无效',
+    };
+    const fallbackStatus = fallbackStatusByDetail[status] || status;
+    const fallbackDetail = fallbackStatus === status ? '' : status;
+    if (status === '已报名') {
+      const ok = await confirm({
+        title: '确认报名',
+        message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
+        confirmText: '确认报名',
+      });
+      if (!ok) return;
+    }
     let payload = { status };
     if (typeof s === 'object' && s.invalid_reason) {
       payload.invalid_reason = s.invalid_reason;
     }
     try {
-      await api.put(`/students/${id}`, payload);
-      actions.updateStudent(id, { status });
+      const res = await api.put(`/students/${id}`, payload);
+      const updated = res.data?.data || {};
+      actions.updateStudent(id, {
+        status: updated.status || fallbackStatus,
+        status_detail: updated.status_detail ?? fallbackDetail,
+      });
       if (state.dial.lockedStudentId === id) {
         actions.setLockedStudent(null);
       }
@@ -134,7 +158,7 @@ export default function useAgentStudents({ state, actions, toast }) {
     } catch (e) {
       toast?.error('更新状态失败: ' + getApiErrorMessage(e));
     }
-  }, [actions, state.dial.lockedStudentId, toast]);
+  }, [actions, confirm, state.dial.lockedStudentId, toast]);
 
   // 更新意向
   const updateIntentById = useCallback(async (id, level) => {

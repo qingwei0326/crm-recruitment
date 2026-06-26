@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Phone, HelpCircle, Plus, Sparkles, X } from 'lucide-react';
+import { Phone, HelpCircle, Plus } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import AgentSidebar from './desktop/AgentSidebar';
 import FilterPanel from './desktop/FilterPanel';
@@ -23,7 +23,7 @@ export default function AgentWorkDesktop({
   scoreRange, setScoreRange,
   selectedStatus, setSelectedStatus,
   searchQuery, setSearchQuery,
-  backlogAlert, dismissBacklogAlert, backlogBanner,
+  backlogBanner,
   fetchFollowing, followingData, followingLoading,
   onHelpOpen, onAddStudent, onShowSettings,
   noteText, setNoteText,
@@ -96,20 +96,22 @@ export default function AgentWorkDesktop({
         {/* Toolbar */}
         <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between shrink-0">
           <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-            {viewTab === 'today' ? '今日任务' : viewTab === 'handled' ? '待办' : '跟进中'}
+            {viewTab === 'today' ? '待拨打' : viewTab === 'handled' ? '待处理' : '跟进中'}
           </h2>
           <div className="flex items-center gap-1">
             <button
               onClick={onHelpOpen}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
               title="使用说明"
+              aria-label="使用说明"
             >
               <HelpCircle className="w-4 h-4" />
             </button>
             <button
               onClick={onAddStudent}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
+              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
               title="手动添加学生"
+              aria-label="手动添加学生"
             >
               <Plus className="w-4 h-4" />
             </button>

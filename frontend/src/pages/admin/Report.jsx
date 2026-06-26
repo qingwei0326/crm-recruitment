@@ -13,7 +13,6 @@ import {
   Medal,
   TrendingUp,
   TrendingDown,
-  Target,
   CheckCircle2,
   MapPin,
   Home,
@@ -44,7 +43,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import HeatmapChart from './HeatmapChart';
-import PredictionChart from './PredictionChart';
 
 /** Skeleton placeholder shown while a chart section has not scrolled into view. */
 function ChartSkeleton({ height = 260 }) {
@@ -87,7 +85,6 @@ export default function Report() {
   const [visits, setVisits] = useState(null);
   const [substageData, setSubstageData] = useState(null);
   const [heatmapData, setHeatmapData] = useState(null);
-  const [predictionData, setPredictionData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -96,14 +93,12 @@ export default function Report() {
       api.get('/visits?page_size=100'),
       api.get('/stats/enrollment-substage-distribution'),
       api.get('/stats/heatmap'),
-      api.get('/stats/predictions'),
     ])
-      .then(([rRes, vRes, sRes, hRes, pRes]) => {
+      .then(([rRes, vRes, sRes, hRes]) => {
         setRanking(rRes.data.data?.ranking || []);
         setVisits(vRes.data.data?.list || []);
         setSubstageData(sRes.data.data || null);
         setHeatmapData(hRes.data.data || null);
-        setPredictionData(pRes.data.data || null);
       })
       .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
@@ -520,21 +515,6 @@ export default function Report() {
                 </div>
                 <div className="p-4 lg:p-6">
                   <HeatmapChart data={heatmapData} />
-                </div>
-              </div>
-            </LazyChart>
-          )}
-
-          {/* ── Section 4: 转化预测分布 ── */}
-          {predictionData && (
-            <LazyChart height={320}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
-                <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
-                  <Target className="w-5 h-5 text-purple-500" />
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-100">转化预测分析</h3>
-                </div>
-                <div className="p-4 lg:p-6">
-                  <PredictionChart data={predictionData} />
                 </div>
               </div>
             </LazyChart>

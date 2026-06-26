@@ -6,7 +6,6 @@ import {
   ExternalLink,
   HelpingHand,
   Loader2,
-  Menu,
   Moon,
   RefreshCw,
   Sun,
@@ -15,6 +14,7 @@ import api from '../../api';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
 
@@ -120,37 +120,31 @@ export default function AdminWorkCenter() {
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button
-                type="button"
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">工作中心</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={load}
-              disabled={loading}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-5 h-5 text-gray-500 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              type="button"
-              onClick={toggle}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
-            </button>
-          </div>
-        </header>
+        <PageHeader
+          title="工作中心"
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+          actionsClassName="flex items-center gap-2"
+          useSafeArea={false}
+        >
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+            aria-label="刷新工作中心"
+          >
+            <RefreshCw className={`w-5 h-5 text-gray-500 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={toggle}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label={dark ? '亮色模式' : '暗色模式'}
+          >
+            {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
+          </button>
+        </PageHeader>
 
         <div className="p-4 lg:p-6 max-w-7xl mx-auto grid gap-4 xl:grid-cols-3">
           <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
@@ -171,7 +165,11 @@ export default function AdminWorkCenter() {
                   <div key={student.id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <PersonLine name={student.name} region={student.region} agentName={student.agent_name} />
-                      <Link to={`/admin/leads/${student.id}`} className="text-gray-400 hover:text-blue-500">
+                      <Link
+                        to={`/admin/leads/${student.id}`}
+                        className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-900/20"
+                        aria-label={`查看 ${student.name || '学生'} 详情`}
+                      >
                         <ExternalLink className="w-4 h-4" />
                       </Link>
                     </div>
@@ -179,7 +177,7 @@ export default function AdminWorkCenter() {
                       type="button"
                       onClick={() => completeHelp(student.id)}
                       disabled={savingKey === `help-${student.id}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 text-white text-sm disabled:opacity-50"
+                      className="inline-flex min-h-9 items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 text-white text-sm disabled:opacity-50"
                     >
                       {savingKey === `help-${student.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                       已处理求助
@@ -217,7 +215,7 @@ export default function AdminWorkCenter() {
                       type="button"
                       onClick={() => completeFollowUp(item.id)}
                       disabled={savingKey === `follow-${item.id}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm disabled:opacity-50"
+                      className="inline-flex min-h-9 items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 text-white text-sm disabled:opacity-50"
                     >
                       {savingKey === `follow-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                       完成回访

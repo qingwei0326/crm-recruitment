@@ -13,10 +13,10 @@ const Login = lazy(() => import('./pages/Login'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 const AdminDash = lazy(() => import('./pages/admin/AdminDash'));
 const AdminWorkCenter = lazy(() => import('./pages/admin/AdminWorkCenter'));
+const AgentScorePreview = lazy(() => import('./pages/admin/AgentScorePreview'));
 const LeadsManage = lazy(() => import('./pages/admin/LeadsManage'));
 const StudentDetail = lazy(() => import('./pages/admin/StudentDetail'));
 const LeadGovernance = lazy(() => import('./pages/admin/LeadGovernance'));
-const LeadRecycle = lazy(() => import('./pages/admin/LeadRecycle'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
 const Report = lazy(() => import('./pages/admin/Report'));
@@ -24,7 +24,6 @@ const TrendReport = lazy(() => import('./pages/admin/TrendReport'));
 const CallVolumeQuery = lazy(() => import('./pages/admin/CallVolumeQuery'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
-const RecycleCenter = lazy(() => import('./pages/admin/RecycleCenter'));
 const ReportCenter = lazy(() => import('./pages/admin/ReportCenter'));
 const DistributeBySchools = lazy(() => import('./pages/admin/DistributeBySchools'));
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'));
@@ -131,6 +130,14 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/score-preview"
+          element={
+            <Protected role="admin">
+              <RouteError><AgentScorePreview /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
           path="/admin/leads"
           element={
             <Protected role="admin">
@@ -158,7 +165,15 @@ export default function App() {
           path="/admin/recycle-center"
           element={
             <Protected role="admin">
-              <RouteError><RecycleCenter /></RouteError>
+              <Navigate to="/admin/governance" replace />
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/recycle"
+          element={
+            <Protected role="admin">
+              <Navigate to="/admin/governance" replace />
             </Protected>
           }
         />
@@ -214,12 +229,20 @@ export default function App() {
           path="/admin/invalid-reclaim"
           element={
             <Protected role="admin">
-              <RouteError><RecycleCenter /></RouteError>
+              <RouteError><InvalidStudentReclaim /></RouteError>
             </Protected>
           }
         />
         <Route
           path="/admin/distribute"
+          element={
+            <Protected role="admin">
+              <RouteError><DistributeBySchools /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/distribute-by-schools"
           element={
             <Protected role="admin">
               <RouteError><DistributeBySchools /></RouteError>

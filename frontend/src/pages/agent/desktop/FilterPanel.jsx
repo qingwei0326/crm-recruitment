@@ -42,9 +42,10 @@ export default function FilterPanel({
             <div>
               <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">学校</label>
               <select
+                aria-label="按学校筛选"
                 value={selectedSchool || ''}
                 onChange={(e) => onSchoolChange(e.target.value || null)}
-                className="w-full px-2 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                className="w-full min-h-9 px-2 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
               >
                 <option value="">全部学校</option>
                 {schoolGroups.map((g) => (
@@ -59,9 +60,10 @@ export default function FilterPanel({
             <div>
               <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">阶段</label>
               <select
+                aria-label="按阶段筛选"
                 value={selectedStage || ''}
                 onChange={(e) => onStageChange(e.target.value || null)}
-                className="w-full px-2 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                className="w-full min-h-9 px-2 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
               >
                 <option value="">全部阶段</option>
                 {STAGES.map((s) => (
@@ -74,9 +76,10 @@ export default function FilterPanel({
             <div>
               <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">意向</label>
               <select
+                aria-label="按意向筛选"
                 value={selectedIntent || ''}
                 onChange={(e) => onIntentChange(e.target.value || null)}
-                className="w-full px-2 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                className="w-full min-h-9 px-2 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
               >
                 <option value="">全部</option>
                 <option value="A">A级</option>
@@ -91,19 +94,21 @@ export default function FilterPanel({
               <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">分数范围</label>
               <div className="flex items-center gap-1.5">
                 <input
+                  aria-label="最低分"
                   type="number"
                   value={scoreRange.min}
                   onChange={(e) => onScoreRangeChange({ ...scoreRange, min: e.target.value })}
                   placeholder="最低"
-                  className="w-full px-2 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+                  className="w-full min-h-9 px-2 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
                 />
                 <span className="text-gray-400 text-xs">-</span>
                 <input
+                  aria-label="最高分"
                   type="number"
                   value={scoreRange.max}
                   onChange={(e) => onScoreRangeChange({ ...scoreRange, max: e.target.value })}
                   placeholder="最高"
-                  className="w-full px-2 py-1.5 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+                  className="w-full min-h-9 px-2 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
                 />
               </div>
             </div>
