@@ -36,8 +36,8 @@ export default function CallVolumeQuery() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [agents, setAgents] = useState([]);
   const [selectedAgents, setSelectedAgents] = useState([]);
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -65,12 +65,12 @@ export default function CallVolumeQuery() {
     }
     setLoading(true);
     const params = {
-      start_date: startDate,
-      end_date: endDate,
       agent_ids: selectedAgents.join(','),
       page: p,
       page_size: pageSize,
     };
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
     api
       .get('/operation-logs/call-volume', { params })
       .then((res) => {
@@ -174,19 +174,27 @@ export default function CallVolumeQuery() {
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 space-y-3">
             <div className="flex flex-wrap gap-3 items-center">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
-              />
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <span className="shrink-0">开始日期</span>
+                <input
+                  aria-label="开始日期"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                />
+              </label>
               <span className="text-gray-500">至</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
-              />
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                <span className="shrink-0">结束日期</span>
+                <input
+                  aria-label="结束日期"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                />
+              </label>
               <button
                 onClick={() => {
                   fetchLogs(1);
@@ -203,7 +211,8 @@ export default function CallVolumeQuery() {
                 <button
                   key={a.id}
                   onClick={() => toggleAgent(a.id)}
-                  className={`text-xs px-3 py-1.5 rounded-full ${selectedAgents.includes(a.id) ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+                  aria-pressed={selectedAgents.includes(a.id)}
+                  className={`min-h-9 min-w-9 text-xs px-3 py-2 rounded-full ${selectedAgents.includes(a.id) ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
                 >
                   {a.name}
                 </button>
@@ -253,10 +262,12 @@ export default function CallVolumeQuery() {
                           </span>
                         </td>
                         <td className="px-3 py-2 font-mono text-xs">{l.case_no?.slice(0, 8)}</td>
-                        <td className="px-3 py-2 text-xs max-w-[150px] truncate">{l.content}</td>
+                        <td className="px-3 py-2 text-xs max-w-[14rem] whitespace-normal break-words">
+                          {l.content}
+                        </td>
                         <td className="px-3 py-2 text-xs">{l.old_status}</td>
                         <td className="px-3 py-2 text-xs">{l.new_status}</td>
-                        <td className="px-3 py-2 text-xs max-w-[150px] truncate">
+                        <td className="px-3 py-2 text-xs max-w-[14rem] whitespace-normal break-words">
                           {l.note_content}
                         </td>
                         <td className="px-3 py-2 text-xs text-gray-500">
@@ -273,24 +284,26 @@ export default function CallVolumeQuery() {
               <div className="flex items-center gap-2">
                 <button
                   disabled={page <= 1}
+                  aria-label="上一页"
                   onClick={() => {
                     const p = page - 1;
                     setPage(p);
                     fetchLogs(p);
                   }}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
+                  className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <span>{page}</span>
                 <button
                   disabled={page * pageSize >= total}
+                  aria-label="下一页"
                   onClick={() => {
                     const p = page + 1;
                     setPage(p);
                     fetchLogs(p);
                   }}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
+                  className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

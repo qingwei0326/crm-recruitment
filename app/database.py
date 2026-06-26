@@ -48,6 +48,8 @@ async def init_db():
         await conn.run_sync(_migrate_user_device_tracking)
         await conn.run_sync(_migrate_user_must_change_password)
         await conn.run_sync(_migrate_operation_log_nullable)
+        await conn.run_sync(_migrate_student_status_detail)
+        await conn.run_sync(_migrate_legacy_student_status_values)
 
 
 def _migrate_user_token_version(sync_connection):
@@ -192,6 +194,89 @@ def _migrate_operation_log_nullable(sync_connection):
                 "CREATE INDEX IF NOT EXISTS ix_operation_logs_target_student_id "
                 "ON operation_logs(target_student_id)"
             )
+        )
+
+
+def _migrate_legacy_student_status_values(sync_connection):
+    inspector = inspect(sync_connection)
+    if "students" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("students")}
+    if "status" not in columns:
+        return
+
+    if "status_detail" in columns:
+        detail_map = {
+            "非常有意向": "非常有意向",
+            "very_interested": "非常有意向",
+            "意向了解加微": "意向了解加微",
+            "interested_add_wechat": "意向了解加微",
+            "高分段": "高分段",
+            "high_score": "高分段",
+            "无意向": "无意向",
+            "not_interested": "无意向",
+            "no_intent": "无意向",
+            "孩子不想读": "孩子不想读",
+            "child_not_want_study": "孩子不想读",
+            "child_not_interested": "孩子不想读",
+            "空号": "空号",
+            "其他": "其他",
+        }
+        for old, detail in detail_map.items():
+            sync_connection.execute(
+                text(
+                    "UPDATE students SET status_detail = :detail "
+                    "WHERE status = :old AND (status_detail IS NULL OR status_detail = '')"
+                ),
+                {"old": old, "detail": detail},
+            )
+
+    legacy_map = {
+        "新线索": "new_lead",
+        "未联系": "not_contacted",
+        "已联系": "contacted",
+        "待回访": "pending_visit",
+        "已完成": "completed",
+        "无效": "invalid",
+        "已报名": "enrolled",
+        "拒绝接听": "rejected",
+        "已过期": "expired",
+        "非常有意向": "very_interested",
+        "意向了解加微": "interested_add_wechat",
+        "未接": "not_reached",
+        "高分段": "high_score",
+        "无意向": "not_interested",
+        "孩子不想读": "child_not_want_study",
+        "空号": "invalid",
+        "其他": "invalid",
+        "unassigned": "not_contacted",
+        "no_intent": "not_interested",
+        "child_not_interested": "child_not_want_study",
+    }
+    for old, new in legacy_map.items():
+        sync_connection.execute(
+            text("UPDATE students SET status = :new WHERE status = :old"),
+            {"old": old, "new": new},
+        )
+
+
+def _migrate_student_status_detail(sync_connection):
+    inspector = inspect(sync_connection)
+    if "students" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("students")}
+    if "status_detail" in columns:
+        return
+    if DB_ENGINE == "postgresql":
+        sync_connection.execute(
+            text(
+                "ALTER TABLE students ADD COLUMN IF NOT EXISTS status_detail "
+                "VARCHAR(64) NOT NULL DEFAULT ''"
+            )
+        )
+    else:
+        sync_connection.execute(
+            text("ALTER TABLE students ADD COLUMN status_detail VARCHAR(64) NOT NULL DEFAULT ''")
         )
 
 

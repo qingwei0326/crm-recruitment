@@ -21,10 +21,16 @@ import StudentInfoCard from '../../components/StudentInfoCard';
 import TimelineItem from '../../components/TimelineItem';
 import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
+import { useConfirm } from '../../components/ConfirmDialog';
 import { getApiErrorMessage } from '../../utils';
-import { STAGES, stageLabel } from '../../labels';
-
-const STUDENT_STATUSES = ['未联系', '已联系', '待回访', '拒绝接听', '无效'];
+import {
+  detailForOperatorResult,
+  displayStatusForOperatorResult,
+  OPERATOR_STATUS_BUTTON_LABELS,
+  STAGES,
+  STATUS_ACTION_BUTTON_CLASSES,
+  stageLabel,
+} from '../../labels';
 const INTENT_LEVELS = ['A', 'B', 'C', '无'];
 const VISIT_STATUSES = ['待确认', '已确认', '已完成', '已取消'];
 
@@ -205,6 +211,7 @@ export default function MobileStudentDetail() {
   const navigate = useNavigate();
   const { dial } = useDialFlow();
   const { user } = useAuth();
+  const confirm = useConfirm();
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -299,7 +306,7 @@ export default function MobileStudentDetail() {
     try {
       const r = await request();
       if (r.data.code === 0) {
-        onSuccess?.();
+        onSuccess?.(r.data.data);
         showToast(successMessage);
       } else {
         showToast(r.data.msg || '更新失败');
@@ -362,12 +369,28 @@ export default function MobileStudentDetail() {
     }
   };
 
-  const handleUpdateStudentStatus = (status) => {
-    if (!student || student.status === status) return;
+  const handleUpdateStudentStatus = async (status) => {
+    if (!student) return;
+    if (status === '已报名') {
+      const ok = await confirm({
+        title: '确认报名',
+        message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
+        confirmText: '确认报名',
+      });
+      if (!ok) return;
+    }
     runWorkflowUpdate(
       () => api.put(`/students/${student.id}`, { status }),
       '联系状态已更新',
-      () => patchStudent({ status }),
+      (updated) => {
+        const nextStatus = updated?.status || displayStatusForOperatorResult(status);
+        const nextDetail = updated?.status_detail ?? detailForOperatorResult(status);
+        patchStudent({
+          status: nextStatus,
+          status_detail: nextDetail,
+          stage: updated?.stage || (nextStatus === '已报名' ? '已报名' : student.stage),
+        });
+      },
     );
   };
 
@@ -708,20 +731,18 @@ export default function MobileStudentDetail() {
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-4">
           <div>
             <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-              联系状态
+              处理结果
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {STUDENT_STATUSES.map((status) => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="group" aria-label="处理结果">
+              {OPERATOR_STATUS_BUTTON_LABELS.map((status) => (
                 <button
                   key={status}
                   type="button"
-                  disabled={workflowSaving || student.status === status}
+                  disabled={workflowSaving}
                   onClick={() => handleUpdateStudentStatus(status)}
-                  className={`min-h-[40px] rounded-lg border text-sm font-medium ${
-                    student.status === status
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
-                  } disabled:opacity-80`}
+                  className={`min-h-[42px] rounded-lg px-2 text-sm font-medium text-white ${
+                    STATUS_ACTION_BUTTON_CLASSES[status]
+                  } disabled:opacity-60`}
                 >
                   {status}
                 </button>

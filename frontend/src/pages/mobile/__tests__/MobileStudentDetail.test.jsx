@@ -103,9 +103,9 @@ describe('MobileStudentDetail follow-up workflow', () => {
 
     await screen.findByText('完整时间线');
 
-    fireEvent.click(screen.getByRole('button', { name: '已联系' }));
+    fireEvent.click(screen.getByRole('button', { name: '非常有意向' }));
     await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith('/students/42', { status: '已联系' });
+      expect(api.put).toHaveBeenCalledWith('/students/42', { status: '非常有意向' });
     });
 
     fireEvent.click(screen.getByRole('button', { name: '意向跟进' }));
@@ -116,6 +116,26 @@ describe('MobileStudentDetail follow-up workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'A 级' }));
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42', { intent_level: 'A' });
+    });
+  });
+
+  it('shows the required operator result buttons on the mobile detail page', async () => {
+    renderPage();
+
+    await screen.findByText('完整时间线');
+    const resultButtons = screen.getByRole('group', { name: '处理结果' });
+
+    [
+      '新线索',
+      '非常有意向',
+      '意向了解加微',
+      '未接',
+      '高分段',
+      '无意向',
+      '孩子不想读',
+      '已报名',
+    ].forEach((label) => {
+      expect(within(resultButtons).getByRole('button', { name: label })).toBeInTheDocument();
     });
   });
 

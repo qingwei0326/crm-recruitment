@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Set test environment BEFORE any app imports
 os.environ.setdefault("DATABASE_PATH", ":memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
@@ -19,6 +21,25 @@ from httpx import ASGITransport, AsyncClient
 
 from app.database import Base, async_session, engine
 from app.main import app
+
+
+def pytest_ignore_collect(collection_path, config):
+    run_e2e = os.getenv("RUN_E2E", "").lower() in {"1", "true", "yes", "on"}
+    if run_e2e:
+        return False
+    path = Path(str(collection_path))
+    return "e2e" in path.parts or path.name.endswith("_e2e.py")
+
+
+def pytest_collection_modifyitems(items):
+    run_e2e = os.getenv("RUN_E2E", "").lower() in {"1", "true", "yes", "on"}
+    if run_e2e:
+        return
+    skip_e2e = pytest.mark.skip(reason="E2E tests require a running app; set RUN_E2E=1 to run")
+    for item in items:
+        path = Path(str(getattr(item, "path", getattr(item, "fspath", ""))))
+        if "e2e" in path.parts or path.name.endswith("_e2e.py"):
+            item.add_marker(skip_e2e)
 
 
 @pytest_asyncio.fixture(autouse=True)

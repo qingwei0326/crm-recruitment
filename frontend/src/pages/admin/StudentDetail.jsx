@@ -242,6 +242,11 @@ export default function StudentDetail() {
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">{student.name}</h1>
           <StatusBadge status={student.status} />
+          {student.status_detail && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+              {student.status === '无效' ? `原因：${student.status_detail}` : student.status_detail}
+            </span>
+          )}
           <IntentLevelBadge level={student.intent_level} />
         </div>
       </header>

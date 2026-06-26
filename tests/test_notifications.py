@@ -5,7 +5,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_expired_scan_logs_failure(db):
-    """When PushPlus fails, OperationLog should have a 通知失败 entry."""
+    """Expired scan is disabled and should not send or log notifications."""
     from datetime import date, timedelta
 
     from sqlalchemy import select
@@ -26,35 +26,37 @@ async def test_expired_scan_logs_failure(db):
     await db.commit()
     await db.refresh(agent)
 
-    # Create an expired student assigned to this agent
+    expired_at = date.today() - timedelta(days=1)
     student = Student(
         name="过期学生B1",
         intent_level=IntentLevel.B,
         status=StudentStatus.pending_visit,
-        expired_at=date.today() - timedelta(days=1),
+        expired_at=expired_at,
         assigned_to=agent.id,
     )
     db.add(student)
     await db.commit()
+    await db.refresh(student)
 
-    # Patch PushPlus to fail
-    with patch("app.scheduler.send_pushplus_to_user", new_callable=AsyncMock, return_value=False):
+    with patch("app.scheduler.send_pushplus_to_user", new_callable=AsyncMock) as send_mock:
         await scan_expired_students()
+        send_mock.assert_not_awaited()
 
-    # Check OperationLog
     logs = (
         (await db.execute(select(OperationLog).where(OperationLog.action == "通知失败")))
         .scalars()
         .all()
     )
-    assert len(logs) == 1
-    assert logs[0].operator_name == "scheduler"
-    assert "agent_id=" in logs[0].content
+    assert len(logs) == 0
+    await db.refresh(student)
+    assert student.assigned_to == agent.id
+    assert student.status == StudentStatus.pending_visit
+    assert student.expired_at == expired_at
 
 
 @pytest.mark.asyncio
 async def test_expired_scan_success_no_log(db):
-    """When PushPlus succeeds, no notify_fail OperationLog should be created."""
+    """Expired scan remains inert even when an expired lead exists."""
     from datetime import date, timedelta
 
     from sqlalchemy import select
@@ -84,8 +86,9 @@ async def test_expired_scan_success_no_log(db):
     db.add(student)
     await db.commit()
 
-    with patch("app.scheduler.send_pushplus_to_user", new_callable=AsyncMock, return_value=True):
+    with patch("app.scheduler.send_pushplus_to_user", new_callable=AsyncMock) as send_mock:
         await scan_expired_students()
+        send_mock.assert_not_awaited()
 
     logs = (
         (await db.execute(select(OperationLog).where(OperationLog.action == "通知失败")))

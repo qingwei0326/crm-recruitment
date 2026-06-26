@@ -1,14 +1,13 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
 
 from app.database import async_session
-from app.expiry import mark_expired_students
-from app.models import FollowUp, OperationLog, Student, StudentStatus, User
+from app.models import FollowUp, OperationLog, Student, User
 from app.pushplus import send_pushplus_to_user
-from app.utils import today_cst_as_utc, utcnow
+from app.utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -79,67 +78,8 @@ async def scan_follow_up_reminders():
 
 
 async def scan_expired_students():
-    """每日：先把已过期且不活跃的学生自动标记为 expired，再对仍需处理的推送提醒。"""
-    async with async_session() as db:
-        # 1) 自动标记：已过期 + 最后活动早于今日 + 非终态 → status=expired
-        #    （与管理员手动「过期检查」共用 app.expiry.mark_expired_students）
-        try:
-            marked = await mark_expired_students(db)
-            await db.commit()
-            if marked:
-                logger.info("auto-marked %d students as expired", marked)
-        except Exception as e:
-            logger.warning("auto expire-mark failed: %s", e)
-            await db.rollback()
-
-        # 2) 提醒：对仍未进入 expired 终态、但已到期/即将到期的学生推送话务员。
-        #    被上一步归档的（不活跃）已变为 expired，会被 status != expired 过滤掉，不再骚扰。
-        today = today_cst_as_utc().date()
-        result = await db.execute(
-            select(Student, User)
-            .join(User, User.id == Student.assigned_to)
-            .where(
-                Student.expired_at.is_not(None),
-                Student.expired_at <= today,
-                Student.status != StudentStatus.expired,
-                Student.status != StudentStatus.enrolled,
-                Student.assigned_to.is_not(None),
-            )
-        )
-        # 按 agent 聚合，每个 agent 一条汇总推送，避免刷屏
-        by_agent: dict[int, list[Student]] = {}
-        for student, agent in result.all():
-            by_agent.setdefault(agent.id, []).append(student)
-
-        for agent_id, students in by_agent.items():
-            lines = ["## 学生即将/已过期提醒", "", f"共 {len(students)} 名学生需要处理：", ""]
-            for s in students[:20]:
-                lines.append(f"- {s.name}（{s.intent_level}，过期 {s.expired_at}）")
-            if len(students) > 20:
-                lines.append(f"- ……另有 {len(students) - 20} 名")
-            ok = await send_pushplus_to_user(db, agent_id, "CRM 学生过期告警", "\n".join(lines))
-            if not ok:
-                db.add(
-                    OperationLog(
-                        operator_id=None,
-                        operator_name="scheduler",
-                        action="通知失败",
-                        content=(
-                            f"CRM 学生过期告警|||agent_id={agent_id}|||"
-                            f"{len(students)} students|||"
-                            + "\n".join(lines)
-                        ),
-                    )
-                )
-                try:
-                    await db.commit()
-                except Exception as e:
-                    logger.warning("notify_fail log commit failed: %s", e)
-                    await db.rollback()
-            else:
-                logger.info(
-                    "expired alert sent to agent_id=%s (%d students)", agent_id, len(students)
-                )
+    """过期逻辑已暂时停用，保留函数以兼容旧测试/脚本调用。"""
+    logger.info("scan_expired_students skipped: expiry flow disabled")
 
 
 async def follow_up_reminder_scheduler():
@@ -152,25 +92,8 @@ async def follow_up_reminder_scheduler():
 
 
 async def expired_student_scheduler():
-    """每天 08:00 CST 扫一次过期学生，重启后不丢窗口。"""
-    from app.utils import _CST
-
-    while True:
-        try:
-            now = datetime.now(_CST)
-            # 计算下一次 08:00 CST
-            target = now.replace(hour=8, minute=0, second=0, microsecond=0)
-            if target <= now:
-                from datetime import timedelta
-
-                target += timedelta(days=1)
-            wait_seconds = (target - now).total_seconds()
-            logger.info("expired_student_scheduler: next scan in %.0fs", wait_seconds)
-            await asyncio.sleep(wait_seconds)
-            await scan_expired_students()
-        except Exception as e:
-            logger.error("scan_expired_students failed: %s", e)
-            await asyncio.sleep(3600)  # 失败后 1h 重试
+    """过期调度已暂时停用。"""
+    logger.info("expired_student_scheduler disabled")
 
 
 async def retry_failed_notifications():

@@ -133,6 +133,29 @@ class TestListStudents:
 
 @pytest.mark.asyncio
 class TestImportStudents:
+    async def test_import_requires_admin(self, client, agent_headers):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["name", "phone"])
+        ws.append(["Agent Import", "13900139000"])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        resp = await client.post(
+            "/api/students/import",
+            headers=agent_headers,
+            files={
+                "file": (
+                    "students.xlsx",
+                    buf.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+
+        assert resp.status_code == 403
+
     async def test_import_xlsx_skips_invalid_rows(self, client, admin_headers, db):
         from sqlalchemy import select
 
@@ -246,6 +269,49 @@ class TestUpdateStudent:
             headers=admin_headers,
         )
         assert resp.json()["code"] == 0
+
+    async def test_update_new_lead_button_returns_default_not_contacted_status(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}",
+            json={"status": "新线索"},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["status"] == "未联系"
+        assert body["data"]["status_detail"] == ""
+
+    async def test_update_interest_result_keeps_canonical_status_detail(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}",
+            json={"status": "非常有意向"},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["status"] == "已联系"
+        assert body["data"]["status_detail"] == "非常有意向"
+
+    async def test_update_invalid_reason_status_keeps_reason_detail(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}",
+            json={"status": "孩子不想读"},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["status"] == "无效"
+        assert body["data"]["status_detail"] == "孩子不想读"
+        assert body["data"]["invalid_reason"] == "孩子不想读"
 
     async def test_manual_intent_writes_operation_log(
         self, client, admin_headers, sample_student, db

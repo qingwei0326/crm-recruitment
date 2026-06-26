@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
-import { statusLabel } from '../../labels';
+import { adminRecycleStatusBadgeClass, statusLabel } from '../../labels';
 import {
   ArrowLeft,
   Users,
@@ -14,7 +15,6 @@ import {
   Eye,
   UserX,
   Edit3,
-  Menu,
   Phone,
   Target,
   CheckCircle2,
@@ -36,21 +36,13 @@ function isLocked(agent) {
   return !Number.isNaN(t.getTime()) && t.getTime() > Date.now();
 }
 
+function getAgentListGroup(agent) {
+  if (!agent?.is_active) return 2;
+  return Number(agent.total_tasks || 0) > 0 ? 0 : 1;
+}
+
 const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
-
-function getStatusBadgeClass(status) {
-  if (status === '已报名' || status === '已完成') {
-    return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300';
-  }
-  if (status === '待回访') {
-    return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300';
-  }
-  if (status === '未联系') {
-    return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
-  }
-  return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300';
-}
 
 export default function AgentManage() {
   const { dark, toggle } = useTheme();
@@ -84,6 +76,17 @@ export default function AgentManage() {
     service_regions: '',
   });
   const [formError, setFormError] = useState('');
+  const sortedAgents = useMemo(
+    () =>
+      agents
+        .map((agent, index) => ({ agent, index }))
+        .sort((left, right) => {
+          const groupDiff = getAgentListGroup(left.agent) - getAgentListGroup(right.agent);
+          return groupDiff || left.index - right.index;
+        })
+        .map(({ agent }) => agent),
+    [agents],
+  );
 
   const fetchAgents = () => {
     setLoading(true);
@@ -224,6 +227,15 @@ export default function AgentManage() {
   };
 
   const handleToggleActive = async (agent) => {
+    if (agent.is_active) {
+      const ok = await confirm({
+        title: `禁用「${agent.name}」`,
+        message: '禁用后该话务员将无法登录系统，已分配的学生不会被回收。确认禁用？',
+        confirmText: '禁用',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
     await api.put(`/admin/users/${agent.id}`, { is_active: !agent.is_active });
     fetchAgents();
   };
@@ -232,7 +244,7 @@ export default function AgentManage() {
       title: `为「${agent.name}」办理离职`,
       message:
         `· 名下未结案的线索会被回收到池\n` +
-        `· 已报名/已过期等历史记录会保留并解绑\n` +
+        `· 已报名等历史记录会保留并解绑\n` +
         `· 账号会被禁用、已登录的会话立即失效\n\n` +
         `账号会保留以便保留历史，如需彻底删除请联系开发者。`,
       confirmText: '办理离职',
@@ -364,40 +376,33 @@ export default function AgentManage() {
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">话务员管理</h2>
-          </div>
-          <div className="flex items-center gap-2">
+        <PageHeader
+          title="话务员管理"
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+          actionsClassName="flex items-center gap-2"
+          useSafeArea={false}
+        >
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            <UserPlus className="w-4 h-4" />
+            {!isMobile && '添加话务员'}
+          </button>
+          {isMobile && (
             <button
-              onClick={openCreateModal}
-              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+              onClick={toggle}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              <UserPlus className="w-4 h-4" />
-              {!isMobile && '添加话务员'}
+              {dark ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-gray-500" />
+              )}
             </button>
-            {isMobile && (
-              <button
-                onClick={toggle}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                {dark ? (
-                  <Sun className="w-4 h-4 text-amber-400" />
-                ) : (
-                  <Moon className="w-4 h-4 text-gray-500" />
-                )}
-              </button>
-            )}
-          </div>
-        </header>
+          )}
+        </PageHeader>
 
         <div className="p-4 lg:p-6 max-w-6xl mx-auto">
           <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
@@ -419,7 +424,7 @@ export default function AgentManage() {
                       暂无话务员
                     </div>
                   ) : (
-                    agents.map((a) => (
+                    sortedAgents.map((a) => (
                       <div
                         key={a.id}
                         onClick={() => viewAgentTasks(a)}
@@ -600,7 +605,7 @@ export default function AgentManage() {
                           color: 'text-amber-600 dark:text-amber-400',
                         },
                         {
-                          label: 'A级意向',
+                          label: 'A 级意向',
                           value: agentTasks.stats.a_level,
                           color: 'text-red-600 dark:text-red-400',
                         },
@@ -721,7 +726,6 @@ export default function AgentManage() {
                                             ['guardian_name', '监护人'],
                                             ['guardian_phone', '监护人电话'],
                                             ['school_name', '学校'],
-                                            ['school_address', '学校地址'],
                                           ].map(([key, label]) => (
                                             <div
                                               key={key}
@@ -871,7 +875,7 @@ export default function AgentManage() {
                         </td>
                         <td className="px-4 py-3">
                           <span
-                            className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(item.status)}`}
+                            className={`text-xs px-2 py-0.5 rounded-full ${adminRecycleStatusBadgeClass(item.status)}`}
                           >
                             {item.status || '-'}
                           </span>

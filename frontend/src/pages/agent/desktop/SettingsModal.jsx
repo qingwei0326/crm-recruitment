@@ -36,7 +36,7 @@ export default function SettingsModal({ show, onClose, tokenInput, setTokenInput
           </button>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-          在 pushplus.plus 注册并获取个人 token。设置后，回访提醒和过期告警会推送到你自己的微信，而不是管理员。
+          在 pushplus.plus 注册并获取个人 token。设置后，回访提醒会推送到你自己的微信，而不是管理员。
         </p>
         <input
           type="text"
