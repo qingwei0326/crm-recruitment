@@ -2,16 +2,8 @@
  * Tests for useIsMobile custom hook.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
-
-// Import the hook directly (minimal mock)
-vi.mock('../hooks/useIsMobile', () => ({
-  default: (breakpoint = 768) => {
-    const [isMobile, setIsMobile] = vi.fn(() => window.innerWidth < breakpoint);
-    return window.innerWidth < breakpoint;
-  },
-}));
+import { describe, it, expect } from 'vitest';
+import { renderHook } from '@testing-library/react';
 
 describe('useIsMobile', () => {
   it('returns true when screen is smaller than breakpoint', () => {

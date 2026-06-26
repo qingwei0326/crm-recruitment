@@ -11,11 +11,16 @@ export default function StageProgress({ currentStage, onStageClick, compact = fa
           <button
             key={s}
             onClick={(e) => { e.stopPropagation(); onStageClick?.(s); }}
-            className={`w-2 h-2 rounded-full transition-all ${
-              i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'
-            } ${s === currentStage ? 'ring-1 ring-blue-300' : ''}`}
+            className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-full"
             title={stageLabel(s)}
-          />
+            aria-label={`设置阶段为${stageLabel(s)}`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full transition-all ${
+                i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'
+              } ${s === currentStage ? 'ring-1 ring-blue-300' : ''}`}
+            />
+          </button>
         ))}
       </div>
     );

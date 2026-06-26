@@ -43,6 +43,7 @@ describe('AdminSidebar', () => {
     );
 
     expect(screen.getByRole('link', { name: '线索治理' })).toHaveAttribute('href', '/admin/governance');
+    expect(screen.getByRole('link', { name: '评分预览' })).toHaveAttribute('href', '/admin/score-preview');
     expect(screen.queryByRole('link', { name: '线索回收' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '无效线索回收' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '多学校分发' })).not.toBeInTheDocument();

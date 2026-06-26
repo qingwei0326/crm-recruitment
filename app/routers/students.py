@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +43,15 @@ from app.permissions import (
 from app.pushplus import notify_a_level_change
 from app.region_extractor import extract_region
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
+from app.status_policy import (
+    canonical_status_value,
+    canonical_student_status,
+    normalize_status_for_write,
+    status_detail_for_write,
+    status_detail_value,
+    statuses_for_canonical,
+)
+from app.task_stats import TERMINAL_STUDENT_STATUSES
 from app.utils import make_operation_log, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
@@ -152,7 +161,8 @@ def _enum_or_error(enum_cls, value: str, label: str):
 
 
 def _student_payload(student: Student) -> dict:
-    status = student.status.value
+    status = canonical_status_value(student.status)
+    detail = status_detail_value(student.status, getattr(student, "status_detail", ""))
     intent_level = student.intent_level.value
     stage = student.stage.value
     payload = {
@@ -161,6 +171,8 @@ def _student_payload(student: Student) -> dict:
         "region": student.region,
         "assigned_to": student.assigned_to,
         "status": status,
+        "status_detail": detail,
+        "invalid_reason": detail if status == StudentStatus.invalid.value else "",
         "intent_level": intent_level,
         "stage": stage,
         "join_reasons": student.join_reasons,
@@ -182,6 +194,7 @@ def _student_payload(student: Student) -> dict:
         "enrollment_substage": student.enrollment_substage.value
         if student.enrollment_substage
         else None,
+        "assigned_at": str(student.assigned_at) if student.assigned_at else None,
         "created_at": str(student.created_at),
         "updated_at": str(student.updated_at),
     }
@@ -415,7 +428,6 @@ async def import_students_excel(
 
         parsed_rows = []  # (row_idx, parsed_dict)
         skipped_rows = []
-        default_expire = Student.default_expired_at()
         assigned_at = utcnow() if default_agent_id is not None else None
 
         for row_idx, row in enumerate(rows, start=data_start_row):
@@ -491,9 +503,9 @@ async def import_students_excel(
                     "program": parsed["program"],
                     "join_reasons": parsed["join_reasons"],
                     "status": StudentStatus.not_contacted,
+                    "status_detail": "",
                     "intent_level": IntentLevel.none,
                     "stage": StudentStage.initial_contact,
-                    "expired_at": default_expire,
                     "case_no": str(uuid.uuid4()),
                 }
             )
@@ -553,7 +565,6 @@ async def download_import_template():
         "监护人2姓名",
         "监护人2电话",
         "学校名称",
-        "学校地址",
         "地域",
     ]
     ws.append(headers)
@@ -568,7 +579,6 @@ async def download_import_template():
             "李女士",
             "13700137000",
             "第一中学",
-            "XX市XX区XX路1号",
             "福州",
         ]
     )
@@ -611,12 +621,14 @@ async def create_student(
             raise HTTPException(status_code=403, detail=f"无权设置字段: {', '.join(forbidden)}")
 
     status = StudentStatus.not_contacted
+    status_detail = ""
     intent_level = IntentLevel.none
     stage = StudentStage.initial_contact
     if is_admin(current_user):
         if body.status:
             try:
-                status = _enum_or_error(StudentStatus, body.status, "状态")
+                status, implicit_detail = normalize_status_for_write(body.status)
+                status_detail = status_detail_for_write(status, implicit_detail)
             except ValueError as e:
                 return Response.error(code=1, msg=str(e))
         if body.intent_level:
@@ -648,6 +660,7 @@ async def create_student(
         assigned_to=assigned_to,
         assigned_at=utcnow() if assigned_to else None,
         status=status,
+        status_detail=status_detail,
         intent_level=intent_level,
         stage=stage,
         join_reasons=body.join_reasons or "",
@@ -662,11 +675,11 @@ async def create_student(
         school_name=body.school_name or "",
         school_address=body.school_address or "",
         need_help=body.need_help or False,
-        expired_at=Student.default_expired_at(),
         case_no=str(uuid.uuid4()),
     )
     if student.stage == StudentStage.enrolled:
         student.status = StudentStatus.enrolled
+        student.status_detail = ""
         if not student.enrolled_at:
             student.enrolled_at = date.today()
 
@@ -684,6 +697,7 @@ async def list_students(
     page_size: int = Query(20, ge=1, le=100),
     q: str = Query(""),
     status: str = Query(""),
+    status_detail: str = Query(""),
     intent_level: str = Query(""),
     assigned_to: int = Query(None),
     assignment: str = Query(""),
@@ -708,22 +722,17 @@ async def list_students(
         # SAEnum 列存的是 enum.name（英文），前端传的是 value（中文）。
         # 转成 enum 实例后 SQLAlchemy 才会正确映射为 name 进 SQL。
         try:
-            status_enum = StudentStatus(status)
+            status_enum = canonical_student_status(StudentStatus(status))
         except ValueError:
             return Response.ok({"total": 0, "page": page, "page_size": page_size, "list": []})
-        query = query.where(Student.status == status_enum)
+        query = query.where(Student.status.in_(statuses_for_canonical(status_enum)))
     else:
-        # 默认隐藏终态线索：已报名/已过期/未接通/无效。需要看时手动选状态筛选。
+        # 默认隐藏终态线索：已报名、无效及旧无效类状态。需要看时手动选状态筛选。
         query = query.where(
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.invalid,
-                ]
-            )
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES)
         )
+    if status_detail:
+        query = query.where(Student.status_detail == status_detail)
     if intent_level:
         try:
             intent_enum = IntentLevel(intent_level)
@@ -1224,7 +1233,7 @@ async def update_student(
 ):
     student = await get_accessible_student(db, student_id, current_user)
     raw = body.model_dump(exclude_unset=True)
-    # invalid_reason 不写入 Student 表，仅用于在状态改为"无效"时附加到操作日志，作为审计依据
+    # invalid_reason is persisted as status_detail for 无效 so admins can filter by reason.
     invalid_reason = (raw.pop("invalid_reason", None) or "").strip()
     if not raw:
         return Response.ok(_student_payload(student))
@@ -1238,12 +1247,18 @@ async def update_student(
 
     old_intent = student.intent_level
     old_status = student.status
+    old_status_detail = student.status_detail or ""
     old_stage = student.stage
     old_assigned = student.assigned_to
     for k, v in raw.items():
         if k == "status" and v is not None:
             try:
-                v = _enum_or_error(StudentStatus, v, "状态")
+                v, implicit_status_detail = normalize_status_for_write(v)
+                student.status_detail = status_detail_for_write(
+                    v,
+                    implicit_status_detail,
+                    invalid_reason,
+                )
             except ValueError as e:
                 return Response.error(code=1, msg=str(e))
         elif k == "stage" and v is not None:
@@ -1262,11 +1277,18 @@ async def update_student(
 
     if student.stage == StudentStage.enrolled:
         student.status = StudentStatus.enrolled
+        student.status_detail = ""
+        if not student.enrolled_at:
+            student.enrolled_at = date.today()
+    elif student.status == StudentStatus.enrolled:
+        student.stage = StudentStage.enrolled
+        student.status_detail = ""
         if not student.enrolled_at:
             student.enrolled_at = date.today()
 
     intent_changed = "intent_level" in raw and old_intent != student.intent_level
     status_changed = old_status != student.status
+    status_detail_changed = old_status_detail != (student.status_detail or "")
     stage_changed = old_stage != student.stage
     assigned_changed = "assigned_to" in raw and old_assigned != student.assigned_to
 
@@ -1284,13 +1306,17 @@ async def update_student(
             )
         )
 
-    if status_changed or stage_changed or assigned_changed:
+    if status_changed or status_detail_changed or stage_changed or assigned_changed:
         parts = []
         if status_changed:
-            parts.append(f"状态 {old_status} → {student.status}")
-            # 改为"无效"时附加原因，留作管理员事后抽查
-            if student.status == StudentStatus.invalid and invalid_reason:
-                parts.append(f"无效原因：{invalid_reason}")
+            parts.append(
+                f"状态 {canonical_status_value(old_status)} → "
+                f"{canonical_status_value(student.status)}"
+            )
+        if status_detail_changed and student.status_detail:
+            parts.append(f"结果/原因：{student.status_detail}")
+        if student.status == StudentStatus.invalid and student.status_detail:
+            parts.append(f"无效原因：{student.status_detail}")
         if stage_changed:
             parts.append(f"阶段 {old_stage} → {student.stage}")
         if assigned_changed:
@@ -1302,10 +1328,10 @@ async def update_student(
                 student.case_no or "",
                 "修改状态" if status_changed else "修改信息",
                 content="; ".join(parts),
-                old_status=str(old_status) if status_changed else "",
-                new_status=str(student.status) if status_changed else "",
-                note_content=invalid_reason
-                if (status_changed and student.status == StudentStatus.invalid)
+                old_status=canonical_status_value(old_status) if status_changed else "",
+                new_status=canonical_status_value(student.status) if status_changed else "",
+                note_content=student.status_detail
+                if (student.status == StudentStatus.invalid and student.status_detail)
                 else "",
             )
         )
@@ -1334,12 +1360,13 @@ async def update_stage(
     # Auto-update status when stage is "已报名"
     if body.stage == "已报名":
         student.status = StudentStatus.enrolled
+        student.status_detail = ""
         if not student.enrolled_at:
             student.enrolled_at = date.today()
 
     await db.commit()
     await db.refresh(student)
-    return Response.ok({"stage": student.stage, "status": student.status})
+    return Response.ok({"stage": student.stage, "status": canonical_status_value(student.status)})
 
 
 @router.put("/{student_id}/enroll")
@@ -1357,6 +1384,7 @@ async def set_enroll_info(
     student.program = body.program
     student.deposit = body.deposit
     student.status = StudentStatus.enrolled
+    student.status_detail = ""
     student.stage = StudentStage.enrolled
     if student.enrollment_substage is None:
         student.enrollment_substage = EnrollmentSubStage.deposit_pending
@@ -1382,20 +1410,32 @@ async def extend_expiry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    student = await get_student_or_404(db, student_id)
-
-    base = student.expired_at if student.expired_at else date.today()
-    student.expired_at = base + timedelta(days=days)
-    if student.status == StudentStatus.expired:
-        student.status = StudentStatus.not_contacted
-
-    await db.commit()
-    return Response.ok({"expired_at": str(student.expired_at)})
+    """过期逻辑已暂时停用，保留接口以兼容旧前端/脚本调用。"""
+    return Response.ok({"expired_at": None, "disabled": True})
 
 
 class AssignReq(BaseModel):
     student_ids: list[int]
     agent_id: int
+
+
+class SchoolAssignReq(BaseModel):
+    school_name: str = Field(..., min_length=1)
+    agent_ids: list[int] = Field(..., min_length=1)
+    regions: list[str] = Field(default_factory=list)
+
+    @field_validator("school_name")
+    @classmethod
+    def normalize_school_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("请选择学校")
+        return value
+
+    @field_validator("regions")
+    @classmethod
+    def normalize_regions(cls, value: list[str]) -> list[str]:
+        return [region.strip() for region in value if isinstance(region, str) and region.strip()]
 
 
 @router.post("/assign")
@@ -1441,14 +1481,7 @@ async def auto_assign(
         cnt = await db.execute(
             select(func.count(Student.id)).where(
                 Student.assigned_to == a.id,
-                Student.status.not_in(
-                    [
-                        StudentStatus.enrolled,
-                        StudentStatus.expired,
-                        StudentStatus.rejected,
-                        StudentStatus.invalid,
-                    ]
-                ),
+                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
             )
         )
         load[a.id] = cnt.scalar() or 0
@@ -1512,14 +1545,7 @@ async def region_assign(
         cnt = await db.execute(
             select(func.count(Student.id)).where(
                 Student.assigned_to == a.id,
-                Student.status.not_in(
-                    [
-                        StudentStatus.enrolled,
-                        StudentStatus.expired,
-                        StudentStatus.rejected,
-                        StudentStatus.invalid,
-                    ]
-                ),
+                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
             )
         )
         load[a.id] = cnt.scalar() or 0
@@ -1570,21 +1596,14 @@ async def region_assign(
 
 @router.post("/school-assign")
 async def school_assign(
-    body: dict,
+    body: SchoolAssignReq,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     """按学校分发：选学校、可选区县过滤、选多个话务员ID、轮询分配"""
-    school = body.get("school_name", "").strip()
-    agent_ids = body.get("agent_ids", [])
-    regions_raw = body.get("regions", []) or []
-    if not isinstance(regions_raw, list):
-        return Response.error(code=1, msg="区县参数格式错误")
-    regions = [r.strip() for r in regions_raw if isinstance(r, str) and r.strip()]
-    if not school:
-        return Response.error(code=1, msg="请选择学校")
-    if not agent_ids or not isinstance(agent_ids, list):
-        return Response.error(code=1, msg="请选择至少一个话务员")
+    school = body.school_name
+    agent_ids = body.agent_ids
+    regions = body.regions
 
     # 验证话务员存在
     agents_result = await db.execute(

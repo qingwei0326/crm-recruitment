@@ -10,6 +10,11 @@ export default [
       'react-refresh': reactRefresh,
     },
     languageOptions: {
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
       globals: {
         window: 'readonly',
         document: 'readonly',
@@ -53,6 +58,8 @@ export default [
         crypto: 'readonly',
         performance: 'readonly',
         console: 'readonly',
+        IntersectionObserver: 'readonly',
+        indexedDB: 'readonly',
       },
     },
     rules: {

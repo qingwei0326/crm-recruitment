@@ -2,7 +2,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Phone, Sparkles, Menu, Sun, Moon, Plus, X, Loader2,
   AlertTriangle, StickyNote, ChevronLeft, ChevronRight,
-  Target, User, History, RefreshCw,
+  Target, User, History, RefreshCw, CalendarClock,
 } from 'lucide-react';
 import { stageLabel, statusLabel, STAGES, INTENT_BADGES } from '../../labels';
 import { formatDateTime } from '../../utils';
@@ -12,6 +12,7 @@ import {
 import AssignedDaysBadge from './shared/AssignedDaysBadge';
 import AiPanel from './AiPanel';
 import AgentSidebar from './desktop/AgentSidebar';
+import HandledView from './desktop/HandledView';
 
 export default function AgentWorkMobile({
   // State
@@ -19,7 +20,7 @@ export default function AgentWorkMobile({
   students, filteredStudents, filteredStats,
   schoolGroups, selectedSchool, setSelectedSchool,
   currentIdx, setCurrentIdx, current,
-  prediction, lockedStudentId,
+  lockedStudentId,
   showMenu, setShowMenu,
   showCreate, setShowCreate, createErr, setCreateErr,
   showDetail, setShowDetail,
@@ -112,7 +113,7 @@ export default function AgentWorkMobile({
           <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
             {filteredStudents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <Target className="w-10 h-10 mb-3" /><p className="text-sm">{selectedSchool ? '该学校暂无任务' : '暂无今日任务'}</p>
+                <Target className="w-10 h-10 mb-3" /><p className="text-sm">{selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}</p>
               </div>
             ) : (
               <div className="p-4 space-y-4">
@@ -126,16 +127,15 @@ export default function AgentWorkMobile({
                           <AssignedDaysBadge days={current.days_since_assigned} />
                         </div>
                         <div className="text-sm text-gray-500 font-mono mt-0.5">{current.school_name || '未知学校'}</div>
-                        {prediction && (
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <span className="text-xs text-gray-500">报名概率</span>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${prediction.conversion_probability >= 0.7 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : prediction.conversion_probability >= 0.4 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'}`}>
-                              {(prediction.conversion_probability * 100).toFixed(0)}%
-                            </span>
-                          </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status] || STATUS_STYLE['未联系']}`}>{statusLabel(current.status)}</span>
+                        {current.status_detail && (
+                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+                            {current.status_detail}
+                          </span>
                         )}
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status] || STATUS_STYLE['未联系']}`}>{statusLabel(current.status)}</span>
                     </div>
                     <div className="flex items-center gap-1 mb-3">
                       {STAGES.map((s, i) => {
@@ -183,6 +183,8 @@ export default function AgentWorkMobile({
             )}
           </div>
         </>
+      ) : viewTab === 'handled' ? (
+        <HandledView onOpenDetail={(id) => { loadDetail(id); setShowDetail(true); }} />
       ) : (
         <div className="flex-1 overflow-y-auto p-4">
           {followingLoading && !followingData ? <Loader2 className="w-6 h-6 mx-auto animate-spin" /> : followingData ? (
@@ -281,7 +283,10 @@ export default function AgentWorkMobile({
       {/* Bottom tab bar */}
       <div className="sticky bottom-0 z-20 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex">
         <button onClick={() => setViewTab('today')} className={`flex-1 flex flex-col items-center py-2 ${viewTab === 'today' ? 'text-green-600' : 'text-gray-400'}`}>
-          <Target className="w-5 h-5" /><span className="text-[10px] mt-0.5">今日任务</span>
+          <Target className="w-5 h-5" /><span className="text-[10px] mt-0.5">待拨打</span>
+        </button>
+        <button onClick={() => setViewTab('handled')} className={`flex-1 flex flex-col items-center py-2 ${viewTab === 'handled' ? 'text-green-600' : 'text-gray-400'}`}>
+          <CalendarClock className="w-5 h-5" /><span className="text-[10px] mt-0.5">待处理</span>
         </button>
         <button onClick={() => { setViewTab('following'); fetchFollowing(); }} className={`flex-1 flex flex-col items-center py-2 ${viewTab === 'following' ? 'text-green-600' : 'text-gray-400'}`}>
           <History className="w-5 h-5" /><span className="text-[10px] mt-0.5">跟进中</span>

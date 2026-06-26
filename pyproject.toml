@@ -8,3 +8,16 @@ select = ["E", "F", "I", "W", "N", "UP"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = [
+    ".git",
+    ".venv-win",
+    ".venv-linux",
+    "node_modules",
+    "frontend",
+    "releases",
+    "backups",
+]

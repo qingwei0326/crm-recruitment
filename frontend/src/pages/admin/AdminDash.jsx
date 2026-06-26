@@ -1,146 +1,30 @@
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import {
-  LayoutDashboard,
   Users,
   PhoneCall,
   TrendingUp,
-  LogOut,
-  Menu,
-  X,
-  ListFilter,
   BarChart3,
   Sun,
   Moon,
-  Search,
   MapPin,
   Home,
   Calendar,
   GraduationCap,
   HelpCircle,
-  Settings,
-  ArrowRightLeft,
-  RefreshCw,
   AlertTriangle,
 } from 'lucide-react';
 import HelpModal from '../../components/HelpModal';
 import FunnelChart from './FunnelChart';
 import { stageLabel, STAGES } from '../../labels';
 
-const SidebarNav = memo(function SidebarNav({ user, dark, toggle, logout, isMobile, onClose }) {
-  return (
-    <>
-      <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-            <TrendingUp className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">CRM 管理后台</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400">{user?.name}</div>
-          </div>
-        </div>
-        {isMobile && (
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <X className="w-5 h-5 text-gray-500" />
-          </button>
-        )}
-      </div>
-      <nav className="p-3 space-y-1">
-        <Link
-          to="/admin"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium"
-        >
-          <LayoutDashboard className="w-4 h-4" /> 仪表盘
-        </Link>
-        <Link
-          to="/admin/leads"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <ListFilter className="w-4 h-4" /> 学生管理
-        </Link>
-        <Link
-          to="/admin/recycle"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <ArrowRightLeft className="w-4 h-4" /> 线索回收
-        </Link>
-        <Link
-          to="/admin/invalid-reclaim"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <RefreshCw className="w-4 h-4" /> 无效线索回收
-        </Link>
-        <Link
-          to="/admin/agents"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <Users className="w-4 h-4" /> 话务员管理
-        </Link>
-        <Link
-          to="/admin/report"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <BarChart3 className="w-4 h-4" /> 汇总报表
-        </Link>
-        <Link
-          to="/admin/trend"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <TrendingUp className="w-4 h-4" /> 趋势报表
-        </Link>
-        <Link
-          to="/admin/call-volume"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <Search className="w-4 h-4" /> 通电量查询
-        </Link>
-        <Link
-          to="/admin/settings"
-          onClick={onClose}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium"
-        >
-          <Settings className="w-4 h-4" /> 系统设置
-        </Link>
-      </nav>
-      <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
-        <button
-          onClick={toggle}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg"
-        >
-          {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}{' '}
-          {dark ? '亮色模式' : '暗色模式'}
-        </button>
-        <button
-          onClick={logout}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-        >
-          <LogOut className="w-4 h-4" /> 退出登录
-        </button>
-      </div>
-    </>
-  );
-});
-
 export default function AdminDash() {
-  const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -195,31 +79,20 @@ export default function AdminDash() {
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSidebarOpen(true);
-                }}
-                style={{ touchAction: 'manipulation' }}
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">仪表盘</h2>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setHelpOpen(true)}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-              title="使用说明"
-            >
-              <HelpCircle className="w-5 h-5" />
-            </button>
-            {isMobile && (
+        <PageHeader
+          title="仪表盘"
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+          useSafeArea={false}
+        >
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            title="使用说明"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </button>
+          {isMobile && (
             <button
               onClick={toggle}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -231,8 +104,7 @@ export default function AdminDash() {
               )}
             </button>
           )}
-          </div>
-        </header>
+        </PageHeader>
         <div className="p-4 lg:p-6 space-y-6 max-w-6xl mx-auto">
           {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
@@ -252,7 +124,7 @@ export default function AdminDash() {
                 link: '/admin/leads?status=已联系',
               },
               {
-                label: 'A级意向',
+                label: 'A 级意向',
                 value: totalA,
                 icon: TrendingUp,
                 color: 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
@@ -336,7 +208,7 @@ export default function AdminDash() {
             <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
               <div className="px-4 py-4 border-b dark:border-gray-700">
                 <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4" /> 转化漏斗
+                  <TrendingUp className="w-4 h-4" /> 线索流转漏斗
                 </h3>
               </div>
               <div className="p-4">

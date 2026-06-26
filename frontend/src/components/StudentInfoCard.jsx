@@ -32,6 +32,11 @@ export default memo(function StudentInfoCard({ student }) {
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{student.name}</h3>
         <StatusBadge status={student.status} />
+        {student.status_detail && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+            {student.status === '无效' ? `原因：${student.status_detail}` : student.status_detail}
+          </span>
+        )}
         <IntentLevelBadge level={student.intent_level} />
         {student.stage && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -48,11 +53,7 @@ export default memo(function StudentInfoCard({ student }) {
         <Field label="监护人电话">{phone(student.guardian_phone_raw, student.guardian_phone)}</Field>
         <Field label="监护人2">{student.guardian2_name}</Field>
         <Field label="监护人2电话">{phone(student.guardian2_phone_raw, student.guardian2_phone)}</Field>
-        <Field label="学校地址">{student.school_address}</Field>
-        <Field label="负责人">{student.agent_name || student.assigned_to_name || '-'}</Field>
-        <Field label="报名原因">{student.join_reasons}</Field>
-        <Field label="创建时间">{formatDateTime(student.created_at)}</Field>
-        <Field label="过期时间">{formatDate(student.expires_at || student.expired_at)}</Field>
+        <Field label="分配时间">{formatDateTime(student.assigned_at)}</Field>
       </div>
 
       {student.status === '已报名' && (

@@ -8,7 +8,8 @@ export default function PaginationBar({ currentIdx, total, onPrev, onNext }) {
       <button
         onClick={onPrev}
         disabled={currentIdx <= 0}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-300"
+        className="flex min-h-9 items-center gap-1 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-300"
+        aria-label="上一条学生"
       >
         <ChevronLeft className="w-4 h-4" /> 上一条
       </button>
@@ -18,7 +19,8 @@ export default function PaginationBar({ currentIdx, total, onPrev, onNext }) {
       <button
         onClick={onNext}
         disabled={currentIdx >= total - 1}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-300"
+        className="flex min-h-9 items-center gap-1 px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 disabled:opacity-30 text-gray-600 dark:text-gray-300"
+        aria-label="下一条学生"
       >
         下一条 <ChevronRight className="w-4 h-4" />
       </button>

@@ -9,7 +9,7 @@ from app.ai_analyzer import analyze_transcript
 from app.auth import get_current_user
 from app.database import get_db
 from app.limiter import limiter
-from app.models import Call, IntentLevel, Note, Student, SystemConfig, User, UserRole
+from app.models import Call, DialLog, IntentLevel, Note, Student, SystemConfig, User, UserRole
 from app.permissions import can_access_student
 from app.pushplus import notify_a_level_change
 from app.schemas import CallCreate, Response
@@ -69,9 +69,9 @@ async def check_today_call(
 
     since = utcnow() - timedelta(hours=within_hours)
     result = await db.execute(
-        select(Call.created_at)
-        .where(Call.student_id == student_id, Call.created_at >= since)
-        .order_by(Call.created_at.desc())
+        select(DialLog.dialed_at)
+        .where(DialLog.student_id == student_id, DialLog.dialed_at >= since)
+        .order_by(DialLog.dialed_at.desc())
     )
     rows = result.all()
     count = len(rows)
@@ -84,7 +84,7 @@ async def check_today_call(
             "within_hours": within_hours,
             "already_called": count > 0,
             "message": (
-                f"{within_hours}h 内该学生已被通话 {count} 次（最近 {last_call_at}）"
+                f"{within_hours}h 内该学生已被拨打 {count} 次（最近 {last_call_at}）"
                 if count
                 else ""
             ),

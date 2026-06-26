@@ -6,7 +6,16 @@ import logger from '../utils/logger';
 /**
  * 管理拨号相关逻辑
  */
-export default function useAgentDial({ state, actions, current, students, toast, confirm, prompt }) {
+export default function useAgentDial({
+  state,
+  actions,
+  current,
+  students,
+  toast,
+  confirm,
+  prompt,
+  updateIntentById,
+}) {
   // 用 ref 缓存 lastFetchedId 防止重复请求
   const lastFetchedIdRef = useRef(null);
 
@@ -22,15 +31,11 @@ export default function useAgentDial({ state, actions, current, students, toast,
     return null;
   }, [actions]);
 
-  // 预测和拨号检查 - 用 ref 防止重复请求
+  // 拨号检查 - 用 ref 防止重复请求
   useEffect(() => {
     const studentId = current?.id;
     if (!studentId || studentId === lastFetchedIdRef.current) return;
     lastFetchedIdRef.current = studentId;
-
-    api.get(`/stats/predict-conversion/${studentId}`).then((r) => {
-      if (r.data.code === 0) actions.setPrediction(r.data.data);
-    }).catch((e) => { logger.error('转化预测失败:', e); actions.setPrediction(null); });
 
     api.get('/calls/check', { params: { student_id: studentId, within_hours: 24 } }).then((r) => {
       if (r.data.code === 0) actions.setDialCheck(studentId, r.data.data);
@@ -95,11 +100,17 @@ export default function useAgentDial({ state, actions, current, students, toast,
       status = '无效';
       invalidReason = '空号';
     }
+    const isInvalidDetail = ['高分段', '无意向', '孩子不想读'].includes(status);
+    const needsIntentStep = ['非常有意向', '意向了解加微', '已联系', '待回访'].includes(status);
 
     if (invalidReason) {
       try {
-        await api.put(`/students/${modal.studentId}`, { status, invalid_reason: invalidReason });
-        actions.updateStudent(modal.studentId, { status });
+        const res = await api.put(`/students/${modal.studentId}`, { status, invalid_reason: invalidReason });
+        const updated = res.data?.data || {};
+        actions.updateStudent(modal.studentId, {
+          status: updated.status || '无效',
+          status_detail: updated.status_detail || invalidReason || '',
+        });
         actions.setActionMsg('状态已更新');
         setTimeout(() => actions.setActionMsg(''), 2000);
       } catch (e) {
@@ -115,17 +126,50 @@ export default function useAgentDial({ state, actions, current, students, toast,
         });
         if (!reason) return;
         try {
-          await api.put(`/students/${modal.studentId}`, { status, invalid_reason: reason });
-          actions.updateStudent(modal.studentId, { status });
+          const res = await api.put(`/students/${modal.studentId}`, { status, invalid_reason: reason });
+          const updated = res.data?.data || {};
+          actions.updateStudent(modal.studentId, {
+            status: updated.status || '无效',
+            status_detail: updated.status_detail || reason,
+          });
+          actions.setActionMsg('状态已更新');
+          setTimeout(() => actions.setActionMsg(''), 2000);
+        } catch (e) {
+          toast?.error('更新状态失败: ' + getApiErrorMessage(e));
+        }
+      } else if (isInvalidDetail) {
+        try {
+          const res = await api.put(`/students/${modal.studentId}`, { status });
+          const updated = res.data?.data || {};
+          actions.updateStudent(modal.studentId, {
+            status: updated.status || '无效',
+            status_detail: updated.status_detail || status,
+          });
           actions.setActionMsg('状态已更新');
           setTimeout(() => actions.setActionMsg(''), 2000);
         } catch (e) {
           toast?.error('更新状态失败: ' + getApiErrorMessage(e));
         }
       } else {
+        if (status === '已报名') {
+          const ok = await confirm({
+            title: '确认报名',
+            message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
+            confirmText: '确认报名',
+          });
+          if (!ok) return;
+        }
         try {
-          await api.put(`/students/${modal.studentId}`, { status });
-          actions.updateStudent(modal.studentId, { status });
+          const res = await api.put(`/students/${modal.studentId}`, { status });
+          const updated = res.data?.data || {};
+          const fallbackStatusByDetail = {
+            非常有意向: '已联系',
+            意向了解加微: '待回访',
+          };
+          actions.updateStudent(modal.studentId, {
+            status: updated.status || fallbackStatusByDetail[status] || status,
+            status_detail: updated.status_detail ?? (fallbackStatusByDetail[status] ? status : ''),
+          });
           actions.setActionMsg('状态已更新');
           setTimeout(() => actions.setActionMsg(''), 2000);
         } catch (e) {
@@ -134,12 +178,12 @@ export default function useAgentDial({ state, actions, current, students, toast,
       }
     }
 
-    if (status === '非常有意向' || status === '意向了解加微' || status === '未接') {
+    if (needsIntentStep) {
       actions.setDialModal({ ...modal, status, showIntent: true });
     } else {
       actions.setDialModal(null);
     }
-  }, [state.dial.modal, actions, toast, prompt]);
+  }, [state.dial.modal, actions, toast, prompt, confirm]);
 
   // 处理拨号结果弹窗 - 意向选择
   const handleDialModalIntent = useCallback(async (level) => {
@@ -148,8 +192,12 @@ export default function useAgentDial({ state, actions, current, students, toast,
     await updateIntentById(modal.studentId, level);
     actions.setActionMsg('意向等级已更新');
     setTimeout(() => actions.setActionMsg(''), 2000);
+    if (modal.status === '意向了解加微' || modal.status === '待回访') {
+      actions.setDialModal({ ...modal, showIntent: false, showFollowUp: true });
+      return;
+    }
     actions.setDialModal(null);
-  }, [state.dial.modal, actions]);
+  }, [state.dial.modal, actions, updateIntentById]);
 
   // 处理拨号结果弹窗 - 回访设置
   const handleDialModalFollowUp = useCallback(async (date) => {

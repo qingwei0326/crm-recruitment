@@ -3,6 +3,7 @@ import {
   ArrowRightLeft,
   BarChart3,
   CalendarClock,
+  Gauge,
   LayoutDashboard,
   ListFilter,
   LogOut,
@@ -21,6 +22,7 @@ import useIsMobile from '../hooks/useIsMobile';
 export const ADMIN_NAV_ITEMS = [
   { to: '/admin', label: '仪表盘', icon: LayoutDashboard, end: true },
   { to: '/admin/work-center', label: '工作中心', icon: CalendarClock },
+  { to: '/admin/score-preview', label: '评分预览', icon: Gauge },
   { to: '/admin/leads', label: '学生管理', icon: ListFilter },
   { to: '/admin/governance', label: '线索治理', icon: ArrowRightLeft },
   { to: '/admin/agents', label: '话务员管理', icon: Users },
