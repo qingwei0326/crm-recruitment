@@ -9,7 +9,6 @@ from app.ai_analyzer import predict_conversion
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
-    Call,
     DialLog,
     EnrollmentSubStage,
     FollowUp,
@@ -26,6 +25,8 @@ from app.models import (
 )
 from app.permissions import get_accessible_student
 from app.schemas import Response
+from app.status_policy import statuses_for_canonical
+from app.task_stats import TERMINAL_STUDENT_STATUSES
 from app.utils import month_start_cst_as_utc, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/stats", tags=["统计"])
@@ -537,7 +538,7 @@ async def funnel_data(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """转化漏斗：总线索 → 已分配 → 已联系 → A意向 → 已到访 → 已报名"""
+    """线索流转漏斗：总线索 → 已分配 → 已联系 → A 级意向 → 已到访 → 已报名 → 无效线索"""
     total_r = await db.execute(select(func.count(Student.id)))
     total = total_r.scalar() or 0
 
@@ -570,15 +571,23 @@ async def funnel_data(
     )
     enrolled = enrolled_r.scalar() or 0
 
+    invalid_r = await db.execute(
+        select(func.count(Student.id)).where(
+            Student.status.in_(statuses_for_canonical(StudentStatus.invalid))
+        )
+    )
+    invalid = invalid_r.scalar() or 0
+
     return Response.ok(
         {
             "stages": [
                 {"name": "总线索", "value": total},
                 {"name": "已分配", "value": assigned},
                 {"name": "已联系", "value": contacted},
-                {"name": "A意向", "value": a_level},
+                {"name": "A 级意向", "value": a_level},
                 {"name": "已到访", "value": visited},
                 {"name": "已报名", "value": enrolled},
+                {"name": "无效线索", "value": invalid},
             ]
         }
     )
@@ -659,14 +668,7 @@ async def prediction_distribution(
     # 1) 所有活跃学生 (一次查询)
     result = await db.execute(
         select(Student).where(
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.invalid,
-                ]
-            )
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES)
         )
     )
     students = result.scalars().all()
@@ -690,14 +692,7 @@ async def prediction_distribution(
     active_ids = (
         select(Student.id)
         .where(
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.invalid,
-                ]
-            )
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES)
         )
         .scalar_subquery()
     )
@@ -958,13 +953,21 @@ async def dashboard_all(
                 select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
             )
         ).scalar() or 0
+        invalid = (
+            await db.execute(
+                select(func.count(Student.id)).where(
+                    Student.status.in_(statuses_for_canonical(StudentStatus.invalid))
+                )
+            )
+        ).scalar() or 0
         return [
             {"name": "总线索", "value": total},
             {"name": "已分配", "value": assigned},
             {"name": "已联系", "value": contacted},
-            {"name": "A意向", "value": a_level},
+            {"name": "A 级意向", "value": a_level},
             {"name": "已到访", "value": visited},
             {"name": "已报名", "value": enrolled},
+            {"name": "无效线索", "value": invalid},
         ]
 
     async def _notify_fails():

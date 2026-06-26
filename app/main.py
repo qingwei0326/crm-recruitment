@@ -28,7 +28,6 @@ from app.routers import (
     visits,
 )
 from app.scheduler import (
-    expired_student_scheduler,
     follow_up_reminder_scheduler,
     notification_retry_scheduler,
 )
@@ -37,6 +36,11 @@ FRONTEND_DIR = os.getenv(
     "FRONTEND_DIR",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"),
 )
+NO_STORE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 @asynccontextmanager
@@ -46,12 +50,11 @@ async def lifespan(app: FastAPI):
     await do_backup_async()
     backup_task = asyncio.create_task(backup_scheduler())
     follow_up_task = asyncio.create_task(follow_up_reminder_scheduler())
-    expired_task = asyncio.create_task(expired_student_scheduler())
     retry_task = asyncio.create_task(notification_retry_scheduler())
     yield
-    for task in (backup_task, follow_up_task, expired_task, retry_task):
+    for task in (backup_task, follow_up_task, retry_task):
         task.cancel()
-    for task in (backup_task, follow_up_task, expired_task, retry_task):
+    for task in (backup_task, follow_up_task, retry_task):
         try:
             await task
         except asyncio.CancelledError:
@@ -112,12 +115,13 @@ if os.path.isdir(FRONTEND_DIR):
             raise HTTPException(status_code=404)
         file_path = os.path.join(FRONTEND_DIR, path)
         if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+            headers = NO_STORE_HEADERS if os.path.basename(file_path) == "index.html" else None
+            return FileResponse(file_path, headers=headers)
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"), headers=NO_STORE_HEADERS)
 
     @app.get("/")
     async def root():
-        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"), headers=NO_STORE_HEADERS)
 else:
 
     @app.get("/")

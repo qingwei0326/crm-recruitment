@@ -13,15 +13,6 @@ from app.schemas import Response
 router = APIRouter(prefix="/api/operation-logs", tags=["操作日志"])
 
 
-def _parse_iso_date(value: str | None, default: date, label: str) -> date:
-    if not value:
-        return default
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        raise HTTPException(status_code=422, detail=f"{label} 日期格式应为 YYYY-MM-DD")
-
-
 def _parse_agent_ids(value: str) -> list[int]:
     ids = []
     for part in value.split(","):
@@ -45,20 +36,28 @@ async def call_volume_query(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    """通电量查询：按日期+话务员筛选操作日志"""
-    today = date.today()
-    s_date = _parse_iso_date(start_date, today, "start_date")
-    e_date = _parse_iso_date(end_date, today, "end_date")
-    if s_date > e_date:
-        raise HTTPException(status_code=422, detail="start_date 不能晚于 end_date")
-    day_start = datetime(s_date.year, s_date.month, s_date.day)
-    day_end = datetime(e_date.year, e_date.month, e_date.day) + timedelta(days=1)
+    """通电量查询：按日期+话务员筛选操作日志（不含登录日志）"""
+    conditions = [OperationLog.action.in_(["修改状态", "写备注", "修改信息"])]
 
-    query = select(OperationLog).where(
-        OperationLog.created_at >= day_start,
-        OperationLog.created_at < day_end,
-        OperationLog.action.in_(["修改状态", "写备注", "修改信息", "登录"]),
-    )
+    if start_date:
+        try:
+            s_date = date.fromisoformat(start_date)
+            conditions.append(
+                OperationLog.created_at >= datetime(s_date.year, s_date.month, s_date.day)
+            )
+        except ValueError:
+            raise HTTPException(status_code=422, detail="start_date 日期格式应为 YYYY-MM-DD")
+    if end_date:
+        try:
+            e_date = date.fromisoformat(end_date)
+            conditions.append(
+                OperationLog.created_at
+                < datetime(e_date.year, e_date.month, e_date.day) + timedelta(days=1)
+            )
+        except ValueError:
+            raise HTTPException(status_code=422, detail="end_date 日期格式应为 YYYY-MM-DD")
+
+    query = select(OperationLog).where(*conditions)
 
     if agent_ids:
         ids = _parse_agent_ids(agent_ids)

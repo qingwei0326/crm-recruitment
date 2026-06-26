@@ -99,7 +99,7 @@ export default function useStudentMutations({ toast }) {
       const res = await api.post(`/students/${id}/need-help`);
       return res.data;
     },
-    onMutate: (id) => {
+    onMutate: () => {
       // 乐观更新需要知道当前值，这里简单失效缓存
     },
     onError: (e) => {

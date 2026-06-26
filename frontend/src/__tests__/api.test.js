@@ -3,7 +3,7 @@
  * Historical bug patterns: auth cookie mode, 401 redirect, encoding.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock localStorage for Node environment
 const localStorageMock = (() => {

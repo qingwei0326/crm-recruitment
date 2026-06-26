@@ -43,7 +43,17 @@ import {
   Wand2,
 } from 'lucide-react';
 
-const STATUS_OPTS = ['', '新线索', '非常有意向', '意向了解加微', '未接', '高分段', '无意向', '孩子不想读', '已报名'];
+const STATUS_OPTS = ['', '未联系', '已联系', '未接', '待回访', '已报名', '无效'];
+const STATUS_DETAIL_OPTS = [
+  '',
+  '非常有意向',
+  '意向了解加微',
+  '高分段',
+  '无意向',
+  '孩子不想读',
+  '空号',
+  '其他',
+];
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGE_STAT_KEYS = ['未分配', ...STAGES];
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
@@ -58,11 +68,9 @@ const emptyStudentForm = {
   guardian2_name: '',
   guardian2_phone: '',
   school_name: '',
-  school_address: '',
   status: '',
   intent_level: '',
   stage: '',
-  join_reasons: '',
   program: '',
   deposit: '',
   enrolled_at: '',
@@ -78,7 +86,6 @@ const createStudentFields = [
   { key: 'guardian2_name', label: '监护人2姓名' },
   { key: 'guardian2_phone', label: '监护人2电话' },
   { key: 'school_name', label: '学校名称' },
-  { key: 'join_reasons', label: '报名原因/备注', type: 'textarea' },
   { key: 'program', label: '报名专业' },
   { key: 'deposit', label: '定金', type: 'number' },
   { key: 'enrolled_at', label: '报名日期', type: 'date' },
@@ -106,8 +113,10 @@ export default function LeadsManage() {
   const [page, setPage] = useState(1);
   const [q, setQ] = useState(searchParams.get('q') || '');
   const [status, setStatus] = useState(searchParams.get('status') || '');
+  const [statusDetail, setStatusDetail] = useState(searchParams.get('status_detail') || '');
   const [region, setRegion] = useState(searchParams.get('region') || '');
   const [stage, setStage] = useState(searchParams.get('stage') || '');
+  const [intent, setIntent] = useState(searchParams.get('intent') || '');
   const assignment = searchParams.get('assignment') || '';
   const [needHelp, setNeedHelp] = useState(searchParams.get('need_help') === '1');
   const [loading, setLoading] = useState(false);
@@ -168,8 +177,10 @@ export default function LeadsManage() {
       const params = { page: p || page, page_size: pageSize };
       if (q) params.q = q;
       if (status) params.status = status;
+      if (statusDetail) params.status_detail = statusDetail;
       if (region) params.region = region;
       if (stage) params.stage = stage;
+      if (intent) params.intent_level = intent;
       if (assignment) params.assignment = assignment;
       if (needHelp) params.need_help = '1';
       api
@@ -182,14 +193,14 @@ export default function LeadsManage() {
         .catch(() => { toast?.error('数据加载失败'); })
         .finally(() => setLoading(false));
     },
-    [page, q, status, region, stage, assignment, needHelp],
+    [page, q, status, statusDetail, region, stage, intent, assignment, needHelp],
   );
 
   useEffect(() => {
     fetchStudents(1);
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, region, stage, assignment, needHelp]);
+  }, [status, statusDetail, region, stage, intent, assignment, needHelp]);
 
   useEffect(() => {
     api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch((e) => logger.error('加载话务员列表失败:', e));
@@ -431,12 +442,6 @@ export default function LeadsManage() {
     refreshExpand();
   };
 
-  const handleExtend = async (id) => {
-    await api.put(`/students/${id}/extend?days=15`);
-    fetchStudents(page);
-    refreshExpand();
-  };
-
   const handleDelete = async (id) => {
     try {
       await api.delete(`/students/${id}`);
@@ -508,8 +513,8 @@ export default function LeadsManage() {
 
   const handleEditSave = async () => {
     if (!editStudent) return;
-    const { id, name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name, school_address } = editStudent;
-    await api.put(`/students/${id}`, { name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name, school_address });
+    const { id, name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name } = editStudent;
+    await api.put(`/students/${id}`, { name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name });
     setShowEdit(false);
     setEditStudent(null);
     fetchStudents(page);
@@ -661,6 +666,7 @@ export default function LeadsManage() {
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">状态</label>
                   <select
+                    aria-label={`设置 ${s.name || '学生'} 状态`}
                     value={s.status}
                     onChange={(e) => quickStatus(s.id, e.target.value)}
                     className={`${inputCls} text-xs`}
@@ -675,6 +681,7 @@ export default function LeadsManage() {
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">意向等级</label>
                   <select
+                    aria-label={`设置 ${s.name || '学生'} 意向等级`}
                     value={s.intent_level}
                     onChange={(e) => quickIntent(s.id, e.target.value)}
                     className={`${inputCls} text-xs`}
@@ -691,6 +698,7 @@ export default function LeadsManage() {
                 <label className="text-xs text-gray-500 mb-1 block">写备注</label>
                 <div className="flex gap-1">
                   <input
+                    aria-label={`给 ${s.name || '学生'} 写备注`}
                     value={noteText[s.id] || ''}
                     onChange={(e) => setNoteText((prev) => ({ ...prev, [s.id]: e.target.value }))}
                     onKeyDown={(e) => e.key === 'Enter' && addNote(s.id)}
@@ -711,6 +719,7 @@ export default function LeadsManage() {
                 <label className="text-xs text-gray-500 mb-1 block">设置回访日期</label>
                 <div className="flex gap-1">
                   <input
+                    aria-label={`设置 ${s.name || '学生'} 回访日期`}
                     type="datetime-local"
                     value={followUpDate[s.id] || ''}
                     onChange={(e) => setFollowUpDate((prev) => ({ ...prev, [s.id]: e.target.value }))}
@@ -730,6 +739,7 @@ export default function LeadsManage() {
                 <div className="border-t dark:border-gray-600 pt-3">
                   <label className="text-xs text-gray-500 mb-1 block">分配话务员</label>
                   <select
+                    aria-label={`分配 ${s.name || '学生'} 给话务员`}
                     value={s.assigned_to || ''}
                     onChange={(e) => handleAssignAgent(s.id, e.target.value)}
                     className={`${inputCls} text-xs`}
@@ -792,15 +802,6 @@ export default function LeadsManage() {
                   编辑信息
                 </button>
 
-                {s.status === '已过期' && (
-                  <button
-                    onClick={() => handleExtend(s.id)}
-                    className="px-3 py-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 rounded-lg text-xs"
-                  >
-                    延期+15天
-                  </button>
-                )}
-
                 {user?.role === 'admin' && (
                   <button
                     onClick={() => setDeleteConfirm(s.id)}
@@ -827,6 +828,7 @@ export default function LeadsManage() {
                         报名后状态
                       </label>
                       <select
+                        aria-label={`设置 ${s.name || '学生'} 报名后状态`}
                         value={s.enrollment_substage || ''}
                         onChange={(e) => handleSubstageChange(s.id, e.target.value)}
                         className={`${inputCls} text-xs flex-1`}
@@ -860,7 +862,7 @@ export default function LeadsManage() {
             isExpanded
               ? 'bg-blue-50 dark:bg-blue-900/20'
               : 'hover:bg-gray-50 dark:hover:bg-gray-700'
-          } ${l.status === '已过期' ? 'opacity-60' : ''} ${
+          } ${l.status === '无效' ? 'opacity-60' : ''} ${
             l.need_help ? 'bg-red-50/50 dark:bg-red-900/5' : ''
           }`}
         >
@@ -872,7 +874,12 @@ export default function LeadsManage() {
             )}
           </td>
           <td className="px-1 py-2.5" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => toggleSel(l.id)}>
+            <button
+              type="button"
+              onClick={() => toggleSel(l.id)}
+              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label={`${selected.has(l.id) ? '取消选择' : '选择'} ${l.name || '学生'}`}
+            >
               {selected.has(l.id) ? (
                 <CheckSquare className="w-4 h-4 text-blue-600" />
               ) : (
@@ -888,7 +895,8 @@ export default function LeadsManage() {
                 to={`/admin/leads/${l.id}`}
                 onClick={(e) => e.stopPropagation()}
                 title="查看详情"
-                className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+                aria-label={`查看 ${l.name || '学生'} 详情`}
+                className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
@@ -905,13 +913,14 @@ export default function LeadsManage() {
           </td>
           <td className="px-2 py-2.5 hidden lg:table-cell">
             <select
+              aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
               value={l.stage}
               onChange={(e) => {
                 e.stopPropagation();
                 quickStage(l.id, e.target.value);
               }}
               onClick={(e) => e.stopPropagation()}
-              className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 border-0 cursor-pointer"
+              className="min-h-9 text-xs px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 cursor-pointer"
             >
               {STAGES.map((st) => (
                 <option key={st} value={st}>{stageLabel(st)}</option>
@@ -919,27 +928,35 @@ export default function LeadsManage() {
             </select>
           </td>
           <td className="px-2 py-2.5">
-            <select
-              value={l.status}
-              onChange={(e) => {
-                e.stopPropagation();
-                quickStatus(l.id, e.target.value);
-              }}
-              onClick={(e) => e.stopPropagation()}
-              className={`text-xs px-1.5 py-0.5 rounded-full border-0 cursor-pointer ${
-                l.status === '已报名'
-                  ? 'bg-green-100 dark:bg-green-900/40 text-green-700'
-                  : l.status === '未联系'
-                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-600'
-                  : l.status === '已过期'
-                  ? 'bg-gray-200 text-gray-400'
-                  : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700'
-              }`}
-            >
-              {STATUS_OPTS.filter(Boolean).map((st) => (
-                <option key={st} value={st}>{statusLabel(st)}</option>
-              ))}
-            </select>
+            <div className="flex flex-col items-start gap-1">
+              <select
+                aria-label={`设置 ${l.name || '学生'} 状态`}
+                value={l.status}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  quickStatus(l.id, e.target.value);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className={`min-h-9 text-xs px-2 py-1.5 rounded-lg border-0 cursor-pointer ${
+                  l.status === '已报名'
+                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700'
+                    : l.status === '未联系'
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-600'
+                    : l.status === '无效'
+                    ? 'bg-gray-200 text-gray-400'
+                    : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700'
+                }`}
+              >
+                {STATUS_OPTS.filter(Boolean).map((st) => (
+                  <option key={st} value={st}>{statusLabel(st)}</option>
+                ))}
+              </select>
+              {l.status_detail && (
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+                  {l.status === '无效' ? `原因：${l.status_detail}` : l.status_detail}
+                </span>
+              )}
+            </div>
           </td>
           <td className="px-2 py-2.5 hidden sm:table-cell">
             {l.intent_level !== '无' ? (
@@ -1063,10 +1080,24 @@ export default function LeadsManage() {
                 />
               </div>
               <div className="flex gap-2">
-                <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputCls} w-auto`}>
+                <select aria-label="按状态筛选学生" value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputCls} w-auto`}>
                   {STATUS_OPTS.map((s) => (
                     <option key={s} value={s}>
                       {s ? statusLabel(s) : '全部状态'}
+                    </option>
+                  ))}
+                </select>
+                <select aria-label="按结果或原因筛选学生" value={statusDetail} onChange={(e) => setStatusDetail(e.target.value)} className={`${inputCls} w-auto`}>
+                  {STATUS_DETAIL_OPTS.map((s) => (
+                    <option key={s} value={s}>
+                      {s || '全部结果/原因'}
+                    </option>
+                  ))}
+                </select>
+                <select aria-label="按意向等级筛选学生" value={intent} onChange={(e) => setIntent(e.target.value)} className={`${inputCls} w-auto`}>
+                  {INTENT_OPTS.map((l) => (
+                    <option key={l} value={l}>
+                      {l ? `${l}级意向` : '全部意向'}
                     </option>
                   ))}
                 </select>
@@ -1137,7 +1168,16 @@ export default function LeadsManage() {
                   <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-left text-gray-600 dark:text-gray-400">
                     <th className="px-0.5 py-3 w-5"></th>
                     <th className="px-1 py-3 w-12">
-                      <button onClick={toggleAll}>
+                      <button
+                        type="button"
+                        onClick={toggleAll}
+                        className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                        aria-label={
+                          selected.size === students.length && students.length > 0
+                            ? '取消选择当前页全部学生'
+                            : '选择当前页全部学生'
+                        }
+                      >
                         {selected.size === students.length && students.length > 0 ? (
                           <CheckSquare className="w-4 h-4 text-blue-600" />
                         ) : (
@@ -1179,12 +1219,13 @@ export default function LeadsManage() {
               <div className="flex items-center gap-2">
                 <button
                   disabled={page <= 1}
+                  aria-label="上一页"
                   onClick={() => {
                     const p = page - 1;
                     setPage(p);
                     fetchStudents(p);
                   }}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
+                  className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -1193,12 +1234,13 @@ export default function LeadsManage() {
                 </span>
                 <button
                   disabled={page >= totalPages}
+                  aria-label="下一页"
                   onClick={() => {
                     const p = page + 1;
                     setPage(p);
                     fetchStudents(p);
                   }}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
+                  className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -1221,7 +1263,7 @@ export default function LeadsManage() {
             </div>
             <div className="space-y-4">
               <div className="text-sm bg-blue-50 dark:bg-blue-900/30 px-3 py-2 rounded-lg">
-                Excel需包含列：<b>姓名</b>、<b>电话</b>、成绩、监护人姓名、监护人电话、学校名称、学校地址、地域（可选），仅支持 .xlsx
+                Excel需包含列：<b>姓名</b>、<b>电话</b>、成绩、监护人姓名、监护人电话、学校名称、地域（可选），仅支持 .xlsx
               </div>
               <a href="/api/students/template/download" className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline">
                 <Download className="w-3.5 h-3.5" />下载Excel模板
@@ -1261,6 +1303,7 @@ export default function LeadsManage() {
                   </label>
                   {field.type === 'textarea' ? (
                     <textarea
+                      aria-label={field.label}
                       value={newStudent[field.key] || ''}
                       onChange={(e) => setNewStudent({ ...newStudent, [field.key]: e.target.value })}
                       className={`${inputCls} h-20 resize-none`}
@@ -1268,6 +1311,7 @@ export default function LeadsManage() {
                     />
                   ) : (
                     <input
+                      aria-label={field.label}
                       value={newStudent[field.key] || ''}
                       onChange={(e) => setNewStudent({ ...newStudent, [field.key]: e.target.value })}
                       className={inputCls}
@@ -1278,26 +1322,26 @@ export default function LeadsManage() {
               ))}
               <div>
                 <label className="block text-sm mb-1">状态</label>
-                <select value={newStudent.status} onChange={(e) => setNewStudent({ ...newStudent, status: e.target.value })} className={inputCls}>
+                <select aria-label="新建学生状态" value={newStudent.status} onChange={(e) => setNewStudent({ ...newStudent, status: e.target.value })} className={inputCls}>
                   {STATUS_OPTS.map((o) => <option key={o} value={o}>{o ? statusLabel(o) : '默认'}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm mb-1">意向等级</label>
-                <select value={newStudent.intent_level} onChange={(e) => setNewStudent({ ...newStudent, intent_level: e.target.value })} className={inputCls}>
+                <select aria-label="新建学生意向等级" value={newStudent.intent_level} onChange={(e) => setNewStudent({ ...newStudent, intent_level: e.target.value })} className={inputCls}>
                   {INTENT_OPTS.map((o) => <option key={o} value={o}>{o || '默认'}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm mb-1">跟进阶段</label>
-                <select value={newStudent.stage} onChange={(e) => setNewStudent({ ...newStudent, stage: e.target.value })} className={inputCls}>
+                <select aria-label="新建学生跟进阶段" value={newStudent.stage} onChange={(e) => setNewStudent({ ...newStudent, stage: e.target.value })} className={inputCls}>
                   <option value="">默认</option>
                   {STAGES.map((o) => <option key={o} value={o}>{stageLabel(o)}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm mb-1">分配话务员</label>
-                <select value={newStudent.assigned_to} onChange={(e) => setNewStudent({ ...newStudent, assigned_to: e.target.value })} className={inputCls}>
+                <select aria-label="新建学生分配话务员" value={newStudent.assigned_to} onChange={(e) => setNewStudent({ ...newStudent, assigned_to: e.target.value })} className={inputCls}>
                   <option value="">不分配</option>
                   {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
@@ -1332,7 +1376,7 @@ export default function LeadsManage() {
             </div>
             <div className="space-y-3">
               <div className="text-sm">已选择 <b>{selected.size}</b> 名学生</div>
-              <select value={assignAgentId} onChange={(e) => setAssignAgentId(e.target.value)} className={inputCls}>
+              <select aria-label="选择批量分配话务员" value={assignAgentId} onChange={(e) => setAssignAgentId(e.target.value)} className={inputCls}>
                 <option value="">选择话务员</option>
                 {agents.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
               </select>
@@ -1364,6 +1408,7 @@ export default function LeadsManage() {
                 <div key={key}>
                   <label className="block text-sm mb-1">{label}</label>
                   <input
+                    aria-label={label}
                     value={editStudent[key] || ''}
                     onChange={(e) => setEditStudent({ ...editStudent, [key]: e.target.value })}
                     className={inputCls}
@@ -1455,6 +1500,7 @@ export default function LeadsManage() {
               <div>
                 <label className="block text-sm mb-1 font-medium">选择学校</label>
                 <select
+                  aria-label="选择学校"
                   value={schoolAssignSchool}
                   onChange={(e) => setSchoolAssignSchool(e.target.value)}
                   className={inputCls}

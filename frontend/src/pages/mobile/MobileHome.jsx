@@ -55,6 +55,19 @@ function ProgressBar({ pct }) {
 
 function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
   const overLimit = (dialCount ?? 0) >= dialMax;
+  const contacts = [
+    {
+      key: 'guardian',
+      label: s.guardian_name || '监护人',
+      phone: s.guardian_phone || s.guardian_phone_raw,
+    },
+    {
+      key: 'guardian2',
+      label: s.guardian2_name || '监护人2',
+      phone: s.guardian2_phone || s.guardian2_phone_raw,
+    },
+  ].filter((contact) => contact.phone);
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
       <button
@@ -71,6 +84,11 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
               {s.name}
             </span>
             <StatusBadge status={s.status} />
+            {s.status_detail && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+                {s.status_detail}
+              </span>
+            )}
             <IntentLevelBadge level={s.intent_level} />
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
@@ -85,27 +103,37 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
         </div>
         <ChevronRight className="w-5 h-5 text-gray-300 dark:text-gray-600 shrink-0 mt-1" />
       </button>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={dialing}
-          onClick={() => onDial(s.id)}
-          className={`flex-1 inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl text-base font-semibold transition active:scale-95 ${
-            overLimit
-              ? 'bg-red-600 text-white'
-              : 'bg-blue-600 hover:bg-blue-700 text-white'
-          } disabled:opacity-60`}
-        >
-          {dialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Phone className="w-5 h-5" />}
-          {overLimit ? `已 ${dialCount} 次 · 仍拨打` : '拨号'}
-        </button>
-        <button
-          type="button"
-          onClick={() => onDetail(s.id)}
-          className="px-4 min-h-[48px] rounded-xl border dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 active:scale-95"
-        >
-          详情
-        </button>
+      <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+        {contacts.length > 0 ? (
+          contacts.map((contact) => (
+            <button
+              key={contact.key}
+              type="button"
+              disabled={dialing}
+              onClick={() => onDial(s.id, contact.key)}
+              className={`inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition active:scale-95 ${
+                overLimit
+                  ? 'bg-red-600 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              } disabled:opacity-60`}
+              aria-label={`拨打 ${s.name || '学生'} ${contact.label}`}
+            >
+              {dialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Phone className="w-5 h-5" />}
+              <span className="truncate">
+                {overLimit ? `已 ${dialCount} 次 · 仍拨` : `拨 ${contact.label}`}
+              </span>
+            </button>
+          ))
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gray-100 text-sm font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-500"
+          >
+            <Phone className="w-5 h-5" />
+            无电话
+          </button>
+        )}
       </div>
       {overLimit && (
         <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-300">
@@ -119,8 +147,8 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
 
 function TabBar({ active }) {
   const items = [
-    { key: 'tasks', to: '/mobile', label: '任务', icon: ListTodo },
-    { key: 'pending', to: '/mobile?tab=pending', label: '待办', icon: CalendarClock },
+    { key: 'tasks', to: '/mobile', label: '待拨打', icon: ListTodo },
+    { key: 'pending', to: '/mobile?tab=pending', label: '待处理', icon: CalendarClock },
     { key: 'me', to: '/mobile?tab=me', label: '我的', icon: UserIcon },
   ];
   return (
@@ -218,6 +246,7 @@ function SettingsSheet({ open, onClose }) {
             PushPlus 个人 Token
           </label>
           <input
+            aria-label="PushPlus 个人 Token"
             type="text"
             value={token}
             onChange={(e) => setToken(e.target.value)}
@@ -287,7 +316,7 @@ function PendingList() {
     return <div className="text-center text-sm text-red-500 py-10">{error}</div>;
   }
   if (items.length === 0) {
-    return <div className="text-center text-sm text-gray-400 py-10">暂无待办</div>;
+    return <div className="text-center text-sm text-gray-400 py-10">暂无待处理</div>;
   }
   return (
     <div className="space-y-3">
@@ -381,17 +410,17 @@ function MePanel({ onOpenSettings }) {
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">当前密码</label>
-            <input type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} placeholder="请输入当前密码"
+            <input aria-label="当前密码" type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} placeholder="请输入当前密码"
               className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">新密码</label>
-            <input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="至少6位"
+            <input aria-label="新密码" type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="至少6位"
               className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">确认新密码</label>
-            <input type="password" value={newPwd2} onChange={e => setNewPwd2(e.target.value)} placeholder="再次输入新密码"
+            <input aria-label="确认新密码" type="password" value={newPwd2} onChange={e => setNewPwd2(e.target.value)} placeholder="再次输入新密码"
               className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100" />
           </div>
           <button type="button" onClick={handleChangePwd} disabled={pwdLoading}
@@ -497,11 +526,11 @@ export default function MobileHome() {
     };
   }, [students, checkDup]);
 
-  const handleDial = async (id) => {
+  const handleDial = async (id, contactKey = 'guardian') => {
     setDialingId(id);
     try {
       const s = students.find((x) => x.id === id);
-      await dial(id, { studentName: s?.name });
+      await dial(id, { contactKey, studentName: s?.name });
       const dc = await checkDup(id);
       if (dc) setDialCountMap((prev) => ({ ...prev, [id]: dc.count ?? 0 }));
     } finally {
@@ -548,7 +577,7 @@ export default function MobileHome() {
             <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                  今日进度
+                  待拨打进度
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
                   {filteredStats.progress_pct ?? 0}%
@@ -557,7 +586,7 @@ export default function MobileHome() {
               <ProgressBar pct={filteredStats.progress_pct} />
               <div className="flex gap-2">
                 <StatCard label="总数" value={filteredStats.total ?? 0} color="gray" />
-                <StatCard label="已完成" value={filteredStats.done ?? 0} color="green" />
+                <StatCard label="已联系" value={filteredStats.done ?? 0} color="green" />
                 <StatCard label="待回访" value={filteredStats.follow_up ?? 0} color="amber" />
                 <StatCard label="未联系" value={filteredStats.pending ?? 0} color="blue" />
               </div>
@@ -565,10 +594,11 @@ export default function MobileHome() {
 
             {/* 学校筛选标签 */}
             {schoolGroups.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <div className="flex gap-2 overflow-x-auto pb-2">
                 <button
+                  type="button"
                   onClick={() => setSelectedSchool(null)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
                     !selectedSchool
                       ? 'bg-blue-600 text-white'
                       : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
@@ -579,8 +609,9 @@ export default function MobileHome() {
                 {schoolGroups.map((g) => (
                   <button
                     key={g.name}
+                    type="button"
                     onClick={() => setSelectedSchool(selectedSchool === g.name ? null : g.name)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                    className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
                       selectedSchool === g.name
                         ? 'bg-blue-600 text-white'
                         : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
@@ -596,6 +627,7 @@ export default function MobileHome() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
+                aria-label="搜索姓名或电话"
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -604,8 +636,10 @@ export default function MobileHome() {
               />
               {search && (
                 <button
+                  type="button"
                   onClick={() => setSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-2 top-1/2 flex min-w-9 min-h-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:text-gray-600"
+                  aria-label="清空搜索"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -621,7 +655,7 @@ export default function MobileHome() {
               <div className="text-center text-sm text-red-500 py-10">{error}</div>
             ) : filteredStudents.length === 0 ? (
               <div className="text-center text-sm text-gray-400 py-12">
-                {selectedSchool ? '该学校暂无任务' : '今日暂无任务'}
+                {selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}
               </div>
             ) : (
               <div className="space-y-3">
@@ -656,7 +690,7 @@ export default function MobileHome() {
       <TabBar active={tab} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
-      {/* 打完电话返回后弹“选择处理结果”，更新联系状况并刷新今日任务 */}
+      {/* 打完电话返回后弹“选择处理结果”，更新联系状况并刷新待拨打列表 */}
       <MobileDialResult onUpdated={() => refetch()} />
     </div>
   );

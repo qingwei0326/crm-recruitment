@@ -1,0 +1,32 @@
+# ═══════════════════════════════════════════════════════════
+# 招生话务CRM — systemd 服务单元（参考文件）
+# 实际由 deploy-linux.sh 自动生成到 /etc/systemd/system/
+# ═══════════════════════════════════════════════════════════
+[Unit]
+Description=招生话务CRM系统
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crm
+Group=crm
+WorkingDirectory=/opt/crm
+Environment=PATH=/opt/crm/.venv-linux/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/opt/crm/.env
+ExecStart=/opt/crm/.venv-linux/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-config logging.json
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crm
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/crm /var/log/crm /tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

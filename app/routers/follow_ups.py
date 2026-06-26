@@ -7,9 +7,14 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.follow_up_service import (
+    sync_student_status_after_follow_up_change,
+    sync_student_status_for_open_follow_up,
+)
 from app.models import FollowUp, Student, User, UserRole
 from app.permissions import get_accessible_student
 from app.schemas import FollowUpCreate, FollowUpUpdate, Response
+from app.status_policy import canonical_status_value, status_detail_value
 from app.utils import utcnow
 
 router = APIRouter(prefix="/api/follow-ups", tags=["回访"])
@@ -21,7 +26,7 @@ async def create_follow_up(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    await get_accessible_student(db, body.student_id, current_user)
+    student = await get_accessible_student(db, body.student_id, current_user)
     fu = FollowUp(
         student_id=body.student_id,
         agent_id=current_user.id,
@@ -30,6 +35,7 @@ async def create_follow_up(
         notes=body.notes,
     )
     db.add(fu)
+    await sync_student_status_for_open_follow_up(db, student)
     await db.commit()
     await db.refresh(fu)
     return Response.ok(_fu_payload(fu))
@@ -72,7 +78,9 @@ async def list_follow_ups(
 
     total = (await db.execute(count_stmt)).scalar() or 0
     result = await db.execute(
-        query.order_by(FollowUp.follow_up_date.asc()).offset((page - 1) * page_size).limit(page_size)
+        query.order_by(FollowUp.follow_up_date.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )
     items = []
     for f in result.scalars().unique().all():
@@ -84,7 +92,10 @@ async def list_follow_ups(
                 "student_id": f.student_id,
                 "student_name": student.name if student else "",
                 "student_region": student.region if student else "",
-                "student_status": str(student.status) if student else "",
+                "student_status": canonical_status_value(student.status) if student else "",
+                "student_status_detail": status_detail_value(student.status, student.status_detail)
+                if student
+                else "",
                 "agent_id": f.agent_id,
                 "agent_name": agent.name if agent else "",
             }
@@ -127,7 +138,8 @@ async def my_pending_follow_ups(
                 "student_name": student.name,
                 "student_region": student.region,
                 "intent_level": student.intent_level,
-                "status": student.status,
+                "status": canonical_status_value(student.status),
+                "status_detail": status_detail_value(student.status, student.status_detail),
                 "overdue": fu.follow_up_date < now,
             }
         )
@@ -179,6 +191,7 @@ async def update_follow_up(
     if body.notes is not None:
         follow_up.notes = body.notes
 
+    await sync_student_status_after_follow_up_change(db, follow_up.student_id)
     await db.commit()
     await db.refresh(follow_up)
     return Response.ok(
@@ -202,6 +215,9 @@ async def delete_follow_up(
     if not _can_manage_follow_up(current_user, follow_up):
         return Response.error(code=1, msg="无权操作此回访")
 
+    student_id = follow_up.student_id
     await db.delete(follow_up)
+    await db.flush()
+    await sync_student_status_after_follow_up_change(db, student_id)
     await db.commit()
     return Response.ok({"deleted": fu_id})

@@ -6,7 +6,7 @@ export default function StatsBar({ stats, variant = 'full' }) {
       <div className="grid grid-cols-4 gap-2 px-3 py-2">
         {[
           { label: '总任务', value: total, color: 'text-gray-700 dark:text-gray-200' },
-          { label: '已完成', value: done, color: 'text-green-600' },
+          { label: '已联系', value: done, color: 'text-green-600' },
           { label: '待联系', value: pending, color: 'text-blue-600' },
           { label: '待回访', value: follow_up, color: 'text-amber-600' },
         ].map((item) => (
