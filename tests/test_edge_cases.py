@@ -1,10 +1,12 @@
 """Tests for edge cases, error handling, and historical bug patterns."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
 from app.auth import create_access_token
+from app.models import DialLog
+from app.utils import utcnow
 
 
 @pytest.mark.asyncio
@@ -199,12 +201,25 @@ class TestCallEndpoints:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "学生不存在"
 
-    async def test_check_today_call(self, client, admin_headers, sample_student):
+    async def test_check_today_call(self, client, db, admin_headers, admin_user, sample_student):
+        db.add(
+            DialLog(
+                student_id=sample_student.id,
+                agent_id=admin_user.id,
+                dialed_at=utcnow() - timedelta(minutes=5),
+            )
+        )
+        await db.commit()
+
         resp = await client.get(
             f"/api/calls/check?student_id={sample_student.id}",
             headers=admin_headers,
         )
-        assert resp.json()["code"] == 0
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["count"] == 1
+        assert body["data"]["already_called"] is True
 
     async def test_check_today_call_unknown_student(self, client, admin_headers):
         resp = await client.get("/api/calls/check?student_id=99999", headers=admin_headers)
@@ -436,5 +451,5 @@ class TestFollowUpEndpoints:
         assert item["student_id"] == sample_student.id
         assert item["student_name"] == sample_student.name
         assert item["student_region"] == sample_student.region
-        assert item["student_status"] == sample_student.status
+        assert item["student_status"] == "待回访"
         assert item["agent_name"]

@@ -52,11 +52,8 @@ export default function SystemSettings() {
   const [customKeyDirty, setCustomKeyDirty] = useState(false);
   const [customBase, setCustomBase] = useState('');
   const [customModel, setCustomModel] = useState('');
-  const [staleDays, setStaleDays] = useState('3');
   const [tokenMessage, setTokenMessage] = useState(null);
-  const [daysMessage, setDaysMessage] = useState(null);
   const [savingToken, setSavingToken] = useState(false);
-  const [savingDays, setSavingDays] = useState(false);
   const [dialWindowStart, setDialWindowStart] = useState('08:00');
   const [dialWindowEnd, setDialWindowEnd] = useState('21:00');
   const [dialMaxPer24h, setDialMaxPer24h] = useState('3');
@@ -116,7 +113,6 @@ export default function SystemSettings() {
       setCustomKeyDirty(false);
       setCustomBase(cfg.ai_custom_base || '');
       setCustomModel(cfg.ai_custom_model || '');
-      setStaleDays(cfg.stale_days || '3');
       setDialWindowStart(cfg.dial_window_start || '08:00');
       setDialWindowEnd(cfg.dial_window_end || '21:00');
       setDialMaxPer24h(cfg.dial_max_per_24h || '3');
@@ -184,20 +180,6 @@ export default function SystemSettings() {
     }
   };
 
-  const saveDays = async () => {
-    setDaysMessage(null);
-    setSavingDays(true);
-    try {
-      const res = await api.put('/admin/config', { key: 'stale_days', value: String(staleDays) });
-      setStaleDays(res.data.data?.value ?? String(staleDays));
-      setDaysMessage({ type: 'success', text: '已保存' });
-    } catch (err) {
-      setDaysMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
-    } finally {
-      setSavingDays(false);
-    }
-  };
-
   const saveDial = async () => {
     setDialMessage(null);
     setSavingDial(true);
@@ -225,7 +207,8 @@ export default function SystemSettings() {
         >
           <button
             onClick={toggle}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="min-w-10 min-h-10 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label={dark ? '亮色模式' : '暗色模式'}
           >
             {dark ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
@@ -240,6 +223,7 @@ export default function SystemSettings() {
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <input
+                      aria-label="PushPlus Token"
                       type={showToken ? 'text' : 'password'}
                       className={inputCls}
                       value={token}
@@ -249,7 +233,8 @@ export default function SystemSettings() {
                     <button
                       type="button"
                       onClick={() => setShowToken((v) => !v)}
-                      className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      aria-label={showToken ? '隐藏 PushPlus Token' : '显示 PushPlus Token'}
                     >
                       {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -267,7 +252,7 @@ export default function SystemSettings() {
                     href="https://www.pushplus.plus"
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                    className="inline-flex min-h-9 items-center text-xs text-blue-600 dark:text-blue-400 hover:underline"
                   >
                     获取 Token →
                   </a>
@@ -275,33 +260,6 @@ export default function SystemSettings() {
                 </div>
               </SettingRow>
 
-              <SettingRow label="未跟进预警天数">
-                <div className="space-y-2">
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="number"
-                      min="1"
-                      max="30"
-                      className={inputCls}
-                      value={staleDays}
-                      onChange={(e) => setStaleDays(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      onClick={saveDays}
-                      disabled={savingDays || loading}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-                    >
-                      <Save className="w-4 h-4" />
-                      保存
-                    </button>
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    A 级学员超过 X 天无跟进记录时推送预警.
-                  </div>
-                  <RowMessage state={daysMessage} />
-                </div>
-              </SettingRow>
             </div>
           </div>
 
@@ -314,6 +272,7 @@ export default function SystemSettings() {
               <SettingRow label="分析引擎">
                 <div className="space-y-2">
                   <select
+                    aria-label="AI 分析引擎"
                     className={inputCls}
                     value={aiProvider}
                     onChange={(e) => setAiProvider(e.target.value)}
@@ -333,6 +292,7 @@ export default function SystemSettings() {
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <input
+                        aria-label="DeepSeek API Key"
                         type={showDsKey ? 'text' : 'password'}
                         className={inputCls}
                         value={dsKey}
@@ -342,7 +302,8 @@ export default function SystemSettings() {
                       <button
                         type="button"
                         onClick={() => setShowDsKey((v) => !v)}
-                        className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        aria-label={showDsKey ? '隐藏 DeepSeek API Key' : '显示 DeepSeek API Key'}
                       >
                         {showDsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -364,6 +325,7 @@ export default function SystemSettings() {
                   <SettingRow label="MiMo API Key">
                     <div className="flex gap-2">
                       <input
+                        aria-label="MiMo API Key"
                         type={showMimoKey ? 'text' : 'password'}
                         className={inputCls}
                         value={mimoKey}
@@ -373,7 +335,8 @@ export default function SystemSettings() {
                       <button
                         type="button"
                         onClick={() => setShowMimoKey((v) => !v)}
-                        className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        aria-label={showMimoKey ? '隐藏 MiMo API Key' : '显示 MiMo API Key'}
                       >
                         {showMimoKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -381,6 +344,7 @@ export default function SystemSettings() {
                   </SettingRow>
                   <SettingRow label="接口地址">
                     <input
+                      aria-label="MiMo 接口地址"
                       className={inputCls}
                       value={mimoBase}
                       onChange={(e) => setMimoBase(e.target.value)}
@@ -389,6 +353,7 @@ export default function SystemSettings() {
                   </SettingRow>
                   <SettingRow label="模型名">
                     <input
+                      aria-label="MiMo 模型名"
                       className={inputCls}
                       value={mimoModel}
                       onChange={(e) => setMimoModel(e.target.value)}
@@ -403,6 +368,7 @@ export default function SystemSettings() {
                   <SettingRow label="API Key">
                     <div className="flex gap-2">
                       <input
+                        aria-label="自定义 API Key"
                         type={showCustomKey ? 'text' : 'password'}
                         className={inputCls}
                         value={customKey}
@@ -412,7 +378,8 @@ export default function SystemSettings() {
                       <button
                         type="button"
                         onClick={() => setShowCustomKey((v) => !v)}
-                        className="px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        aria-label={showCustomKey ? '隐藏自定义 API Key' : '显示自定义 API Key'}
                       >
                         {showCustomKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
@@ -420,6 +387,7 @@ export default function SystemSettings() {
                   </SettingRow>
                   <SettingRow label="接口地址">
                     <input
+                      aria-label="自定义接口地址"
                       className={inputCls}
                       value={customBase}
                       onChange={(e) => setCustomBase(e.target.value)}
@@ -428,6 +396,7 @@ export default function SystemSettings() {
                   </SettingRow>
                   <SettingRow label="模型名">
                     <input
+                      aria-label="自定义模型名"
                       className={inputCls}
                       value={customModel}
                       onChange={(e) => setCustomModel(e.target.value)}
@@ -462,7 +431,9 @@ export default function SystemSettings() {
             </div>
             <div className="p-4 lg:p-6">
               <SettingRow label="拨号窗口开始">
+                <label className="sr-only" htmlFor="dial-window-start">拨号窗口开始</label>
                 <input
+                  id="dial-window-start"
                   type="time"
                   className={inputCls}
                   value={dialWindowStart}
@@ -470,7 +441,9 @@ export default function SystemSettings() {
                 />
               </SettingRow>
               <SettingRow label="拨号窗口结束">
+                <label className="sr-only" htmlFor="dial-window-end">拨号窗口结束</label>
                 <input
+                  id="dial-window-end"
                   type="time"
                   className={inputCls}
                   value={dialWindowEnd}
@@ -478,7 +451,9 @@ export default function SystemSettings() {
                 />
               </SettingRow>
               <SettingRow label="24 小时内最多拨打次数">
+                <label className="sr-only" htmlFor="dial-max-per-24h">24 小时内最多拨打次数</label>
                 <input
+                  id="dial-max-per-24h"
                   type="number"
                   min="1"
                   max="20"
@@ -542,7 +517,7 @@ export default function SystemSettings() {
                       <a
                         href={`/api/admin/backups/${encodeURIComponent(b.name)}`}
                         download
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        className="inline-flex min-h-9 items-center gap-1.5 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                       >
                         <Download className="w-4 h-4" />
                         下载

@@ -1,4 +1,4 @@
-import { useReducer, useCallback, useMemo } from 'react';
+import { useReducer, useMemo } from 'react';
 
 // 初始状态
 const initialState = {
@@ -50,9 +50,6 @@ const initialState = {
     loading: false,
   },
 
-  // 预测相关
-  prediction: null,
-
   // 备注相关
   noteText: '',
 
@@ -90,7 +87,7 @@ const initialState = {
     expandedId: null,
   },
 
-  // 积压提醒
+  // 时限类提醒暂时关闭；字段保留以兼容旧 action。
   backlogAlert: null,
 };
 
@@ -123,8 +120,6 @@ const ActionTypes = {
 
   SET_FOLLOWING: 'SET_FOLLOWING',
   SET_FOLLOWING_LOADING: 'SET_FOLLOWING_LOADING',
-
-  SET_PREDICTION: 'SET_PREDICTION',
 
   SET_NOTE_TEXT: 'SET_NOTE_TEXT',
   SET_FOLLOW_UP_DATE: 'SET_FOLLOW_UP_DATE',
@@ -252,9 +247,6 @@ function agentWorkReducer(state, action) {
     case ActionTypes.SET_FOLLOWING_LOADING:
       return { ...state, following: { ...state.following, loading: action.payload } };
 
-    case ActionTypes.SET_PREDICTION:
-      return { ...state, prediction: action.payload };
-
     case ActionTypes.SET_NOTE_TEXT:
       return { ...state, noteText: action.payload };
 
@@ -351,8 +343,6 @@ export default function useAgentWorkState() {
 
     setFollowing: (p) => dispatch({ type: ActionTypes.SET_FOLLOWING, payload: p }),
     setFollowingLoading: (p) => dispatch({ type: ActionTypes.SET_FOLLOWING_LOADING, payload: p }),
-
-    setPrediction: (p) => dispatch({ type: ActionTypes.SET_PREDICTION, payload: p }),
 
     setNoteText: (p) => dispatch({ type: ActionTypes.SET_NOTE_TEXT, payload: p }),
     setFollowUpDate: (p) => dispatch({ type: ActionTypes.SET_FOLLOW_UP_DATE, payload: p }),

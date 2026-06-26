@@ -32,6 +32,36 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
+const MAIN_SERIES = [
+  { key: 'calls', name: '呼出量', stroke: '#3b82f6', strokeWidth: 2, dot: { r: 2 } },
+  { key: 'enrolled', name: '报名数', stroke: '#10b981', strokeWidth: 2, dot: { r: 3 } },
+  {
+    key: 'prev_calls',
+    name: '上周同期',
+    stroke: '#94a3b8',
+    strokeWidth: 1.5,
+    strokeDasharray: '4 4',
+    dot: false,
+    connectNulls: false,
+  },
+];
+
+const AGENT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+function hasPositiveValue(rows, getValue) {
+  return rows.some((row) => Number(getValue(row) || 0) > 0);
+}
+
+function getActiveAgentNames(rows) {
+  const totals = new Map();
+  rows.forEach((row) => {
+    Object.entries(row.agent_calls || {}).forEach(([name, value]) => {
+      totals.set(name, (totals.get(name) || 0) + Number(value || 0));
+    });
+  });
+  return [...totals.entries()].filter(([, total]) => total > 0).map(([name]) => name);
+}
+
 export default function TrendReport() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -88,11 +118,6 @@ export default function TrendReport() {
     URL.revokeObjectURL(url);
   };
 
-  // Collect agent names for lines
-  const agentNames = trendData?.daily?.[0]?.agent_calls
-    ? Object.keys(trendData.daily[0].agent_calls)
-    : [];
-
   // 周同比：把 7 天前的呼出量偏移到对应日期上
   const chartData = useMemo(() => {
     if (!trendData?.daily) return [];
@@ -108,6 +133,14 @@ export default function TrendReport() {
       };
     });
   }, [trendData]);
+  const visibleMainSeries = useMemo(
+    () => MAIN_SERIES.filter((series) => hasPositiveValue(chartData, (row) => row[series.key])),
+    [chartData],
+  );
+  const visibleAgentNames = useMemo(
+    () => getActiveAgentNames(trendData?.daily || []).slice(0, 5),
+    [trendData],
+  );
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -194,59 +227,46 @@ export default function TrendReport() {
           ) : trendData ? (
             <>
               {/* Calls + Enrollments chart */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4">
-                <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">
-                  每日呼出量 & 新增报名
-                </h3>
-                <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={dark ? '#374151' : '#e5e7eb'} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }}
-                      tickFormatter={(v) => v.slice(5)}
-                    />
-                    <YAxis tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: dark ? '#1f2937' : '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                      }}
-                    />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="calls"
-                      stroke="#3b82f6"
-                      name="呼出量"
-                      strokeWidth={2}
-                      dot={{ r: 2 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="enrolled"
-                      stroke="#10b981"
-                      name="报名数"
-                      strokeWidth={2}
-                      dot={{ r: 3 }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="prev_calls"
-                      stroke="#94a3b8"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
-                      dot={false}
-                      name="上周同期"
-                      connectNulls={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              {visibleMainSeries.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4">
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">每日趋势</h3>
+                  <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={dark ? '#374151' : '#e5e7eb'} />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }}
+                        tickFormatter={(v) => v.slice(5)}
+                      />
+                      <YAxis tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: dark ? '#1f2937' : '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                        }}
+                      />
+                      <Legend />
+                      {visibleMainSeries.map((series) => (
+                        <Line
+                          key={series.key}
+                          type="monotone"
+                          dataKey={series.key}
+                          stroke={series.stroke}
+                          name={series.name}
+                          strokeWidth={series.strokeWidth}
+                          strokeDasharray={series.strokeDasharray}
+                          dot={series.dot}
+                          connectNulls={series.connectNulls}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
 
               {/* Agent comparison chart */}
-              {agentNames.length > 0 && (
+              {visibleAgentNames.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4">
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">
                     各话务员每日呼出量对比
@@ -268,12 +288,12 @@ export default function TrendReport() {
                         }}
                       />
                       <Legend />
-                      {agentNames.slice(0, 5).map((name, i) => (
+                      {visibleAgentNames.map((name, i) => (
                         <Line
                           key={name}
                           type="monotone"
                           dataKey={`agent_calls.${name}`}
-                          stroke={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'][i]}
+                          stroke={AGENT_COLORS[i]}
                           name={name}
                           strokeWidth={2}
                           dot={{ r: 1 }}
@@ -296,7 +316,7 @@ export default function TrendReport() {
                         <th className="px-4 py-2 font-medium">日期</th>
                         <th className="px-4 py-2 font-medium text-center">呼出量</th>
                         <th className="px-4 py-2 font-medium text-center">报名数</th>
-                        {agentNames.slice(0, 5).map((n) => (
+                        {visibleAgentNames.map((n) => (
                           <th key={n} className="px-3 py-2 font-medium text-center text-xs">
                             {n}
                           </th>
@@ -313,7 +333,7 @@ export default function TrendReport() {
                           <td className="px-4 py-2 text-center font-medium text-green-600">
                             {d.enrolled}
                           </td>
-                          {agentNames.slice(0, 5).map((n) => (
+                          {visibleAgentNames.map((n) => (
                             <td key={n} className="px-3 py-2 text-center text-gray-500">
                               {d.agent_calls?.[n] || 0}
                             </td>

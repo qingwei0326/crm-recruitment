@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PhoneCall, X, Loader2, CalendarClock, MessageSquare } from 'lucide-react';
 import api from '../api';
 import logger from '../utils/logger';
+import { useConfirm } from './ConfirmDialog';
+import {
+  displayStatusForOperatorResult,
+  OPERATOR_INVALID_DETAIL_LABELS,
+  OPERATOR_STATUS_BUTTON_LABELS,
+  STATUS_ACTION_BUTTON_CLASSES,
+} from '../labels';
 
 /**
  * 手机端"打完电话选结果"底部弹窗。
@@ -43,24 +50,12 @@ function defaultFollowUp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// 与桌面 AgentWork.renderDialModal 一致的处理结果
-// 无效按钮点击后弹出原因选择，而非直接标记
-const STATUS_BUTTONS = [
-  { label: '新线索', cls: 'bg-sky-500 hover:bg-sky-600' },
-  { label: '非常有意向', cls: 'bg-red-600 hover:bg-red-700' },
-  { label: '意向了解加微', cls: 'bg-amber-600 hover:bg-amber-700' },
-  { label: '未接', cls: 'bg-gray-500 hover:bg-gray-600' },
-  { label: '无效', cls: 'bg-gray-400 hover:bg-gray-500', isInvalid: true },
-  { label: '已报名', cls: 'bg-green-600 hover:bg-green-700' },
-];
-
-const INVALID_REASONS = [
-  { label: '空号', value: '空号' },
-  { label: '高分段', value: '高分段' },
-  { label: '无意向', value: '无意向' },
-  { label: '孩子不想读', value: '孩子不想读' },
-  { label: '其他', value: '' },
-];
+// 统一后的处理结果。无效原因类按钮直接写入对应原因，避免话务员重复备注。
+export const STATUS_BUTTONS = OPERATOR_STATUS_BUTTON_LABELS.map((label) => ({
+  label,
+  cls: STATUS_ACTION_BUTTON_CLASSES[label],
+  invalidDetail: OPERATOR_INVALID_DETAIL_LABELS.includes(label),
+}));
 
 const INTENT_BUTTONS = [
   { level: 'A', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
@@ -68,15 +63,6 @@ const INTENT_BUTTONS = [
   { level: 'C', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   { level: '无', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
 ];
-
-function getMsg(e) {
-  return (
-    e?.response?.data?.detail ||
-    e?.response?.data?.msg ||
-    e?.message ||
-    '更新失败'
-  );
-}
 
 /**
  * 手机端“打完电话选结果”底部弹窗。
@@ -91,17 +77,15 @@ function getMsg(e) {
  * props.onUpdated(studentId, status) — 落库成功后回调，宿主页据此刷新列表/详情。
  */
 export default function MobileDialResult({ onUpdated }) {
+  const confirm = useConfirm();
   const [pending, setPending] = useState(null); // { studentId, studentName, dialStartedAt }
   const [showIntent, setShowIntent] = useState(false);
   const [flowStatus, setFlowStatus] = useState(null); // 记住本次选的联系状况
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
-  const [invalidMode, setInvalidMode] = useState(false);
-  const [showCustomInput, setShowCustomInput] = useState(false);
-  const [invalidReason, setInvalidReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState('');
   const [noteText, setNoteText] = useState('');
+  const callRecordedRef = useRef(false);
 
   const tryLoadPending = useCallback(() => {
     // 正在处理一通的结果时，别被新的 visibilitychange 覆盖
@@ -121,10 +105,7 @@ export default function MobileDialResult({ onUpdated }) {
         setFlowStatus(null);
         setShowFollowUp(false);
         setFollowUpDate(defaultFollowUp());
-        setInvalidMode(false);
-        setShowCustomInput(false);
-        setInvalidReason('');
-        setErr('');
+        callRecordedRef.current = false;
         setPending(data);
       }
     } catch {
@@ -156,63 +137,50 @@ export default function MobileDialResult({ onUpdated }) {
     setShowIntent(false);
     setFlowStatus(null);
     setShowFollowUp(false);
-    setInvalidMode(false);
-    setShowCustomInput(false);
-    setInvalidReason('');
-    setErr('');
     setSubmitting(false);
     setNoteText('');
   };
 
   const putField = (payload) => api.put(`/students/${pending.studentId}`, payload);
 
+  const recordCallOnce = () => {
+    if (callRecordedRef.current) return;
+    callRecordedRef.current = true;
+    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
+  };
+
   const pickStatus = async (btn) => {
     if (submitting) return;
-    // "无效" 按钮 → 弹出原因选择
-    if (btn.isInvalid) {
-      setInvalidMode(true);
-      setShowCustomInput(false);
-      setInvalidReason('');
-      setErr('');
-      return;
-    }
     const status = btn.label;
+    if (status === '已报名') {
+      const ok = await confirm({
+        title: '确认报名',
+        message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
+        confirmText: '确认报名',
+      });
+      if (!ok) return;
+    }
     // 乐观更新：先更新 UI，后台同步
-    onUpdated && onUpdated(pending.studentId, status);
+    onUpdated && onUpdated(
+      pending.studentId,
+      displayStatusForOperatorResult(status),
+      btn.invalidDetail ? status : '',
+    );
     // 后台静默同步
     putField({ status }).catch((e) => {
       logger.error('状态同步失败:', e);
       onUpdated && onUpdated(pending.studentId, null);
     });
-    // 记录通话时长和备注
-    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
 
-    // 意向步骤：非常有意向、意向了解加微、未接 需要选意向等级
-    if (status === '非常有意向' || status === '意向了解加微' || status === '未接') {
+    // 接通后可补充意向等级；待回访会在意向后继续设置回访时间。
+    if (status === '非常有意向' || status === '意向了解加微' || status === '已联系' || status === '待回访') {
       setFlowStatus(status);
       setShowIntent(true);
       return; // Don't close yet, show intent step
     }
 
+    recordCallOnce();
     close();
-  };
-
-  const pickInvalidReason = async (reason) => {
-    if (submitting) return;
-    // 快速原因：直接提交
-    if (reason) {
-      onUpdated && onUpdated(pending.studentId, '无效');
-      close();
-      putField({ status: '无效', invalid_reason: reason }).catch((e) => {
-        logger.error('无效状态同步失败:', e);
-        onUpdated && onUpdated(pending.studentId, null);
-      });
-      recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
-      return;
-    }
-    // "其他" → 切到手动输入模式
-    setShowCustomInput(true);
-    setInvalidReason('');
   };
 
   const pickIntent = async (level) => {
@@ -220,10 +188,11 @@ export default function MobileDialResult({ onUpdated }) {
     // 乐观更新：先更新 UI
     onUpdated && onUpdated(pending.studentId, null);
     // 待回访：接着收集回访时间落 /follow-ups；其他：完成
-    if (flowStatus === '待回访') {
+    if (flowStatus === '待回访' || flowStatus === '意向了解加微') {
       setShowIntent(false);
       setShowFollowUp(true);
     } else {
+      recordCallOnce();
       close();
     }
     // 后台静默同步
@@ -235,11 +204,13 @@ export default function MobileDialResult({ onUpdated }) {
   const saveFollowUp = async () => {
     if (submitting) return;
     if (!followUpDate) {
+      recordCallOnce();
       close();
       return;
     }
     // 乐观更新：先更新 UI
     onUpdated && onUpdated(pending.studentId, null);
+    recordCallOnce();
     close();
     // 后台静默同步
     api.post('/follow-ups', {
@@ -248,25 +219,6 @@ export default function MobileDialResult({ onUpdated }) {
     }).catch((e) => {
       logger.error('回访记录同步失败:', e);
     });
-    // 记录通话时长和备注
-    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
-  };
-
-  const submitInvalid = async () => {
-    if (submitting) return;
-    if (!invalidReason.trim()) {
-      setErr('请填写无效原因');
-      return;
-    }
-    // 乐观更新：先更新 UI
-    onUpdated && onUpdated(pending.studentId, '无效');
-    close();
-    // 后台静默同步
-    putField({ status: '无效', invalid_reason: invalidReason.trim() }).catch((e) => {
-      logger.error('无效状态同步失败:', e);
-    });
-    // 记录通话时长和备注
-    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
   };
 
   return (
@@ -287,16 +239,10 @@ export default function MobileDialResult({ onUpdated }) {
               <div className="text-xs text-gray-500">通话已完成，请选择处理结果</div>
             </div>
           </div>
-          <button onClick={close} className="text-gray-400 p-1 -mr-1" aria-label="稍后再说">
+          <button onClick={close} className="text-gray-400 p-1 -mr-1" aria-label="不记录，关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {err && (
-          <div className="text-xs text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-900/30 rounded-lg px-3 py-2">
-            {err}
-          </div>
-        )}
 
         {showFollowUp ? (
           <div className="space-y-3">
@@ -337,7 +283,10 @@ export default function MobileDialResult({ onUpdated }) {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={close}
+                onClick={() => {
+                  recordCallOnce();
+                  close();
+                }}
                 disabled={submitting}
                 className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
               >
@@ -352,58 +301,6 @@ export default function MobileDialResult({ onUpdated }) {
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 保存回访提醒
               </button>
-            </div>
-          </div>
-        ) : invalidMode ? (
-          <div className="space-y-3">
-            <div className="text-xs text-gray-500 dark:text-gray-400 text-center">选择无效原因</div>
-            <div className="grid grid-cols-2 gap-2">
-              {INVALID_REASONS.map((r) => (
-                <button
-                  key={r.label}
-                  type="button"
-                  onClick={() => pickInvalidReason(r.value)}
-                  disabled={submitting}
-                  className="min-h-[48px] rounded-xl text-sm font-medium border dark:border-gray-600 text-gray-700 dark:text-gray-200 active:scale-95 disabled:opacity-60"
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-            {/* "其他" 展开手动输入 */}
-            {showCustomInput && (
-              <textarea
-                value={invalidReason}
-                onChange={(e) => setInvalidReason(e.target.value)}
-                placeholder="请填写无效原因"
-                className="w-full h-20 border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-red-500 resize-none"
-              />
-            )}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setInvalidMode(false);
-                  setShowCustomInput(false);
-                  setInvalidReason('');
-                  setErr('');
-                }}
-                disabled={submitting}
-                className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
-              >
-                返回
-              </button>
-              {invalidReason !== '' && (
-                <button
-                  type="button"
-                  onClick={submitInvalid}
-                  disabled={submitting || !invalidReason.trim()}
-                  className="flex-1 min-h-[48px] rounded-xl bg-red-500 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
-                >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  确认无效
-                </button>
-              )}
             </div>
           </div>
         ) : (
@@ -454,7 +351,10 @@ export default function MobileDialResult({ onUpdated }) {
                 </div>
                 <button
                   type="button"
-                  onClick={close}
+                  onClick={() => {
+                    recordCallOnce();
+                    close();
+                  }}
                   disabled={submitting}
                   className="mt-2.5 w-full text-xs text-gray-400 py-1.5 disabled:opacity-60"
                 >

@@ -19,7 +19,6 @@ import StudentCreateModal from './StudentCreateModal';
 import SettingsModal from './desktop/SettingsModal';
 import DialResultModal from './desktop/DialResultModal';
 import HelpModal from '../../components/HelpModal';
-import { X, AlertTriangle } from 'lucide-react';
 
 export default function AgentWork() {
   const { user, logout } = useAuth();
@@ -54,7 +53,16 @@ export default function AgentWork() {
     handleDialModalStatus,
     handleDialModalIntent,
     handleDialModalFollowUp,
-  } = useAgentDial({ state, actions, current, students, toast, confirm, prompt });
+  } = useAgentDial({
+    state,
+    actions,
+    current,
+    students,
+    toast,
+    confirm,
+    prompt,
+    updateIntentById,
+  });
 
   // 详情面板管理
   const {
@@ -67,7 +75,7 @@ export default function AgentWork() {
   } = useAgentDetail({ state, actions, students, toast });
 
   // 跟进管理
-  const { fetchFollowing, dismissBacklogAlert } = useAgentFollowing({
+  const { fetchFollowing } = useAgentFollowing({
     state, actions, user, toast,
   });
 
@@ -79,34 +87,8 @@ export default function AgentWork() {
     if (state.currentIdx < filteredStudents.length - 1) actions.setCurrentIdx(state.currentIdx + 1);
   };
 
-  // 积压提醒横幅
-  const backlogBanner = state.backlogAlert ? (
-    <div className="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700 px-4 py-2.5 flex items-center gap-2">
-      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
-      <div className="flex-1 text-sm text-amber-800 dark:text-amber-200">
-        你有 <span className="font-bold">{state.backlogAlert.count}</span> 个学员积压超过{' '}
-        {state.backlogAlert.threshold_days} 天没动
-        {state.backlogAlert.oldest_days > 0 && `，最久 ${state.backlogAlert.oldest_days} 天`}
-      </div>
-      <button
-        onClick={() => {
-          actions.setViewTab('following');
-          fetchFollowing();
-          dismissBacklogAlert();
-        }}
-        className="text-xs text-amber-700 dark:text-amber-200 font-medium whitespace-nowrap"
-      >
-        去看看
-      </button>
-      <button
-        onClick={dismissBacklogAlert}
-        className="text-amber-600 dark:text-amber-300 hover:text-amber-800 shrink-0"
-        aria-label="关闭提醒"
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-  ) : null;
+  // 时限类提醒已暂时关闭，保留 prop 以兼容桌面/移动布局。
+  const backlogBanner = null;
 
   // Modals
   const modals = (
@@ -162,7 +144,6 @@ export default function AgentWork() {
     currentIdx: state.currentIdx,
     setCurrentIdx: actions.setCurrentIdx,
     current,
-    prediction: state.prediction,
     // 筛选
     selectedSchool: state.filters.selectedSchool,
     setSelectedSchool: (v) => actions.setFilter('selectedSchool', v),
@@ -211,9 +192,6 @@ export default function AgentWork() {
     // 跟进
     followingData: state.following.data,
     followingLoading: state.following.loading,
-    // 积压
-    backlogAlert: state.backlogAlert,
-    dismissBacklogAlert,
     backlogBanner,
     // Handlers
     handleDial,

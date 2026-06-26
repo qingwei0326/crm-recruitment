@@ -1,13 +1,25 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Call, FollowUp, IntentLevel, OperationLog, Student, StudentStatus, User
 from app.schemas import Response
+from app.status_policy import (
+    canonical_status_value,
+    canonical_student_status,
+    status_detail_value,
+    statuses_for_canonical,
+)
+from app.task_stats import (
+    AGENT_HANDLED_TASK_STATUSES,
+    AGENT_TODAY_TASK_STATUSES,
+    TERMINAL_STUDENT_STATUSES,
+    build_task_stats,
+)
 from app.utils import today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/tasks", tags=["任务"])
@@ -15,17 +27,6 @@ router = APIRouter(prefix="/api/tasks", tags=["任务"])
 # 今日任务列表单次返回上限。stats/学校分组走 SQL 聚合，不受此上限影响，
 # 即使列表被截断也始终是全量准确值。超过此数会置 truncated=True 提示前端。
 TODAY_TASK_LIMIT = 1000
-
-# 任务列表只展示「还需要打电话」的状态：
-#   未联系 — 新分配的，还没打
-#   未接   — 打了没人接，需要重试
-#   待回访 — 约好了回访时间，需要跟进
-# 已联系/非常有意向/意向了解加微/高分段/无意向/孩子不想读/已报名 → 移到待办或终态，不占任务列表
-_ACTIVE_TASK_STATUSES = [
-    StudentStatus.not_contacted,
-    StudentStatus.not_reached,
-    StudentStatus.pending_visit,
-]
 
 
 @router.get("/today")
@@ -37,23 +38,16 @@ async def today_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 统计范围与列表一致：活跃状态 + 有电话，数字对得上
+    # 统计范围与列表一致：话务员端主任务只展示未联系学生。
+    # 缺电话的学生也留在任务池里，由前端显示“无联系人电话”。
     stats_where = (
         Student.assigned_to == current_user.id,
-        Student.status.in_(_ACTIVE_TASK_STATUSES),
-        or_(
-            and_(Student.guardian_phone.isnot(None), Student.guardian_phone != ''),
-            and_(Student.guardian2_phone.isnot(None), Student.guardian2_phone != ''),
-        ),
+        Student.status.in_(AGENT_TODAY_TASK_STATUSES),
     )
     # 列表范围：同上
     base_where = (
         Student.assigned_to == current_user.id,
-        Student.status.in_(_ACTIVE_TASK_STATUSES),
-        or_(
-            and_(Student.guardian_phone.isnot(None), Student.guardian_phone != ''),
-            and_(Student.guardian2_phone.isnot(None), Student.guardian2_phone != ''),
-        ),
+        Student.status.in_(AGENT_TODAY_TASK_STATUSES),
     )
 
     filters = list(base_where)
@@ -76,12 +70,7 @@ async def today_tasks(
         select(Student.status, func.count()).where(*stats_where).group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
-    total = sum(counts.values())
-    # 待联系 = 未联系 + 未接（需要打电话的）
-    pending = counts.get(StudentStatus.not_contacted, 0) + counts.get(StudentStatus.not_reached, 0)
-    # 已处理 = 总数 - 待联系（已联系/待回访等都算已处理）
-    handled = total - pending
-    progress_pct = round(handled / total * 100, 1) if total > 0 else 0
+    stats = build_task_stats(counts, total_statuses=AGENT_TODAY_TASK_STATUSES)
 
     # 学校分组走 SQL 聚合：基于 stats_where（全部学生），排除 school_name 过滤，
     # 保证前端学校切换标签始终是全部学校（不受当前选中学校影响）。
@@ -107,7 +96,7 @@ async def today_tasks(
         .limit(limit)
     )
     students = result.scalars().all()
-    truncated = total > len(students) + offset
+    truncated = stats["total"] > len(students) + offset
 
     now = utcnow()
 
@@ -119,14 +108,8 @@ async def today_tasks(
 
     return Response.ok(
         {
-            "total": total,
-            "stats": {
-                "total": total,
-                "done": handled,
-                "pending": pending,
-                "follow_up": 0,
-                "progress_pct": progress_pct,
-            },
+            "total": stats["total"],
+            "stats": stats,
             "schools": schools,
             "truncated": truncated,
             "list": [
@@ -143,7 +126,8 @@ async def today_tasks(
                     "guardian2_phone_raw": s.guardian2_phone,
                     "school_name": s.school_name,
                     "school_address": s.school_address,
-                    "status": s.status,
+                    "status": canonical_status_value(s.status),
+                    "status_detail": status_detail_value(s.status, s.status_detail),
                     "stage": s.stage,
                     "intent_level": s.intent_level,
                     "need_help": s.need_help,
@@ -167,10 +151,8 @@ async def handled_students(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """待办学生列表（已联系但无明确意向，需要再次跟进确认的）"""
-    handled_statuses = [
-        StudentStatus.contacted,
-    ]
+    """待办学生列表：已联系有效和未接，需要话务员继续处理。"""
+    handled_statuses = AGENT_HANDLED_TASK_STATUSES
     base_where = (
         Student.assigned_to == current_user.id,
         Student.status.in_(handled_statuses),
@@ -179,8 +161,8 @@ async def handled_students(
 
     if status:
         try:
-            status_enum = StudentStatus(status)
-            filters.append(Student.status == status_enum)
+            status_enum = canonical_student_status(StudentStatus(status))
+            filters.append(Student.status.in_(statuses_for_canonical(status_enum)))
         except ValueError:
             pass
 
@@ -199,7 +181,18 @@ async def handled_students(
         .group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
-    total = sum(counts.values())
+    stats = build_task_stats(
+        counts,
+        total_statuses=AGENT_HANDLED_TASK_STATUSES,
+    )
+    total = stats["done"] + stats["follow_up"]
+    count_payload = {
+        "已联系": stats["done"],
+        "未接": sum(
+            int(counts.get(status, 0) or 0)
+            for status in statuses_for_canonical(StudentStatus.not_reached)
+        ),
+    }
 
     result = await db.execute(
         select(Student)
@@ -212,7 +205,7 @@ async def handled_students(
 
     return Response.ok({
         "total": total,
-        "counts": {str(s): c for s, c in counts.items()},
+        "counts": count_payload,
         "list": [
             {
                 "id": s.id,
@@ -222,7 +215,8 @@ async def handled_students(
                 "guardian_name": s.guardian_name,
                 "guardian_phone": s.guardian_phone,
                 "school_name": s.school_name,
-                "status": s.status,
+                "status": canonical_status_value(s.status),
+                "status_detail": status_detail_value(s.status, s.status_detail),
                 "stage": s.stage,
                 "intent_level": s.intent_level,
             }
@@ -283,7 +277,13 @@ async def yesterday_review(
         .limit(20)
     )
     assigned_list = [
-        {"id": s.id, "name": s.name, "status": s.status, "assigned_at": str(s.assigned_at)}
+        {
+            "id": s.id,
+            "name": s.name,
+            "status": canonical_status_value(s.status),
+            "status_detail": status_detail_value(s.status, s.status_detail),
+            "assigned_at": str(s.assigned_at),
+        }
         for s in assigned_result.scalars().all()
     ]
 
@@ -307,7 +307,8 @@ async def yesterday_review(
             "student_name": student.name,
             "student_region": student.region,
             "intent_level": student.intent_level,
-            "status": student.status,
+            "status": canonical_status_value(student.status),
+            "status_detail": status_detail_value(student.status, student.status_detail),
         }
         for fu, student in follow_up_result.all()
     ]
@@ -362,14 +363,7 @@ async def following_students(
         .where(
             Student.assigned_to == current_user.id,
             Student.intent_level != IntentLevel.none,
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.invalid,
-                ]
-            ),
+            Student.status.in_(statuses_for_canonical(StudentStatus.pending_visit)),
         )
         .order_by(Student.updated_at.desc())
     )
@@ -387,7 +381,8 @@ async def following_students(
                 "school_name": s.school_name,
                 "stage": s.stage.value,
                 "intent_level": s.intent_level.value,
-                "status": s.status.value,
+                "status": canonical_status_value(s.status),
+                "status_detail": status_detail_value(s.status, s.status_detail),
                 "guardian_name": s.guardian_name,
                 "guardian_phone": s.guardian_phone,
                 "days_since_assigned": days,
@@ -425,15 +420,7 @@ async def my_backlog(
             func.min(Student.assigned_at),
         ).where(
             Student.assigned_to == current_user.id,
-            Student.status.not_in(
-                [
-                    StudentStatus.enrolled,
-                    StudentStatus.expired,
-                    StudentStatus.rejected,
-                    StudentStatus.completed,
-                    StudentStatus.invalid,
-                ]
-            ),
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
             Student.assigned_at.isnot(None),
             Student.assigned_at < cutoff,
         )

@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv-win/
+.venv-linux/
 .pydeps/
 .pytest_cache/
+.ruff_cache/
 
 # Database
 *.db
@@ -15,6 +17,7 @@ __pycache__/
 # Node
 node_modules/
 frontend/dist/
+test-results/
 
 # OS
 .DS_Store
@@ -24,10 +27,14 @@ Thumbs.db
 .vscode/
 .idea/
 .claude/
+.codex/
+.agents/
+.mcp.json
 
 # Logs
 *.log
 *.log.old
+*.log.[0-9]*
 *.out
 
 # PID files
@@ -55,7 +62,16 @@ forward.js
 
 # Env
 .env
+.env.linux
 *.env.local
+
+# Runtime data
+data/
+
+# Local tunnel credentials/config
+frpc.ini
+start-tunnel.bat
+install-tunnel-task.ps1
 
 # Project docs
 docs/

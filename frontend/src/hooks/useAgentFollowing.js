@@ -1,11 +1,10 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import api from '../api';
-import logger from '../utils/logger';
 
 /**
- * 管理跟进中数据和积压提醒
+ * 管理跟进中数据
  */
-export default function useAgentFollowing({ state, actions, user, toast }) {
+export default function useAgentFollowing({ actions, toast }) {
   // 加载跟进中数据
   const fetchFollowing = useCallback(async () => {
     actions.setFollowingLoading(true);
@@ -19,28 +18,10 @@ export default function useAgentFollowing({ state, actions, user, toast }) {
     }
   }, [actions, toast]);
 
-  // 加载积压提醒
-  useEffect(() => {
-    if (!user?.id) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const key = `crm_backlog_dismissed_${user.id}_${today}`;
-    if (localStorage.getItem(key)) return;
-
-    api.get('/tasks/backlog', { params: { days_threshold: 3 } }).then((r) => {
-      if (r.data.code === 0 && r.data.data?.count > 0) {
-        actions.setBacklogAlert(r.data.data);
-      }
-    }).catch((e) => logger.error('加载积压提醒失败:', e));
-  }, [user?.id, actions]);
-
-  // 关闭积压提醒
+  // 兼容旧调用；积压提醒已暂时关闭。
   const dismissBacklogAlert = useCallback(() => {
-    if (user?.id) {
-      const today = new Date().toISOString().slice(0, 10);
-      localStorage.setItem(`crm_backlog_dismissed_${user.id}_${today}`, '1');
-    }
     actions.setBacklogAlert(null);
-  }, [user?.id, actions]);
+  }, [actions]);
 
   return {
     fetchFollowing,

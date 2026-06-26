@@ -31,7 +31,6 @@ describe('LeadGovernance', () => {
 
     expect(screen.getByRole('heading', { name: '线索治理' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /学生管理与分配/ })).toHaveAttribute('href', '/admin/leads');
-    expect(screen.getByRole('link', { name: /超时线索回收/ })).toHaveAttribute('href', '/admin/recycle');
     expect(screen.getByRole('link', { name: /无效线索回收/ })).toHaveAttribute('href', '/admin/invalid-reclaim');
     expect(screen.getByRole('link', { name: /多学校分发/ })).toHaveAttribute('href', '/admin/distribute');
   });

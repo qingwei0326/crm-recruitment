@@ -48,7 +48,7 @@ SPECIAL_SCHOOLS = {
     "漳州市常山华侨经济开发区观竹中心小学": "常山开发区",
 }
 
-_PREFIX_PATTERN = re.compile(r"^(.{2,4}?[县区市])")
+_PREFIX_PATTERN = re.compile(r"^([^县区市]{1,8}[县区市])")
 _PROVINCE_LEVEL = ("福建省", "福建")
 _CITY_LEVEL = ("漳州市", "漳州")
 
@@ -58,19 +58,17 @@ def extract_region(school_name: str) -> str:
         return ""
     if school_name in SPECIAL_SCHOOLS:
         return SPECIAL_SCHOOLS[school_name]
-    m = _PREFIX_PATTERN.match(school_name)
+    name = school_name
+    for prefix in _PROVINCE_LEVEL:
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    for prefix in _CITY_LEVEL:
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    m = _PREFIX_PATTERN.match(name)
     if not m:
         return ""
     prefix = m.group(1)
-    rest = school_name[len(prefix) :]
-    m2 = _PREFIX_PATTERN.match(rest)
-    if m2 and prefix in _PROVINCE_LEVEL:
-        prefix = m2.group(1)
-        rest2 = rest[len(prefix) :]
-        m3 = _PREFIX_PATTERN.match(rest2)
-        if m3 and prefix in _CITY_LEVEL:
-            prefix = m3.group(1)
-        return prefix
-    if m2 and prefix in _CITY_LEVEL:
-        prefix = m2.group(1)
     return prefix

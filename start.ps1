@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $Root "scripts\process-control.ps1")
 if ($env:CRM_PYTHON) {
     $Python = $env:CRM_PYTHON
 } else {
@@ -26,6 +27,20 @@ if (-not $PythonCommand) {
     throw "Python interpreter not found: $Python. Create .venv-win or set CRM_PYTHON to your Python path."
 }
 $Python = $PythonCommand.Source
+
+# Load .env before applying script defaults. Existing process environment wins over .env.
+$EnvFile = Join-Path $Root ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        if ($_ -match '^\s*([^#=]+)=(.+)\s*$') {
+            $k = $matches[1].Trim()
+            $v = $matches[2].Trim()
+            if ([string]::IsNullOrEmpty([System.Environment]::GetEnvironmentVariable($k))) {
+                [System.Environment]::SetEnvironmentVariable($k, $v, 'Process')
+            }
+        }
+    }
+}
 
 $PyDeps = Join-Path $Root ".pydeps"
 if (Test-Path $PyDeps) {
@@ -50,22 +65,8 @@ $env:PYTHONNOUSERSITE = "1"
 $env:CORS_ORIGINS = if ($env:CORS_ORIGINS) { $env:CORS_ORIGINS } else { "http://127.0.0.1:8000,http://localhost:8000,https://crm.qing-wei.com" }
 # 通过 Cloudflare Tunnel 接入，必须信任代理头才能拿到真实 IP（限流/审计才正确）
 if (-not $env:TRUST_PROXY_HEADERS) { $env:TRUST_PROXY_HEADERS = "1" }
-# 仅经 https://crm.qing-wei.com 暴露，cookie 走 HTTPS 才有效
-if (-not $env:COOKIE_SECURE) { $env:COOKIE_SECURE = "1" }
-
-# Load .env if exists
-$EnvFile = Join-Path $Root ".env"
-if (Test-Path $EnvFile) {
-    Get-Content $EnvFile | ForEach-Object {
-        if ($_ -match '^\s*([^#=]+)=(.+)\s*$') {
-            $k = $matches[1].Trim()
-            $v = $matches[2].Trim()
-            if ([string]::IsNullOrEmpty([System.Environment]::GetEnvironmentVariable($k))) {
-                [System.Environment]::SetEnvironmentVariable($k, $v, 'Process')
-            }
-        }
-    }
-}
+# 本地 http://127.0.0.1:8000 也要能直接登录；公网 HTTPS 部署请在 .env 显式设 COOKIE_SECURE=1。
+if (-not $env:COOKIE_SECURE) { $env:COOKIE_SECURE = "0" }
 
 Set-Location $Root
 
@@ -107,20 +108,8 @@ if ($NoBuild) {
 
 $BackendPidFile = Join-Path $Root "backend.pid"
 $ForwardPidFile = Join-Path $Root "forward.pid"
-# 已知的进程名白名单：避免 PID 复用后误杀无关进程
-$ExpectedNames = @("python", "python.exe", "pythonw", "pythonw.exe", "node", "node.exe", "uvicorn")
-foreach ($PidFile in @($BackendPidFile, $ForwardPidFile)) {
-    if (Test-Path $PidFile) {
-        $OldPid = (Get-Content -Raw $PidFile).Trim()
-        if ($OldPid) {
-            $Proc = Get-Process -Id ([int]$OldPid) -ErrorAction SilentlyContinue
-            if ($Proc -and ($ExpectedNames -contains $Proc.ProcessName -or $ExpectedNames -contains "$($Proc.ProcessName).exe")) {
-                Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
-            }
-        }
-        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
-    }
-}
+Stop-CrmProcesses -Root $Root -PidFiles @($BackendPidFile, $ForwardPidFile)
+Assert-CrmPortAvailable -Root $Root
 
 # 日志轮转：旧进程已经停了，这是唯一能安全改 *.log 的时机
 $MaxLogSize = 5MB
@@ -147,7 +136,30 @@ $Backend = Start-Process `
     -RedirectStandardOutput (Join-Path $Root "backend_stdout.log") `
     -RedirectStandardError (Join-Path $Root "backend_stderr.log") `
     -PassThru
-Set-Content -Path $BackendPidFile -Value $Backend.Id -Encoding ASCII
+$BackendOwner = $null
+$BackendDeadline = (Get-Date).AddSeconds(20)
+do {
+    $BackendOwner = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty OwningProcess
+    if ($BackendOwner) {
+        break
+    }
+    if ($Backend.HasExited) {
+        break
+    }
+    Start-Sleep -Milliseconds 500
+} while ((Get-Date) -lt $BackendDeadline)
+
+if (-not $BackendOwner) {
+    $ErrorLog = Join-Path $Root "backend_stderr.log"
+    $LogTail = if (Test-Path $ErrorLog) {
+        (Get-Content $ErrorLog -Tail 20 -ErrorAction SilentlyContinue) -join "`n"
+    } else {
+        ""
+    }
+    throw "CRM backend did not start listening on 127.0.0.1:8000 within 20 seconds.`n$LogTail"
+}
+Set-Content -Path $BackendPidFile -Value $BackendOwner -Encoding ASCII
 
 $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
 if ($NodeCommand) {

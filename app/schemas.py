@@ -4,7 +4,22 @@ from typing import Literal
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-_VALID_STATUSES = {"未联系", "已联系", "待回访", "已完成", "无效", "已报名", "拒绝接听", "已过期"}
+_VALID_STATUSES = {
+    "新线索",
+    "未联系",
+    "已联系",
+    "待回访",
+    "已完成",
+    "无效",
+    "已报名",
+    "拒绝接听",
+    "非常有意向",
+    "意向了解加微",
+    "未接",
+    "高分段",
+    "无意向",
+    "孩子不想读",
+}
 _VALID_INTENT_LEVELS = {"A", "B", "C", "无"}
 _VALID_STAGES = {"初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"}
 
@@ -33,6 +48,7 @@ class StudentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     region: str = Field(default="")
     status: str | None = None
+    status_detail: str | None = Field(default=None, max_length=64)
     intent_level: str | None = None
     assigned_to: int | None = None
     join_reasons: str | None = None
@@ -74,6 +90,7 @@ class StudentCreate(BaseModel):
 class StudentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     status: str | None = None
+    status_detail: str | None = Field(default=None, max_length=64)
     intent_level: str | None = None
     assigned_to: int | None = None
     join_reasons: str | None = None
@@ -204,6 +221,8 @@ class StudentResponse(BaseModel):
     region: str = ""
     assigned_to: int | None = None
     status: str
+    status_detail: str = ""
+    invalid_reason: str = ""
     intent_level: str
     stage: str
     join_reasons: str = ""
@@ -221,6 +240,7 @@ class StudentResponse(BaseModel):
     deposit: float | None = None
     expired_at: str | None = None
     enrollment_substage: str | None = None
+    assigned_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
     guardian_phone_raw: str | None = None

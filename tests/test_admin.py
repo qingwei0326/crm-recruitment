@@ -7,6 +7,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from app.models import DialLog, FollowUp, IntentLevel, Note, Student, StudentStatus
+from app.utils import today_cst_as_utc, utcnow
+
 
 @pytest.mark.asyncio
 class TestAdminAgents:
@@ -16,6 +19,31 @@ class TestAdminAgents:
         assert body["code"] == 0
         assert any(a["username"] == "testagent" for a in body["data"])
 
+    async def test_list_agents_counts_today_dial_logs(
+        self, client, admin_headers, db, agent_user
+    ):
+        student = Student(
+            name="今日拨号学生",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+        )
+        db.add(student)
+        await db.flush()
+        db.add(
+            DialLog(
+                student_id=student.id,
+                agent_id=agent_user.id,
+                dialed_at=today_cst_as_utc() + timedelta(hours=1),
+            )
+        )
+        await db.commit()
+
+        resp = await client.get("/api/admin/agents", headers=admin_headers)
+        body = resp.json()
+
+        agent_row = next(a for a in body["data"] if a["id"] == agent_user.id)
+        assert agent_row["today_calls"] == 1
+
     async def test_list_agents_requires_admin(self, client, agent_headers):
         resp = await client.get("/api/admin/agents", headers=agent_headers)
         assert resp.status_code == 403
@@ -23,6 +51,106 @@ class TestAdminAgents:
     async def test_list_agents_no_auth(self, client):
         resp = await client.get("/api/admin/agents")
         assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+class TestAgentScorePreview:
+    async def test_agent_score_preview_requires_admin(self, client, agent_headers):
+        resp = await client.get("/api/admin/agent-score-preview", headers=agent_headers)
+        assert resp.status_code == 403
+
+    async def test_agent_score_preview_returns_workflow_score(
+        self, client, admin_headers, db, agent_user
+    ):
+        now = utcnow()
+        today = today_cst_as_utc()
+        students = [
+            Student(
+                name="逾期未联系",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                intent_level=IntentLevel.none,
+                assigned_at=now - timedelta(days=5),
+            ),
+            Student(
+                name="已推进A",
+                assigned_to=agent_user.id,
+                status=StudentStatus.very_interested,
+                intent_level=IntentLevel.A,
+                guardian_phone="13800138000",
+                assigned_at=now,
+            ),
+            Student(
+                name="待加微",
+                assigned_to=agent_user.id,
+                status=StudentStatus.interested_add_wechat,
+                intent_level=IntentLevel.B,
+                guardian_phone="13800138001",
+                assigned_at=now,
+            ),
+            Student(
+                name="已报名A",
+                assigned_to=agent_user.id,
+                status=StudentStatus.enrolled,
+                intent_level=IntentLevel.A,
+                guardian_phone="13800138002",
+                assigned_at=now - timedelta(days=2),
+            ),
+        ]
+        db.add_all(students)
+        await db.flush()
+        db.add_all(
+            [
+                DialLog(
+                    student_id=students[0].id,
+                    agent_id=agent_user.id,
+                    dialed_at=today + timedelta(hours=1),
+                ),
+                FollowUp(
+                    student_id=students[2].id,
+                    agent_id=agent_user.id,
+                    follow_up_date=now - timedelta(hours=1),
+                    is_completed=False,
+                ),
+                Note(
+                    student_id=students[1].id,
+                    agent_id=agent_user.id,
+                    content="家长有意向，等待二次沟通",
+                    created_at=today + timedelta(hours=2),
+                ),
+            ]
+        )
+        await db.commit()
+
+        resp = await client.get(
+            "/api/admin/agent-score-preview",
+            params={"daily_call_target": 4},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["daily_call_target"] == 4
+        item = body["data"]["items"][0]
+        assert item["agent"]["id"] == agent_user.id
+        assert item["metrics"]["active_tasks"] == 3
+        assert item["metrics"]["pending_tasks"] == 1
+        assert item["metrics"]["done_tasks"] == 1
+        assert item["metrics"]["follow_up_tasks"] == 1
+        assert item["metrics"]["today_calls"] == 1
+        assert item["metrics"]["open_follow_ups"] == 1
+        assert item["metrics"]["overdue_follow_ups"] == 1
+        assert item["metrics"]["missing_phone_tasks"] == 1
+        assert item["metrics"]["a_level_count"] == 2
+        assert item["metrics"]["enrolled_count"] == 1
+        assert item["metrics"]["notes_today"] == 1
+        assert item["score"] < 55
+        assert item["level"] == "risk"
+        assert item["components"]["task_progress"]["max"] == 30.0
+        signal_keys = {signal["key"] for signal in item["signals"]}
+        assert "overdue_follow_ups" in signal_keys
+        assert "missing_phone_tasks" in signal_keys
+        assert item["recommended_action"] == "先处理逾期回访，防止高意向线索流失"
 
 
 @pytest.mark.asyncio

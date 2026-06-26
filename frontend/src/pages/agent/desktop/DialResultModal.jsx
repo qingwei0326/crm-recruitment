@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { PhoneCall, CalendarClock } from 'lucide-react';
+import { DESKTOP_DIAL_STATUS_BUTTONS } from '../../../labels';
 
 // 默认回访时间：明天上午 9 点，格式与 <input type="datetime-local"> 一致
 function defaultFollowUp() {
@@ -20,14 +21,6 @@ export default function DialResultModal({
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
 
   if (!dialModal) return null;
-
-  const colors = {
-    '已联系': 'bg-blue-600 hover:bg-blue-700',
-    '待回访': 'bg-amber-600 hover:bg-amber-700',
-    '已报名': 'bg-green-600 hover:bg-green-700',
-    '无效': 'bg-red-500 hover:bg-red-600',
-    '拒绝接听': 'bg-gray-500 hover:bg-gray-600',
-  };
 
   const step = dialModal.showFollowUp ? 'followup' : dialModal.showIntent ? 'intent' : 'status';
 
@@ -56,13 +49,13 @@ export default function DialResultModal({
 
         {step === 'status' && (
           <div className="grid grid-cols-2 gap-3 mb-3">
-            {Object.keys(colors).map((s) => (
+            {DESKTOP_DIAL_STATUS_BUTTONS.map(({ status, className }) => (
               <button
-                key={s}
-                onClick={() => onStatusSelect(s)}
-                className={`px-4 py-3 rounded-xl text-sm font-medium text-white ${colors[s]}`}
+                key={status}
+                onClick={() => onStatusSelect(status)}
+                className={`px-4 py-3 rounded-xl text-sm font-medium text-white ${className}`}
               >
-                {s}
+                {status}
               </button>
             ))}
           </div>
@@ -115,7 +108,7 @@ export default function DialResultModal({
           onClick={onClose}
           className="mt-4 w-full py-2.5 rounded-xl border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
         >
-          {step === 'status' ? '稍后处理' : '跳过'}
+          {step === 'status' ? '不记录，关闭' : '跳过'}
         </button>
       </div>
     </div>

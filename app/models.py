@@ -28,6 +28,9 @@ class UserRole(enum.StrEnum):
 class StudentStatus(enum.StrEnum):
     new_lead = "新线索"
     not_contacted = "未联系"
+    # Historical DB rows may still store this enum name. SQLAlchemy stores enum
+    # names by default, so keep it as an alias while startup migration normalizes.
+    unassigned = "未联系"
     contacted = "已联系"
     pending_visit = "待回访"
     completed = "已完成"
@@ -40,7 +43,9 @@ class StudentStatus(enum.StrEnum):
     not_reached = "未接"
     high_score = "高分段"
     not_interested = "无意向"
+    no_intent = "无意向"
     child_not_want_study = "孩子不想读"
+    child_not_interested = "孩子不想读"
 
 
 class IntentLevel(enum.StrEnum):
@@ -118,7 +123,12 @@ class Student(Base):
     name = Column(String(64), nullable=False)
     region = Column(String(64), default="", nullable=False, index=True)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
-    status = Column(SAEnum(StudentStatus), nullable=False, default=StudentStatus.not_contacted)
+    status = Column(
+        SAEnum(StudentStatus, omit_aliases=False),
+        nullable=False,
+        default=StudentStatus.not_contacted,
+    )
+    status_detail = Column(String(64), default="", nullable=False)
     intent_level = Column(SAEnum(IntentLevel), nullable=False, default=IntentLevel.none)
     stage = Column(SAEnum(StudentStage), nullable=False, default=StudentStage.initial_contact)
     join_reasons = Column(Text, default="")
