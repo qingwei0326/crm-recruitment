@@ -1,18 +1,25 @@
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_score import score_agent_work
-from app.auth import hash_password, invalidate_user_tokens, require_admin
-from app.backup import BACKUP_DIR, _get_backup_extension, do_backup_async
+from app.auth import (
+    get_current_user,
+    hash_password,
+    invalidate_user_tokens,
+    require_admin,
+    require_super_admin,
+)
+from app.backup import BACKUP_DIR, MAX_BACKUPS, _get_backup_extension, do_backup_async
 from app.database import get_db
 from app.expiry import build_last_activity_subquery
 from app.models import (
@@ -39,9 +46,10 @@ from app.status_policy import (
     statuses_for_canonical,
 )
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES, build_task_stats
-from app.utils import make_operation_log, today_cst_as_utc, utcnow
+from app.utils import make_operation_log, mask_phone, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
+SCORE_DAILY_CALL_TARGET_MAX = 1000
 
 
 class UserCreateReq(BaseModel):
@@ -49,6 +57,7 @@ class UserCreateReq(BaseModel):
     password: str
     name: str
     role: Literal["admin", "agent"] = "agent"
+    is_super_admin: bool = False
     service_regions: str = ""
 
 
@@ -56,6 +65,7 @@ class UserUpdateReq(BaseModel):
     name: str | None = None
     role: Literal["admin", "agent"] | None = None
     is_active: bool | None = None
+    is_super_admin: bool | None = None
     password: str | None = None
     service_regions: str | None = None
 
@@ -89,6 +99,7 @@ ALLOWED_CONFIG_KEYS = {
     "ai_custom_base",
     "ai_custom_model",
     "follow_up_window_minutes",
+    "score_daily_call_target",
 }
 
 
@@ -198,6 +209,14 @@ def _validate_config_value(key: str, value: str) -> tuple[str | None, str | None
         if not 1 <= n <= 20:
             return None, "dial_max_per_24h must be an integer between 1 and 20"
         return str(n), None
+    if key == "score_daily_call_target":
+        try:
+            n = int(value)
+        except ValueError:
+            return None, f"score_daily_call_target must be an integer between 1 and {SCORE_DAILY_CALL_TARGET_MAX}"
+        if not 1 <= n <= SCORE_DAILY_CALL_TARGET_MAX:
+            return None, f"score_daily_call_target must be an integer between 1 and {SCORE_DAILY_CALL_TARGET_MAX}"
+        return str(n), None
     if key in ("dial_window_start", "dial_window_end"):
         if not _HHMM_RE.match(value):
             return None, f"{key} must be HH:MM (24h)"
@@ -261,10 +280,75 @@ async def get_config_value(db: AsyncSession, key: str, fallback: str = "") -> st
     return os.getenv(key.upper(), fallback)
 
 
+async def count_active_super_admins(db: AsyncSession) -> int:
+    result = await db.execute(
+        select(func.count(User.id)).where(
+            User.role == UserRole.admin,
+            User.is_active,
+            User.is_super_admin,
+        )
+    )
+    return result.scalar() or 0
+
+
+def _backup_items() -> list[dict]:
+    if not os.path.isdir(BACKUP_DIR):
+        return []
+    items = []
+    ext = _get_backup_extension()
+    for fname in os.listdir(BACKUP_DIR):
+        if not (fname.startswith("crm_") and fname.endswith(ext)):
+            continue
+        fpath = os.path.join(BACKUP_DIR, fname)
+        try:
+            st = os.stat(fpath)
+        except OSError:
+            continue
+        items.append(
+            {
+                "name": fname,
+                "size": st.st_size,
+                "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            }
+        )
+    items.sort(key=lambda x: x["modified_at"], reverse=True)
+    return items
+
+
+def _status_rank(status: str) -> int:
+    return {"ok": 0, "warning": 1, "error": 2}.get(status, 0)
+
+
+def _combined_status(*statuses: str) -> str:
+    if not statuses:
+        return "ok"
+    return max(statuses, key=_status_rank)
+
+
+def _log_file_summary(name: str) -> dict:
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    path = os.path.join(base_dir, name)
+    exists = os.path.isfile(path)
+    data = {"name": name, "exists": exists, "size": 0, "modified_at": None}
+    if not exists:
+        return data
+    try:
+        st = os.stat(path)
+    except OSError:
+        return data
+    data.update(
+        {
+            "size": st.st_size,
+            "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+        }
+    )
+    return data
+
+
 @router.get("/config")
 async def get_system_config(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     result = await db.execute(select(SystemConfig).order_by(SystemConfig.key))
     data = {item.key: mask_config_value(item.key, item.value) for item in result.scalars().all()}
@@ -275,7 +359,7 @@ async def get_system_config(
 async def update_system_config(
     body: ConfigUpdateReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     key = body.key.strip()
     value = body.value.strip()
@@ -297,6 +381,338 @@ async def update_system_config(
     await db.commit()
 
     return Response.ok({"key": key, "value": mask_config_value(key, value)})
+
+
+@router.get("/ops-health")
+async def ops_health(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """管理员运维总览：聚合数据库、备份、日志和关键业务积压状态。"""
+    db_start = time.monotonic()
+    await db.execute(select(func.count()).select_from(User))
+    db_ms = round((time.monotonic() - db_start) * 1000)
+
+    now = utcnow()
+    today = today_cst_as_utc()
+    backup_items = _backup_items()
+    latest_backup = backup_items[0] if backup_items else None
+    backup_exists = os.path.isdir(BACKUP_DIR)
+    backup_status = "ok" if latest_backup else "warning"
+
+    user_stats = (
+        await db.execute(
+            select(
+                func.count(User.id).filter(User.role == UserRole.admin, User.is_active).label(
+                    "active_admins"
+                ),
+                func.count(User.id).filter(User.role == UserRole.agent, User.is_active).label(
+                    "active_agents"
+                ),
+                func.count(User.id)
+                .filter(User.role == UserRole.agent, User.is_active.is_(False))
+                .label("disabled_agents"),
+                func.count(User.id).filter(User.locked_until.is_not(None)).label("locked_users"),
+            )
+        )
+    ).one()
+
+    student_stats = (
+        await db.execute(
+            select(
+                func.count(Student.id).label("total_students"),
+                func.count(Student.id)
+                .filter(
+                    Student.assigned_to.is_(None),
+                    Student.status.in_(ACTIVE_TASK_STATUSES),
+                )
+                .label("unassigned_active"),
+                func.count(Student.id)
+                .filter(
+                    Student.status.in_(ACTIVE_TASK_STATUSES),
+                    Student.guardian_phone == "",
+                    Student.guardian2_phone == "",
+                )
+                .label("missing_phone_tasks"),
+            )
+        )
+    ).one()
+
+    follow_up_stats = (
+        await db.execute(
+            select(
+                func.count(FollowUp.id)
+                .filter(FollowUp.is_completed.is_(False))
+                .label("open_follow_ups"),
+                func.count(FollowUp.id)
+                .filter(
+                    FollowUp.is_completed.is_(False),
+                    FollowUp.follow_up_date < now,
+                )
+                .label("overdue_follow_ups"),
+                func.count(FollowUp.id)
+                .filter(
+                    FollowUp.is_completed.is_(False),
+                    FollowUp.follow_up_date >= today,
+                    FollowUp.follow_up_date < today + timedelta(days=1),
+                )
+                .label("today_follow_ups"),
+            )
+        )
+    ).one()
+
+    notification_failures_7d = (
+        await db.execute(
+            select(func.count(OperationLog.id)).where(
+                OperationLog.action == "通知失败",
+                OperationLog.created_at >= now - timedelta(days=7),
+            )
+        )
+    ).scalar_one()
+    frontend_errors_24h = (
+        await db.execute(
+            select(func.count(OperationLog.id)).where(
+                OperationLog.action == "前端错误",
+                OperationLog.created_at >= now - timedelta(days=1),
+            )
+        )
+    ).scalar_one()
+
+    business_status = "ok"
+    if (
+        int(getattr(follow_up_stats, "overdue_follow_ups") or 0) > 0
+        or int(getattr(user_stats, "locked_users") or 0) > 0
+        or int(notification_failures_7d or 0) > 0
+        or int(frontend_errors_24h or 0) > 0
+    ):
+        business_status = "warning"
+
+    logs = [
+        _log_file_summary(name)
+        for name in (
+            "backend.log",
+            "backend_stderr.log",
+            "backend_access.log",
+            "forward.log",
+            "forward_err.log",
+        )
+    ]
+
+    data = {
+        "status": _combined_status("ok", backup_status, business_status),
+        "generated_at": now.isoformat(),
+        "database": {
+            "status": "ok",
+            "db_ms": db_ms,
+        },
+        "backups": {
+            "status": backup_status,
+            "directory": BACKUP_DIR,
+            "exists": backup_exists,
+            "count": len(backup_items),
+            "max_keep": MAX_BACKUPS,
+            "latest": latest_backup,
+        },
+        "logs": {
+            "status": "ok",
+            "files": logs,
+        },
+        "business": {
+            "status": business_status,
+            "active_admins": int(getattr(user_stats, "active_admins") or 0),
+            "active_agents": int(getattr(user_stats, "active_agents") or 0),
+            "disabled_agents": int(getattr(user_stats, "disabled_agents") or 0),
+            "locked_users": int(getattr(user_stats, "locked_users") or 0),
+            "total_students": int(getattr(student_stats, "total_students") or 0),
+            "unassigned_active": int(getattr(student_stats, "unassigned_active") or 0),
+            "missing_phone_tasks": int(getattr(student_stats, "missing_phone_tasks") or 0),
+            "open_follow_ups": int(getattr(follow_up_stats, "open_follow_ups") or 0),
+            "overdue_follow_ups": int(getattr(follow_up_stats, "overdue_follow_ups") or 0),
+            "today_follow_ups": int(getattr(follow_up_stats, "today_follow_ups") or 0),
+            "notification_failures_7d": int(notification_failures_7d or 0),
+            "frontend_errors_24h": int(frontend_errors_24h or 0),
+        },
+    }
+    return Response.ok(data)
+
+
+@router.get("/data-quality")
+async def data_quality(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """管理员数据质量看板：通话时长回写、缺电话、逾期回访和无效原因分布。"""
+    now = utcnow()
+    today = today_cst_as_utc()
+    tomorrow = today + timedelta(days=1)
+    month_start = today.replace(day=1)
+
+    def unrecorded_clause():
+        return or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None))
+
+    call_summary_r = await db.execute(
+        select(
+            func.count(DialLog.id)
+            .filter(DialLog.dialed_at >= today, DialLog.dialed_at < tomorrow)
+            .label("today_total"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                DialLog.duration_seconds > 0,
+            )
+            .label("today_recorded"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                unrecorded_clause(),
+            )
+            .label("today_unrecorded"),
+            func.count(DialLog.id).filter(DialLog.dialed_at >= month_start).label("month_total"),
+            func.count(DialLog.id)
+            .filter(DialLog.dialed_at >= month_start, DialLog.duration_seconds > 0)
+            .label("month_recorded"),
+            func.count(DialLog.id)
+            .filter(DialLog.dialed_at >= month_start, unrecorded_clause())
+            .label("month_unrecorded"),
+            func.avg(DialLog.duration_seconds)
+            .filter(DialLog.dialed_at >= month_start, DialLog.duration_seconds > 0)
+            .label("month_avg_recorded"),
+        )
+    )
+    call_summary = call_summary_r.one()
+
+    agent_call_r = await db.execute(
+        select(
+            DialLog.agent_id,
+            User.name.label("agent_name"),
+            func.count(DialLog.id).label("total_calls"),
+            func.count(DialLog.id).filter(DialLog.duration_seconds > 0).label("recorded_calls"),
+            func.count(DialLog.id).filter(unrecorded_clause()).label("unrecorded_calls"),
+            func.avg(DialLog.duration_seconds)
+            .filter(DialLog.duration_seconds > 0)
+            .label("avg_recorded_duration_seconds"),
+        )
+        .join(User, User.id == DialLog.agent_id)
+        .where(DialLog.dialed_at >= month_start)
+        .group_by(DialLog.agent_id, User.name)
+    )
+    agent_rows = []
+    for row in agent_call_r.all():
+        total_calls = int(row.total_calls or 0)
+        unrecorded_calls = int(row.unrecorded_calls or 0)
+        agent_rows.append(
+            {
+                "agent_id": int(row.agent_id),
+                "agent_name": row.agent_name or "",
+                "total_calls": total_calls,
+                "recorded_calls": int(row.recorded_calls or 0),
+                "unrecorded_calls": unrecorded_calls,
+                "unrecorded_ratio": round(unrecorded_calls / total_calls * 100, 1)
+                if total_calls
+                else 0,
+                "avg_recorded_duration_seconds": round(
+                    row.avg_recorded_duration_seconds or 0, 1
+                ),
+            }
+        )
+    agent_rows.sort(key=lambda item: (-item["unrecorded_calls"], item["agent_name"]))
+
+    student_quality_r = await db.execute(
+        select(
+            func.count(Student.id)
+            .filter(
+                Student.status.in_(ACTIVE_TASK_STATUSES),
+                or_(Student.guardian_phone == "", Student.guardian_phone.is_(None)),
+                or_(Student.guardian2_phone == "", Student.guardian2_phone.is_(None)),
+            )
+            .label("missing_phone_tasks"),
+            func.count(Student.id)
+            .filter(Student.status.in_(ACTIVE_TASK_STATUSES), Student.assigned_to.is_(None))
+            .label("unassigned_active"),
+        )
+    )
+    student_quality = student_quality_r.one()
+
+    invalid_reasons_r = await db.execute(
+        select(Student.status, Student.status_detail, func.count(Student.id).label("count"))
+        .where(Student.status.in_(statuses_for_canonical(StudentStatus.invalid)))
+        .group_by(Student.status, Student.status_detail)
+    )
+    invalid_reason_counts: dict[str, int] = {}
+    invalid_total = 0
+    for row in invalid_reasons_r.all():
+        count = int(row.count or 0)
+        invalid_total += count
+        reason = status_detail_value(row.status, row.status_detail) or "未填写"
+        invalid_reason_counts[reason] = invalid_reason_counts.get(reason, 0) + count
+    invalid_reasons = [
+        {"reason": reason, "count": count}
+        for reason, count in sorted(
+            invalid_reason_counts.items(), key=lambda item: (-item[1], item[0])
+        )
+    ]
+
+    follow_up_quality_r = await db.execute(
+        select(
+            func.count(FollowUp.id)
+            .filter(FollowUp.is_completed.is_(False))
+            .label("open_follow_ups"),
+            func.count(FollowUp.id)
+            .filter(FollowUp.is_completed.is_(False), FollowUp.follow_up_date < now)
+            .label("overdue_follow_ups"),
+        )
+    )
+    follow_up_quality = follow_up_quality_r.one()
+
+    month_total = int(call_summary.month_total or 0)
+    month_unrecorded = int(call_summary.month_unrecorded or 0)
+    status = "warning" if (
+        month_unrecorded > 0
+        or int(getattr(student_quality, "missing_phone_tasks") or 0) > 0
+        or int(getattr(follow_up_quality, "overdue_follow_ups") or 0) > 0
+    ) else "ok"
+
+    return Response.ok(
+        {
+            "status": status,
+            "generated_at": now.isoformat(),
+            "calls": {
+                "today": {
+                    "total_calls": int(call_summary.today_total or 0),
+                    "recorded_calls": int(call_summary.today_recorded or 0),
+                    "unrecorded_calls": int(call_summary.today_unrecorded or 0),
+                },
+                "month": {
+                    "total_calls": month_total,
+                    "recorded_calls": int(call_summary.month_recorded or 0),
+                    "unrecorded_calls": month_unrecorded,
+                    "unrecorded_ratio": round(month_unrecorded / month_total * 100, 1)
+                    if month_total
+                    else 0,
+                    "avg_recorded_duration_seconds": round(
+                        call_summary.month_avg_recorded or 0, 1
+                    ),
+                },
+                "agents": agent_rows[:10],
+            },
+            "students": {
+                "missing_phone_tasks": int(
+                    getattr(student_quality, "missing_phone_tasks") or 0
+                ),
+                "unassigned_active": int(getattr(student_quality, "unassigned_active") or 0),
+                "invalid_total": invalid_total,
+                "invalid_reasons": invalid_reasons,
+            },
+            "follow_ups": {
+                "open_follow_ups": int(getattr(follow_up_quality, "open_follow_ups") or 0),
+                "overdue_follow_ups": int(
+                    getattr(follow_up_quality, "overdue_follow_ups") or 0
+                ),
+            },
+        }
+    )
 
 
 @router.get("/stale-a")
@@ -586,7 +1002,9 @@ async def list_agents(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    result = await db.execute(select(User).where(User.role == UserRole.agent).order_by(User.id))
+    result = await db.execute(
+        select(User).where(User.role == UserRole.agent, User.is_active).order_by(User.id)
+    )
     agents = result.scalars().all()
     if not agents:
         return Response.ok([])
@@ -629,6 +1047,7 @@ async def list_agents(
                 "name": a.name,
                 "username": a.username,
                 "is_active": a.is_active,
+                "is_super_admin": a.is_super_admin,
                 "service_regions": a.service_regions,
                 "total_tasks": task_stats["total"],
                 "done_tasks": task_stats["done"],
@@ -645,20 +1064,94 @@ async def list_agents(
     return Response.ok(data)
 
 
+@router.get("/users")
+async def list_users(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    result = await db.execute(
+        select(User).where(User.role.in_([UserRole.admin, UserRole.agent])).order_by(User.id)
+    )
+    users = result.scalars().all()
+    if not users:
+        return Response.ok([])
+
+    agent_ids = [user.id for user in users if user.role == UserRole.agent]
+    status_counts_by_agent: dict[int, dict[StudentStatus, int]] = {}
+    total_leads_by_agent: dict[int, int] = {}
+    today_calls_map: dict[int, int] = {}
+    if agent_ids:
+        today = today_cst_as_utc()
+        stats_r = await db.execute(
+            select(
+                Student.assigned_to,
+                Student.status,
+                func.count().label("count"),
+            )
+            .where(Student.assigned_to.in_(agent_ids))
+            .group_by(Student.assigned_to, Student.status)
+        )
+        for row in stats_r.all():
+            status_counts_by_agent.setdefault(row.assigned_to, {})[row.status] = int(row.count or 0)
+            total_leads_by_agent[row.assigned_to] = (
+                total_leads_by_agent.get(row.assigned_to, 0) + int(row.count or 0)
+            )
+
+        today_calls_r = await db.execute(
+            select(DialLog.agent_id, func.count(DialLog.id))
+            .where(DialLog.agent_id.in_(agent_ids), DialLog.dialed_at >= today)
+            .group_by(DialLog.agent_id)
+        )
+        today_calls_map = dict(today_calls_r.all())
+
+    data = []
+    for user in users:
+        task_stats = build_task_stats(status_counts_by_agent.get(user.id, {}))
+        data.append(
+            {
+                "id": user.id,
+                "name": user.name,
+                "username": user.username,
+                "role": user.role,
+                "is_active": user.is_active,
+                "is_super_admin": user.is_super_admin,
+                "service_regions": user.service_regions,
+                "total_tasks": task_stats["total"] if user.role == UserRole.agent else 0,
+                "done_tasks": task_stats["done"] if user.role == UserRole.agent else 0,
+                "pending_tasks": task_stats["pending"] if user.role == UserRole.agent else 0,
+                "follow_up_tasks": task_stats["follow_up"] if user.role == UserRole.agent else 0,
+                "total_leads": total_leads_by_agent.get(user.id, 0),
+                "today_calls": int(today_calls_map.get(user.id, 0)),
+                "locked_until": str(user.locked_until) if user.locked_until else None,
+                "failed_login_attempts": user.failed_login_attempts,
+                "created_at": str(user.created_at),
+            }
+        )
+
+    return Response.ok(data)
+
+
 @router.get("/agent-score-preview")
 async def agent_score_preview(
-    daily_call_target: int = Query(30, ge=1, le=200),
+    daily_call_target: int | None = Query(None, ge=1, le=SCORE_DAILY_CALL_TARGET_MAX),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     """只读评分预览：聚合现有工作记录，不写库、不改变派单或话务流程。"""
-    agents_r = await db.execute(select(User).where(User.role == UserRole.agent).order_by(User.id))
+    configured_call_target = int(await get_config_value(db, "score_daily_call_target", "30") or 30)
+    effective_daily_call_target = daily_call_target or configured_call_target
+    agents_r = await db.execute(
+        select(User)
+        .where(User.role == UserRole.agent, User.is_active)
+        .order_by(User.id)
+    )
     agents = agents_r.scalars().all()
     if not agents:
         return Response.ok(
             {
                 "generated_at": str(utcnow()),
-                "daily_call_target": daily_call_target,
+                "daily_call_target": effective_daily_call_target,
+                "configured_daily_call_target": configured_call_target,
                 "items": [],
             }
         )
@@ -720,7 +1213,19 @@ async def agent_score_preview(
     }
 
     today_calls_r = await db.execute(
-        select(DialLog.agent_id, func.count(DialLog.id))
+        select(
+            DialLog.agent_id,
+            func.count(DialLog.id).label("today_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.duration_seconds > 0)
+            .label("today_recorded_calls"),
+            func.count(DialLog.id)
+            .filter(or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None)))
+            .label("today_unrecorded_calls"),
+            func.avg(DialLog.duration_seconds)
+            .filter(DialLog.duration_seconds > 0)
+            .label("avg_recorded_duration_seconds"),
+        )
         .where(
             DialLog.agent_id.in_(agent_ids),
             DialLog.dialed_at >= today,
@@ -728,7 +1233,15 @@ async def agent_score_preview(
         )
         .group_by(DialLog.agent_id)
     )
-    today_calls_map = {int(agent_id): int(count or 0) for agent_id, count in today_calls_r.all()}
+    today_call_metrics = {
+        int(row.agent_id): {
+            "today_calls": int(row.today_calls or 0),
+            "today_recorded_calls": int(row.today_recorded_calls or 0),
+            "today_unrecorded_calls": int(row.today_unrecorded_calls or 0),
+            "avg_recorded_duration_seconds": round(row.avg_recorded_duration_seconds or 0, 1),
+        }
+        for row in today_calls_r.all()
+    }
 
     follow_up_r = await db.execute(
         select(
@@ -780,6 +1293,15 @@ async def agent_score_preview(
         fm = follow_up_metrics.get(agent.id, {})
         active_tasks = int(task_stats["total"])
         missing_phone_tasks = int(sm.get("missing_phone_tasks", 0))
+        call_metrics = today_call_metrics.get(
+            agent.id,
+            {
+                "today_calls": 0,
+                "today_recorded_calls": 0,
+                "today_unrecorded_calls": 0,
+                "avg_recorded_duration_seconds": 0,
+            },
+        )
         metrics = {
             "total_leads": total_leads_by_agent.get(agent.id, 0),
             "active_tasks": active_tasks,
@@ -787,7 +1309,10 @@ async def agent_score_preview(
             "pending_tasks": int(task_stats["pending"]),
             "follow_up_tasks": int(task_stats["follow_up"]),
             "progress_pct": float(task_stats["progress_pct"]),
-            "today_calls": today_calls_map.get(agent.id, 0),
+            "today_calls": call_metrics["today_calls"],
+            "today_recorded_calls": call_metrics["today_recorded_calls"],
+            "today_unrecorded_calls": call_metrics["today_unrecorded_calls"],
+            "avg_recorded_duration_seconds": call_metrics["avg_recorded_duration_seconds"],
             "open_follow_ups": int(fm.get("open_follow_ups", 0)),
             "overdue_follow_ups": int(fm.get("overdue_follow_ups", 0)),
             "today_follow_ups": int(fm.get("today_follow_ups", 0)),
@@ -804,7 +1329,7 @@ async def agent_score_preview(
         }
         score = score_agent_work(
             metrics,
-            daily_call_target=daily_call_target,
+            daily_call_target=effective_daily_call_target,
         )
         items.append(
             {
@@ -830,7 +1355,8 @@ async def agent_score_preview(
     return Response.ok(
         {
             "generated_at": str(utcnow()),
-            "daily_call_target": daily_call_target,
+            "daily_call_target": effective_daily_call_target,
+            "configured_daily_call_target": configured_call_target,
             "items": items,
         }
     )
@@ -922,7 +1448,7 @@ async def agent_tasks(
 async def create_user(
     body: UserCreateReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     result = await db.execute(select(User).where(User.username == body.username))
     if result.scalar_one_or_none():
@@ -934,6 +1460,7 @@ async def create_user(
         role=UserRole(body.role),
         service_regions=body.service_regions,
         is_active=True,
+        is_super_admin=body.role == "admin" and body.is_super_admin,
         # 新建话务员：首次登录强制本人改密；管理员账号不强制
         must_change_password=(UserRole(body.role) == UserRole.agent),
     )
@@ -951,7 +1478,13 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return Response.ok(
-        {"id": user.id, "username": user.username, "name": user.name, "role": user.role}
+        {
+            "id": user.id,
+            "username": user.username,
+            "name": user.name,
+            "role": user.role,
+            "is_super_admin": user.is_super_admin,
+        }
     )
 
 
@@ -960,7 +1493,7 @@ async def update_user(
     user_id: int,
     body: UserUpdateReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -974,7 +1507,7 @@ async def update_user(
     if body.role is not None:
         new_role = UserRole(body.role)
         if new_role != user.role:
-            # 防止把唯一一个 admin 降级
+            # 防止把唯一一个 admin / super admin 降级
             if user.role == UserRole.admin and new_role != UserRole.admin:
                 admin_count = (
                     await db.execute(
@@ -985,10 +1518,23 @@ async def update_user(
                 ).scalar() or 0
                 if admin_count <= 1:
                     return Response.error(code=1, msg="系统至少需要保留一个管理员")
+                if user.is_super_admin and user.is_active and await count_active_super_admins(db) <= 1:
+                    return Response.error(code=1, msg="系统至少需要保留一个超级管理员")
             changes.append(f"角色 {user.role}→{new_role}")
             user.role = new_role
+            if new_role != UserRole.admin and user.is_super_admin:
+                user.is_super_admin = False
+                changes.append("取消超级管理员")
+    if body.is_super_admin is not None and body.is_super_admin != user.is_super_admin:
+        if body.is_super_admin and user.role != UserRole.admin:
+            return Response.error(code=1, msg="只有管理员账号可以设为超级管理员")
+        if not body.is_super_admin and user.is_super_admin and user.is_active:
+            if await count_active_super_admins(db) <= 1:
+                return Response.error(code=1, msg="系统至少需要保留一个超级管理员")
+        user.is_super_admin = body.is_super_admin
+        changes.append("设为超级管理员" if body.is_super_admin else "取消超级管理员")
     if body.is_active is not None and body.is_active != user.is_active:
-        # 防止把唯一一个 admin 停用
+        # 防止把唯一一个 admin / super admin 停用
         if user.role == UserRole.admin and user.is_active and not body.is_active:
             admin_count = (
                 await db.execute(
@@ -997,6 +1543,8 @@ async def update_user(
             ).scalar() or 0
             if admin_count <= 1:
                 return Response.error(code=1, msg="不能停用最后一个管理员")
+            if user.is_super_admin and await count_active_super_admins(db) <= 1:
+                return Response.error(code=1, msg="不能停用最后一个超级管理员")
         changes.append("启用" if body.is_active else "停用")
         user.is_active = body.is_active
         # 禁用时立即撤销现有 token，防止账号被禁用后旧会话仍能访问
@@ -1022,7 +1570,14 @@ async def update_user(
         )
     await db.commit()
     return Response.ok(
-        {"id": user.id, "username": user.username, "name": user.name, "is_active": user.is_active}
+        {
+            "id": user.id,
+            "username": user.username,
+            "name": user.name,
+            "role": user.role,
+            "is_active": user.is_active,
+            "is_super_admin": user.is_super_admin,
+        }
     )
 
 
@@ -1030,7 +1585,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     if user_id == current_user.id:
         return Response.error(code=1, msg="不能删除自己")
@@ -1047,6 +1602,8 @@ async def delete_user(
         ).scalar() or 0
         if admin_count <= 1:
             return Response.error(code=1, msg="不能删除最后一个管理员")
+        if user.is_super_admin and user.is_active and await count_active_super_admins(db) <= 1:
+            return Response.error(code=1, msg="不能删除最后一个超级管理员")
     # 1) 先处理终态学员：只解绑话务员，保留状态作为历史归档
     await db.execute(
         update(Student)
@@ -1088,7 +1645,7 @@ async def delete_user(
 async def offboard_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     """软离职：禁用账号 + 撤销 token + 回收线索 + 留存历史。
 
@@ -1114,6 +1671,8 @@ async def offboard_user(
         ).scalar() or 0
         if admin_count <= 1:
             return Response.error(code=1, msg="不能离职最后一个管理员")
+        if user.is_super_admin and await count_active_super_admins(db) <= 1:
+            return Response.error(code=1, msg="不能离职最后一个超级管理员")
 
     # 1) 终态学员（已报名/无效及旧无效类状态）：只解绑，状态保留作为历史
     terminal_statuses = TERMINAL_STUDENT_STATUSES
@@ -1188,7 +1747,7 @@ async def offboard_user(
 async def unlock_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -1213,7 +1772,7 @@ async def unlock_user(
 async def reset_user_password(
     user_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -1243,36 +1802,16 @@ async def reset_user_password(
 
 @router.get("/backups")
 async def list_backups(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     """列出已有备份文件。"""
-    if not os.path.isdir(BACKUP_DIR):
-        return Response.ok([])
-    items = []
-    ext = _get_backup_extension()
-    for fname in os.listdir(BACKUP_DIR):
-        if not (fname.startswith("crm_") and fname.endswith(ext)):
-            continue
-        fpath = os.path.join(BACKUP_DIR, fname)
-        try:
-            st = os.stat(fpath)
-        except OSError:
-            continue
-        items.append(
-            {
-                "name": fname,
-                "size": st.st_size,
-                "modified_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
-            }
-        )
-    items.sort(key=lambda x: x["modified_at"], reverse=True)
-    return Response.ok(items)
+    return Response.ok(_backup_items())
 
 
 @router.post("/backups")
 async def trigger_backup(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     """手动触发一次数据库备份。"""
     await do_backup_async()
@@ -1292,7 +1831,7 @@ async def trigger_backup(
 @router.get("/backups/{name}")
 async def download_backup(
     name: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     """下载指定备份文件。"""
     # 双重防穿越：1) 文件名白名单 2) realpath 必须仍在 BACKUP_DIR 下
@@ -1381,7 +1920,7 @@ async def list_invalid_students(
             "name": s.name,
             "region": s.region,
             "school_name": s.school_name,
-            "guardian_phone": s.guardian_phone or "",
+            "guardian_phone": mask_phone(s.guardian_phone),
             "assigned_to": s.assigned_to,
             "agent_name": agent_name or "未分配",
             "status": canonical_status_value(s.status),
@@ -1523,7 +2062,7 @@ async def reclaim_invalid_students_to_unassigned_pool(
 async def delete_invalid_students(
     body: BulkInvalidStudentsReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     """删除选中的无效线索及关联记录。"""
     if not body.student_ids:
@@ -1599,7 +2138,7 @@ async def reclaim_by_school(
 async def delete_by_school(
     body: ReclaimBySchoolReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     """按学校批量删除无效线索（含关联的通话/备注/回访/到访/日志）"""
     if not body.school_name:
@@ -1661,8 +2200,9 @@ async def unassigned_school_groups(
     current_user: User = Depends(require_admin),
 ):
     """按学校聚合未分配（assigned_to=null）且未完成的学员数量"""
+    region_expr = func.coalesce(func.max(func.nullif(Student.region, "")), "")
     result = await db.execute(
-        select(Student.school_name, func.count())
+        select(Student.school_name, region_expr.label("region"), func.count())
         .where(
             Student.assigned_to.is_(None),
             Student.status.not_in(TERMINAL_STUDENT_STATUSES),
@@ -1670,7 +2210,10 @@ async def unassigned_school_groups(
         .group_by(Student.school_name)
         .order_by(func.count().desc())
     )
-    groups = [{"name": name or "未知学校", "count": cnt} for name, cnt in result.all()]
+    groups = [
+        {"name": name or "未知学校", "region": region or "未知区县", "count": cnt}
+        for name, region, cnt in result.all()
+    ]
     total = sum(g["count"] for g in groups)
     return Response.ok({"groups": groups, "total": total})
 
@@ -1800,6 +2343,7 @@ class ErrorReport(BaseModel):
 async def report_frontend_error(
     body: ErrorReport,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """接收前端错误报告，记录到 OperationLog。"""
     content = f"[{body.type}] {body.message}"
@@ -1810,8 +2354,8 @@ async def report_frontend_error(
 
     db.add(
         OperationLog(
-            operator_id=None,
-            operator_name="前端",
+            operator_id=current_user.id,
+            operator_name=current_user.name,
             action="前端错误",
             content=content[:1000],
         )

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
@@ -36,21 +37,33 @@ function isLocked(agent) {
   return !Number.isNaN(t.getTime()) && t.getTime() > Date.now();
 }
 
+function isAgentAccount(account) {
+  return (account?.role || 'agent') === 'agent';
+}
+
 function getAgentListGroup(agent) {
   if (!agent?.is_active) return 2;
+  if (!isAgentAccount(agent)) return 1;
   return Number(agent.total_tasks || 0) > 0 ? 0 : 1;
 }
 
 const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 
+function roleLabel(account) {
+  if (account?.is_super_admin) return '超管';
+  return account?.role === 'admin' ? '管理员' : '话务员';
+}
+
 export default function AgentManage() {
   const { dark, toggle } = useTheme();
+  const { user } = useAuth();
   const isMobile = useIsMobile();
   const confirm = useConfirm();
   const toast = useToast();
 
   const [agents, setAgents] = useState([]);
+  const [agentStatusFilter, setAgentStatusFilter] = useState('active');
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [agentTasks, setAgentTasks] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -73,25 +86,48 @@ export default function AgentManage() {
     password: '',
     name: '',
     role: 'agent',
-    service_regions: '',
   });
   const [formError, setFormError] = useState('');
+  const canManageUsers = Boolean(user?.is_super_admin);
+  const activeAgents = useMemo(
+    () => agents.filter((agent) => isAgentAccount(agent) && agent.is_active),
+    [agents],
+  );
+  const agentFilterOptions = useMemo(
+    () => [
+      { key: 'active', label: '在职', count: agents.filter((agent) => agent.is_active).length },
+      { key: 'inactive', label: '离职', count: agents.filter((agent) => !agent.is_active).length },
+      { key: 'all', label: '全部', count: agents.length },
+    ],
+    [agents],
+  );
+
+  const visibleAgents = useMemo(() => {
+    if (agentStatusFilter === 'inactive') {
+      return agents.filter((agent) => !agent.is_active);
+    }
+    if (agentStatusFilter === 'all') {
+      return agents;
+    }
+    return agents.filter((agent) => agent.is_active);
+  }, [agents, agentStatusFilter]);
+
   const sortedAgents = useMemo(
     () =>
-      agents
+      visibleAgents
         .map((agent, index) => ({ agent, index }))
         .sort((left, right) => {
           const groupDiff = getAgentListGroup(left.agent) - getAgentListGroup(right.agent);
           return groupDiff || left.index - right.index;
         })
         .map(({ agent }) => agent),
-    [agents],
+    [visibleAgents],
   );
 
   const fetchAgents = () => {
     setLoading(true);
     api
-      .get('/admin/agents')
+      .get('/admin/users')
       .then((res) => setAgents(res.data.data || []))
       .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
@@ -108,6 +144,14 @@ export default function AgentManage() {
 
   const viewAgentTasks = async (agent) => {
     setSelectedAgent(agent);
+    if (!isAgentAccount(agent)) {
+      setTaskLoading(false);
+      setAgentTasks(null);
+      setExpandedTaskId(null);
+      setTaskDetailCache({});
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
     setTaskLoading(true);
     setAgentTasks(null);
     setExpandedTaskId(null);
@@ -190,7 +234,7 @@ export default function AgentManage() {
 
   const openCreateModal = () => {
     setEditingUser(null);
-    setForm({ username: '', password: '', name: '', role: 'agent', service_regions: '' });
+    setForm({ username: '', password: '', name: '', role: 'agent', is_super_admin: false });
     setFormError('');
     setShowModal(true);
   };
@@ -200,8 +244,8 @@ export default function AgentManage() {
       username: agent.username,
       password: '',
       name: agent.name,
-      role: 'agent',
-      service_regions: agent.service_regions || '',
+      role: agent.role || 'agent',
+      is_super_admin: Boolean(agent.is_super_admin),
     });
     setFormError('');
     setShowModal(true);
@@ -213,11 +257,24 @@ export default function AgentManage() {
     if (!editingUser && !form.password) return setFormError('请输入密码');
     try {
       if (editingUser) {
-        const body = { name: form.name, service_regions: form.service_regions };
+        const body = {
+          name: form.name,
+          role: form.role,
+          is_super_admin: Boolean(form.is_super_admin),
+        };
         if (form.password) body.password = form.password;
         await api.put(`/admin/users/${editingUser.id}`, body);
       } else {
-        await api.post('/admin/users', form);
+        const body = {
+          username: form.username,
+          password: form.password,
+          name: form.name,
+          role: form.role,
+        };
+        if (form.role === 'admin') {
+          body.is_super_admin = Boolean(form.is_super_admin);
+        }
+        await api.post('/admin/users', body);
       }
       setShowModal(false);
       fetchAgents();
@@ -377,19 +434,21 @@ export default function AgentManage() {
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
         <PageHeader
-          title="话务员管理"
+          title="账号管理"
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
           actionsClassName="flex items-center gap-2"
-          useSafeArea={false}
         >
-          <button
-            onClick={openCreateModal}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-          >
-            <UserPlus className="w-4 h-4" />
-            {!isMobile && '添加话务员'}
-          </button>
+          {canManageUsers && (
+            <button
+              onClick={openCreateModal}
+              aria-label="添加账号"
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+            >
+              <UserPlus className="w-4 h-4" />
+              {!isMobile && '添加账号'}
+            </button>
+          )}
           {isMobile && (
             <button
               onClick={toggle}
@@ -410,18 +469,39 @@ export default function AgentManage() {
             <div className={`lg:w-80 shrink-0 ${isMobile && selectedAgent ? 'hidden' : ''}`}>
               <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                    <Users className="w-4 h-4" /> 话务员列表 ({agents.length})
-                  </h3>
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                      <Users className="w-4 h-4" /> 账号列表 ({visibleAgents.length})
+                    </h3>
+                    <div className="inline-flex rounded-lg border dark:border-gray-700 overflow-hidden text-xs">
+                      {agentFilterOptions.map((option) => (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => {
+                            setAgentStatusFilter(option.key);
+                            setSelectedAgent(null);
+                          }}
+                          className={`px-2.5 py-1 transition-colors ${
+                            agentStatusFilter === option.key
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {option.label} {option.count}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="divide-y dark:divide-gray-700 max-h-[calc(100vh-14rem)] overflow-y-auto">
                   {loading ? (
                     <div className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
                       加载中...
                     </div>
-                  ) : agents.length === 0 ? (
+                  ) : sortedAgents.length === 0 ? (
                     <div className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
-                      暂无话务员
+                      {agentStatusFilter === 'inactive' ? '暂无离职账号' : '暂无账号'}
                     </div>
                   ) : (
                     sortedAgents.map((a) => (
@@ -430,13 +510,18 @@ export default function AgentManage() {
                         onClick={() => viewAgentTasks(a)}
                         className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedAgent?.id === a.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : ''}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                              {a.name}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 flex flex-wrap items-center gap-1.5">
+                              <span className="truncate max-w-[7.5rem] break-normal whitespace-nowrap">
+                                {a.name}
+                              </span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300">
+                                {roleLabel(a)}
+                              </span>
                               {!a.is_active && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400">
-                                  已禁用
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 whitespace-nowrap">
+                                  已离职
                                 </span>
                               )}
                               {isLocked(a) && (
@@ -446,13 +531,12 @@ export default function AgentManage() {
                                 </span>
                               )}
                             </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
                               @{a.username}
-                              {a.service_regions ? ` · ${a.service_regions}` : ''}
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            {isLocked(a) && (
+                          <div className="shrink-0 flex flex-wrap justify-end gap-1 max-w-[10rem]">
+                            {canManageUsers && isLocked(a) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -465,51 +549,60 @@ export default function AgentManage() {
                                 解锁
                               </button>
                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(a);
-                              }}
-                              className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                            >
-                              <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRecycleModal(a);
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs whitespace-nowrap"
-                            >
-                              <ArrowRightLeft className="w-3.5 h-3.5" />
-                              回收线索
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOffboard(a);
-                              }}
-                              title="办理离职：回收线索、禁用账号、保留历史"
-                              className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                            >
-                              <UserX className="w-3.5 h-3.5 text-red-400" />
-                            </button>
+                            {canManageUsers && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(a);
+                                }}
+                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                              >
+                                <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+                              </button>
+                            )}
+                            {a.is_active && isAgentAccount(a) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openRecycleModal(a);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs whitespace-nowrap"
+                              >
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                                回收
+                              </button>
+                            )}
+                            {canManageUsers && a.is_active && isAgentAccount(a) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOffboard(a);
+                                }}
+                                title="办理离职：回收线索、禁用账号、保留历史"
+                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs whitespace-nowrap"
+                              >
+                                <UserX className="w-3.5 h-3.5" />
+                                禁用
+                              </button>
+                            )}
                           </div>
                         </div>
-                        <div className="flex gap-3 mt-2 text-xs text-gray-500 dark:text-gray-400">
-                          <span className="flex items-center gap-1">
-                            <Target className="w-3 h-3" />
-                            {a.total_tasks}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            {a.done_tasks}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3" />
-                            {a.today_calls}
-                          </span>
-                        </div>
+                        {isAgentAccount(a) && (
+                          <div className="flex gap-3 mt-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="flex items-center gap-1">
+                              <Target className="w-3 h-3" />
+                              {a.total_tasks}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {a.done_tasks}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Phone className="w-3 h-3" />
+                              {a.today_calls}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -532,11 +625,66 @@ export default function AgentManage() {
               {!selectedAgent ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm flex flex-col items-center justify-center py-20 text-gray-300 dark:text-gray-600">
                   <Eye className="w-12 h-12 mb-3" />
-                  <p className="text-sm">点击左侧话务员查看其任务详情</p>
+                  <p className="text-sm">点击左侧账号查看详情</p>
                 </div>
               ) : taskLoading ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm flex items-center justify-center py-20">
                   <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                </div>
+              ) : !isAgentAccount(selectedAgent) ? (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4 lg:p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-gray-800 dark:text-gray-100">
+                        {selectedAgent.name}
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        @{selectedAgent.username} · {roleLabel(selectedAgent)}
+                      </p>
+                    </div>
+                    {canManageUsers && (
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          onClick={() => openEditModal(selectedAgent)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleResetPassword(selectedAgent)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                        >
+                          重置密码
+                        </button>
+                        <button
+                          onClick={() => handleToggleActive(selectedAgent)}
+                          className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
+                        >
+                          {selectedAgent.is_active ? '禁用' : '启用'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">状态</div>
+                      <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
+                        {selectedAgent.is_active ? '启用' : '禁用'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">权限</div>
+                      <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
+                        {roleLabel(selectedAgent)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">创建时间</div>
+                      <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
+                        {formatDateTime(selectedAgent.created_at) || '-'}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : agentTasks ? (
                 <div className="space-y-4">
@@ -550,35 +698,44 @@ export default function AgentManage() {
                           @{agentTasks.agent.username}
                         </p>
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleToggleActive(selectedAgent)}
-                          className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
-                        >
-                          {selectedAgent.is_active ? '禁用' : '启用'}
-                        </button>
-                        <button
-                          onClick={() => openEditModal(selectedAgent)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => handleResetPassword(selectedAgent)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
-                        >
-                          重置密码
-                        </button>
-                        {isLocked(selectedAgent) && (
+                      {canManageUsers && (
+                        <div className="flex flex-wrap justify-end gap-2">
                           <button
-                            onClick={() => handleUnlock(selectedAgent)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 inline-flex items-center gap-1"
+                            onClick={() => openEditModal(selectedAgent)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
                           >
-                            <Unlock className="w-3.5 h-3.5" />
-                            解锁
+                            编辑
                           </button>
-                        )}
-                      </div>
+                          <button
+                            onClick={() => handleResetPassword(selectedAgent)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                          >
+                            重置密码
+                          </button>
+                          {isLocked(selectedAgent) && (
+                            <button
+                              onClick={() => handleUnlock(selectedAgent)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 inline-flex items-center gap-1"
+                            >
+                              <Unlock className="w-3.5 h-3.5" />
+                              解锁
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openRecycleModal(selectedAgent)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 inline-flex items-center gap-1"
+                          >
+                            <ArrowRightLeft className="w-3.5 h-3.5" />
+                            回收
+                          </button>
+                          <button
+                            onClick={() => handleToggleActive(selectedAgent)}
+                            className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
+                          >
+                            {selectedAgent.is_active ? '禁用' : '启用'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div
                       className={`grid ${isMobile ? 'grid-cols-3' : 'grid-cols-4 lg:grid-cols-7'} gap-2`}
@@ -733,17 +890,7 @@ export default function AgentManage() {
                                             >
                                               <div className="text-xs text-gray-500">{label}</div>
                                               <div className="text-sm font-medium break-words mt-0.5">
-                                                {key === 'guardian_phone' && student[key] && student[key] !== '-' ? (
-                                                  <a
-                                                    href={`tel:${student.guardian_phone_raw || student[key]}`}
-                                                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                  >
-                                                    {student[key]}
-                                                  </a>
-                                                ) : (
-                                                  student[key] || '-'
-                                                )}
+                                                {student[key] || '-'}
                                               </div>
                                             </div>
                                           ))}
@@ -913,13 +1060,11 @@ export default function AgentManage() {
                   className={`${inputCls} lg:w-56`}
                 >
                   <option value="">选择坐席</option>
-                  {agents
-                    .filter((agent) => agent.is_active)
-                    .map((agent) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </option>
-                    ))}
+                  {activeAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
                 </select>
                 <button
                   onClick={() => handleRecycleReassign('manual')}
@@ -951,7 +1096,7 @@ export default function AgentManage() {
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                {editingUser ? '编辑话务员' : '添加话务员'}
+                {editingUser ? '编辑账号' : '添加账号'}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -984,6 +1129,40 @@ export default function AgentManage() {
                 />
               </div>
               <div>
+                <label
+                  htmlFor="account-role"
+                  className="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+                >
+                  角色
+                </label>
+                <select
+                  id="account-role"
+                  value={form.role}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      role: e.target.value,
+                      is_super_admin: e.target.value === 'admin' ? form.is_super_admin : false,
+                    })
+                  }
+                  className={inputCls}
+                >
+                  <option value="agent">话务员</option>
+                  <option value="admin">普通管理员</option>
+                </select>
+              </div>
+              {form.role === 'admin' && (
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.is_super_admin)}
+                    onChange={(e) => setForm({ ...form, is_super_admin: e.target.checked })}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  超级管理员
+                </label>
+              )}
+              <div>
                 <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
                   密码{editingUser ? '（留空不修改）' : ''}
                 </label>
@@ -993,18 +1172,6 @@ export default function AgentManage() {
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className={inputCls}
                   placeholder={editingUser ? '留空则不修改密码' : '设置密码'}
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  负责地域{' '}
-                  <span className="text-xs text-gray-400">（逗号分隔，如"龙海,芗城"）</span>
-                </label>
-                <input
-                  value={form.service_regions}
-                  onChange={(e) => setForm({ ...form, service_regions: e.target.value })}
-                  className={inputCls}
-                  placeholder="龙海,芗城"
                 />
               </div>
               {formError && (

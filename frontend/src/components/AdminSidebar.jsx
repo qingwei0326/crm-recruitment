@@ -8,10 +8,8 @@ import {
   ListFilter,
   LogOut,
   Moon,
-  Search,
   Settings,
   Sun,
-  TrendingUp,
   Users,
   X,
 } from 'lucide-react';
@@ -25,11 +23,9 @@ export const ADMIN_NAV_ITEMS = [
   { to: '/admin/score-preview', label: '评分预览', icon: Gauge },
   { to: '/admin/leads', label: '学生管理', icon: ListFilter },
   { to: '/admin/governance', label: '线索治理', icon: ArrowRightLeft },
-  { to: '/admin/agents', label: '话务员管理', icon: Users },
-  { to: '/admin/report', label: '汇总报表', icon: BarChart3 },
-  { to: '/admin/trend', label: '趋势报表', icon: TrendingUp },
-  { to: '/admin/call-volume', label: '通电量查询', icon: Search },
-  { to: '/admin/settings', label: '系统设置', icon: Settings },
+  { to: '/admin/agents', label: '账号管理', icon: Users },
+  { to: '/admin/report-center', label: '报表中心', icon: BarChart3 },
+  { to: '/admin/settings', label: '系统设置', icon: Settings, superOnly: true },
 ];
 
 function isActivePath(pathname, item) {
@@ -42,6 +38,7 @@ export default function AdminSidebar({ onClose }) {
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const location = useLocation();
+  const visibleNavItems = ADMIN_NAV_ITEMS.filter((item) => !item.superOnly || user?.is_super_admin);
 
   const navClass = (active) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${
@@ -55,7 +52,7 @@ export default function AdminSidebar({ onClose }) {
       <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
-            <TrendingUp className="w-4 h-4 text-white" />
+            <BarChart3 className="w-4 h-4 text-white" />
           </div>
           <div className="min-w-0">
             <div className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">
@@ -77,7 +74,7 @@ export default function AdminSidebar({ onClose }) {
       </div>
 
       <nav className="p-3 space-y-1">
-        {ADMIN_NAV_ITEMS.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const active = isActivePath(location.pathname, item);
           return (
