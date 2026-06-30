@@ -2,9 +2,10 @@
 话务员移动端全流程 E2E 测试
 模拟话务员完整工作流程：登录→待拨打列表→拨号→选择状态→查看详情→待处理→设置
 """
+
 import sys
 
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8000"
 API = "http://127.0.0.1:8000"
@@ -15,16 +16,19 @@ passed = 0
 failed = 0
 errors = []
 
+
 def ok(name):
     global passed
     passed += 1
     print(f"  ✅ {name}")
+
 
 def fail(name, reason=""):
     global failed
     failed += 1
     errors.append(f"{name}: {reason}")
     print(f"  ❌ {name} — {reason}")
+
 
 def login(page):
     """登录话务员账号"""
@@ -78,7 +82,7 @@ def test_02_task_list(page):
             ok(name)
         else:
             # 可能是"今日暂无任务"
-            no_task = page.locator('text=今日暂无任务')
+            no_task = page.locator("text=今日暂无任务")
             if no_task.count() > 0:
                 ok(name + " (暂无任务)")
             else:
@@ -91,10 +95,8 @@ def test_03_stats_display(page):
     """测试03: 统计数据展示"""
     name = "统计数据展示"
     try:
-        progress = page.locator('text=待拨打进度')
-        total = page.locator('text=总数')
-        done = page.locator('text=已完成')
-        pending = page.locator('text=未联系')
+        progress = page.locator("text=待拨打进度")
+        total = page.locator("text=总数")
         if progress.count() > 0 and total.count() > 0:
             ok(name)
         else:
@@ -117,7 +119,7 @@ def test_04_search(page):
         # 检查列表变化（可能有搜索结果或暂无结果）
         ok(name)
         # 清空搜索
-        clear_btn = page.locator('button svg.lucide-x').first
+        clear_btn = page.locator("button svg.lucide-x").first
         if clear_btn.count() > 0:
             clear_btn.click()
             page.wait_for_timeout(500)
@@ -129,15 +131,13 @@ def test_05_student_card(page):
     """测试05: 学生卡片渲染"""
     name = "学生卡片渲染"
     try:
-        # 找到第一个有名字的学生卡片
-        cards = page.locator('div.bg-white.rounded-2xl, div.dark\\:bg-gray-800.rounded-2xl')
         # 检查是否有学生头像（首字母）
-        avatars = page.locator('div:has(> div.text-base.font-semibold)')
+        avatars = page.locator("div:has(> div.text-base.font-semibold)")
         if avatars.count() > 0:
             ok(name)
         else:
             # 可能暂无任务
-            no = page.locator('text=今日暂无任务')
+            no = page.locator("text=今日暂无任务")
             if no.count() > 0:
                 ok(name + " (暂无任务)")
             else:
@@ -154,7 +154,7 @@ def test_06_dial_button(page):
         if dial_btns.count() > 0:
             ok(name)
         else:
-            no = page.locator('text=今日暂无任务')
+            no = page.locator("text=今日暂无任务")
             if no.count() > 0:
                 ok(name + " (暂无任务)")
             else:
@@ -174,7 +174,7 @@ def test_07_dial_flow(page):
 
         dial_btns = page.locator('button:has-text("拨号")')
         if dial_btns.count() == 0:
-            no = page.locator('text=今日暂无任务')
+            no = page.locator("text=今日暂无任务")
             if no.count() > 0:
                 ok(name + " (跳过,无任务)")
                 return
@@ -192,23 +192,35 @@ def test_07_dial_flow(page):
         sname = students[0].get("name", "测试")
 
         # 模拟拨号返回：手动触发 MobileDialResult 弹窗
-        page.evaluate(f"""
-            () => {{
-                sessionStorage.setItem('pendingDial', JSON.stringify({{ studentId: {sid}, studentName: '{sname}' }}));
-                window.dispatchEvent(new Event('focus'));
-                document.dispatchEvent(new Event('visibilitychange'));
-            }}
-        """)
+        page.evaluate(
+            f"""
+                () => {{
+                    const pendingDial = {{ studentId: {sid}, studentName: '{sname}' }};
+                    sessionStorage.setItem('pendingDial', JSON.stringify(pendingDial));
+                    window.dispatchEvent(new Event('focus'));
+                    document.dispatchEvent(new Event('visibilitychange'));
+                }}
+            """
+        )
         page.wait_for_timeout(2000)
 
         # 验证弹窗弹出
         name_input = page.locator('input[placeholder*="姓名"]')
-        dialog_text = page.locator('text=请选择处理结果')
+        dialog_text = page.locator("text=请选择处理结果")
         if name_input.count() > 0 or dialog_text.count() > 0:
             ok("弹窗弹出")
 
             # 验证状态按钮存在（弹窗内）— 8个按钮
-            btns = ['新线索', '非常有意向', '意向了解加微', '未接', '高分段', '无意向', '孩子不想读', '已报名']
+            btns = [
+                "新线索",
+                "非常有意向",
+                "意向了解加微",
+                "未接",
+                "高分段",
+                "无意向",
+                "孩子不想读",
+                "已报名",
+            ]
             found = 0
             for b in btns:
                 if page.locator(f'button:has-text("{b}")').count() > 0:
@@ -222,7 +234,7 @@ def test_07_dial_flow(page):
                 page.wait_for_timeout(2000)
                 ok("选择状态")
             else:
-                fail(f"状态按钮", f"只找到{found}/8个")
+                fail("状态按钮", f"只找到{found}/8个")
         else:
             # headless 下 tel: 跳转不触发，弹窗无法弹出 — 这是已知限制
             ok(name + " (headless限制,弹窗需真机验证)")
@@ -242,7 +254,7 @@ def test_08_student_detail(page):
         # 点击"详情"按钮
         detail_btns = page.locator('button:has-text("详情")')
         if detail_btns.count() == 0:
-            no = page.locator('text=今日暂无任务')
+            no = page.locator("text=今日暂无任务")
             if no.count() > 0:
                 ok(name + " (跳过,无任务)")
                 return
@@ -269,7 +281,9 @@ def test_08_student_detail(page):
             ok("返回按钮")
 
         # 检查状态按钮
-        status_btns = page.locator('button:has-text("未联系"), button:has-text("非常有意向"), button:has-text("已报名")')
+        status_btns = page.locator(
+            'button:has-text("未联系"), button:has-text("非常有意向"), button:has-text("已报名")'
+        )
         if status_btns.count() > 0:
             ok("详情页状态按钮")
 
@@ -293,8 +307,8 @@ def test_09_pending_tab(page):
         if pending_link.count() > 0:
             ok("待处理标签")
         # 检查内容
-        no_pending = page.locator('text=暂无待处理')
-        has_items = page.locator('.rounded-2xl.border').count() > 0
+        no_pending = page.locator("text=暂无待处理")
+        has_items = page.locator(".rounded-2xl.border").count() > 0
         if no_pending.count() > 0 or has_items:
             ok("待处理内容加载")
         else:
@@ -310,20 +324,20 @@ def test_10_me_tab(page):
         page.goto(f"{BASE}/mobile?tab=me", wait_until="networkidle")
         page.wait_for_timeout(1500)
         # 检查用户信息
-        user_name = page.locator('text=蒲安琪')
+        user_name = page.locator("text=蒲安琪")
         if user_name.count() > 0:
             ok("显示用户名")
         else:
             # 可能显示用户名而不是姓名
-            any_name = page.locator('div.text-base.font-semibold')
+            any_name = page.locator("div.text-base.font-semibold")
             if any_name.count() > 0:
                 ok("显示用户信息")
             else:
                 fail(name, "找不到用户信息")
 
         # 检查功能按钮
-        pushplus = page.locator('text=PushPlus')
-        theme = page.locator('text=主题模式')
+        pushplus = page.locator("text=PushPlus")
+        theme = page.locator("text=主题模式")
         logout = page.locator('button:has-text("退出登录")')
         if pushplus.count() > 0:
             ok("PushPlus设置入口")
@@ -342,7 +356,7 @@ def test_11_settings(page):
         page.goto(f"{BASE}/mobile?tab=me", wait_until="networkidle")
         page.wait_for_timeout(1000)
         # 点击 PushPlus 设置
-        pushplus = page.locator('text=PushPlus')
+        pushplus = page.locator("text=PushPlus")
         if pushplus.count() > 0:
             pushplus.first.click()
             page.wait_for_timeout(1000)
@@ -409,11 +423,11 @@ def test_14_status_badges(page):
         page.goto(f"{BASE}/mobile", wait_until="networkidle")
         page.wait_for_timeout(2000)
         # 检查是否有 StatusBadge 组件
-        badges = page.locator('span.inline-flex.items-center.rounded-full')
+        badges = page.locator("span.inline-flex.items-center.rounded-full")
         if badges.count() > 0:
             ok(f"状态标签({badges.count()}个)")
         else:
-            no = page.locator('text=今日暂无任务')
+            no = page.locator("text=今日暂无任务")
             if no.count() > 0:
                 ok(name + " (暂无任务)")
             else:
@@ -432,8 +446,6 @@ def test_15_dark_mode(page):
         if theme_btn.count() > 0:
             theme_btn.first.click()
             page.wait_for_timeout(500)
-            # 检查是否有 dark class
-            has_dark = page.locator('html.dark, body.dark, div.dark').count() > 0
             text = theme_btn.inner_text()
             if "深色" in text or "浅色" in text:
                 ok("主题切换正常")
@@ -486,10 +498,13 @@ def test_18_api_login(page):
     """测试18: API登录"""
     name = "API登录"
     try:
-        resp = page.request.post(f"{API}/api/auth/login", data={
-            "username": AGENT_USER,
-            "password": AGENT_PASS,
-        })
+        resp = page.request.post(
+            f"{API}/api/auth/login",
+            data={
+                "username": AGENT_USER,
+                "password": AGENT_PASS,
+            },
+        )
         data = resp.json()
         if data.get("code") == 0 and data.get("data", {}).get("access_token"):
             ok(name)
@@ -503,19 +518,22 @@ def test_19_api_tasks(page):
     """测试19: API任务列表"""
     name = "API任务列表"
     try:
-        resp = page.request.post(f"{API}/api/auth/login", data={
-            "username": AGENT_USER,
-            "password": AGENT_PASS,
-        })
+        resp = page.request.post(
+            f"{API}/api/auth/login",
+            data={
+                "username": AGENT_USER,
+                "password": AGENT_PASS,
+            },
+        )
         token = resp.json()["data"]["access_token"]
-        resp2 = page.request.get(f"{API}/api/tasks/today?limit=10", headers={
-            "Authorization": f"Bearer {token}"
-        })
+        resp2 = page.request.get(
+            f"{API}/api/tasks/today?limit=10", headers={"Authorization": f"Bearer {token}"}
+        )
         data = resp2.json()
         if data.get("code") == 0:
             students = data.get("data", {}).get("list", [])
             stats = data.get("data", {}).get("stats", {})
-            ok(f"任务列表({len(students)}个,总{stats.get('total',0)})")
+            ok(f"任务列表({len(students)}个,总{stats.get('total', 0)})")
         else:
             fail(name, str(data)[:100])
     except Exception as e:
@@ -526,14 +544,17 @@ def test_20_api_followups(page):
     """测试20: API待处理回访"""
     name = "API待处理回访"
     try:
-        resp = page.request.post(f"{API}/api/auth/login", data={
-            "username": AGENT_USER,
-            "password": AGENT_PASS,
-        })
+        resp = page.request.post(
+            f"{API}/api/auth/login",
+            data={
+                "username": AGENT_USER,
+                "password": AGENT_PASS,
+            },
+        )
         token = resp.json()["data"]["access_token"]
-        resp2 = page.request.get(f"{API}/api/follow-ups/my-pending", headers={
-            "Authorization": f"Bearer {token}"
-        })
+        resp2 = page.request.get(
+            f"{API}/api/follow-ups/my-pending", headers={"Authorization": f"Bearer {token}"}
+        )
         data = resp2.json()
         if data.get("code") == 0:
             items = data.get("data", [])
@@ -553,7 +574,11 @@ def test_21_sw_cleanup(page):
         page.goto(f"{BASE}/login", wait_until="networkidle")
         page.wait_for_timeout(1000)
         # 检查没有注册SW
-        sw_count = page.evaluate("navigator.serviceWorker ? navigator.serviceWorker.getRegistrations().then(r => r.length) : 0")
+        sw_count = page.evaluate(
+            "navigator.serviceWorker "
+            "? navigator.serviceWorker.getRegistrations().then(r => r.length) "
+            ": 0"
+        )
         if sw_count == 0:
             ok("无Service Worker注册")
         else:
@@ -598,7 +623,10 @@ def main():
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(
             viewport={"width": 390, "height": 844},  # iPhone 14 Pro
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+            user_agent=(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                "AppleWebKit/605.1.15"
+            ),
             is_mobile=True,
             has_touch=True,
         )

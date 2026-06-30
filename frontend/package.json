@@ -12,6 +12,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-virtual": "^3.14.3",
     "axios": "^1.6.2",
     "lucide-react": "^0.300.0",

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Agent workflow E2E tests -- deep functional testing.
 
 Tests the full agent lifecycle:
@@ -18,7 +17,9 @@ Run:  PYTHONIOENCODING=utf-8 .venv-win/Scripts/python.exe tests/e2e/test_agent_w
 import asyncio
 import os
 import sys
-from playwright.async_api import async_playwright, expect, TimeoutError as PwTimeout
+
+from playwright.async_api import TimeoutError as PwTimeout
+from playwright.async_api import async_playwright
 
 BASE_URL = "http://localhost:3000"
 
@@ -26,14 +27,23 @@ BASE_URL = "http://localhost:3000"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def shot(page, name):
     path = f"tests/e2e/screenshots/{name}.png"
     await page.screenshot(path=path, full_page=True)
     print(f"  [shot] {path}")
 
-def ok(msg): print(f"  [OK] {msg}")
-def fail(msg): print(f"  [FAIL] {msg}")
-def info(msg): print(f"  [..] {msg}")
+
+def ok(msg):
+    print(f"  [OK] {msg}")
+
+
+def fail(msg):
+    print(f"  [FAIL] {msg}")
+
+
+def info(msg):
+    print(f"  [..] {msg}")
 
 
 async def clear_and_login(page, username, password):
@@ -59,6 +69,7 @@ async def clear_and_login(page, username, password):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 async def test_01_login(page):
     """Login as e2etest agent."""
     print("\n[1] Login as agent")
@@ -77,7 +88,7 @@ async def test_02_today_tasks(page):
     # Check student names visible
     student_names = ["林灿阳", "吕江豪", "黄仲坤", "曾晓蓉", "杨宇彤"]
     found = [n for n in student_names if n in body]
-    assert len(found) >= 1, f"No student names found in body"
+    assert len(found) >= 1, "No student names found in body"
     ok(f"Students visible: {', '.join(found)}")
 
     # Check stats
@@ -95,7 +106,9 @@ async def test_03_expand_student_row(page):
     """Click a student row to expand detail."""
     print("\n[3] Expand student row")
     # Click the first student row (click the name cell)
-    first_name = page.locator('td:has-text("林灿阳"), td:has-text("吕江豪"), td:has-text("黄仲坤")').first
+    first_name = page.locator(
+        'td:has-text("林灿阳"), td:has-text("吕江豪"), td:has-text("黄仲坤")'
+    ).first
     if await first_name.count() > 0:
         await first_name.click()
         await page.wait_for_timeout(1500)
@@ -163,7 +176,9 @@ async def test_04_quick_status_flow(page):
             body2 = await page.text_content("body")
             has_intent = "意向等级" in body2 or "请选择意向" in body2
             if has_intent:
-                intent_btn = page.locator('button:has-text("A级"), button:has-text("B级"), button:has-text("C级")').first
+                intent_btn = page.locator(
+                    'button:has-text("A级"), button:has-text("B级"), button:has-text("C级")'
+                ).first
                 if await intent_btn.count() > 0:
                     await intent_btn.click()
                     await page.wait_for_timeout(1000)
@@ -199,7 +214,9 @@ async def test_05_add_note(page):
             await page.wait_for_timeout(1000)
 
     # Look for note textarea/input in expanded row
-    note_input = page.locator('input[placeholder*="备注"], textarea[placeholder*="备注"], input[placeholder*="记录"]').first
+    note_input = page.locator(
+        'input[placeholder*="备注"], textarea[placeholder*="备注"], input[placeholder*="记录"]'
+    ).first
     if await note_input.count() > 0:
         await note_input.fill("E2E自动化测试备注")
         await page.wait_for_timeout(500)
@@ -226,7 +243,9 @@ async def test_05_add_note(page):
             ok("Note panel opened via button")
 
             # Now look for the input
-            note_input2 = page.locator('input[placeholder*="备注"], textarea[placeholder*="备注"]').first
+            note_input2 = page.locator(
+                'input[placeholder*="备注"], textarea[placeholder*="备注"]'
+            ).first
             if await note_input2.count() > 0:
                 await note_input2.fill("E2E自动化测试备注")
                 await note_input2.press("Enter")
@@ -262,10 +281,10 @@ async def test_07_school_filter(page):
         await page.wait_for_timeout(1500)
 
     # Find school dropdown
-    school_select = page.locator('select').first
+    school_select = page.locator("select").first
     if await school_select.count() > 0:
         # Get all options
-        options = await school_select.locator('option').all()
+        options = await school_select.locator("option").all()
         option_texts = []
         for opt in options[:5]:
             txt = await opt.text_content()
@@ -285,7 +304,9 @@ async def test_07_school_filter(page):
 async def test_08_search(page):
     """Test search functionality."""
     print("\n[8] Search")
-    search_input = page.locator('input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]').first
+    search_input = page.locator(
+        'input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]'
+    ).first
     if await search_input.count() > 0:
         await search_input.fill("林")
         await page.wait_for_timeout(1500)
@@ -332,7 +353,9 @@ async def test_10_logout(page):
     await page.keyboard.press("Escape")
     await page.wait_for_timeout(500)
     # Try clicking close button on any modal
-    close_modal = page.locator('.fixed button:has-text("取消"), .fixed button[aria-label="关闭"], .fixed button:has(svg)').first
+    close_modal = page.locator(
+        '.fixed button:has-text("取消"), .fixed button[aria-label="关闭"], .fixed button:has(svg)'
+    ).first
     if await close_modal.count() > 0:
         try:
             await close_modal.click(timeout=2000)
@@ -409,13 +432,13 @@ async def main():
         await browser.close()
 
     total = passed + failed
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  RESULTS: {passed}/{total} passed, {failed} failed")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     if errors:
         print("\n  Failed tests:")
         for name, err in errors:
-            short = err[:200].replace('\n', ' ')
+            short = err[:200].replace("\n", " ")
             print(f"    - {name}: {short}")
     print()
     return 0 if failed == 0 else 1

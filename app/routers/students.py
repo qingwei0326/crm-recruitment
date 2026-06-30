@@ -221,13 +221,12 @@ def _student_payload(student: Student) -> dict:
 def _is_call_result_write(status: StudentStatus, status_detail: str | None) -> bool:
     canonical_status = canonical_student_status(status)
     detail = (status_detail or "").strip()
-    return (
-        canonical_status in CALL_RESULT_STATUSES
-        or detail in CALL_RESULT_STATUS_DETAILS
-    )
+    return canonical_status in CALL_RESULT_STATUSES or detail in CALL_RESULT_STATUS_DETAILS
 
 
-def _allows_call_result_backfill_without_recent_dial(old_status: StudentStatus | str | None) -> bool:
+def _allows_call_result_backfill_without_recent_dial(
+    old_status: StudentStatus | str | None,
+) -> bool:
     return canonical_student_status(old_status) == StudentStatus.contacted
 
 
@@ -1409,10 +1408,9 @@ async def update_student(
     assigned_changed = "assigned_to" in raw and old_assigned != student.assigned_to
 
     if status_changed or status_detail_changed:
-        if (
-            _is_call_result_write(student.status, student.status_detail)
-            and not _allows_call_result_backfill_without_recent_dial(old_status)
-        ):
+        if _is_call_result_write(
+            student.status, student.status_detail
+        ) and not _allows_call_result_backfill_without_recent_dial(old_status):
             await require_recent_agent_dial(db, student.id, current_user)
 
     if intent_changed:

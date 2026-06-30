@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Mobile workflow E2E tests -- deep functional testing.
 
 Tests the full mobile agent lifecycle:
@@ -15,7 +14,9 @@ Run:  PYTHONIOENCODING=utf-8 .venv-win/Scripts/python.exe tests/e2e/test_mobile_
 import asyncio
 import os
 import sys
-from playwright.async_api import async_playwright, TimeoutError as PwTimeout
+
+from playwright.async_api import TimeoutError as PwTimeout
+from playwright.async_api import async_playwright
 
 BASE_URL = "http://localhost:3000"
 MOBILE_VIEWPORT = {"width": 390, "height": 844}
@@ -24,14 +25,23 @@ MOBILE_VIEWPORT = {"width": 390, "height": 844}
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def shot(page, name):
     path = f"tests/e2e/screenshots/{name}.png"
     await page.screenshot(path=path, full_page=True)
     print(f"  [shot] {path}")
 
-def ok(msg): print(f"  [OK] {msg}")
-def fail(msg): print(f"  [FAIL] {msg}")
-def info(msg): print(f"  [..] {msg}")
+
+def ok(msg):
+    print(f"  [OK] {msg}")
+
+
+def fail(msg):
+    print(f"  [FAIL] {msg}")
+
+
+def info(msg):
+    print(f"  [..] {msg}")
 
 
 async def clear_and_login(page, username, password):
@@ -57,6 +67,7 @@ async def clear_and_login(page, username, password):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 async def test_01_login(page):
     """Login as agent with mobile viewport."""
@@ -329,13 +340,13 @@ async def main():
         await browser.close()
 
     total = passed + failed
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  RESULTS: {passed}/{total} passed, {failed} failed")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     if errors:
         print("\n  Failed tests:")
         for name, err in errors:
-            short = err[:200].replace('\n', ' ')
+            short = err[:200].replace("\n", " ")
             print(f"    - {name}: {short}")
     print()
     return 0 if failed == 0 else 1
