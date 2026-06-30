@@ -8,6 +8,7 @@ import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
+import PhoneLink from '../../components/PhoneLink';
 import { stageLabel, statusLabel, STAGES } from '../../labels';
 import { formatDateTime, buildStudentPayload, getApiErrorMessage } from '../../utils';
 import {
@@ -24,7 +25,6 @@ import {
   X,
   CheckSquare,
   Square,
-  Users,
   Plus,
   Clock,
   Loader2,
@@ -98,6 +98,16 @@ function schoolPlaceholder(regions, loading, schools) {
   return '-- 请选择 --';
 }
 
+function getOwnershipFilterFromParams(searchParams) {
+  if (searchParams.get('assignment') === 'unassigned') return 'unassigned';
+  const assignedTo = searchParams.get('assigned_to');
+  return assignedTo ? `agent:${assignedTo}` : '';
+}
+
+function getAssignedToFromOwnershipFilter(value) {
+  return value?.startsWith('agent:') ? value.slice('agent:'.length) : '';
+}
+
 export default function LeadsManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -105,6 +115,7 @@ export default function LeadsManage() {
   const toast = useToast();
   const confirm = useConfirm();
   const [searchParams] = useSearchParams();
+  const searchParamString = searchParams.toString();
   const navigate = useNavigate();
   const [autoAssigning, setAutoAssigning] = useState(false);
 
@@ -117,7 +128,7 @@ export default function LeadsManage() {
   const [region, setRegion] = useState(searchParams.get('region') || '');
   const [stage, setStage] = useState(searchParams.get('stage') || '');
   const [intent, setIntent] = useState(searchParams.get('intent') || '');
-  const assignment = searchParams.get('assignment') || '';
+  const [assignmentFilter, setAssignmentFilter] = useState(getOwnershipFilterFromParams(searchParams));
   const [needHelp, setNeedHelp] = useState(searchParams.get('need_help') === '1');
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -170,19 +181,36 @@ export default function LeadsManage() {
 
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const selectedStudents = students.filter((student) => selected.has(student.id));
+  const selectedAgent = agents.find((agent) => String(agent.id) === String(assignAgentId));
+  const selectedAssignmentAgentId = getAssignedToFromOwnershipFilter(assignmentFilter);
+  const selectedAssignmentAgent = agents.find((agent) => String(agent.id) === selectedAssignmentAgentId);
 
   const fetchStudents = useCallback(
-    (p) => {
+    (p, overrides = {}) => {
       setLoading(true);
+      const filters = {
+        q,
+        status,
+        statusDetail,
+        region,
+        stage,
+        intent,
+        assignment: assignmentFilter,
+        needHelp,
+        ...overrides,
+      };
       const params = { page: p || page, page_size: pageSize };
-      if (q) params.q = q;
-      if (status) params.status = status;
-      if (statusDetail) params.status_detail = statusDetail;
-      if (region) params.region = region;
-      if (stage) params.stage = stage;
-      if (intent) params.intent_level = intent;
-      if (assignment) params.assignment = assignment;
-      if (needHelp) params.need_help = '1';
+      if (filters.q) params.q = filters.q;
+      if (filters.status) params.status = filters.status;
+      if (filters.statusDetail) params.status_detail = filters.statusDetail;
+      if (filters.region) params.region = filters.region;
+      if (filters.stage) params.stage = filters.stage;
+      if (filters.intent) params.intent_level = filters.intent;
+      if (filters.assignment === 'unassigned') params.assignment = 'unassigned';
+      const assignedTo = getAssignedToFromOwnershipFilter(filters.assignment);
+      if (assignedTo) params.assigned_to = assignedTo;
+      if (filters.needHelp) params.need_help = '1';
       api
         .get('/students', { params })
         .then((res) => {
@@ -193,14 +221,25 @@ export default function LeadsManage() {
         .catch(() => { toast?.error('数据加载失败'); })
         .finally(() => setLoading(false));
     },
-    [page, q, status, statusDetail, region, stage, intent, assignment, needHelp],
+    [page, q, status, statusDetail, region, stage, intent, assignmentFilter, needHelp],
   );
 
   useEffect(() => {
     fetchStudents(1);
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, statusDetail, region, stage, intent, assignment, needHelp]);
+  }, [status, statusDetail, region, stage, intent, assignmentFilter, needHelp]);
+
+  useEffect(() => {
+    setQ(searchParams.get('q') || '');
+    setStatus(searchParams.get('status') || '');
+    setStatusDetail(searchParams.get('status_detail') || '');
+    setRegion(searchParams.get('region') || '');
+    setStage(searchParams.get('stage') || '');
+    setIntent(searchParams.get('intent') || '');
+    setAssignmentFilter(getOwnershipFilterFromParams(searchParams));
+    setNeedHelp(searchParams.get('need_help') === '1');
+  }, [searchParamString]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get('/admin/agents').then((r) => setAgents(r.data.data || [])).catch((e) => logger.error('加载话务员列表失败:', e));
@@ -287,6 +326,61 @@ export default function LeadsManage() {
   const refreshExpand = () => {
     if (expandedId) loadExpandData(expandedId);
   };
+
+  const clearSingleFilter = (key) => {
+    if (key === 'q') {
+      setQ('');
+      setPage(1);
+      fetchStudents(1, { q: '' });
+      return;
+    }
+    if (key === 'status') setStatus('');
+    if (key === 'statusDetail') setStatusDetail('');
+    if (key === 'region') setRegion('');
+    if (key === 'stage') setStage('');
+    if (key === 'intent') setIntent('');
+    if (key === 'assignment') setAssignmentFilter('');
+    if (key === 'needHelp') setNeedHelp(false);
+  };
+
+  const clearAllFilters = () => {
+    setQ('');
+    setStatus('');
+    setStatusDetail('');
+    setRegion('');
+    setStage('');
+    setIntent('');
+    setAssignmentFilter('');
+    setNeedHelp(false);
+    setPage(1);
+    fetchStudents(1, {
+      q: '',
+      status: '',
+      statusDetail: '',
+      region: '',
+      stage: '',
+      intent: '',
+      assignment: '',
+      needHelp: false,
+    });
+    if (searchParamString) navigate('/admin/leads', { replace: true });
+  };
+
+  const activeFilterChips = [
+    q.trim() && { key: 'q', label: `搜索：${q.trim()}` },
+    assignmentFilter === 'unassigned'
+      ? { key: 'assignment', label: '未分配' }
+      : selectedAssignmentAgentId && {
+        key: 'assignment',
+        label: `归属：${selectedAssignmentAgent?.name || `话务员 ${selectedAssignmentAgentId}`}`,
+      },
+    region && { key: 'region', label: `区县：${region}` },
+    stage && { key: 'stage', label: `阶段：${stageLabel(stage)}` },
+    status && { key: 'status', label: `状态：${statusLabel(status)}` },
+    statusDetail && { key: 'statusDetail', label: `结果：${statusDetail}` },
+    intent && { key: 'intent', label: `意向：${intent}` },
+    needHelp && { key: 'needHelp', label: '需协助' },
+  ].filter(Boolean);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -521,6 +615,48 @@ export default function LeadsManage() {
     refreshExpand();
   };
 
+  const openEditStudent = async (s) => {
+    try {
+      const res = await api.get(`/students/${s.id}/phone-plain`);
+      const phoneData = res.data?.data || {};
+      setEditStudent({
+        id: s.id,
+        name: s.name,
+        region: s.region || '',
+        score: s.score || '',
+        guardian_name: s.guardian_name || '',
+        guardian_phone: phoneData.guardian_phone || '',
+        guardian2_name: s.guardian2_name || '',
+        guardian2_phone: phoneData.guardian2_phone || '',
+        school_name: s.school_name || '',
+      });
+      setShowEdit(true);
+    } catch (e) {
+      toast?.error('加载明文电话失败: ' + getApiErrorMessage(e));
+    }
+  };
+
+  const handleDialStudent = async (studentId, contactKey = 'guardian') => {
+    try {
+      const res = await api.get(`/students/phone/${studentId}`);
+      if (res.data.code !== 0) {
+        toast?.error(res.data.msg || '获取电话失败');
+        return;
+      }
+      const phone =
+        contactKey === 'guardian2'
+          ? res.data.data?.guardian2_phone || ''
+          : res.data.data?.guardian_phone || '';
+      if (!phone) {
+        toast?.error('该联系人没有电话');
+        return;
+      }
+      window.location.href = `tel:${phone}`;
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e) || '获取电话失败');
+    }
+  };
+
   const closeSidebar = () => setSidebarOpen(false);
 
   // ── Render helpers ──
@@ -568,24 +704,22 @@ export default function LeadsManage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['成绩', s.score != null ? s.score : '-', false],
-                  ['监护人', s.guardian_name || '-', false],
-                  ['监护人电话', s.guardian_phone_raw || s.guardian_phone || '-', true],
-                  ['监护人2', s.guardian2_name || '-', false],
-                  ['监护人2电话', s.guardian2_phone_raw || s.guardian2_phone || '-', true],
-                  ['学校', s.school_name || '-', false],
-                ].map(([k, v, isPhone]) => (
+                  ['成绩', s.score != null ? s.score : '-', null],
+                  ['监护人', s.guardian_name || '-', null],
+                  ['监护人电话', s.guardian_phone_raw || s.guardian_phone || '', 'guardian'],
+                  ['监护人2', s.guardian2_name || '-', null],
+                  ['监护人2电话', s.guardian2_phone_raw || s.guardian2_phone || '', 'guardian2'],
+                  ['学校', s.school_name || '-', null],
+                ].map(([k, v, contactKey]) => (
                   <div key={k} className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
                     <div className="text-xs text-gray-400">{k}</div>
                     <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {isPhone && v && v !== '-' ? (
-                        <a
-                          href={`tel:${v}`}
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {v}
-                        </a>
+                      {contactKey ? (
+                        <PhoneLink
+                          value={v}
+                          label={`拨打${k}`}
+                          onDial={() => handleDialStudent(l.id, contactKey)}
+                        />
                       ) : (
                         v
                       )}
@@ -782,20 +916,7 @@ export default function LeadsManage() {
                   查看详情
                 </Link>
                 <button
-                  onClick={() => {
-                    setEditStudent({
-                      id: s.id,
-                      name: s.name,
-                      region: s.region || '',
-                      score: s.score || '',
-                      guardian_name: s.guardian_name || '',
-                      guardian_phone: s.guardian_phone_raw || s.guardian_phone || '',
-                      guardian2_name: s.guardian2_name || '',
-                      guardian2_phone: s.guardian2_phone_raw || s.guardian2_phone || '',
-                      school_name: s.school_name || '',
-                    });
-                    setShowEdit(true);
-                  }}
+                  onClick={() => openEditStudent(s)}
                   className="flex items-center gap-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs hover:bg-gray-200 dark:hover:bg-gray-600"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -982,21 +1103,197 @@ export default function LeadsManage() {
     );
   };
 
+  const renderMobileCard = (l) => {
+    const isExpanded = expandedId === l.id;
+    return (
+      <div
+        key={l.id}
+        className={`rounded-lg border bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 ${
+          l.need_help ? 'border-red-300 bg-red-50/50 dark:border-red-800 dark:bg-red-900/10' : ''
+        } ${l.status === '无效' ? 'opacity-75' : ''}`}
+      >
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => toggleSel(l.id)}
+            className="mt-0.5 inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg bg-gray-50 text-gray-500 dark:bg-gray-700 dark:text-gray-300"
+            aria-label={`${selected.has(l.id) ? '取消选择' : '选择'} ${l.name || '学生'}`}
+          >
+            {selected.has(l.id) ? (
+              <CheckSquare className="w-4 h-4 text-blue-600" />
+            ) : (
+              <Square className="w-4 h-4" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleExpand(l.id)}
+            className="min-w-0 flex-1 text-left"
+            aria-expanded={isExpanded}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
+                {l.name || `学生 #${l.id}`}
+              </span>
+              {l.need_help && <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />}
+              {isExpanded ? (
+                <ChevronDown className="ml-auto w-4 h-4 shrink-0 text-blue-500" />
+              ) : (
+                <ChevronRight className="ml-auto w-4 h-4 shrink-0 text-gray-400" />
+              )}
+            </div>
+            <div className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+              {l.school_name || '未知学校'} · {l.region || '未知地区'}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs ${
+                  l.status === '已报名'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                    : l.status === '无效'
+                    ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                }`}
+              >
+                {statusLabel(l.status)}
+              </span>
+              {l.status_detail && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-gray-700 dark:text-gray-300">
+                  {l.status_detail}
+                </span>
+              )}
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                {stageLabel(l.stage)}
+              </span>
+              {l.intent_level && l.intent_level !== '无' && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                  {l.intent_level}级
+                </span>
+              )}
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-2">
+          <PhoneLink
+            value={l.guardian_phone_raw || l.guardian_phone || ''}
+            label="拨打联系人1"
+            onDial={() => handleDialStudent(l.id, 'guardian')}
+            className="min-h-10 justify-center rounded-lg bg-green-50 px-2 text-sm no-underline dark:bg-green-900/20"
+          />
+          <PhoneLink
+            value={l.guardian2_phone_raw || l.guardian2_phone || ''}
+            label="拨打联系人2"
+            onDial={() => handleDialStudent(l.id, 'guardian2')}
+            className="min-h-10 justify-center rounded-lg bg-green-50 px-2 text-sm no-underline dark:bg-green-900/20"
+          />
+          <Link
+            to={`/admin/leads/${l.id}`}
+            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-50 px-2 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+          >
+            详情
+          </Link>
+          <button
+            type="button"
+            onClick={() => openEditStudent(l)}
+            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-gray-100 px-2 text-sm text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+          >
+            编辑
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                aria-label={`设置 ${l.name || '学生'} 状态`}
+                value={l.status}
+                onChange={(e) => quickStatus(l.id, e.target.value)}
+                className={`${inputCls} text-sm`}
+              >
+                {STATUS_OPTS.filter(Boolean).map((st) => (
+                  <option key={st} value={st}>{statusLabel(st)}</option>
+                ))}
+              </select>
+              <select
+                aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
+                value={l.stage}
+                onChange={(e) => quickStage(l.id, e.target.value)}
+                className={`${inputCls} text-sm`}
+              >
+                {STAGES.map((st) => (
+                  <option key={st} value={st}>{stageLabel(st)}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input
+                aria-label={`给 ${l.name || '学生'} 写备注`}
+                value={noteText[l.id] || ''}
+                onChange={(e) => setNoteText((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && addNote(l.id)}
+                placeholder="写备注..."
+                className={`min-w-0 flex-1 ${inputCls}`}
+              />
+              <button
+                type="button"
+                onClick={() => addNote(l.id)}
+                className="inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-600 px-3 text-sm text-white"
+              >
+                提交
+              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => toggleNeedHelp(l.id)}
+                className={`rounded-lg px-3 py-2 text-sm ${
+                  l.need_help
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                }`}
+              >
+                {l.need_help ? '取消协助' : '需要协助'}
+              </button>
+              {user?.role === 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm(l.id)}
+                  className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
+                >
+                  删除
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       {/* ── Mobile sidebar overlay ── */}
       {/* ── Sidebar ── */}
       {/* ── Main ── */}
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pt-[env(safe-area-inset-top)] h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <header
+          className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pb-2 flex items-end justify-between"
+          style={{
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+            minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+          }}
+        >
+          <div className="flex min-h-10 items-center gap-3">
           {isMobile && (
             <button
-              className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600"
+              className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600"
               onClick={(e) => {
                 e.stopPropagation();
                 setSidebarOpen(true);
               }}
+              aria-label="打开导航"
               style={{ touchAction: 'manipulation' }}
             >
               <Menu className="w-5 h-5" />
@@ -1004,119 +1301,191 @@ export default function LeadsManage() {
           )}
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">学生管理</h2>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-h-10 items-center gap-1.5">
             {selected.size > 0 && (
               <button
+                type="button"
                 onClick={() => setShowAssign(true)}
-                className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
+                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
+                aria-label={`分配已选 ${selected.size} 个学生`}
+                title="分配已选学生"
               >
                 <UserPlus className="w-4 h-4" />
                 {!isMobile && '分配(' + selected.size + ')'}
               </button>
             )}
             <button
+              type="button"
               onClick={() => {
                 setShowCreate(true);
                 setCreateErr('');
               }}
-              className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+              aria-label="新建学生"
+              title="新建学生"
             >
               <Plus className="w-4 h-4" />
               {!isMobile && '新建'}
             </button>
             <button
+              type="button"
               onClick={() => {
                 setShowImport(true);
                 setImportResult(null);
                 setImportFile(null);
               }}
-              className="flex items-center gap-1 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm"
+              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm"
+              aria-label="导入学生"
+              title="导入学生"
             >
               <FileUp className="w-4 h-4" />
               {!isMobile && '导入'}
             </button>
             <button
+              type="button"
               onClick={handleRegionAssign}
-              className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm"
+              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm"
+              aria-label="按学校分发"
+              title="按学校分发"
             >
               <MapPin className="w-4 h-4" />
               {!isMobile && '学校分发'}
             </button>
             <button
+              type="button"
               onClick={handleAutoAssign}
               disabled={autoAssigning}
-              className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50"
+              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50"
+              aria-label="自动均摊分配"
+              title="自动均摊分配"
             >
               {autoAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
               {!isMobile && '自动均摊'}
             </button>
-            <button
-              onClick={() => navigate('/admin/leads?assignment=unassigned')}
-              className="flex items-center gap-1 px-3 py-2 bg-slate-600 text-white rounded-lg text-sm"
-            >
-              <Users className="w-4 h-4" />
-              {!isMobile && '未分配任务'}
-            </button>
             {isMobile && (
-              <button onClick={toggle} className="p-2 rounded-lg">
+              <button
+                onClick={toggle}
+                className="inline-flex min-w-10 min-h-10 items-center justify-center rounded-lg"
+                aria-label={dark ? '亮色模式' : '暗色模式'}
+              >
                 {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-500" />}
               </button>
             )}
           </div>
         </header>
 
-        <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
+        <div className="w-full p-4 lg:p-6 space-y-4">
           {/* Search */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-3 lg:p-4 shadow-sm">
-            <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="搜索姓名/电话/学校..."
-                  aria-label="搜索学生"
-                  className={`pl-9 ${inputCls}`}
-                />
+            <form onSubmit={handleSearch} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <div className="relative w-full xl:w-[26rem] xl:max-w-[32rem]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="搜姓名 / 电话 / 学校"
+                    aria-label="搜索学生"
+                    className={`pl-9 ${inputCls}`}
+                  />
+                </div>
+                <div className="grid flex-1 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+                  <select
+                    aria-label="按分配状态筛选学生"
+                    value={assignmentFilter}
+                    onChange={(e) => setAssignmentFilter(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">全部归属</option>
+                    <option value="unassigned">未分配</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={`agent:${agent.id}`}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="按跟进阶段筛选学生"
+                    value={stage}
+                    onChange={(e) => setStage(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">全部阶段</option>
+                    {STAGES.map((s) => (
+                      <option key={s} value={s}>
+                        {stageLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                  <select aria-label="按状态筛选学生" value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
+                    {STATUS_OPTS.map((s) => (
+                      <option key={s} value={s}>
+                        {s ? statusLabel(s) : '全部状态'}
+                      </option>
+                    ))}
+                  </select>
+                  <select aria-label="按结果或原因筛选学生" value={statusDetail} onChange={(e) => setStatusDetail(e.target.value)} className={inputCls}>
+                    {STATUS_DETAIL_OPTS.map((s) => (
+                      <option key={s} value={s}>
+                        {s || '全部结果/原因'}
+                      </option>
+                    ))}
+                  </select>
+                  <select aria-label="按意向等级筛选学生" value={intent} onChange={(e) => setIntent(e.target.value)} className={inputCls}>
+                    {INTENT_OPTS.map((l) => (
+                      <option key={l} value={l}>
+                        {l ? `${l}级意向` : '全部意向'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setNeedHelp(!needHelp)}
+                    className={`inline-flex min-h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-medium ${
+                      needHelp
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    需协助
+                  </button>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button type="submit" className="min-h-10 min-w-20 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm">
+                    搜索
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="min-h-10 min-w-20 px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    重置
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <select aria-label="按状态筛选学生" value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputCls} w-auto`}>
-                  {STATUS_OPTS.map((s) => (
-                    <option key={s} value={s}>
-                      {s ? statusLabel(s) : '全部状态'}
-                    </option>
+              {activeFilterChips.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+                  {activeFilterChips.map((chip) => (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      onClick={() => clearSingleFilter(chip.key)}
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200"
+                    >
+                      <span className="truncate">{chip.label}</span>
+                      <X className="h-3 w-3 shrink-0" />
+                    </button>
                   ))}
-                </select>
-                <select aria-label="按结果或原因筛选学生" value={statusDetail} onChange={(e) => setStatusDetail(e.target.value)} className={`${inputCls} w-auto`}>
-                  {STATUS_DETAIL_OPTS.map((s) => (
-                    <option key={s} value={s}>
-                      {s || '全部结果/原因'}
-                    </option>
-                  ))}
-                </select>
-                <select aria-label="按意向等级筛选学生" value={intent} onChange={(e) => setIntent(e.target.value)} className={`${inputCls} w-auto`}>
-                  {INTENT_OPTS.map((l) => (
-                    <option key={l} value={l}>
-                      {l ? `${l}级意向` : '全部意向'}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setNeedHelp(!needHelp)}
-                  className={`px-4 py-2.5 rounded-lg text-sm font-medium ${
-                    needHelp
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  <AlertTriangle className="w-4 h-4 inline mr-1" />
-                  需协助
-                </button>
-                <button type="submit" className="px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm">
-                  搜索
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    清空筛选
+                  </button>
+                </div>
+              )}
             </form>
           </div>
 
@@ -1160,58 +1529,89 @@ export default function LeadsManage() {
             </div>
           )}
 
-          {/* Student table */}
+          {/* Student list */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-left text-gray-600 dark:text-gray-400">
-                    <th className="px-0.5 py-3 w-5"></th>
-                    <th className="px-1 py-3 w-12">
-                      <button
-                        type="button"
-                        onClick={toggleAll}
-                        className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                        aria-label={
-                          selected.size === students.length && students.length > 0
-                            ? '取消选择当前页全部学生'
-                            : '选择当前页全部学生'
-                        }
-                      >
-                        {selected.size === students.length && students.length > 0 ? (
-                          <CheckSquare className="w-4 h-4 text-blue-600" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                      </button>
-                    </th>
-                    <th className="px-2 py-3 font-medium">姓名</th>
-                    <th className="px-2 py-3 font-medium hidden md:table-cell">学校</th>
-                    <th className="px-2 py-3 font-medium hidden lg:table-cell">阶段</th>
-                    <th className="px-2 py-3 font-medium">状态</th>
-                    <th className="px-2 py-3 font-medium hidden sm:table-cell">意向</th>
-                    <th className="px-1 py-3 font-medium w-4"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y dark:divide-gray-700">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-12">
-                        <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                      </td>
+            {isMobile ? (
+              <div className="bg-gray-50 p-3 dark:bg-gray-900">
+                <div className="mb-3 flex items-center justify-between text-sm">
+                  <button
+                    type="button"
+                    onClick={toggleAll}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    {selected.size === students.length && students.length > 0 ? (
+                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                    当前页全选
+                  </button>
+                  <span className="text-xs text-gray-500">共 {total} 条</span>
+                </div>
+                {loading ? (
+                  <div className="py-12 text-center">
+                    <Loader2 className="mx-auto h-5 w-5 animate-spin text-gray-400" />
+                  </div>
+                ) : students.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-gray-400">暂无数据</div>
+                ) : (
+                  <div className="space-y-3">
+                    {students.map((l) => renderMobileCard(l))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-left text-gray-600 dark:text-gray-400">
+                      <th className="px-0.5 py-3 w-5"></th>
+                      <th className="px-1 py-3 w-12">
+                        <button
+                          type="button"
+                          onClick={toggleAll}
+                          className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                          aria-label={
+                            selected.size === students.length && students.length > 0
+                              ? '取消选择当前页全部学生'
+                              : '选择当前页全部学生'
+                          }
+                        >
+                          {selected.size === students.length && students.length > 0 ? (
+                            <CheckSquare className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="px-2 py-3 font-medium">姓名</th>
+                      <th className="px-2 py-3 font-medium hidden md:table-cell">学校</th>
+                      <th className="px-2 py-3 font-medium hidden lg:table-cell">阶段</th>
+                      <th className="px-2 py-3 font-medium">状态</th>
+                      <th className="px-2 py-3 font-medium hidden sm:table-cell">意向</th>
+                      <th className="px-1 py-3 font-medium w-4"></th>
                     </tr>
-                  ) : students.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-12 text-gray-400">
-                        暂无数据
-                      </td>
-                    </tr>
-                  ) : (
-                    students.map((l) => renderRow(l))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y dark:divide-gray-700">
+                    {loading ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-12">
+                          <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                        </td>
+                      </tr>
+                    ) : students.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-12 text-gray-400">
+                          暂无数据
+                        </td>
+                      </tr>
+                    ) : (
+                      students.map((l) => renderRow(l))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="px-4 py-3 border-t dark:border-gray-700 flex items-center justify-between text-sm">
               <span className="text-gray-500">
                 共 {total} 条{selected.size > 0 ? '，已选 ' + selected.size : ''}
@@ -1375,11 +1775,22 @@ export default function LeadsManage() {
               <button onClick={() => setShowAssign(false)}><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3">
-              <div className="text-sm">已选择 <b>{selected.size}</b> 名学生</div>
+              <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2 text-sm text-gray-600 dark:text-gray-300">
+                已选择 <b>{selected.size}</b> 名学生
+                {selectedStudents.length > 0 && (
+                  <div className="mt-1 text-xs text-gray-500">
+                    将影响：{selectedStudents.slice(0, 3).map((student) => student.name).join('、')}
+                    {selectedStudents.length > 3 ? ` 等 ${selectedStudents.length} 人` : ''}
+                  </div>
+                )}
+              </div>
               <select aria-label="选择批量分配话务员" value={assignAgentId} onChange={(e) => setAssignAgentId(e.target.value)} className={inputCls}>
                 <option value="">选择话务员</option>
                 {agents.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
               </select>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                确认后会把已选学生分配给「{selectedAgent?.name || '未选择'}」，原坐席将不再处理这些线索。
+              </div>
               <button onClick={handleAssign} disabled={!assignAgentId} className="w-full py-2.5 bg-green-600 text-white rounded-lg text-sm disabled:opacity-50">确认分配</button>
             </div>
           </div>

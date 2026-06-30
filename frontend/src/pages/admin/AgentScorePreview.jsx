@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -18,7 +19,8 @@ import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
-import { getApiErrorMessage } from '../../utils';
+import { formatDuration, getApiErrorMessage } from '../../utils';
+import { leadFilterUrl } from './adminWorkflow';
 
 const levelClass = {
   excellent: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
@@ -44,6 +46,15 @@ const sortOptions = [
   { key: 'score_asc', label: '分数从低到高' },
   { key: 'overdue_desc', label: '逾期回访最多' },
   { key: 'calls_asc', label: '通话量从低到高' },
+];
+
+const MAX_DAILY_CALL_TARGET = 1000;
+const scoringRules = [
+  '任务推进 30 = 推进覆盖 20 + 待联系清理 10',
+  '今日通话 25 = 实际拨号 / 通话目标，达标封顶',
+  '回访及时 20 = 未逾期回访占比',
+  '有效产出 15 = A 级意向 + 报名',
+  '资料完整 10 = 活跃任务电话完整度',
 ];
 
 function StatCell({ icon: Icon, label, value }) {
@@ -86,6 +97,11 @@ function ComponentBar({ component }) {
       <div className="mt-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
         <div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} />
       </div>
+      {component?.detail ? (
+        <div className="mt-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+          {component.detail}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -119,18 +135,21 @@ export default function AgentScorePreview() {
   const isMobile = useIsMobile();
   const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [dailyCallTarget, setDailyCallTarget] = useState(30);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(searchParams.get('filter') || 'all');
   const [sortBy, setSortBy] = useState('score_asc');
   const [data, setData] = useState({ items: [] });
   const closeSidebar = () => setSidebarOpen(false);
 
-  const load = async () => {
+  const load = async (target = dailyCallTarget) => {
+    const safeTarget = Math.min(MAX_DAILY_CALL_TARGET, Math.max(1, Number(target) || 1));
+    setDailyCallTarget(safeTarget);
     setLoading(true);
     try {
       const res = await api.get('/admin/agent-score-preview', {
-        params: { daily_call_target: dailyCallTarget },
+        params: { daily_call_target: safeTarget },
       });
       setData(res.data.data || { items: [] });
     } catch (error) {
@@ -142,8 +161,30 @@ export default function AgentScorePreview() {
   };
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+    api
+      .get('/admin/config')
+      .then((res) => {
+        if (cancelled) return;
+        const target = Math.min(
+          MAX_DAILY_CALL_TARGET,
+          Math.max(1, Number(res.data.data?.score_daily_call_target || 30) || 30),
+        );
+        setDailyCallTarget(target);
+        load(target);
+      })
+      .catch(() => load(30));
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    const next = searchParams.get('filter') || 'all';
+    if (next !== filter && filters.some((item) => item.key === next)) {
+      setFilter(next);
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = useMemo(() => {
     const items = data.items || [];
@@ -152,8 +193,18 @@ export default function AgentScorePreview() {
       attention: items.filter((item) => ['risk', 'watch'].includes(item.level)).length,
       overdue: items.reduce((sum, item) => sum + Number(item.metrics?.overdue_follow_ups || 0), 0),
       calls: items.reduce((sum, item) => sum + Number(item.metrics?.today_calls || 0), 0),
+      recordedCalls: items.reduce(
+        (sum, item) => sum + Number(item.metrics?.today_recorded_calls || 0),
+        0,
+      ),
+      unrecordedCalls: items.reduce(
+        (sum, item) => sum + Number(item.metrics?.today_unrecorded_calls || 0),
+        0,
+      ),
     };
   }, [data.items]);
+
+  const effectiveDailyCallTarget = Number(data.daily_call_target || dailyCallTarget || 30);
 
   const filteredItems = useMemo(() => {
     const items = [...(data.items || [])];
@@ -188,11 +239,10 @@ export default function AgentScorePreview() {
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
           actionsClassName="flex items-center gap-2"
-          useSafeArea={false}
         >
           <button
             type="button"
-            onClick={load}
+            onClick={() => load()}
             disabled={loading}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
             aria-label="刷新"
@@ -209,40 +259,54 @@ export default function AgentScorePreview() {
           </button>
         </PageHeader>
 
-        <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
-          <div className="grid gap-3 md:grid-cols-4">
+        <div className="w-full p-4 lg:p-6 space-y-4">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
             <StatCell icon={Activity} label="话务员" value={summary.total} />
             <StatCell icon={AlertTriangle} label="需关注" value={summary.attention} />
             <StatCell icon={Clock3} label="逾期回访" value={summary.overdue} />
-            <StatCell icon={Phone} label="今日通话" value={summary.calls} />
+            <StatCell icon={Phone} label="今日拨号" value={summary.calls} />
+            <StatCell icon={CheckCircle2} label="有效记录" value={summary.recordedCalls} />
+            <StatCell icon={Clock3} label="未记录" value={summary.unrecordedCalls} />
           </div>
 
           <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200 lg:mr-auto">
-                <SlidersHorizontal className="w-4 h-4 text-gray-500" />
-                试算参数
+            <div className="grid gap-3 xl:grid-cols-[8rem_minmax(0,1fr)_auto] xl:items-center">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <SlidersHorizontal className="w-4 h-4 shrink-0 text-gray-500" />
+                <span>试算参数</span>
               </div>
-              <label className="grid gap-1 text-sm text-gray-600 dark:text-gray-300">
-                <span>通话目标</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="200"
-                  value={dailyCallTarget}
-                  onChange={(e) => setDailyCallTarget(Number(e.target.value || 1))}
-                  className="w-full lg:w-32 px-3 py-2 rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={load}
-                disabled={loading}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Target className="w-4 h-4" />}
-                重新试算
-              </button>
+              <div className="flex min-w-0 flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <span className="rounded-full bg-gray-50 px-2 py-1 dark:bg-gray-700/60">
+                  本次按 {effectiveDailyCallTarget} 通/人计算
+                </span>
+                {scoringRules.map((rule) => (
+                  <span key={rule} className="rounded-full bg-gray-50 px-2 py-1 dark:bg-gray-700/60">
+                    {rule}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end xl:justify-end">
+                <label className="grid gap-1 text-sm text-gray-600 dark:text-gray-300">
+                  <span>通话目标</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={MAX_DAILY_CALL_TARGET}
+                    value={dailyCallTarget}
+                    onChange={(e) => setDailyCallTarget(e.target.value)}
+                    className="h-10 w-full rounded-lg border px-3 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 sm:w-32"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => load()}
+                  disabled={loading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Target className="w-4 h-4" />}
+                  重新试算
+                </button>
+              </div>
             </div>
           </section>
 
@@ -253,7 +317,10 @@ export default function AgentScorePreview() {
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => setFilter(item.key)}
+                    onClick={() => {
+                      setFilter(item.key);
+                      setSearchParams(item.key === 'all' ? {} : { filter: item.key });
+                    }}
                     className={`px-3 py-1.5 rounded-lg text-sm border ${
                       filter === item.key
                         ? 'bg-blue-600 border-blue-600 text-white'
@@ -299,15 +366,15 @@ export default function AgentScorePreview() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[1180px] table-fixed text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-900/60 text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
                     <tr>
-                      <th className="px-4 py-3 text-left font-medium min-w-[12rem]">话务员</th>
-                      <th className="px-4 py-3 text-left font-medium min-w-[9rem]">分数</th>
-                      <th className="px-4 py-3 text-left font-medium min-w-[22rem]">分项</th>
-                      <th className="px-4 py-3 text-left font-medium min-w-[16rem]">指标</th>
-                      <th className="px-4 py-3 text-left font-medium min-w-[18rem]">风险信号</th>
-                      <th className="px-4 py-3 text-left font-medium min-w-[18rem]">建议动作</th>
+                      <th className="w-[13%] px-4 py-3 text-left font-medium">话务员</th>
+                      <th className="w-[9%] px-4 py-3 text-left font-medium">分数</th>
+                      <th className="w-[31%] px-4 py-3 text-left font-medium">分项</th>
+                      <th className="w-[20%] px-4 py-3 text-left font-medium">指标</th>
+                      <th className="w-[13%] px-4 py-3 text-left font-medium">风险信号</th>
+                      <th className="w-[14%] px-4 py-3 text-left font-medium">建议动作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y dark:divide-gray-700">
@@ -336,7 +403,10 @@ export default function AgentScorePreview() {
                           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-600 dark:text-gray-300">
                             <span>活跃 {item.metrics.active_tasks}</span>
                             <span>推进 {item.metrics.progress_pct}%</span>
-                            <span>通话 {item.metrics.today_calls}</span>
+                            <span>拨号 {item.metrics.today_calls}</span>
+                            <span>有效 {item.metrics.today_recorded_calls ?? 0}</span>
+                            <span>未记录 {item.metrics.today_unrecorded_calls ?? 0}</span>
+                            <span>均长 {formatDuration(item.metrics.avg_recorded_duration_seconds)}</span>
                             <span>回访 {item.metrics.open_follow_ups}</span>
                             <span>A 意向 {item.metrics.a_level_count}</span>
                             <span>报名 {item.metrics.enrolled_count}</span>
@@ -348,7 +418,33 @@ export default function AgentScorePreview() {
                           <SignalList signals={item.signals} />
                         </td>
                         <td className="px-4 py-4 text-gray-700 dark:text-gray-200">
-                          {item.recommended_action}
+                          <div className="space-y-2">
+                            <div>{item.recommended_action}</div>
+                            <div className="flex flex-wrap gap-2">
+                              {Number(item.metrics?.overdue_follow_ups || 0) > 0 && (
+                                <Link
+                                  to={`/admin/work-center?queue=follow`}
+                                  className="rounded-lg border border-amber-200 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20"
+                                >
+                                  看逾期回访
+                                </Link>
+                              )}
+                              {Number(item.metrics?.a_level_count || 0) > 0 && (
+                                <Link
+                                  to={leadFilterUrl({ intent: 'A' })}
+                                  className="rounded-lg border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-900/20"
+                                >
+                                  看 A 级线索
+                                </Link>
+                              )}
+                              <Link
+                                to={`/admin/agents`}
+                                className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+                              >
+                                坐席任务
+                              </Link>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))}

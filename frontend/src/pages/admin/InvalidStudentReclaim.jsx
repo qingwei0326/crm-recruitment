@@ -223,12 +223,25 @@ export default function InvalidStudentReclaim() {
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <header
+          className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex justify-between ${
+            isMobile ? 'items-end pb-2' : 'h-14 items-center'
+          }`}
+          style={
+            isMobile
+              ? {
+                  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+                  minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+                }
+              : undefined
+          }
+        >
+          <div className="flex min-h-10 items-center gap-3">
             {isMobile && (
               <button
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                 onClick={() => setSidebarOpen(true)}
+                aria-label="打开导航"
               >
                 <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
@@ -239,7 +252,8 @@ export default function InvalidStudentReclaim() {
           </div>
           <button
             onClick={toggle}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="inline-flex min-w-10 min-h-10 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label={dark ? '亮色模式' : '暗色模式'}
           >
             {dark ? (
               <Sun className="w-5 h-5 text-amber-400" />

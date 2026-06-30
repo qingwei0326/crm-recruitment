@@ -1,36 +1,23 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect } from 'react';
 import useLazyLoad from '../../hooks/useLazyLoad';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import {
-  ArrowLeft,
   Trophy,
   Medal,
   TrendingUp,
   TrendingDown,
-  CheckCircle2,
   MapPin,
   Home,
   Calendar,
-  Clock,
-  UserCheck,
-  LogOut,
-  Menu,
-  X,
-  Users,
-  ListFilter,
   BarChart3,
   Sun,
   Moon,
-  LayoutDashboard,
   Loader2,
-  ChevronDown,
-  ChevronUp,
   AlertTriangle,
   Download,
 } from 'lucide-react';
@@ -74,8 +61,7 @@ const rankColors = [
   'bg-amber-600 text-amber-100',
 ];
 
-export default function Report() {
-  const { user, logout } = useAuth();
+export default function Report({ embedded = false }) {
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -141,37 +127,8 @@ export default function Report() {
     );
   }
 
-  return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-
-      <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pt-[env(safe-area-inset-top)] h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">汇总报表</h2>
-          </div>
-          {isMobile && (
-            <button
-              onClick={toggle}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              {dark ? (
-                <Sun className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Moon className="w-4 h-4 text-gray-500" />
-              )}
-            </button>
-          )}
-        </header>
-
-        <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-6">
+  const content = (
+        <div className={`${embedded ? '' : 'p-4 lg:p-6'} max-w-6xl mx-auto space-y-6`}>
           {/* ── Section 0: 报名后生命周期分布 + 流失率 ── */}
           {substageData && (
             <LazyChart height={340}>
@@ -520,6 +477,30 @@ export default function Report() {
             </LazyChart>
           )}
         </div>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
+      <main className="flex-1 min-w-0">
+        <PageHeader title="汇总报表" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={toggle}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label={dark ? '亮色模式' : '暗色模式'}
+            >
+              {dark ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+          )}
+        </PageHeader>
+        {content}
       </main>
     </AdminLayout>
   );

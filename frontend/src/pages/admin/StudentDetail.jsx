@@ -3,9 +3,6 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
   Phone,
-  StickyNote,
-  Calendar,
-  MapPin,
   Loader2,
   Sparkles,
   AlertTriangle,
@@ -22,12 +19,13 @@ import {
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import useIsMobile from '../../hooks/useIsMobile';
 import { useToast } from '../../components/Toast';
 import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
-import TimelineItem from '../../components/TimelineItem';
-import { formatDateTime, getApiErrorMessage } from '../../utils';
+import StudentTimeline from '../../components/StudentTimeline';
+import { formatDateTime, formatDuration, getApiErrorMessage } from '../../utils';
 
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 const TABS = [
@@ -45,6 +43,7 @@ export default function StudentDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { dark } = useTheme();
+  const isMobile = useIsMobile();
   const toast = useToast();
   const [tab, setTab] = useState('info');
   const [data, setData] = useState(null);
@@ -78,39 +77,6 @@ export default function StudentDetail() {
   const visits = data?.visits || [];
   const intentTimeline = data?.intent_timeline || [];
 
-  const mergedTimeline = useMemo(() => {
-    const items = [];
-    calls.forEach((c) =>
-      items.push({
-        kind: 'call',
-        ts: c.created_at || c.call_time,
-        data: c,
-      }),
-    );
-    notes.forEach((n) =>
-      items.push({
-        kind: 'note',
-        ts: n.created_at,
-        data: n,
-      }),
-    );
-    followUps.forEach((f) =>
-      items.push({
-        kind: 'follow_up',
-        ts: f.created_at || f.follow_up_date,
-        data: f,
-      }),
-    );
-    visits.forEach((v) =>
-      items.push({
-        kind: 'visit',
-        ts: v.created_at || v.visit_date,
-        data: v,
-      }),
-    );
-    return items.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')));
-  }, [calls, notes, followUps, visits]);
-
   const intentChartData = useMemo(() => {
     return intentTimeline.map((it) => {
       const lvl = it.intent_level || it.level || '无';
@@ -138,66 +104,25 @@ export default function StudentDetail() {
     }
   };
 
-  const renderTimelineItem = (item) => {
-    const { kind, data: d } = item;
-    if (kind === 'call') {
-      return (
-        <TimelineItem
-          key={`call-${d.id}`}
-          type="通话"
-          icon={Phone}
-          color="blue"
-          title={`通话 ${d.duration ? `· ${d.duration}秒` : ''}`}
-          content={d.ai_summary || d.content || d.notes || ''}
-          agentName={d.agent_name}
-          timestamp={d.created_at || d.call_time}
-        />
-      );
+  const handleDial = async (contactKey = 'guardian') => {
+    try {
+      const res = await api.get(`/students/phone/${id}`);
+      if (res.data.code !== 0) {
+        toast?.error(res.data.msg || '获取电话失败');
+        return;
+      }
+      const phone =
+        contactKey === 'guardian2'
+          ? res.data.data?.guardian2_phone || ''
+          : res.data.data?.guardian_phone || '';
+      if (!phone) {
+        toast?.error('该联系人没有电话');
+        return;
+      }
+      window.location.href = `tel:${phone}`;
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e) || '获取电话失败');
     }
-    if (kind === 'note') {
-      return (
-        <TimelineItem
-          key={`note-${d.id}`}
-          type="备注"
-          icon={StickyNote}
-          color={d.source === 'ai' ? 'purple' : 'gray'}
-          title="备注"
-          content={d.content}
-          agentName={d.agent_name}
-          timestamp={d.created_at}
-          source={d.source}
-        />
-      );
-    }
-    if (kind === 'follow_up') {
-      return (
-        <TimelineItem
-          key={`fu-${d.id}`}
-          type="回访"
-          icon={Calendar}
-          color="amber"
-          title={`回访计划 · ${d.follow_up_date || ''}`}
-          content={d.note || d.content || ''}
-          agentName={d.agent_name}
-          timestamp={d.created_at}
-        />
-      );
-    }
-    if (kind === 'visit') {
-      return (
-        <TimelineItem
-          key={`v-${d.id}`}
-          type="到访"
-          icon={MapPin}
-          color="teal"
-          title={`${d.visit_type || '到访'} · ${d.visit_date || ''}`}
-          content={d.note || d.content || ''}
-          agentName={d.agent_name}
-          timestamp={d.created_at}
-        />
-      );
-    }
-    return null;
   };
 
   if (loading) {
@@ -225,10 +150,23 @@ export default function StudentDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center gap-3">
+      <header
+        className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex gap-3 ${
+          isMobile ? 'items-end pb-2' : 'h-14 items-center'
+        }`}
+        style={
+          isMobile
+            ? {
+                paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+                minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+              }
+            : undefined
+        }
+      >
         <button
           onClick={() => navigate(-1)}
-          className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          aria-label="返回"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
@@ -274,7 +212,7 @@ export default function StudentDetail() {
         {/* Tab content */}
         {tab === 'info' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6 space-y-4">
-            <StudentInfoCard student={student} />
+            <StudentInfoCard student={student} onDial={handleDial} />
 
             {student.status === '已报名' && (
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
@@ -312,13 +250,15 @@ export default function StudentDetail() {
 
         {tab === 'timeline' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6">
-            {mergedTimeline.length === 0 ? (
-              <div className="py-12 text-center text-gray-400 text-sm">暂无记录</div>
-            ) : (
-              <div className="space-y-4">
-                {mergedTimeline.map((it) => renderTimelineItem(it))}
-              </div>
-            )}
+            <StudentTimeline
+              student={student}
+              calls={calls}
+              notes={notes}
+              followUps={followUps}
+              visits={visits}
+              intentTimeline={intentTimeline}
+              emptyText="暂无记录"
+            />
           </div>
         )}
 
@@ -401,7 +341,7 @@ export default function StudentDetail() {
                         {c.agent_name || '-'}
                       </span>
                       <span>· {formatDateTime(c.created_at || c.call_time)}</span>
-                      {c.duration != null && <span>· 时长 {c.duration}s</span>}
+                      <span>· 时长 {formatDuration(c.duration_seconds ?? c.duration)}</span>
                       {c.ai_confidence != null && (
                         <span className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">
                           <Sparkles className="w-3 h-3" />

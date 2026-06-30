@@ -19,9 +19,6 @@ const StudentDetail = lazy(() => import('./pages/admin/StudentDetail'));
 const LeadGovernance = lazy(() => import('./pages/admin/LeadGovernance'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
-const Report = lazy(() => import('./pages/admin/Report'));
-const TrendReport = lazy(() => import('./pages/admin/TrendReport'));
-const CallVolumeQuery = lazy(() => import('./pages/admin/CallVolumeQuery'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
 const ReportCenter = lazy(() => import('./pages/admin/ReportCenter'));
@@ -46,13 +43,16 @@ function defaultRouteFor(user, isMobile) {
   return '/login';
 }
 
-function Protected({ children, role }) {
+function Protected({ children, role, superAdmin = false }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   if (!user) return <Navigate to="/login" replace />;
   // 首次登录 / 被重置密码：强制先改密，任何受保护页都先拦到改密页
   if (user.must_change_password) return <Navigate to="/change-password" replace />;
   if (role && user.role !== role) {
+    return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
+  }
+  if (superAdmin && !user.is_super_admin) {
     return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
   }
   return children;
@@ -197,7 +197,7 @@ export default function App() {
           path="/admin/report"
           element={
             <Protected role="admin">
-              <RouteError><Report /></RouteError>
+              <Navigate to="/admin/report-center?tab=summary" replace />
             </Protected>
           }
         />
@@ -205,7 +205,7 @@ export default function App() {
           path="/admin/trend"
           element={
             <Protected role="admin">
-              <RouteError><TrendReport /></RouteError>
+              <Navigate to="/admin/report-center?tab=trend" replace />
             </Protected>
           }
         />
@@ -213,14 +213,14 @@ export default function App() {
           path="/admin/call-volume"
           element={
             <Protected role="admin">
-              <RouteError><CallVolumeQuery /></RouteError>
+              <Navigate to="/admin/report-center?tab=call-volume" replace />
             </Protected>
           }
         />
         <Route
           path="/admin/settings"
           element={
-            <Protected role="admin">
+            <Protected role="admin" superAdmin>
               <RouteError><SystemSettings /></RouteError>
             </Protected>
           }

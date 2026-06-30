@@ -97,7 +97,7 @@ async def test_admin_sidebar_nav(page):
         ("/admin/leads", "学生管理"),
         ("/admin/governance", "线索治理"),
         ("/admin/recycle", "线索回收"),
-        ("/admin/agents", "坐席管理"),
+        ("/admin/agents", "账号管理"),
         ("/admin/report", "数据报表"),
         ("/admin/trend", "趋势报表"),
         ("/admin/call-volume", "话务查询"),

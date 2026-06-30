@@ -126,13 +126,18 @@ class TestAdminAgentTaskStats:
         assert agent_row["pending_tasks"] == 2
         assert agent_row["total_leads"] == 4
 
-    async def test_agent_handled_tasks_show_contacted_and_not_reached_students(
+    async def test_agent_handled_tasks_show_contacted_not_reached_and_follow_up_students(
         self, client, db, agent_headers, agent_user
     ):
         students = [
             Student(name="已联系有效", assigned_to=agent_user.id, status=StudentStatus.contacted),
             Student(name="未接待办", assigned_to=agent_user.id, status=StudentStatus.not_reached),
             Student(name="旧拒接待办", assigned_to=agent_user.id, status=StudentStatus.rejected),
+            Student(
+                name="待回访待办",
+                assigned_to=agent_user.id,
+                status=StudentStatus.pending_visit,
+            ),
             Student(
                 name="未联系任务",
                 assigned_to=agent_user.id,
@@ -143,6 +148,11 @@ class TestAdminAgentTaskStats:
                 assigned_to=agent_user.id,
                 status=StudentStatus.very_interested,
             ),
+            Student(
+                name="意向了解加微",
+                assigned_to=agent_user.id,
+                status=StudentStatus.interested_add_wechat,
+            ),
             Student(name="无意向", assigned_to=agent_user.id, status=StudentStatus.not_interested),
         ]
         db.add_all(students)
@@ -151,9 +161,9 @@ class TestAdminAgentTaskStats:
         resp = await client.get("/api/tasks/handled", headers=agent_headers)
         data = resp.json()["data"]
 
-        assert data["total"] == 4
-        assert data["counts"] == {"已联系": 2, "未接": 2}
-        assert {item["status"] for item in data["list"]} == {"已联系", "未接"}
+        assert data["total"] == 6
+        assert data["counts"] == {"已联系": 2, "未接": 2, "待回访": 2}
+        assert {item["status"] for item in data["list"]} == {"已联系", "未接", "待回访"}
 
         filtered_resp = await client.get(
             "/api/tasks/handled?status=未接",
@@ -161,8 +171,46 @@ class TestAdminAgentTaskStats:
         )
         filtered_data = filtered_resp.json()["data"]
 
-        assert filtered_data["total"] == 4
+        assert filtered_data["total"] == 6
         assert {item["status"] for item in filtered_data["list"]} == {"未接"}
+
+        follow_up_resp = await client.get(
+            "/api/tasks/handled?status=待回访",
+            headers=agent_headers,
+        )
+        follow_up_data = follow_up_resp.json()["data"]
+
+        assert follow_up_data["total"] == 6
+        assert {item["status"] for item in follow_up_data["list"]} == {"待回访"}
+
+    async def test_agent_today_search_matches_normalized_guardian2_phone(
+        self, client, db, agent_headers, agent_user
+    ):
+        db.add(
+            Student(
+                name="第二电话任务",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                guardian2_phone="18960100618",
+            )
+        )
+        db.add(
+            Student(
+                name="其他任务",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                guardian_phone="13800138000",
+            )
+        )
+        await db.commit()
+
+        resp = await client.get("/api/tasks/today?search=189 6010-0618", headers=agent_headers)
+        data = resp.json()["data"]
+
+        assert data["total"] == 2
+        assert [item["name"] for item in data["list"]] == ["第二电话任务"]
+        assert data["list"][0]["guardian2_phone"] == "18960100618"
+        assert data["list"][0]["guardian2_phone_raw"] is None
 
 
 @pytest.mark.asyncio

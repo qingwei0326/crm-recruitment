@@ -7,22 +7,28 @@ import AdminLayout from '../../components/AdminLayout';
 
 const workflows = [
   {
+    step: '1',
     title: '学生管理与分配',
     description: '新增、筛选、批量选择线索，并进行手动分配、自动分配和学校分发。',
+    outcome: '适合日常查找、少量手动调整和批量分配。',
     to: '/admin/leads',
     icon: ListFilter,
     tone: 'blue',
   },
   {
+    step: '2',
     title: '无效线索回收',
     description: '按学校汇总无效线索，批量回收后重新进入未分配池。',
+    outcome: '适合先按原因/学校预览，再回收到未分配池或删除。',
     to: '/admin/invalid-reclaim',
     icon: RefreshCcw,
     tone: 'red',
   },
   {
+    step: '3',
     title: '多学校分发',
     description: '按学校批量选择未分配学员，自动均摊或指定分发给话务员。',
+    outcome: '适合处理成批学校线索，减少逐条分配。',
     to: '/admin/distribute',
     icon: School,
     tone: 'green',
@@ -45,13 +51,26 @@ export default function LeadGovernance() {
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <header
+          className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex justify-between ${
+            isMobile ? 'items-end pb-2' : 'h-14 items-center'
+          }`}
+          style={
+            isMobile
+              ? {
+                  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+                  minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+                }
+              : undefined
+          }
+        >
+          <div className="flex min-h-10 items-center gap-3">
             {isMobile && (
               <button
                 type="button"
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                 onClick={() => setSidebarOpen(true)}
+                aria-label="打开导航"
               >
                 <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
@@ -61,7 +80,8 @@ export default function LeadGovernance() {
           <button
             type="button"
             onClick={toggle}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="inline-flex min-w-10 min-h-10 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label={dark ? '亮色模式' : '暗色模式'}
           >
             {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
           </button>
@@ -69,12 +89,15 @@ export default function LeadGovernance() {
 
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              统一处理线索分配、无效回收和学校分发。
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
+              线索治理三步走
+            </div>
+            <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              先判断线索池类型，再选择处理路径，最后在目标页面确认影响范围后执行。
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             {workflows.map((item) => {
               const Icon = item.icon;
               return (
@@ -85,17 +108,21 @@ export default function LeadGovernance() {
                 >
                   <div className="flex items-start gap-4">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${toneClasses[item.tone]}`}>
-                      <Icon className="w-5 h-5" />
+                      <span className="text-xs font-bold">{item.step}</span>
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3">
-                        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                          <Icon className="w-4 h-4" />
                           {item.title}
                         </h2>
                         <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 shrink-0" />
                       </div>
                       <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
                         {item.description}
+                      </p>
+                      <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
+                        {item.outcome}
                       </p>
                     </div>
                   </div>
