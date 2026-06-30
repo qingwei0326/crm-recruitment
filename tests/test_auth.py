@@ -62,6 +62,7 @@ class TestLoginEndpoint:
         assert "access_token" in body["data"]
         assert body["data"]["token_type"] == "bearer"
         assert body["data"]["user"]["role"] == "admin"
+        assert body["data"]["user"]["is_super_admin"] is True
 
     async def test_login_cookie_authenticates_business_routes(self, client, admin_user):
         resp = await client.post(
@@ -177,6 +178,7 @@ class TestCurrentUserEndpoint:
         assert body["code"] == 0
         assert body["data"]["username"] == "testadmin"
         assert body["data"]["role"] == "admin"
+        assert body["data"]["is_super_admin"] is True
 
     async def test_me_no_token(self, client):
         resp = await client.get("/api/auth/me")
