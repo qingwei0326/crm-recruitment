@@ -45,6 +45,9 @@ project_all.txt
 project_review.txt
 project_review_bundle.txt
 releases/
+.codex-*.png
+review-*.patch
+health_check_report.txt
 
 # Secret key
 .secret_key
