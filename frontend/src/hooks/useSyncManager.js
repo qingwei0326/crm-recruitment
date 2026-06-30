@@ -31,10 +31,13 @@ export default function useSyncManager(onSyncComplete) {
         await api.put(`/students/${payload.studentId}/stage`, { stage: payload.stage });
         break;
       case 'add_note':
-        await api.post(`/students/${payload.studentId}/notes`, { content: payload.content });
+        await api.post('/notes', {
+          student_id: payload.studentId,
+          content: payload.content,
+        });
         break;
       case 'add_call':
-        await api.post('/calls', {
+        await api.post('/calls/analyze', {
           student_id: payload.studentId,
           transcript: payload.transcript,
           duration_seconds: payload.duration,

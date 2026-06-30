@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -22,6 +22,7 @@ export default function useAgentWork() {
   const { dark, toggle: toggleTheme } = useTheme();
   const confirm = useConfirm();
   const toast = useToast();
+  const recordedDialRef = useRef(null);
 
   // ── 1. 状态管理 ──
   const { state, actions } = useAgentWorkState();
@@ -63,6 +64,18 @@ export default function useAgentWork() {
   // ── 便捷别名 ──
   const { noteText, followUpDate } = state;
   const { visit } = state;
+
+  const recordDialDurationOnce = useCallback((modal) => {
+    if (!modal?.studentId || !modal?.dialStartedAt) return;
+    const duration = Math.round((Date.now() - modal.dialStartedAt) / 1000);
+    if (duration <= 0) return;
+    const key = `${modal.studentId}:${modal.dialStartedAt}`;
+    if (recordedDialRef.current === key) return;
+    recordedDialRef.current = key;
+    api.put('/students/dial-duration', null, {
+      params: { student_id: modal.studentId, duration_seconds: duration },
+    }).catch((e) => console.error('record dial duration failed:', e));
+  }, []);
 
   // ── 6. 剩余副作用 ──
 
@@ -148,21 +161,23 @@ export default function useAgentWork() {
       if (STATUS_WITH_INTENT.includes(s)) {
         actions.setDialModal({ ...state.dial.modal, status: s, showIntent: true });
       } else {
+        recordDialDurationOnce(state.dial.modal);
         actions.setDialModal(null);
         next();
       }
     } catch (e) {
       console.error('handleDialModalStatus failed:', e);
     }
-  }, [state.dial.modal, updateStatus, actions, next]);
+  }, [state.dial.modal, updateStatus, actions, next, recordDialDurationOnce]);
 
   const handleDialModalIntent = useCallback(async (level) => {
     if (!state.dial.modal) return;
     await updateIntentById(state.dial.modal.studentId, level);
     flashMsg('意向等级已更新');
+    recordDialDurationOnce(state.dial.modal);
     actions.setDialModal(null);
     next();
-  }, [state.dial.modal, updateIntentById, flashMsg, actions, next]);
+  }, [state.dial.modal, updateIntentById, flashMsg, actions, next, recordDialDurationOnce]);
 
   const handleDialModalFollowUp = useCallback(async (date) => {
     if (!state.dial.modal) return;
@@ -179,9 +194,18 @@ export default function useAgentWork() {
         );
       }
     }
+    recordDialDurationOnce(state.dial.modal);
     actions.setDialModal(null);
     next();
-  }, [state.dial.modal, flashMsg, actions, next, toast]);
+  }, [state.dial.modal, flashMsg, actions, next, toast, recordDialDurationOnce]);
+
+  const handleDialModalClose = useCallback(() => {
+    const modal = state.dial.modal;
+    if (modal?.showIntent || modal?.showFollowUp) {
+      recordDialDurationOnce(modal);
+    }
+    actions.setDialModal(null);
+  }, [state.dial.modal, actions, recordDialDurationOnce]);
 
   // ── 13. 拨号主流程 ──
   const refreshDialCheck = useCallback(async (id) => {
@@ -228,6 +252,7 @@ export default function useAgentWork() {
     sessionStorage.setItem('pendingDial', JSON.stringify({
       studentId: id,
       studentName: dialStudent?.name || '未知',
+      dialStartedAt: Date.now(),
     }));
     window.location.href = `tel:${phone}`;
     actions.setLockedStudent(id);
@@ -310,5 +335,6 @@ export default function useAgentWork() {
     handleDialModalStatus,
     handleDialModalIntent,
     handleDialModalFollowUp,
+    handleDialModalClose,
   };
 }

@@ -16,45 +16,45 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         loading: true,
         error: '',
         notesError: '',
+        notes: [],
+        calls: [],
+        followUps: [],
+        visits: [],
+        intentTimeline: [],
       });
     } else {
-      actions.setDetail({ show: true, loading: true, error: '', notesError: '' });
+      actions.setDetail({
+        show: true,
+        loading: true,
+        error: '',
+        notesError: '',
+        notes: [],
+        calls: [],
+        followUps: [],
+        visits: [],
+        intentTimeline: [],
+      });
     }
 
     try {
-      const [studentResult, notesResult, callsResult] = await Promise.allSettled([
-        api.get(`/students/${id}`),
-        api.get(`/notes?student_id=${id}`),
-        api.get(`/calls?student_id=${id}&page_size=5`),
-      ]);
-
-      const detailUpdate = { loading: false };
-
-      if (studentResult.status === 'fulfilled') {
-        detailUpdate.student = studentResult.value.data.data;
-      } else {
-        detailUpdate.error = getApiErrorMessage(studentResult.reason);
-      }
-
-      if (notesResult.status === 'fulfilled') {
-        detailUpdate.notes = notesResult.value.data.data || [];
-        detailUpdate.notesError = '';
-      } else {
-        detailUpdate.notes = [];
-        detailUpdate.notesError = getApiErrorMessage(notesResult.reason);
-      }
-
-      detailUpdate.noteIdx = 0;
-
-      if (callsResult.status === 'fulfilled') {
-        detailUpdate.hasAnalysis = callsResult.value.data.data?.list?.some((c) => c.analyzed_at);
-      } else {
-        detailUpdate.hasAnalysis = false;
-      }
-
-      actions.setDetail(detailUpdate);
-    } catch {
-      actions.setDetail({ loading: false, error: '加载失败' });
+      const res = await api.get(`/students/${id}/detail`);
+      const data = res.data.data || res.data || {};
+      const calls = data.calls || [];
+      actions.setDetail({
+        loading: false,
+        error: '',
+        notesError: '',
+        student: data.student || fallbackStudent,
+        notes: data.notes || [],
+        calls,
+        followUps: data.follow_ups || [],
+        visits: data.visits || [],
+        intentTimeline: data.intent_timeline || [],
+        noteIdx: 0,
+        hasAnalysis: calls.some((c) => c.ai_summary || c.ai_intent || c.ai_confidence != null),
+      });
+    } catch (e) {
+      actions.setDetail({ loading: false, error: getApiErrorMessage(e) });
     }
   }, [students, actions]);
 

@@ -17,6 +17,7 @@ const QUICK_STATUS_ICONS = {
   已联系: CheckCheck,
   未接: Clock,
   待回访: Clock,
+  空号: Ban,
   高分段: Ban,
   无意向: UserX,
   孩子不想读: UserX,
@@ -81,16 +82,16 @@ export function getContactOptions(student) {
   if (!student) return [];
   return [
     {
-      key: 'guardian1',
+      key: 'guardian',
       label: '联系人1',
       name: student.guardian_name || '联系人1',
-      phone: student.guardian_phone_raw || student.guardian_phone || '',
+      phone: student.guardian_phone || '',
     },
     {
       key: 'guardian2',
       label: '联系人2',
       name: student.guardian2_name || '联系人2',
-      phone: student.guardian2_phone_raw || student.guardian2_phone || '',
+      phone: student.guardian2_phone || '',
     },
   ].filter((item) => item.phone);
 }
