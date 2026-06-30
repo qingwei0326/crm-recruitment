@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
@@ -23,10 +24,13 @@ import {
 import HelpModal from '../../components/HelpModal';
 import FunnelChart from './FunnelChart';
 import { stageLabel, STAGES } from '../../labels';
+import { ActionCard } from './AdminWorkflowComponents';
+import { buildDashboardActions } from './adminWorkflow';
+import AdminMobileDash from './AdminMobileDash';
 
-export default function AdminDash() {
+function AdminDesktopDash({ isMobile }) {
   const { dark, toggle } = useTheme();
-  const isMobile = useIsMobile();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -40,6 +44,13 @@ export default function AdminDash() {
   const [funnelData, setFunnelData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notifyFails, setNotifyFails] = useState(0);
+  const [actionData, setActionData] = useState({
+    helpRequests: [],
+    followUps: [],
+    visits: [],
+    scoreItems: [],
+    unassignedCount: 0,
+  });
 
   useEffect(() => {
     Promise.all([
@@ -50,8 +61,13 @@ export default function AdminDash() {
       api.get('/stats/stages'),
       api.get('/students/enrolled?page_size=1'),
       api.get('/stats/funnel'),
+      api.get('/students', { params: { need_help: '1', page_size: 100 } }),
+      api.get('/follow-ups', { params: { is_completed: false, page_size: 100 } }),
+      api.get('/visits', { params: { page_size: 100 } }),
+      api.get('/admin/agent-score-preview', { params: { daily_call_target: 30 } }),
+      api.get('/students', { params: { assignment: 'unassigned', page_size: 1 } }),
     ])
-      .then(([sRes, lRes, aRes, vRes, stRes, eRes, fRes]) => {
+      .then(([sRes, lRes, aRes, vRes, stRes, eRes, fRes, helpRes, followRes, visitRes, scoreRes, unassignedRes]) => {
         setStats(sRes.data.data || []);
         setTotalStudents(lRes.data.data?.total || 0);
         const agents = aRes.data.data || [];
@@ -60,6 +76,13 @@ export default function AdminDash() {
         setStageStats(stRes.data.data || {});
         setEnrollmentData(eRes.data.data || null);
         setFunnelData(fRes.data.data || null);
+        setActionData({
+          helpRequests: helpRes.data.data?.list || [],
+          followUps: followRes.data.data?.list || [],
+          visits: visitRes.data.data?.list || [],
+          scoreItems: scoreRes.data.data?.items || [],
+          unassignedCount: unassignedRes.data.data?.total || 0,
+        });
       })
       .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
@@ -73,6 +96,20 @@ export default function AdminDash() {
 
   const totalA = useMemo(() => stats.reduce((s, i) => s + (i.a_count || 0), 0), [stats]);
   const contacted = useMemo(() => stats.reduce((s, i) => s + (i.contacted || 0), 0), [stats]);
+  const actionItems = useMemo(
+    () =>
+      buildDashboardActions({
+        helpCount: actionData.helpRequests.length,
+        followUps: actionData.followUps,
+        visits: actionData.visits,
+        scoreItems: actionData.scoreItems,
+        unassignedCount: actionData.unassignedCount,
+        aIntentCount: totalA,
+        notifyFails,
+        canViewSystemSettings: Boolean(user?.is_super_admin),
+      }),
+    [actionData, notifyFails, totalA, user?.is_super_admin],
+  );
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
@@ -83,19 +120,22 @@ export default function AdminDash() {
           title="仪表盘"
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
-          useSafeArea={false}
         >
           <button
+            type="button"
             onClick={() => setHelpOpen(true)}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+            aria-label="使用说明"
             title="使用说明"
           >
             <HelpCircle className="w-5 h-5" />
           </button>
           {isMobile && (
             <button
+              type="button"
               onClick={toggle}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label={dark ? '亮色模式' : '暗色模式'}
             >
               {dark ? (
                 <Sun className="w-4 h-4 text-amber-400" />
@@ -106,6 +146,22 @@ export default function AdminDash() {
           )}
         </PageHeader>
         <div className="p-4 lg:p-6 space-y-6 max-w-6xl mx-auto">
+          <section className="rounded-xl border dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+            <div className="border-b dark:border-gray-700 px-4 py-3">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                今日待办
+              </h2>
+              <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                先处理风险项，再看报表数据；每张卡片都能直达对应页面。
+              </div>
+            </div>
+            <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
+              {actionItems.map((item) => (
+                <ActionCard key={item.key} item={loading ? { ...item, value: '-' } : item} />
+              ))}
+            </div>
+          </section>
+
           {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
             {[
@@ -135,7 +191,7 @@ export default function AdminDash() {
                 value: todayCalls,
                 icon: BarChart3,
                 color: 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
-                link: '/admin/leads',
+                link: '/admin/report-center?tab=call-volume',
               },
             ].map((s, i) => (
               <Link
@@ -163,7 +219,8 @@ export default function AdminDash() {
           {notifyFails > 0 && (
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-3 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              近 7 天有 {notifyFails} 条推送通知失败，请检查 PushPlus Token 配置
+              近 7 天有 {notifyFails} 条推送通知失败
+              {user?.is_super_admin ? '，请检查 PushPlus Token 配置' : '，请联系超级管理员处理'}
             </div>
           )}
 
@@ -376,4 +433,12 @@ export default function AdminDash() {
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role="admin" />
     </AdminLayout>
   );
+}
+
+export default function AdminDash() {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return <AdminMobileDash />;
+  }
+  return <AdminDesktopDash isMobile={isMobile} />;
 }

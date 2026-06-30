@@ -18,10 +18,17 @@ export default function PageHeader({
 }) {
   return (
     <header
-      className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between"
-      style={useSafeArea ? { paddingTop: 'env(safe-area-inset-top)' } : undefined}
+      className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex items-end justify-between pb-2"
+      style={
+        useSafeArea && isMobile
+          ? {
+              paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+              minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+            }
+          : { minHeight: '56px' }
+      }
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-h-10 items-center gap-3">
         {isMobile && (
           <button
             type="button"
@@ -35,7 +42,13 @@ export default function PageHeader({
         )}
         <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{title}</h1>
       </div>
-      {children && <div className={actionsClassName}>{children}</div>}
+      {children && (
+        <div
+          className={`${actionsClassName} min-h-10 items-center [&>button]:inline-flex [&>button]:min-h-10 [&>button]:min-w-10 [&>button]:items-center [&>button]:justify-center`}
+        >
+          {children}
+        </div>
+      )}
     </header>
   )
 }

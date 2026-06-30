@@ -41,19 +41,24 @@ export default function HeatmapChart({ data }) {
     return parts.length >= 3 ? `${parts[1]}-${parts[2]}` : d;
   };
 
+  const shouldShowDate = (index) => (
+    index === 0 || index === dates.length - 1 || index % 5 === 0
+  );
+
   return (
     <div className="overflow-x-auto">
       <div className="inline-block min-w-full">
         {/* 日期标题行 */}
-        <div className="flex">
+        <div className="flex items-end">
           <div className="w-20 shrink-0" />
           {dates.map((d, i) => (
             <div
               key={i}
-              className="w-8 text-center text-[10px] text-gray-500 dark:text-gray-400 -rotate-45 origin-bottom-left h-8"
+              className="w-8 h-5 text-center text-[10px] leading-5 text-gray-500 dark:text-gray-400"
               title={d}
+              aria-label={d}
             >
-              {shortDate(d)}
+              {shouldShowDate(i) ? shortDate(d) : ''}
             </div>
           ))}
         </div>
