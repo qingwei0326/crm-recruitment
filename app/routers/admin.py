@@ -175,6 +175,7 @@ async def reclaim_invalid_students_to_pool(
         reclaimed_count += 1
     return reclaimed_count
 
+
 _AI_PROVIDERS = {"deepseek", "mimo", "custom"}
 _AI_BASE_KEYS = {"mimo_base", "ai_custom_base"}
 _AI_MODEL_KEYS = {"mimo_model", "ai_custom_model"}
@@ -210,12 +211,16 @@ def _validate_config_value(key: str, value: str) -> tuple[str | None, str | None
             return None, "dial_max_per_24h must be an integer between 1 and 20"
         return str(n), None
     if key == "score_daily_call_target":
+        score_target_msg = (
+            "score_daily_call_target must be an integer between 1 and "
+            f"{SCORE_DAILY_CALL_TARGET_MAX}"
+        )
         try:
             n = int(value)
         except ValueError:
-            return None, f"score_daily_call_target must be an integer between 1 and {SCORE_DAILY_CALL_TARGET_MAX}"
+            return None, score_target_msg
         if not 1 <= n <= SCORE_DAILY_CALL_TARGET_MAX:
-            return None, f"score_daily_call_target must be an integer between 1 and {SCORE_DAILY_CALL_TARGET_MAX}"
+            return None, score_target_msg
         return str(n), None
     if key in ("dial_window_start", "dial_window_end"):
         if not _HHMM_RE.match(value):
@@ -403,12 +408,12 @@ async def ops_health(
     user_stats = (
         await db.execute(
             select(
-                func.count(User.id).filter(User.role == UserRole.admin, User.is_active).label(
-                    "active_admins"
-                ),
-                func.count(User.id).filter(User.role == UserRole.agent, User.is_active).label(
-                    "active_agents"
-                ),
+                func.count(User.id)
+                .filter(User.role == UserRole.admin, User.is_active)
+                .label("active_admins"),
+                func.count(User.id)
+                .filter(User.role == UserRole.agent, User.is_active)
+                .label("active_agents"),
                 func.count(User.id)
                 .filter(User.role == UserRole.agent, User.is_active.is_(False))
                 .label("disabled_agents"),
@@ -612,9 +617,7 @@ async def data_quality(
                 "unrecorded_ratio": round(unrecorded_calls / total_calls * 100, 1)
                 if total_calls
                 else 0,
-                "avg_recorded_duration_seconds": round(
-                    row.avg_recorded_duration_seconds or 0, 1
-                ),
+                "avg_recorded_duration_seconds": round(row.avg_recorded_duration_seconds or 0, 1),
             }
         )
     agent_rows.sort(key=lambda item: (-item["unrecorded_calls"], item["agent_name"]))
@@ -668,11 +671,15 @@ async def data_quality(
 
     month_total = int(call_summary.month_total or 0)
     month_unrecorded = int(call_summary.month_unrecorded or 0)
-    status = "warning" if (
-        month_unrecorded > 0
-        or int(getattr(student_quality, "missing_phone_tasks") or 0) > 0
-        or int(getattr(follow_up_quality, "overdue_follow_ups") or 0) > 0
-    ) else "ok"
+    status = (
+        "warning"
+        if (
+            month_unrecorded > 0
+            or int(getattr(student_quality, "missing_phone_tasks") or 0) > 0
+            or int(getattr(follow_up_quality, "overdue_follow_ups") or 0) > 0
+        )
+        else "ok"
+    )
 
     return Response.ok(
         {
@@ -691,25 +698,19 @@ async def data_quality(
                     "unrecorded_ratio": round(month_unrecorded / month_total * 100, 1)
                     if month_total
                     else 0,
-                    "avg_recorded_duration_seconds": round(
-                        call_summary.month_avg_recorded or 0, 1
-                    ),
+                    "avg_recorded_duration_seconds": round(call_summary.month_avg_recorded or 0, 1),
                 },
                 "agents": agent_rows[:10],
             },
             "students": {
-                "missing_phone_tasks": int(
-                    getattr(student_quality, "missing_phone_tasks") or 0
-                ),
+                "missing_phone_tasks": int(getattr(student_quality, "missing_phone_tasks") or 0),
                 "unassigned_active": int(getattr(student_quality, "unassigned_active") or 0),
                 "invalid_total": invalid_total,
                 "invalid_reasons": invalid_reasons,
             },
             "follow_ups": {
                 "open_follow_ups": int(getattr(follow_up_quality, "open_follow_ups") or 0),
-                "overdue_follow_ups": int(
-                    getattr(follow_up_quality, "overdue_follow_ups") or 0
-                ),
+                "overdue_follow_ups": int(getattr(follow_up_quality, "overdue_follow_ups") or 0),
             },
         }
     )
@@ -775,9 +776,7 @@ async def stale_students(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
     ).label("last_activity_at")
     cutoff = utcnow() - timedelta(days=days)
-    stale_filters = [
-        Student.status.not_in(TERMINAL_STUDENT_STATUSES)
-    ]
+    stale_filters = [Student.status.not_in(TERMINAL_STUDENT_STATUSES)]
 
     if agent_id is None:
         stale_filters.extend(
@@ -1026,8 +1025,8 @@ async def list_agents(
     total_leads_by_agent: dict[int, int] = {}
     for row in stats_r.all():
         status_counts_by_agent.setdefault(row.assigned_to, {})[row.status] = int(row.count or 0)
-        total_leads_by_agent[row.assigned_to] = (
-            total_leads_by_agent.get(row.assigned_to, 0) + int(row.count or 0)
+        total_leads_by_agent[row.assigned_to] = total_leads_by_agent.get(row.assigned_to, 0) + int(
+            row.count or 0
         )
 
     # 今日呼出数：拨号动作写入 DialLog，未做 AI 分析也要计入。
@@ -1093,9 +1092,9 @@ async def list_users(
         )
         for row in stats_r.all():
             status_counts_by_agent.setdefault(row.assigned_to, {})[row.status] = int(row.count or 0)
-            total_leads_by_agent[row.assigned_to] = (
-                total_leads_by_agent.get(row.assigned_to, 0) + int(row.count or 0)
-            )
+            total_leads_by_agent[row.assigned_to] = total_leads_by_agent.get(
+                row.assigned_to, 0
+            ) + int(row.count or 0)
 
         today_calls_r = await db.execute(
             select(DialLog.agent_id, func.count(DialLog.id))
@@ -1141,9 +1140,7 @@ async def agent_score_preview(
     configured_call_target = int(await get_config_value(db, "score_daily_call_target", "30") or 30)
     effective_daily_call_target = daily_call_target or configured_call_target
     agents_r = await db.execute(
-        select(User)
-        .where(User.role == UserRole.agent, User.is_active)
-        .order_by(User.id)
+        select(User).where(User.role == UserRole.agent, User.is_active).order_by(User.id)
     )
     agents = agents_r.scalars().all()
     if not agents:
@@ -1181,16 +1178,14 @@ async def agent_score_preview(
         select(
             Student.assigned_to,
             func.count(Student.id)
-            .filter(
-                Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid])
-            )
+            .filter(Student.status.not_in([StudentStatus.not_contacted, StudentStatus.invalid]))
             .label("contacted_count"),
-            func.count(Student.id).filter(Student.intent_level == IntentLevel.A).label(
-                "a_level_count"
-            ),
-            func.count(Student.id).filter(Student.status == StudentStatus.enrolled).label(
-                "enrolled_count"
-            ),
+            func.count(Student.id)
+            .filter(Student.intent_level == IntentLevel.A)
+            .label("a_level_count"),
+            func.count(Student.id)
+            .filter(Student.status == StudentStatus.enrolled)
+            .label("enrolled_count"),
             func.count(Student.id)
             .filter(
                 Student.status.in_(ACTIVE_TASK_STATUSES),
@@ -1246,9 +1241,9 @@ async def agent_score_preview(
     follow_up_r = await db.execute(
         select(
             FollowUp.agent_id,
-            func.count(FollowUp.id).filter(FollowUp.is_completed.is_(False)).label(
-                "open_follow_ups"
-            ),
+            func.count(FollowUp.id)
+            .filter(FollowUp.is_completed.is_(False))
+            .label("open_follow_ups"),
             func.count(FollowUp.id)
             .filter(
                 FollowUp.is_completed.is_(False),
@@ -1388,9 +1383,7 @@ async def agent_tasks(
 
     extra_stats_r = await db.execute(
         select(
-            func.count(Student.id).filter(
-                Student.intent_level == IntentLevel.A
-            ).label("a_level"),
+            func.count(Student.id).filter(Student.intent_level == IntentLevel.A).label("a_level"),
         ).where(Student.assigned_to == agent_id)
     )
     extra_stats = extra_stats_r.one()
@@ -1518,7 +1511,11 @@ async def update_user(
                 ).scalar() or 0
                 if admin_count <= 1:
                     return Response.error(code=1, msg="系统至少需要保留一个管理员")
-                if user.is_super_admin and user.is_active and await count_active_super_admins(db) <= 1:
+                if (
+                    user.is_super_admin
+                    and user.is_active
+                    and await count_active_super_admins(db) <= 1
+                ):
                     return Response.error(code=1, msg="系统至少需要保留一个超级管理员")
             changes.append(f"角色 {user.role}→{new_role}")
             user.role = new_role

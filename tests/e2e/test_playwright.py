@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Playwright E2E tests for CRM system.
 
 Run directly:  python tests/e2e/test_playwright.py
@@ -7,13 +6,16 @@ Run directly:  python tests/e2e/test_playwright.py
 import asyncio
 import os
 import sys
-from playwright.async_api import async_playwright, expect, TimeoutError as PwTimeout
+
+from playwright.async_api import TimeoutError as PwTimeout
+from playwright.async_api import async_playwright, expect
 
 BASE_URL = "http://localhost:3000"
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def login(page, username="admin", password="admin123"):
     """Login and wait for redirect."""
@@ -77,6 +79,7 @@ def skip(msg):
 # Admin tests
 # ---------------------------------------------------------------------------
 
+
 async def test_admin_login(page):
     """1. Admin login -> dashboard."""
     print("\n[1/16] Admin login -> dashboard")
@@ -118,7 +121,9 @@ async def test_admin_leads_management(page):
     await page.wait_for_load_state("networkidle")
     content = await page.text_content("body")
     assert "学生" in content or "线索" in content, "Leads page missing content"
-    search_input = page.locator('input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]').first
+    search_input = page.locator(
+        'input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]'
+    ).first
     if await search_input.count() > 0:
         await search_input.fill("张")
         await page.wait_for_timeout(1500)
@@ -238,6 +243,7 @@ async def test_admin_distribute(page):
 # Agent tests (need agent login)
 # ---------------------------------------------------------------------------
 
+
 async def test_agent_login(page):
     """14. Agent login -> work center with today/following tabs."""
     print("\n[14/16] Agent login -> work center")
@@ -248,7 +254,6 @@ async def test_agent_login(page):
     # Wait for agent work center
     await page.wait_for_load_state("networkidle")
     await page.wait_for_timeout(2000)
-    content = await page.text_content("body")
     ok(f"Logged in, URL: {page.url}")
 
     # Try dial queue tab
@@ -273,6 +278,7 @@ async def test_agent_login(page):
 # Mobile tests
 # ---------------------------------------------------------------------------
 
+
 async def test_mobile_home(page):
     """15. Mobile: login -> mobile home with task/pending/me tabs."""
     print("\n[15/16] Mobile: login + home tabs")
@@ -292,9 +298,9 @@ async def test_mobile_home(page):
     await shot(page, "15_mobile_home")
 
     # Check for bottom tab bar
-    task_tab = page.locator('text=待拨打').first
-    pending_tab = page.locator('text=待处理').first
-    me_tab = page.locator('text=我的').first
+    task_tab = page.locator("text=待拨打").first
+    pending_tab = page.locator("text=待处理").first
+    me_tab = page.locator("text=我的").first
 
     has_tabs = False
     if await task_tab.count() > 0:
@@ -360,9 +366,9 @@ async def main():
         test_num = 0
 
         # --- Admin tests ---
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("  ADMIN TESTS")
-        print("="*60)
+        print("=" * 60)
         for test_fn in ADMIN_TESTS:
             test_num += 1
             name = test_fn.__name__
@@ -386,9 +392,9 @@ async def main():
                 failed += 1
 
         # --- Agent tests ---
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("  AGENT TESTS")
-        print("="*60)
+        print("=" * 60)
         for test_fn in AGENT_TESTS:
             test_num += 1
             name = test_fn.__name__
@@ -412,9 +418,9 @@ async def main():
                 failed += 1
 
         # --- Mobile tests ---
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("  MOBILE TESTS")
-        print("="*60)
+        print("=" * 60)
         for test_fn in MOBILE_TESTS:
             test_num += 1
             name = test_fn.__name__
@@ -440,13 +446,13 @@ async def main():
         await browser.close()
 
     total = passed + failed
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  FINAL RESULTS: {passed}/{total} passed, {failed} failed")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     if errors:
         print("\n  Failed tests:")
         for name, err in errors:
-            short = err[:150].replace('\n', ' ')
+            short = err[:150].replace("\n", " ")
             print(f"    - {name}: {short}")
     print()
     return 0 if failed == 0 else 1

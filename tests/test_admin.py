@@ -87,9 +87,7 @@ class TestAdminAgents:
         assert agent_user.username in user_rows
         assert user_rows["offboarded_agent"]["is_active"] is False
 
-    async def test_list_agents_counts_today_dial_logs(
-        self, client, admin_headers, db, agent_user
-    ):
+    async def test_list_agents_counts_today_dial_logs(self, client, admin_headers, db, agent_user):
         student = Student(
             name="今日拨号学生",
             assigned_to=agent_user.id,
@@ -511,7 +509,9 @@ class TestAdminDeleteUser:
         assert resp.json()["code"] == 1
 
     async def test_delete_requires_super_admin(self, client, normal_admin_headers, agent_user):
-        resp = await client.delete(f"/api/admin/users/{agent_user.id}", headers=normal_admin_headers)
+        resp = await client.delete(
+            f"/api/admin/users/{agent_user.id}", headers=normal_admin_headers
+        )
         assert resp.status_code == 403
 
 
@@ -528,9 +528,7 @@ class TestAdminSystemAndDeletePermissions:
         assert get_resp.status_code == 403
         assert put_resp.status_code == 403
 
-    async def test_delete_invalid_students_requires_super_admin(
-        self, client, normal_admin_headers
-    ):
+    async def test_delete_invalid_students_requires_super_admin(self, client, normal_admin_headers):
         resp = await client.post(
             "/api/admin/invalid-students/delete",
             json={"student_ids": [1]},
@@ -716,7 +714,9 @@ class TestAdminOpsHealth:
 
         assert resp.status_code == 401
 
-    async def test_error_report_records_authenticated_user(self, client, db, admin_user, admin_headers):
+    async def test_error_report_records_authenticated_user(
+        self, client, db, admin_user, admin_headers
+    ):
         from sqlalchemy import select
 
         from app.models import OperationLog
@@ -730,9 +730,7 @@ class TestAdminOpsHealth:
         assert resp.status_code == 200
         assert resp.json()["code"] == 0
         log = (
-            await db.execute(
-                select(OperationLog).where(OperationLog.action == "前端错误")
-            )
+            await db.execute(select(OperationLog).where(OperationLog.action == "前端错误"))
         ).scalar_one()
         assert log.operator_id == admin_user.id
         assert log.operator_name == admin_user.name
