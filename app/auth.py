@@ -87,3 +87,9 @@ def require_role(*roles: UserRole):
 
 require_admin = require_role(UserRole.admin)
 require_agent = require_role(UserRole.admin, UserRole.agent)
+
+
+async def require_super_admin(current_user: User = Depends(get_current_user)):
+    if current_user.role != UserRole.admin or not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="需要超级管理员权限")
+    return current_user

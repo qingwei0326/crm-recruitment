@@ -1,19 +1,17 @@
 import { useState } from 'react';
-import { ChevronUp, ChevronDown, Phone, StickyNote, Sparkles, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { STAGES } from '../../../labels';
-import { INTENT_BADGES, stageLabel, statusLabel } from '../../../labels';
+import { ChevronUp, ChevronDown, Phone, StickyNote, Sparkles, AlertTriangle } from 'lucide-react';
+import { INTENT_BADGES, statusLabel } from '../../../labels';
 import { STATUS_STYLE, getContactOptions } from '../agentWorkUtils';
 import AssignedDaysBadge from '../shared/AssignedDaysBadge';
 import StageProgress from '../shared/StageProgress';
 import ExpandedRow from './ExpandedRow';
 
 const COLUMNS = [
-  { key: 'name', label: '姓名', sortable: true, className: 'w-[12%]' },
-  { key: 'school_name', label: '学校', sortable: true, className: 'w-[22%]' },
-  { key: 'stage', label: '阶段', sortable: true, className: 'w-[15%]' },
+  { key: 'name', label: '姓名', sortable: true, className: 'w-[16%]' },
+  { key: 'school_name', label: '学校', sortable: true, className: 'w-[24%]' },
+  { key: 'stage', label: '阶段', sortable: true, className: 'w-[18%]' },
   { key: 'intent_level', label: '意向', sortable: true, className: 'w-[8%]' },
-  { key: 'status', label: '状态', sortable: true, className: 'w-[10%]' },
-  { key: 'days', label: '天数', sortable: true, className: 'w-[8%]' },
+  { key: 'status', label: '状态', sortable: true, className: 'w-[14%]' },
 ];
 
 export default function StudentTable({
@@ -46,18 +44,6 @@ export default function StudentTable({
     return sortConfig.direction === 'asc'
       ? <ChevronUp className="w-3 h-3 inline" />
       : <ChevronDown className="w-3 h-3 inline" />;
-  };
-
-  const getSortValue = (student, key) => {
-    switch (key) {
-      case 'name': return student.name || '';
-      case 'school_name': return student.school_name || '';
-      case 'stage': return STAGES.indexOf(student.stage);
-      case 'intent_level': return student.intent_level === '无' ? -1 : (student.intent_level === 'A' ? 0 : student.intent_level === 'B' ? 1 : 2);
-      case 'status': return student.status || '';
-      case 'days': return student.days_since_assigned ?? 999;
-      default: return '';
-    }
   };
 
   return (
@@ -93,7 +79,7 @@ export default function StudentTable({
         <tbody className="divide-y dark:divide-gray-700/50">
           {students.length === 0 ? (
             <tr>
-              <td colSpan={8} className="text-center py-12 text-gray-400">
+              <td colSpan={7} className="text-center py-12 text-gray-400">
                 暂无数据
               </td>
             </tr>
@@ -116,7 +102,6 @@ export default function StudentTable({
                 onScoreChange={onScoreChange}
                 noteText={expandedId === s.id ? noteText : ''}
                 onNoteTextChange={onNoteTextChange}
-                getSortValue={getSortValue}
               />
             ))
           )}
@@ -127,7 +112,7 @@ export default function StudentTable({
 }
 
 function StudentRow({
-  student: s, isExpanded, isSelected, dialCheck, isLocked,
+  student: s, isExpanded, isSelected, isLocked,
   onToggleExpand, onSelect, onDial, onQuickStatus, onUpdateStage,
   onAddNote, onOpenAi, onScoreChange, noteText, onNoteTextChange,
 }) {
@@ -182,9 +167,6 @@ function StudentRow({
             )}
           </div>
         </td>
-        <td className="px-3 py-2 text-xs text-gray-500">
-          {s.days_since_assigned != null ? `${s.days_since_assigned}天` : '-'}
-        </td>
         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-1">
             {contacts.length > 0 && (
@@ -219,10 +201,11 @@ function StudentRow({
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={8} className="p-0">
+          <td colSpan={7} className="p-0">
             <ExpandedRow
               student={s}
               isLocked={isLocked}
+              onDial={onDial}
               onQuickStatus={onQuickStatus}
               onUpdateStage={onUpdateStage}
               onAddNote={onAddNote}

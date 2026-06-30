@@ -26,10 +26,11 @@ FOLLOW_UP_TASK_STATUSES = (StudentStatus.not_reached, StudentStatus.pending_visi
 # 话务员端主任务列表只展示当前真正需要拨打的未联系学生。
 AGENT_TODAY_TASK_STATUSES = statuses_for_canonical(StudentStatus.not_contacted)
 
-# 话务员端待办列表展示已接通待确认，以及未接后需要再处理的学生。
+# 话务员端待办列表展示已接通、未接、待回访这些仍需继续推进的学生。
 AGENT_HANDLED_TASK_STATUSES = statuses_for_canonical(
     StudentStatus.contacted,
     StudentStatus.not_reached,
+    StudentStatus.pending_visit,
 )
 
 TERMINAL_STUDENT_STATUSES = statuses_for_canonical(

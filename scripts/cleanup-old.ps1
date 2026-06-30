@@ -6,12 +6,18 @@
 # 用法：
 #   .\cleanup-old.ps1                         # 预览，不删
 #   .\cleanup-old.ps1 -Apply                  # 真正删除
-#   .\cleanup-old.ps1 -Apply -KeepBackups 3   # 只保留最近 3 份 db 备份（默认 5）
+#   .\cleanup-old.ps1 -Apply -PruneBackups -KeepBackups 3  # 只保留最近 3 份 db 备份
+#   .\cleanup-old.ps1 -Apply -RemoveRuntimeLogs  # 额外删除当前运行日志
+#   .\cleanup-old.ps1 -Apply -RemoveBuildArtifacts  # 额外删除前端 dist（会影响当前静态页面）
 #   .\cleanup-old.ps1 -Apply -Target D:\CRM   # 指定项目根（默认当前目录）
+# 说明：此脚本只清理本地运行垃圾和旧缓存，不删除 Ubuntu 部署脚本/配置。
 
 param(
     [string]$Target = (Get-Location).Path,
     [switch]$Apply,
+    [switch]$PruneBackups,
+    [switch]$RemoveRuntimeLogs,
+    [switch]$RemoveBuildArtifacts,
     [int]$KeepBackups = 5,
     [int]$KeepReleases = 1
 )
@@ -56,19 +62,21 @@ function Add-Target {
     }
 }
 
-# ── 1) 运行日志 ──
-# 注：不动 *.pid —— stop.ps1 靠它找进程。建议先 stop.bat 再跑本脚本。
-foreach ($name in @(
-    "backend_out.log","backend_err.log",
-    "forward.log","forward_out.log","forward_err.log",
-    "startup.log",
-    "health_check_report.txt"
-)) {
-    Add-Target -Path (Join-Path $Root $name) -Reason "运行时日志"
+# ── 1) 运行日志（服务运行时默认保留）──
+# 注：不动 *.pid —— stop.ps1 靠它找进程。建议先 stop.bat 再删当前日志。
+if ($RemoveRuntimeLogs) {
+    foreach ($name in @(
+        "backend_out.log","backend_err.log",
+        "forward.log","forward_out.log","forward_err.log",
+        "startup.log",
+        "health_check_report.txt"
+    )) {
+        Add-Target -Path (Join-Path $Root $name) -Reason "运行时日志（显式要求删除）"
+    }
 }
 
 # ── 2) Python 缓存（仅项目代码目录，不动依赖目录里的）──
-$DepDirs = @(".venv", ".venv-win", "venv", ".pydeps", "node_modules")
+$DepDirs = @(".venv", ".venv-win", ".venv-linux", "venv", ".pydeps", "node_modules")
 Get-ChildItem -LiteralPath $Root -Recurse -Force -Directory -ErrorAction SilentlyContinue |
     Where-Object {
         ($_.Name -eq "__pycache__" -or $_.Name -eq ".pytest_cache" -or $_.Name -eq ".ruff_cache") -and
@@ -97,36 +105,39 @@ if (Test-Path $ReleaseDir) {
     }
 }
 
-# ── 5) 旧 db 备份（保留最近 N 个）──
-$BackupDir = Join-Path $Root "backups"
-if (Test-Path $BackupDir) {
-    $dbs = Get-ChildItem -LiteralPath $BackupDir -File -ErrorAction SilentlyContinue |
-           Where-Object { $_.Name -like "*.db*" -or $_.Name -like "crm*" } |
-           Sort-Object LastWriteTime -Descending
-    $toKill = @($dbs | Select-Object -Skip $KeepBackups)
-    foreach ($f in $toKill) {
-        Add-Target -Path $f.FullName -Reason "旧 db 备份（保留最近 $KeepBackups 份）"
+# ── 5) 旧 db 备份（默认保留，显式要求时才裁剪）──
+if ($PruneBackups) {
+    $BackupDir = Join-Path $Root "backups"
+    if (Test-Path $BackupDir) {
+        $dbs = Get-ChildItem -LiteralPath $BackupDir -File -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -like "*.db*" -or $_.Name -like "crm*" } |
+               Sort-Object LastWriteTime -Descending
+        $toKill = @($dbs | Select-Object -Skip $KeepBackups)
+        foreach ($f in $toKill) {
+            Add-Target -Path $f.FullName -Reason "旧 db 备份（保留最近 $KeepBackups 份）"
+        }
     }
 }
 
-# ── 6) 前端构建产物（重启时会重新 build）──
-$Dist = Join-Path $Root "frontend\dist"
-if (Test-Path $Dist) {
-    Add-Target -Path $Dist -Reason "前端 dist（start.ps1 启动时会重新构建）"
+# ── 6) 前端构建产物（当前后端会从这里托管页面，默认保留）──
+if ($RemoveBuildArtifacts) {
+    $Dist = Join-Path $Root "frontend\dist"
+    if (Test-Path $Dist) {
+        Add-Target -Path $Dist -Reason "前端 dist（显式要求删除构建产物）"
+    }
 }
 
 # ── 7) 旧日志轮转文件（.old）──
 Get-ChildItem -LiteralPath $Root -File -Filter "*.old" -ErrorAction SilentlyContinue |
     ForEach-Object { Add-Target -Path $_.FullName -Reason "旧日志轮转文件" }
 
-# ── 8) 替代部署方式配置（你用 start.ps1，下面这些都用不到）──
+# ── 8) Windows/J1900 遗留守护脚本（已废弃；Ubuntu 服务器用 systemd，不需要）──
 foreach ($name in @(
-    "Dockerfile","docker-compose.yml",".dockerignore",
-    "ecosystem.config.js",
-    "nginx.conf",
-    "cloudflared-config.yml"
+    "watchdog.ps1",
+    "install-watchdog.ps1",
+    "uninstall-watchdog.ps1"
 )) {
-    Add-Target -Path (Join-Path $Root $name) -Reason "替代部署配置（未在用）"
+    Add-Target -Path (Join-Path $Root $name) -Reason "Windows 看门狗脚本（Ubuntu systemd 已替代）"
 }
 
 # ── 9) 迁移残留（跑完回填脚本后就不需要了）──

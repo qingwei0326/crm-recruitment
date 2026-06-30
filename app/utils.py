@@ -1,10 +1,12 @@
 """Shared utility functions"""
 
+import re
 from datetime import UTC, datetime, timedelta, timezone
 
 from app.models import OperationLog
 
 _CST = timezone(timedelta(hours=8))
+_PHONE_QUERY_RE = re.compile(r"^[\d\s()+\-./（）]+$")
 
 
 def utcnow() -> datetime:
@@ -27,14 +29,28 @@ def month_start_cst_as_utc() -> datetime:
 
 
 def mask_phone(phone: str) -> str:
-    """脱敏电话号码：保留前3后4，中间用 * 替代。"""
+    """Return phone numbers without display masking."""
     if not phone:
         return ""
-    s = phone.strip()
-    n = len(s)
-    if n <= 7:
-        return s[:1] + "*" * max(n - 3, 0) + s[-2:] if n > 2 else s
-    return s[:3] + "*" * (n - 7) + s[-4:]
+    return str(phone).strip()
+
+
+def normalize_phone(phone) -> str:
+    """Store phone numbers in a searchable digit-only form."""
+    if phone is None:
+        return ""
+    digits = re.sub(r"\D+", "", str(phone).strip())
+    if len(digits) == 13 and digits.startswith("86") and digits[2:3] == "1":
+        return digits[2:]
+    if len(digits) == 15 and digits.startswith("0086") and digits[4:5] == "1":
+        return digits[4:]
+    return digits
+
+
+def is_phone_query(value) -> bool:
+    """Return True when a search string is intended as a full phone lookup."""
+    text = str(value or "").strip()
+    return bool(_PHONE_QUERY_RE.fullmatch(text)) and len(normalize_phone(text)) >= 7
 
 
 def make_operation_log(

@@ -90,3 +90,44 @@ async def test_follow_up_window_minutes_empty(client, admin_headers):
     assert r.status_code == 200
     # Empty string should either succeed (clearing value) or fail validation
     # Based on existing pattern, empty string is accepted for some keys
+
+
+@pytest.mark.asyncio
+async def test_score_daily_call_target_valid(client, admin_headers, db, admin_user):
+    admin_user.is_super_admin = True
+    db.add(admin_user)
+    await db.commit()
+
+    r = await client.put(
+        "/api/admin/config",
+        json={"key": "score_daily_call_target", "value": "500"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["code"] == 0
+    assert r.json()["data"]["value"] == "500"
+
+
+@pytest.mark.asyncio
+async def test_score_daily_call_target_rejects_out_of_range(client, admin_headers, db, admin_user):
+    admin_user.is_super_admin = True
+    db.add(admin_user)
+    await db.commit()
+
+    r = await client.put(
+        "/api/admin/config",
+        json={"key": "score_daily_call_target", "value": "1001"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["code"] == 1
+
+
+@pytest.mark.asyncio
+async def test_config_requires_super_admin(client, normal_admin_headers):
+    r = await client.put(
+        "/api/admin/config",
+        json={"key": "score_daily_call_target", "value": "30"},
+        headers=normal_admin_headers,
+    )
+    assert r.status_code == 403

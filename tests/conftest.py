@@ -82,6 +82,23 @@ async def admin_user(db):
         role="admin",
         name="测试管理员",
         is_active=True,
+        is_super_admin=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def normal_admin_user(db):
+    user = User(
+        username="normaladmin",
+        hashed_password=hash_password("admin123"),
+        role="admin",
+        name="普通管理员",
+        is_active=True,
+        is_super_admin=False,
     )
     db.add(user)
     await db.commit()
@@ -116,6 +133,17 @@ async def admin_token(admin_user):
 
 
 @pytest_asyncio.fixture
+async def normal_admin_token(normal_admin_user):
+    return create_access_token(
+        {
+            "sub": str(normal_admin_user.id),
+            "role": normal_admin_user.role,
+            "tv": normal_admin_user.token_version,
+        }
+    )
+
+
+@pytest_asyncio.fixture
 async def agent_token(agent_user):
     return create_access_token(
         {
@@ -129,6 +157,11 @@ async def agent_token(agent_user):
 @pytest_asyncio.fixture
 async def admin_headers(admin_token):
     return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest_asyncio.fixture
+async def normal_admin_headers(normal_admin_token):
+    return {"Authorization": f"Bearer {normal_admin_token}"}
 
 
 @pytest_asyncio.fixture

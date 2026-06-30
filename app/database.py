@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -41,12 +43,14 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_drop_legacy_student_phone_column)
+        await conn.run_sync(_migrate_student_phone_normalization)
         await conn.run_sync(_migrate_follow_up_columns)
         await conn.run_sync(_drop_message_templates_table)
         await conn.run_sync(_ensure_student_indexes)
         await conn.run_sync(_migrate_user_token_version)
         await conn.run_sync(_migrate_user_device_tracking)
         await conn.run_sync(_migrate_user_must_change_password)
+        await conn.run_sync(_migrate_user_super_admin)
         await conn.run_sync(_migrate_operation_log_nullable)
         await conn.run_sync(_migrate_student_status_detail)
         await conn.run_sync(_migrate_legacy_student_status_values)
@@ -124,6 +128,69 @@ def _migrate_user_must_change_password(sync_connection):
             text(
                 "ALTER TABLE users ADD COLUMN must_change_password "
                 "BOOLEAN NOT NULL DEFAULT 0"
+            )
+        )
+
+
+def _migrate_user_super_admin(sync_connection):
+    inspector = inspect(sync_connection)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "is_super_admin" not in columns:
+        if DB_ENGINE == "postgresql":
+            sync_connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin "
+                    "BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            )
+        else:
+            sync_connection.execute(
+                text("ALTER TABLE users ADD COLUMN is_super_admin BOOLEAN NOT NULL DEFAULT 0")
+            )
+
+    if DB_ENGINE == "postgresql":
+        existing_super_admin = (
+            sync_connection.execute(
+                text(
+                    "SELECT COUNT(*) FROM users "
+                    "WHERE role = 'admin' AND is_active = TRUE AND is_super_admin = TRUE"
+                )
+            ).scalar()
+            or 0
+        )
+    else:
+        existing_super_admin = (
+            sync_connection.execute(
+                text(
+                    "SELECT COUNT(*) FROM users "
+                    "WHERE role = 'admin' AND is_active = 1 AND is_super_admin = 1"
+                )
+            ).scalar()
+            or 0
+        )
+    if existing_super_admin:
+        return
+
+    if DB_ENGINE == "postgresql":
+        sync_connection.execute(
+            text(
+                "UPDATE users SET is_super_admin = TRUE "
+                "WHERE id = ("
+                "SELECT id FROM users WHERE role = 'admin' AND is_active = TRUE "
+                "ORDER BY id LIMIT 1"
+                ")"
+            )
+        )
+    else:
+        sync_connection.execute(
+            text(
+                "UPDATE users SET is_super_admin = 1 "
+                "WHERE id = ("
+                "SELECT id FROM users WHERE role = 'admin' AND is_active = 1 "
+                "ORDER BY id LIMIT 1"
+                ")"
             )
         )
 
@@ -288,6 +355,48 @@ def _ensure_student_indexes(sync_connection):
     sync_connection.execute(
         text("CREATE INDEX IF NOT EXISTS ix_students_school_name ON students(school_name)")
     )
+    sync_connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_students_guardian_phone ON students(guardian_phone)")
+    )
+    sync_connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_students_guardian2_phone ON students(guardian2_phone)")
+    )
+
+
+def _normalize_phone_for_storage(phone) -> str:
+    if phone is None:
+        return ""
+    digits = re.sub(r"\D+", "", str(phone).strip())
+    if len(digits) == 13 and digits.startswith("86") and digits[2:3] == "1":
+        return digits[2:]
+    if len(digits) == 15 and digits.startswith("0086") and digits[4:5] == "1":
+        return digits[4:]
+    return digits
+
+
+def _migrate_student_phone_normalization(sync_connection):
+    inspector = inspect(sync_connection)
+    if "students" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("students")}
+    phone_columns = [name for name in ("guardian_phone", "guardian2_phone") if name in columns]
+    if not phone_columns:
+        return
+
+    select_columns = ", ".join(["id", *phone_columns])
+    rows = sync_connection.execute(text(f"SELECT {select_columns} FROM students")).mappings()
+    for row in rows:
+        updates = {}
+        for column in phone_columns:
+            normalized = _normalize_phone_for_storage(row.get(column))
+            if normalized != (row.get(column) or ""):
+                updates[column] = normalized
+        if updates:
+            assignments = ", ".join(f"{column} = :{column}" for column in updates)
+            sync_connection.execute(
+                text(f"UPDATE students SET {assignments} WHERE id = :id"),
+                {**updates, "id": row["id"]},
+            )
 
 
 def _migrate_follow_up_columns(sync_connection):

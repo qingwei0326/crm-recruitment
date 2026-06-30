@@ -1,18 +1,56 @@
-import { useState } from 'react';
-import { StickyNote, Sparkles, Pencil, Check, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { StickyNote, Sparkles, Pencil, Check, X, Loader2, AlertTriangle } from 'lucide-react';
 import api from '../../../api';
-import { statusLabel } from '../../../labels';
-import { STATUS_STYLE } from '../agentWorkUtils';
+import { stageLabel } from '../../../labels';
+import { getApiErrorMessage } from '../../../utils';
+import PhoneLink from '../../../components/PhoneLink';
+import StudentTimeline from '../../../components/StudentTimeline';
 import StageProgress from '../shared/StageProgress';
 import QuickStatusButtons from '../shared/QuickStatusButtons';
 
 export default function ExpandedRow({
   student: s, isLocked,
-  onQuickStatus, onUpdateStage, onAddNote, onOpenAi, onScoreChange,
+  onDial, onQuickStatus, onUpdateStage, onAddNote, onOpenAi, onScoreChange,
   noteText, onNoteTextChange,
 }) {
   const [editingScore, setEditingScore] = useState(false);
   const [scoreVal, setScoreVal] = useState(s.score ?? '');
+  const [detail, setDetail] = useState({
+    loading: true,
+    error: '',
+    calls: [],
+    notes: [],
+    followUps: [],
+    visits: [],
+    intentTimeline: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setDetail((prev) => ({ ...prev, loading: true, error: '' }));
+    api
+      .get(`/students/${s.id}/detail`)
+      .then((res) => {
+        if (cancelled) return;
+        const data = res.data.data || res.data || {};
+        setDetail({
+          loading: false,
+          error: '',
+          calls: data.calls || [],
+          notes: data.notes || [],
+          followUps: data.follow_ups || [],
+          visits: data.visits || [],
+          intentTimeline: data.intent_timeline || [],
+        });
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setDetail((prev) => ({ ...prev, loading: false, error: getApiErrorMessage(e) }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [s.id]);
 
   const saveScore = () => {
     setEditingScore(false);
@@ -27,16 +65,24 @@ export default function ExpandedRow({
         <div>
           <span className="text-xs text-gray-500 dark:text-gray-400">联系人1</span>
           <div className="font-medium text-gray-800 dark:text-gray-200">{s.guardian_name || <span className="text-gray-400 dark:text-gray-500 italic">未填</span>}</div>
-          <div className="font-mono text-xs">{s.guardian_phone
-            ? <span className="text-green-600 dark:text-green-400">{s.guardian_phone}</span>
-            : <span className="text-gray-400 dark:text-gray-500 italic">未填</span>}</div>
+          <div className="text-xs">
+            <PhoneLink
+              value={s.guardian_phone}
+              label="拨打联系人1"
+              onDial={onDial ? () => onDial('guardian') : undefined}
+            />
+          </div>
         </div>
         <div>
           <span className="text-xs text-gray-500 dark:text-gray-400">联系人2</span>
           <div className="font-medium text-gray-800 dark:text-gray-200">{s.guardian2_name || <span className="text-gray-400 dark:text-gray-500 italic">未填</span>}</div>
-          <div className="font-mono text-xs">{s.guardian2_phone
-            ? <span className="text-green-600 dark:text-green-400">{s.guardian2_phone}</span>
-            : <span className="text-gray-400 dark:text-gray-500 italic">未填</span>}</div>
+          <div className="text-xs">
+            <PhoneLink
+              value={s.guardian2_phone}
+              label="拨打联系人2"
+              onDial={onDial ? () => onDial('guardian2') : undefined}
+            />
+          </div>
         </div>
         <div>
           <span className="text-xs text-gray-500 dark:text-gray-400">地域</span>
@@ -72,7 +118,7 @@ export default function ExpandedRow({
 
       {/* Row 2: Stage progress */}
       <div>
-        <span className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">当前阶段: {statusLabel(s.stage) || s.stage}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">当前阶段: {stageLabel(s.stage) || s.stage}</span>
         <StageProgress currentStage={s.stage} onStageClick={onUpdateStage} />
       </div>
 
@@ -104,6 +150,36 @@ export default function ExpandedRow({
         >
           <StickyNote className="w-4 h-4" />
         </button>
+      </div>
+
+      <div className="border-t dark:border-gray-700 pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">关键时间线</div>
+          <div className="text-xs text-gray-400">最近 5 条</div>
+        </div>
+        {detail.loading ? (
+          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            加载时间线...
+          </div>
+        ) : detail.error ? (
+          <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>{detail.error}</span>
+          </div>
+        ) : (
+          <StudentTimeline
+            student={s}
+            calls={detail.calls}
+            notes={detail.notes}
+            followUps={detail.followUps}
+            visits={detail.visits}
+            intentTimeline={detail.intentTimeline}
+            limit={5}
+            emptyText="暂无跟进记录"
+            className="space-y-3"
+          />
+        )}
       </div>
     </div>
   );

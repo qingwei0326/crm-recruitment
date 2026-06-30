@@ -25,6 +25,7 @@ import useDialFlow from '../../hooks/useDialFlow';
 import { formatDateTime } from '../../utils';
 import { useToast } from '../../components/Toast';
 import HelpModal from '../../components/HelpModal';
+import PhoneLink from '../../components/PhoneLink';
 
 function StatCard({ label, value, color = 'blue' }) {
   const colorMap = {
@@ -59,12 +60,12 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
     {
       key: 'guardian',
       label: s.guardian_name || '监护人',
-      phone: s.guardian_phone || s.guardian_phone_raw,
+      phone: s.guardian_phone,
     },
     {
       key: 'guardian2',
       label: s.guardian2_name || '监护人2',
-      phone: s.guardian2_phone || s.guardian2_phone_raw,
+      phone: s.guardian2_phone,
     },
   ].filter((contact) => contact.phone);
 
@@ -95,14 +96,20 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
             {s.school_name || '-'}
             {s.region ? ` · ${s.region}` : ''}
           </div>
-          {s.guardian_name && (
-            <div className="text-xs text-gray-400 mt-0.5 truncate">
-              {s.guardian_name} {s.guardian_phone || ''}
-            </div>
-          )}
         </div>
         <ChevronRight className="w-5 h-5 text-gray-300 dark:text-gray-600 shrink-0 mt-1" />
       </button>
+      {s.guardian_name && (
+        <div className="text-xs text-gray-400 -mt-1 ml-14 truncate flex items-center gap-1">
+          <span>{s.guardian_name}</span>
+          <PhoneLink
+            value={s.guardian_phone}
+            label={`拨打 ${s.name || '学生'} 监护人`}
+            onDial={() => onDial(s.id, 'guardian')}
+            className="text-xs"
+          />
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">
         {contacts.length > 0 ? (
           contacts.map((contact) => (
@@ -176,6 +183,13 @@ function TabBar({ active }) {
     </nav>
   );
 }
+
+const PENDING_STATUS_FILTERS = [
+  { label: '全部', value: null },
+  { label: '已联系', value: '已联系' },
+  { label: '未接', value: '未接' },
+  { label: '待回访', value: '待回访' },
+];
 
 function SettingsSheet({ open, onClose }) {
   const { user, logout } = useAuth();
@@ -282,8 +296,11 @@ function SettingsSheet({ open, onClose }) {
   );
 }
 
-function PendingList() {
+export function PendingList() {
   const [items, setItems] = useState([]);
+  const [counts, setCounts] = useState({});
+  const [total, setTotal] = useState(0);
+  const [selectedStatus, setSelectedStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -291,59 +308,103 @@ function PendingList() {
   useEffect(() => {
     setLoading(true);
     setError('');
+    const params = { limit: 100 };
+    if (selectedStatus) params.status = selectedStatus;
     api
-      .get('/tasks/handled', { params: { limit: 100 } })
+      .get('/tasks/handled', { params })
       .then((r) => {
         if (r.data.code === 0) {
           const d = r.data.data;
           setItems(d?.list ?? (Array.isArray(d) ? d : []));
+          setCounts(d?.counts ?? {});
+          setTotal(d?.total ?? 0);
         } else setError(r.data.msg || '加载失败');
       })
       .catch((e) =>
         setError(e?.response?.data?.detail || e?.response?.data?.msg || '加载失败'),
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedStatus]);
+
+  const visibleTotal = total || items.length;
+
+  const filters = (
+    <div className="flex gap-2 overflow-x-auto pb-2">
+      {PENDING_STATUS_FILTERS.map((filter) => {
+        const count = filter.value ? (counts[filter.value] || 0) : visibleTotal;
+        return (
+          <button
+            key={filter.value || 'all'}
+            type="button"
+            onClick={() => setSelectedStatus(selectedStatus === filter.value ? null : filter.value)}
+            className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
+              selectedStatus === filter.value
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+            }`}
+          >
+            {filter.label} {count}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   if (loading) {
     return (
-      <div className="flex justify-center py-10">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      <div>
+        {filters}
+        <div className="flex justify-center py-10">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+        </div>
       </div>
     );
   }
   if (error) {
-    return <div className="text-center text-sm text-red-500 py-10">{error}</div>;
+    return (
+      <div>
+        {filters}
+        <div className="text-center text-sm text-red-500 py-10">{error}</div>
+      </div>
+    );
   }
   if (items.length === 0) {
-    return <div className="text-center text-sm text-gray-400 py-10">暂无待处理</div>;
+    return (
+      <div>
+        {filters}
+        <div className="text-center text-sm text-gray-400 py-10">暂无待处理</div>
+      </div>
+    );
   }
   return (
     <div className="space-y-3">
-      {items.map((it) => (
-        <button
-          key={it.id}
-          type="button"
-          onClick={() => navigate(`/mobile/student/${it.id}`)}
-          className={`w-full text-left bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4`}
-        >
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
-              {it.name}
-            </span>
-            <StatusBadge status={it.status} />
-            <IntentLevelBadge level={it.intent_level} />
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
-          </div>
-          {it.notes && (
-            <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 break-words">
-              {it.notes}
+      {filters}
+      <div className="space-y-3">
+        {items.map((it) => (
+          <button
+            key={it.id}
+            type="button"
+            onClick={() => navigate(`/mobile/student/${it.id}`)}
+            className={`w-full text-left bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4`}
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                {it.name}
+              </span>
+              <StatusBadge status={it.status} />
+              <IntentLevelBadge level={it.intent_level} />
             </div>
-          )}
-        </button>
-      ))}
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
+            </div>
+            {it.notes && (
+              <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 break-words">
+                {it.notes}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -506,25 +567,6 @@ export default function MobileHome() {
     if (t === 'pending' || t === 'me') setTab(t);
     else setTab('tasks');
   }, [location.search]);
-
-  // 预查每个学生的 24h 拨打次数（拉一次即可，新增量靠拨号后刷新）
-  useEffect(() => {
-    if (!students || students.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      const updates = {};
-      for (const s of students) {
-        const dc = await checkDup(s.id);
-        if (dc) updates[s.id] = dc.count ?? 0;
-      }
-      if (!cancelled) {
-        setDialCountMap((prev) => ({ ...prev, ...updates }));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [students, checkDup]);
 
   const handleDial = async (id, contactKey = 'guardian') => {
     setDialingId(id);

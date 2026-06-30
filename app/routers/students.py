@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import uuid
@@ -15,8 +16,9 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_admin, require_agent
+from app.auth import get_current_user, require_admin, require_agent, require_super_admin
 from app.database import get_db
+from app.dial_guard import require_recent_agent_dial
 from app.models import (
     Call,
     DialLog,
@@ -40,7 +42,7 @@ from app.permissions import (
     get_student_or_404,
     is_admin,
 )
-from app.pushplus import notify_a_level_change
+from app.pushplus import notify_a_level_change_background
 from app.region_extractor import extract_region
 from app.schemas import EnrollInfo, Response, StageUpdate, StudentCreate, StudentUpdate
 from app.status_policy import (
@@ -52,7 +54,7 @@ from app.status_policy import (
     statuses_for_canonical,
 )
 from app.task_stats import TERMINAL_STUDENT_STATUSES
-from app.utils import make_operation_log, utcnow
+from app.utils import is_phone_query, make_operation_log, mask_phone, normalize_phone, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
 
@@ -143,6 +145,21 @@ AGENT_STUDENT_UPDATE_FIELDS = {
     "need_help",
     "score",
 }
+CALL_RESULT_STATUSES = {
+    StudentStatus.contacted,
+    StudentStatus.not_reached,
+    StudentStatus.pending_visit,
+    StudentStatus.invalid,
+}
+CALL_RESULT_STATUS_DETAILS = {
+    "非常有意向",
+    "意向了解加微",
+    "高分段",
+    "无意向",
+    "孩子不想读",
+    "空号",
+    "其他",
+}
 
 
 def next_stage(current: str) -> str | None:
@@ -180,11 +197,11 @@ def _student_payload(student: Student) -> dict:
         "need_help": student.need_help,
         "score": student.score,
         "guardian_name": student.guardian_name,
-        "guardian_phone": student.guardian_phone,
-        "guardian_phone_raw": student.guardian_phone,
+        "guardian_phone": mask_phone(student.guardian_phone),
+        "guardian_phone_raw": None,
         "guardian2_name": student.guardian2_name,
-        "guardian2_phone": student.guardian2_phone,
-        "guardian2_phone_raw": student.guardian2_phone,
+        "guardian2_phone": mask_phone(student.guardian2_phone),
+        "guardian2_phone_raw": None,
         "school_name": student.school_name,
         "school_address": student.school_address,
         "enrolled_at": str(student.enrolled_at) if student.enrolled_at else None,
@@ -199,6 +216,18 @@ def _student_payload(student: Student) -> dict:
         "updated_at": str(student.updated_at),
     }
     return payload
+
+
+def _is_call_result_write(status: StudentStatus, status_detail: str | None) -> bool:
+    canonical_status = canonical_student_status(status)
+    detail = (status_detail or "").strip()
+    return canonical_status in CALL_RESULT_STATUSES or detail in CALL_RESULT_STATUS_DETAILS
+
+
+def _allows_call_result_backfill_without_recent_dial(
+    old_status: StudentStatus | str | None,
+) -> bool:
+    return canonical_student_status(old_status) == StudentStatus.contacted
 
 
 def _normalize_import_header(value) -> str:
@@ -236,7 +265,7 @@ def _clean_import_text(value) -> str:
 
 
 def _clean_import_phone(value) -> str:
-    return re.sub(r"\s+", "", _clean_import_text(value))
+    return normalize_phone(value)
 
 
 def _parse_import_float(value, field_label: str) -> float | None:
@@ -669,9 +698,9 @@ async def create_student(
         deposit=body.deposit,
         score=body.score,
         guardian_name=body.guardian_name or "",
-        guardian_phone=re.sub(r"\s+", "", body.guardian_phone or ""),
+        guardian_phone=normalize_phone(body.guardian_phone),
         guardian2_name=body.guardian2_name or "",
-        guardian2_phone=re.sub(r"\s+", "", body.guardian2_phone or ""),
+        guardian2_phone=normalize_phone(body.guardian2_phone),
         school_name=body.school_name or "",
         school_address=body.school_address or "",
         need_help=body.need_help or False,
@@ -687,7 +716,9 @@ async def create_student(
     await db.commit()
     await db.refresh(student)
     if student.intent_level == IntentLevel.A:
-        await notify_a_level_change(db, student, current_user, "create")
+        asyncio.create_task(
+            notify_a_level_change_background(student.id, current_user.name, "create")
+        )
     return Response.ok(_student_payload(student))
 
 
@@ -710,14 +741,24 @@ async def list_students(
 ):
     query = apply_student_scope(select(Student), current_user)
     if q:
-        query = query.where(
-            or_(
-                Student.name.contains(q),
-                Student.region.contains(q),
-                Student.school_name.contains(q),
-                Student.guardian_name.contains(q),
+        q = q.strip()
+        if is_phone_query(q):
+            phone_q = normalize_phone(q)
+            query = query.where(
+                or_(
+                    Student.guardian_phone == phone_q,
+                    Student.guardian2_phone == phone_q,
+                )
             )
-        )
+        else:
+            query = query.where(
+                or_(
+                    Student.name.contains(q),
+                    Student.region.contains(q),
+                    Student.school_name.contains(q),
+                    Student.guardian_name.contains(q),
+                )
+            )
     if status:
         # SAEnum 列存的是 enum.name（英文），前端传的是 value（中文）。
         # 转成 enum 实例后 SQLAlchemy 才会正确映射为 name 进 SQL。
@@ -727,10 +768,7 @@ async def list_students(
             return Response.ok({"total": 0, "page": page, "page_size": page_size, "list": []})
         query = query.where(Student.status.in_(statuses_for_canonical(status_enum)))
     else:
-        # 默认隐藏终态线索：已报名、无效及旧无效类状态。需要看时手动选状态筛选。
-        query = query.where(
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES)
-        )
+        query = query.where(Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)))
     if status_detail:
         query = query.where(Student.status_detail == status_detail)
     if intent_level:
@@ -882,6 +920,7 @@ async def list_schools(
 
 
 _CST = timezone(timedelta(hours=8))
+DIAL_LOG_DEDUP_SECONDS = 3
 
 
 async def _get_system_config(db: AsyncSession, key: str, default: str = "") -> str:
@@ -927,7 +966,28 @@ async def get_student_phone(
             detail=f"当前为禁拨时段（拨号窗口 {window_start}-{window_end}）",
         )
 
-    # 2. 24h 防撞号校验（全局，任何坐席）
+    # 2. 短时间重复点击同一个拨号按钮时复用本次取号，不重复写 DialLog。
+    duplicate_since = utcnow() - timedelta(seconds=DIAL_LOG_DEDUP_SECONDS)
+    duplicate_r = await db.execute(
+        select(DialLog)
+        .where(
+            DialLog.student_id == student.id,
+            DialLog.agent_id == current_user.id,
+            DialLog.dialed_at >= duplicate_since,
+        )
+        .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
+        .limit(1)
+    )
+    recent_duplicate = duplicate_r.scalar_one_or_none()
+    if recent_duplicate is not None:
+        return Response.ok(
+            {
+                "guardian_phone": student.guardian_phone,
+                "guardian2_phone": student.guardian2_phone,
+            }
+        )
+
+    # 3. 24h 防撞号校验（全局，任何坐席）
     since = utcnow() - timedelta(hours=24)
     count_r = await db.execute(
         select(func.count(DialLog.id)).where(
@@ -942,7 +1002,7 @@ async def get_student_phone(
             detail=f"该学生 24h 内已被拨打 {count_24h} 次，达到上限 {max_per_24h}",
         )
 
-    # 3. 通过校验，写 DialLog 并记录操作日志
+    # 4. 通过校验，写 DialLog 并记录操作日志
     db.add(DialLog(student_id=student.id, agent_id=current_user.id))
     db.add(
         make_operation_log(
@@ -951,6 +1011,61 @@ async def get_student_phone(
             student.case_no or "",
             "查看电话",
             content="查看明文电话号码",
+        )
+    )
+    await db.commit()
+    return Response.ok(
+        {
+            "guardian_phone": student.guardian_phone,
+            "guardian2_phone": student.guardian2_phone,
+        }
+    )
+
+
+@router.put("/dial-duration")
+async def update_dial_duration(
+    student_id: int = Query(...),
+    duration_seconds: int = Query(..., ge=0, le=24 * 60 * 60),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await get_accessible_student(db, student_id, current_user)
+
+    result = await db.execute(
+        select(DialLog)
+        .where(DialLog.student_id == student_id, DialLog.agent_id == current_user.id)
+        .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
+        .limit(1)
+    )
+    dial_log = result.scalar_one_or_none()
+    if dial_log is None:
+        return Response.error(code=1, msg="未找到本次拨号记录")
+
+    dial_log.duration_seconds = duration_seconds
+    await db.commit()
+    return Response.ok(
+        {
+            "id": dial_log.id,
+            "student_id": dial_log.student_id,
+            "duration_seconds": dial_log.duration_seconds,
+        }
+    )
+
+
+@router.get("/{student_id}/phone-plain")
+async def reveal_student_phone_plain(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    student = await get_student_or_404(db, student_id)
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "查看明文电话",
+            content="管理员查看明文电话号码",
         )
     )
     await db.commit()
@@ -1271,8 +1386,8 @@ async def update_student(
                 v = _enum_or_error(IntentLevel, v, "意向等级")
             except ValueError as e:
                 return Response.error(code=1, msg=str(e))
-        elif k == "guardian_phone" and v is not None:
-            v = re.sub(r"\s+", "", v)
+        elif k in {"guardian_phone", "guardian2_phone"} and v is not None:
+            v = normalize_phone(v)
         setattr(student, k, v)
 
     if student.stage == StudentStage.enrolled:
@@ -1291,6 +1406,12 @@ async def update_student(
     status_detail_changed = old_status_detail != (student.status_detail or "")
     stage_changed = old_stage != student.stage
     assigned_changed = "assigned_to" in raw and old_assigned != student.assigned_to
+
+    if status_changed or status_detail_changed:
+        if _is_call_result_write(
+            student.status, student.status_detail
+        ) and not _allows_call_result_backfill_without_recent_dial(old_status):
+            await require_recent_agent_dial(db, student.id, current_user)
 
     if intent_changed:
         db.add(
@@ -1339,7 +1460,9 @@ async def update_student(
     await db.commit()
     await db.refresh(student)
     if intent_changed and student.intent_level == IntentLevel.A:
-        await notify_a_level_change(db, student, current_user, "manual")
+        asyncio.create_task(
+            notify_a_level_change_background(student.id, current_user.name, "manual")
+        )
     return Response.ok(_student_payload(student))
 
 
@@ -1680,7 +1803,7 @@ async def toggle_need_help(
 async def delete_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_super_admin),
 ):
     student = await get_student_or_404(db, student_id)
     db.add(

@@ -24,6 +24,10 @@ const initialState = {
     show: false,
     student: null,
     notes: [],
+    calls: [],
+    followUps: [],
+    visits: [],
+    intentTimeline: [],
     noteIdx: 0,
     loading: false,
     error: '',
@@ -141,7 +145,26 @@ const ActionTypes = {
 
   UPDATE_STUDENT: 'UPDATE_STUDENT',
   UPDATE_STUDENT_FIELD: 'UPDATE_STUDENT_FIELD',
+  REMOVE_STUDENT_FROM_QUEUE: 'REMOVE_STUDENT_FROM_QUEUE',
 };
+
+function decrementStatsForRemovedStudent(stats, student) {
+  if (!student) return stats;
+  const total = Math.max((Number(stats.total) || 0) - 1, 0);
+  const pending = ['未联系', '新线索'].includes(student.status)
+    ? Math.max((Number(stats.pending) || 0) - 1, 0)
+    : (Number(stats.pending) || 0);
+  const done = Number(stats.done) || 0;
+  const followUp = Number(stats.follow_up) || 0;
+  return {
+    ...stats,
+    total,
+    pending,
+    done,
+    follow_up: followUp,
+    progress_pct: total > 0 ? Math.round(((done + followUp) / total) * 1000) / 10 : 0,
+  };
+}
 
 // Reducer
 function agentWorkReducer(state, action) {
@@ -155,8 +178,12 @@ function agentWorkReducer(state, action) {
     case ActionTypes.SET_SCHOOL_GROUPS:
       return { ...state, schoolGroups: action.payload };
 
-    case ActionTypes.SET_CURRENT_IDX:
-      return { ...state, currentIdx: action.payload };
+    case ActionTypes.SET_CURRENT_IDX: {
+      const nextIdx = typeof action.payload === 'function'
+        ? action.payload(state.currentIdx)
+        : action.payload;
+      return { ...state, currentIdx: nextIdx };
+    }
 
     case ActionTypes.SET_FILTER:
       return {
@@ -186,6 +213,10 @@ function agentWorkReducer(state, action) {
           show: true,
           student: action.payload.student ?? state.detail.student,
           notes: action.payload.notes ?? state.detail.notes,
+          calls: action.payload.calls ?? state.detail.calls,
+          followUps: action.payload.followUps ?? state.detail.followUps,
+          visits: action.payload.visits ?? state.detail.visits,
+          intentTimeline: action.payload.intentTimeline ?? state.detail.intentTimeline,
           noteIdx: action.payload.noteIdx ?? state.detail.noteIdx,
           loading: action.payload.loading ?? state.detail.loading,
           error: action.payload.error ?? state.detail.error,
@@ -305,6 +336,20 @@ function agentWorkReducer(state, action) {
           : state.detail,
       };
 
+    case ActionTypes.REMOVE_STUDENT_FROM_QUEUE: {
+      const removed = state.students.find((s) => s.id === action.id);
+      const students = state.students.filter((s) => s.id !== action.id);
+      return {
+        ...state,
+        students,
+        currentIdx: Math.min(state.currentIdx, Math.max(students.length - 1, 0)),
+        stats: decrementStatsForRemovedStudent(state.stats, removed),
+        dial: state.dial.lockedStudentId === action.id
+          ? { ...state.dial, lockedStudentId: null }
+          : state.dial,
+      };
+    }
+
     default:
       return state;
   }
@@ -364,6 +409,7 @@ export default function useAgentWorkState() {
 
     updateStudent: (id, fields) => dispatch({ type: ActionTypes.UPDATE_STUDENT, id, fields }),
     updateStudentField: (id, field, value) => dispatch({ type: ActionTypes.UPDATE_STUDENT_FIELD, id, field, value }),
+    removeStudentFromQueue: (id) => dispatch({ type: ActionTypes.REMOVE_STUDENT_FROM_QUEUE, id }),
   }), []); // dispatch 是稳定的，所以依赖数组为空
 
   return { state, actions };

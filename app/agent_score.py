@@ -19,6 +19,7 @@ def score_agent_work(
     """Build an explainable 100-point preview score from already aggregated metrics."""
     safe_call_target = max(int(daily_call_target or 1), 1)
     active_tasks = _as_int(metrics.get("active_tasks"))
+    pending_tasks = _as_int(metrics.get("pending_tasks"))
     progress_pct = _as_float(metrics.get("progress_pct"))
     today_calls = _as_int(metrics.get("today_calls"))
     open_follow_ups = _as_int(metrics.get("open_follow_ups"))
@@ -27,7 +28,13 @@ def score_agent_work(
     enrolled_count = _as_int(metrics.get("enrolled_count"))
     missing_phone_tasks = _as_int(metrics.get("missing_phone_tasks"))
 
-    task_progress = _component("task_progress", progress_pct / 100 if active_tasks else 1)
+    progress_ratio = progress_pct / 100 if active_tasks else 1
+    pending_clearance_ratio = (
+        (active_tasks - pending_tasks) / active_tasks if active_tasks else 1
+    )
+    progress_coverage = _points(20.0, progress_ratio)
+    pending_clearance = _points(10.0, pending_clearance_ratio)
+    task_progress = round(progress_coverage + pending_clearance, 1)
     call_activity = _component("call_activity", today_calls / safe_call_target)
     if open_follow_ups:
         follow_up_timeliness = _component(
@@ -54,13 +61,19 @@ def score_agent_work(
             "任务推进",
             task_progress,
             COMPONENT_MAX["task_progress"],
-            "active task progress",
+            "progress coverage and pending cleanup",
+            detail=f"推进率 {_format_pct(progress_pct)}，待联系 {pending_tasks}/{active_tasks}",
+            parts=[
+                _part_payload("推进覆盖", progress_coverage, 20.0),
+                _part_payload("待联系清理", pending_clearance, 10.0),
+            ],
         ),
         "call_activity": _component_payload(
             "今日通话",
             call_activity,
             COMPONENT_MAX["call_activity"],
             "daily dial volume",
+            detail=_call_detail(today_calls, safe_call_target),
         ),
         "follow_up_timeliness": _component_payload(
             "回访及时",
@@ -95,16 +108,54 @@ def score_agent_work(
 
 
 def _component(name: str, ratio: float) -> float:
-    return round(max(0.0, min(1.0, ratio)) * COMPONENT_MAX[name], 1)
+    return _points(COMPONENT_MAX[name], ratio)
 
 
-def _component_payload(label: str, score: float, max_score: float, basis: str) -> dict:
-    return {
+def _points(max_score: float, ratio: float) -> float:
+    return round(max(0.0, min(1.0, ratio)) * max_score, 1)
+
+
+def _component_payload(
+    label: str,
+    score: float,
+    max_score: float,
+    basis: str,
+    *,
+    detail: str | None = None,
+    parts: list[dict] | None = None,
+) -> dict:
+    payload = {
         "label": label,
         "score": round(score, 1),
         "max": max_score,
         "basis": basis,
     }
+    if detail:
+        payload["detail"] = detail
+    if parts:
+        payload["parts"] = parts
+    return payload
+
+
+def _part_payload(label: str, score: float, max_score: float) -> dict:
+    return {
+        "label": label,
+        "score": round(score, 1),
+        "max": max_score,
+    }
+
+
+def _call_detail(today_calls: int, daily_call_target: int) -> str:
+    detail = f"{today_calls}/{daily_call_target} 通"
+    if today_calls >= daily_call_target:
+        return f"{detail}，已达标封顶"
+    return detail
+
+
+def _format_pct(value: float) -> str:
+    if float(value).is_integer():
+        return f"{int(value)}%"
+    return f"{round(value, 1)}%"
 
 
 def _build_signals(
@@ -116,6 +167,7 @@ def _build_signals(
     overdue_follow_ups = _as_int(metrics.get("overdue_follow_ups"))
     missing_phone_tasks = _as_int(metrics.get("missing_phone_tasks"))
     today_calls = _as_int(metrics.get("today_calls"))
+    today_unrecorded_calls = _as_int(metrics.get("today_unrecorded_calls"))
     progress_pct = _as_float(metrics.get("progress_pct"))
     contacted_count = _as_int(metrics.get("contacted_count"))
     a_level_count = _as_int(metrics.get("a_level_count"))
@@ -154,6 +206,16 @@ def _build_signals(
                 "severity": "warning",
                 "label": "今日通话低于目标 50%",
                 "count": today_calls,
+            }
+        )
+    if today_unrecorded_calls > 0:
+        unrecorded_ratio = today_unrecorded_calls / today_calls if today_calls else 1
+        signals.append(
+            {
+                "key": "unrecorded_call_duration",
+                "severity": "warning" if today_calls >= 5 and unrecorded_ratio >= 0.5 else "info",
+                "label": f"{today_unrecorded_calls} 通未记录时长",
+                "count": today_unrecorded_calls,
             }
         )
     if active_tasks >= 10 and progress_pct < 40:

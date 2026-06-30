@@ -150,11 +150,11 @@ async function loginAgent(page) {
       }
     });
 
-    await runTest('话务员管理-页面加载', async () => {
+    await runTest('账号管理-页面加载', async () => {
       await page.goto(`${BASE}/admin/agents`);
       await page.waitForTimeout(3000);
       const text = await page.textContent('body');
-      if (!text.includes('话务员')) throw new Error('缺少话务员');
+      if (!text.includes('账号管理')) throw new Error('缺少账号管理');
       await screenshot(page, '09-agents-page');
     });
 

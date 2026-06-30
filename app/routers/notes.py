@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.dial_guard import require_recent_agent_dial
 from app.models import Note, Student, User, UserRole
 from app.permissions import get_accessible_student
 from app.schemas import NoteCreate, NoteUpdate, Response
@@ -19,6 +20,7 @@ async def create_note(
     current_user: User = Depends(get_current_user),
 ):
     student = await get_accessible_student(db, body.student_id, current_user)
+    await require_recent_agent_dial(db, student.id, current_user)
 
     note = Note(
         student_id=body.student_id,
@@ -102,6 +104,7 @@ async def update_note(
     note = await _get_note_for_modify(db, note_id, current_user)
     student_r = await db.execute(select(Student).where(Student.id == note.student_id))
     student = student_r.scalar_one_or_none()
+    await require_recent_agent_dial(db, note.student_id, current_user)
 
     old_content = note.content
     note.content = body.content

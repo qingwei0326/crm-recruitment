@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """全角色全流程 E2E 测试
 
 覆盖:
@@ -8,13 +7,15 @@
   D. 安全 (3 项) - 权限隔离、错误登录、改密
 
 Run:
-  .venv-win\Scripts\python.exe tests\e2e\test_full_flow.py
+  .venv-win\\Scripts\\python.exe tests\\e2e\test_full_flow.py
 """
 
 import asyncio
 import os
 import sys
-from playwright.async_api import async_playwright, TimeoutError as PwTimeout
+
+from playwright.async_api import TimeoutError as PwTimeout
+from playwright.async_api import async_playwright
 
 BASE_URL = "http://127.0.0.1:8000"
 MOBILE_VIEWPORT = {"width": 390, "height": 844}
@@ -23,16 +24,28 @@ MOBILE_VIEWPORT = {"width": 390, "height": 844}
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def shot(page, name):
     os.makedirs("tests/e2e/screenshots", exist_ok=True)
     path = f"tests/e2e/screenshots/full_{name}.png"
     await page.screenshot(path=path, full_page=True)
     print(f"  [shot] {path}")
 
-def ok(msg): print(f"  [OK] {msg}")
-def fail(msg): print(f"  [FAIL] {msg}")
-def info(msg): print(f"  [..] {msg}")
-def skip(msg): print(f"  [SKIP] {msg}")
+
+def ok(msg):
+    print(f"  [OK] {msg}")
+
+
+def fail(msg):
+    print(f"  [FAIL] {msg}")
+
+
+def info(msg):
+    print(f"  [..] {msg}")
+
+
+def skip(msg):
+    print(f"  [SKIP] {msg}")
 
 
 async def clear_and_login(page, username, password, viewport=None):
@@ -71,6 +84,7 @@ async def force_logout(page):
 # ===================================================================
 # A. ADMIN TESTS
 # ===================================================================
+
 
 async def test_a01_health(page):
     """A01. API health check."""
@@ -117,7 +131,7 @@ async def test_a04_admin_sidebar_nav(page):
         ("/admin/leads", "学生管理"),
         ("/admin/governance", "线索治理"),
         ("/admin/recycle-center", "线索回收"),
-        ("/admin/agents", "坐席管理"),
+        ("/admin/agents", "账号管理"),
         ("/admin/report-center", "报表中心"),
         ("/admin/report", "汇总报表"),
         ("/admin/trend", "趋势报表"),
@@ -146,7 +160,9 @@ async def test_a05_leads_search(page):
     await page.wait_for_timeout(1500)
     body = await page.text_content("body")
     assert "学生" in body or "线索" in body or "管理" in body, "Leads page missing"
-    search = page.locator('input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]').first
+    search = page.locator(
+        'input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]'
+    ).first
     if await search.count() > 0:
         await search.fill("张")
         await page.wait_for_timeout(1500)
@@ -167,7 +183,9 @@ async def test_a06_lead_detail(page):
         await page.wait_for_load_state("networkidle")
         await page.wait_for_timeout(1500)
         body = await page.text_content("body")
-        has_detail = any(k in body for k in ["联系人", "阶段", "通话记录", "备注", "地域", "监护人"])
+        has_detail = any(
+            k in body for k in ["联系人", "阶段", "通话记录", "备注", "地域", "监护人"]
+        )
         ok(f"Detail loaded: {has_detail}")
         await shot(page, "a06_lead_detail")
     else:
@@ -179,8 +197,7 @@ async def test_a07_governance(page):
     print("\n[A07] Lead governance")
     await safe_goto(page, f"{BASE_URL}/admin/governance")
     await page.wait_for_timeout(1500)
-    body = await page.text_content("body")
-    ok(f"Governance loaded")
+    ok("Governance loaded")
     await shot(page, "a07_governance")
 
 
@@ -207,7 +224,11 @@ async def test_a09_agent_manage(page):
 async def test_a10_reports(page):
     """A10. Reports: summary + trend + call volume."""
     print("\n[A10] Reports")
-    for path, label in [("/admin/report", "汇总"), ("/admin/trend", "趋势"), ("/admin/call-volume", "话务")]:
+    for path, label in [
+        ("/admin/report", "汇总"),
+        ("/admin/trend", "趋势"),
+        ("/admin/call-volume", "话务"),
+    ]:
         await safe_goto(page, f"{BASE_URL}{path}")
         await page.wait_for_timeout(1500)
         ok(f"{label} report loaded")
@@ -247,13 +268,13 @@ async def test_a13_distribute(page):
 # B. AGENT DESKTOP TESTS
 # ===================================================================
 
+
 async def test_b01_agent_login(page):
     """B01. Agent login -> desktop workspace."""
     print("\n[B01] Agent login (desktop)")
     await force_logout(page)
     await clear_and_login(page, "e2etest", "e2etest123")
     await page.wait_for_timeout(2000)
-    body = await page.text_content("body")
     ok(f"Logged in -> {page.url}")
     await shot(page, "b01_agent_home")
 
@@ -301,7 +322,15 @@ async def test_b04_dial_flow(page):
     has_modal = "通话已完成" in body or "请选择处理结果" in body
     ok(f"Dial modal visible: {has_modal}")
     if has_modal:
-        btn = page.locator('button:has-text("非常有意向"), button:has-text("新线索"), button:has-text("意向了解加微")').first
+        btn = page.locator(
+            ", ".join(
+                [
+                    'button:has-text("非常有意向")',
+                    'button:has-text("新线索")',
+                    'button:has-text("意向了解加微")',
+                ]
+            )
+        ).first
         if await btn.count() > 0:
             await btn.click()
             await page.wait_for_timeout(1500)
@@ -341,8 +370,7 @@ async def test_b06_following_tab(page):
     if await btn.count() > 0:
         await btn.click()
         await page.wait_for_timeout(2000)
-        body = await page.text_content("body")
-        ok(f"Following tab loaded")
+        ok("Following tab loaded")
     else:
         skip("Following button not found")
     await shot(page, "b06_following")
@@ -355,9 +383,9 @@ async def test_b07_school_filter(page):
     if await today_btn.count() > 0:
         await today_btn.click()
         await page.wait_for_timeout(1500)
-    school_select = page.locator('select').first
+    school_select = page.locator("select").first
     if await school_select.count() > 0:
-        options = await school_select.locator('option').all()
+        options = await school_select.locator("option").all()
         if len(options) > 1:
             await school_select.select_option(index=1)
             await page.wait_for_timeout(1500)
@@ -370,7 +398,9 @@ async def test_b07_school_filter(page):
 async def test_b08_search(page):
     """B08. Search."""
     print("\n[B08] Search")
-    search = page.locator('input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]').first
+    search = page.locator(
+        'input[placeholder*="搜索"], input[placeholder*="姓名"], input[placeholder*="手机"]'
+    ).first
     if await search.count() > 0:
         await search.fill("林")
         await page.wait_for_timeout(1500)
@@ -422,6 +452,7 @@ async def test_b10_logout(page):
 # C. MOBILE TESTS
 # ===================================================================
 
+
 async def test_c01_mobile_login(page):
     """C01. Mobile login."""
     print("\n[C01] Mobile login")
@@ -429,8 +460,7 @@ async def test_c01_mobile_login(page):
     await clear_and_login(page, "e2etest", "e2etest123", viewport=MOBILE_VIEWPORT)
     await page.goto(f"{BASE_URL}/mobile", wait_until="networkidle")
     await page.wait_for_timeout(2000)
-    body = await page.text_content("body")
-    ok(f"Mobile home loaded")
+    ok("Mobile home loaded")
     await shot(page, "c01_mobile_home")
 
 
@@ -568,6 +598,7 @@ async def test_c09_mobile_logout(page):
 # D. SECURITY TESTS
 # ===================================================================
 
+
 async def test_d01_wrong_password(page):
     """D01. Login with wrong password -> error."""
     print("\n[D01] Wrong password")
@@ -670,9 +701,9 @@ SECURITY_TESTS = [
 
 
 async def run_suite(page, name, tests):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {name}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     passed = failed = 0
     errors = []
     for test_fn in tests:
@@ -726,9 +757,9 @@ async def main():
         await browser.close()
 
     total = total_passed + total_failed
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  FINAL: {total_passed}/{total} passed, {total_failed} failed")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     if all_errors:
         print("\n  Failed:")
         for name, err in all_errors:

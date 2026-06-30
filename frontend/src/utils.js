@@ -42,6 +42,15 @@ export function formatDate(value) {
   }
 }
 
+export function formatDuration(seconds, { emptyText = '未记录', suffix = '' } = {}) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return emptyText;
+  if (value < 60) return `${Math.round(value)}秒${suffix}`;
+  const minutes = Math.floor(value / 60);
+  const rest = Math.round(value % 60);
+  return `${minutes}分${rest > 0 ? `${rest}秒` : ''}${suffix}`;
+}
+
 export function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
 }

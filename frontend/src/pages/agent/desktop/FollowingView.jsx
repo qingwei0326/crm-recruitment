@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Phone, User, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { INTENT_BADGES, statusLabel, stageLabel } from '../../../labels';
 import AssignedDaysBadge from '../shared/AssignedDaysBadge';
 import { STATUS_STYLE } from '../agentWorkUtils';
@@ -92,12 +92,6 @@ export default function FollowingView({ followingData, loading, onRefresh, onOpe
                     <span className="text-gray-400">|</span>
                     <span>{stageLabel(item.stage)}</span>
                   </div>
-                  {(item.guardian_name || item.guardian_phone) && (
-                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                      {item.guardian_name && <span className="flex items-center gap-1"><User className="w-3 h-3" />{item.guardian_name}</span>}
-                      {item.guardian_phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{item.guardian_phone}</span>}
-                    </div>
-                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <AssignedDaysBadge days={item.days_since_assigned} />
