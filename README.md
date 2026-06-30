@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.5.0-blue)
+![Version](https://img.shields.io/badge/version-1.6.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -335,6 +335,17 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.6.0（2026-06-30）
+
+- **发布检查闭环** — 新增 `scripts/release-check.ps1` 和发布清单，统一校验发包规则、后端测试、前端测试、lint、build 和运行健康。
+- **账号权限升级** — 管理员拆分为超级管理员和普通管理员；账号管理、系统设置、删除类操作收敛到超级管理员，普通管理员保留日常管理视图。
+- **离职账号治理** — 离职/禁用账号默认不进入分配类列表，账号管理保留历史记录用于追溯操作。
+- **学生号码与拨号规则** — 号码展示改为明文，电话搜索走标准化号码匹配；话务员写入通话结果前需有系统拨号记录，已联系线索允许补录。
+- **无效线索口径调整** — 学生列表默认隐藏无效线索，选择无效状态时仍可搜索和处理。
+- **线索治理与学校分发优化** — 多学校分发支持按区县分组，分发候选人只显示启用话务员，后台补齐线索治理、回收和报表测试。
+- **管理员移动看板与工作台体验** — 新增移动端管理员看板，优化话务员工作台详情抽屉、学生时间线、离线同步和移动首页。
+- **废弃项清理** — 删除旧 watchdog 三脚本，废弃旧 `/api/stats/predictions` 预测接口，避免发布包带入历史运行守护逻辑。
 
 ### v1.5.0（2026-06-27）
 
