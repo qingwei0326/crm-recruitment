@@ -1,3 +1,17 @@
+import {
+  detailForOperatorResult,
+  displayStatusForOperatorResult,
+  FIXED_INVALID_REASON_LABELS,
+  OPERATOR_RESULT_LABELS,
+  RESULT_DETAIL_LABELS,
+  RESULT_TO_DISPLAY_STATUS,
+} from './operatorResultPolicy';
+
+export {
+  detailForOperatorResult,
+  displayStatusForOperatorResult,
+};
+
 // 后端 API 统一返回学生状态；历史存储值由后端归一化。
 // 后端阶段值 → 前端展示文案
 const STAGE_LABEL_MAP = {
@@ -83,6 +97,7 @@ export const STATUS_ACTION_BUTTON_CLASSES = {
   已联系: 'bg-blue-600 hover:bg-blue-700',
   未接: 'bg-gray-600 hover:bg-gray-700',
   待回访: 'bg-amber-600 hover:bg-amber-700',
+  空号: 'bg-stone-600 hover:bg-stone-700',
   高分段: 'bg-indigo-600 hover:bg-indigo-700',
   无意向: 'bg-slate-600 hover:bg-slate-700',
   孩子不想读: 'bg-zinc-600 hover:bg-zinc-700',
@@ -90,43 +105,10 @@ export const STATUS_ACTION_BUTTON_CLASSES = {
   无效: 'bg-red-500 hover:bg-red-600',
 };
 
-export const OPERATOR_STATUS_BUTTON_LABELS = [
-  '新线索',
-  '非常有意向',
-  '意向了解加微',
-  '未接',
-  '高分段',
-  '无意向',
-  '孩子不想读',
-  '已报名',
-];
-
-export const OPERATOR_RESULT_TO_DISPLAY_STATUS = {
-  新线索: '未联系',
-  非常有意向: '已联系',
-  意向了解加微: '待回访',
-  高分段: '无效',
-  无意向: '无效',
-  孩子不想读: '无效',
-};
-
-export const OPERATOR_DETAIL_RESULT_LABELS = [
-  '非常有意向',
-  '意向了解加微',
-  '高分段',
-  '无意向',
-  '孩子不想读',
-];
-
-export const OPERATOR_INVALID_DETAIL_LABELS = ['高分段', '无意向', '孩子不想读'];
-
-export function displayStatusForOperatorResult(status) {
-  return OPERATOR_RESULT_TO_DISPLAY_STATUS[status] || status;
-}
-
-export function detailForOperatorResult(status) {
-  return OPERATOR_DETAIL_RESULT_LABELS.includes(status) ? status : '';
-}
+export const OPERATOR_STATUS_BUTTON_LABELS = OPERATOR_RESULT_LABELS;
+export const OPERATOR_RESULT_TO_DISPLAY_STATUS = RESULT_TO_DISPLAY_STATUS;
+export const OPERATOR_DETAIL_RESULT_LABELS = RESULT_DETAIL_LABELS;
+export const OPERATOR_INVALID_DETAIL_LABELS = FIXED_INVALID_REASON_LABELS;
 
 export const DESKTOP_DIAL_STATUS_BUTTONS = [
   ...OPERATOR_STATUS_BUTTON_LABELS,

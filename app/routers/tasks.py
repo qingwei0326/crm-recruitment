@@ -20,7 +20,7 @@ from app.task_stats import (
     TERMINAL_STUDENT_STATUSES,
     build_task_stats,
 )
-from app.utils import today_cst_as_utc, utcnow
+from app.utils import is_phone_query, mask_phone, normalize_phone, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/tasks", tags=["任务"])
 
@@ -56,11 +56,14 @@ async def today_tasks(
     search_pred = None
     if search and search.strip():
         q = search.strip()
-        search_pred = or_(
-            Student.name.ilike(f"%{q}%"),
-            Student.guardian_phone.ilike(f"%{q}%"),
-            Student.guardian2_phone.ilike(f"%{q}%"),
-        )
+        if is_phone_query(q):
+            phone_q = normalize_phone(q)
+            search_pred = or_(
+                Student.guardian_phone == phone_q,
+                Student.guardian2_phone == phone_q,
+            )
+        else:
+            search_pred = Student.name.ilike(f"%{q}%")
         filters.append(search_pred)
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
@@ -119,11 +122,11 @@ async def today_tasks(
                     "region": s.region,
                     "score": s.score,
                     "guardian_name": s.guardian_name,
-                    "guardian_phone": s.guardian_phone,
-                    "guardian_phone_raw": s.guardian_phone,
+                    "guardian_phone": mask_phone(s.guardian_phone),
+                    "guardian_phone_raw": None,
                     "guardian2_name": s.guardian2_name,
-                    "guardian2_phone": s.guardian2_phone,
-                    "guardian2_phone_raw": s.guardian2_phone,
+                    "guardian2_phone": mask_phone(s.guardian2_phone),
+                    "guardian2_phone_raw": None,
                     "school_name": s.school_name,
                     "school_address": s.school_address,
                     "status": canonical_status_value(s.status),
@@ -151,7 +154,7 @@ async def handled_students(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """待办学生列表：已联系有效和未接，需要话务员继续处理。"""
+    """待办学生列表：已联系、未接、待回访，需要话务员继续处理。"""
     handled_statuses = AGENT_HANDLED_TASK_STATUSES
     base_where = (
         Student.assigned_to == current_user.id,
@@ -168,11 +171,16 @@ async def handled_students(
 
     if search and search.strip():
         q = search.strip()
-        filters.append(or_(
-            Student.name.ilike(f"%{q}%"),
-            Student.guardian_phone.ilike(f"%{q}%"),
-            Student.guardian2_phone.ilike(f"%{q}%"),
-        ))
+        if is_phone_query(q):
+            phone_q = normalize_phone(q)
+            filters.append(
+                or_(
+                    Student.guardian_phone == phone_q,
+                    Student.guardian2_phone == phone_q,
+                )
+            )
+        else:
+            filters.append(Student.name.ilike(f"%{q}%"))
 
     # 统计各状态数量
     counts_r = await db.execute(
@@ -191,6 +199,10 @@ async def handled_students(
         "未接": sum(
             int(counts.get(status, 0) or 0)
             for status in statuses_for_canonical(StudentStatus.not_reached)
+        ),
+        "待回访": sum(
+            int(counts.get(status, 0) or 0)
+            for status in statuses_for_canonical(StudentStatus.pending_visit)
         ),
     }
 
@@ -213,7 +225,7 @@ async def handled_students(
                 "region": s.region,
                 "score": s.score,
                 "guardian_name": s.guardian_name,
-                "guardian_phone": s.guardian_phone,
+                "guardian_phone": mask_phone(s.guardian_phone),
                 "school_name": s.school_name,
                 "status": canonical_status_value(s.status),
                 "status_detail": status_detail_value(s.status, s.status_detail),
@@ -384,7 +396,7 @@ async def following_students(
                 "status": canonical_status_value(s.status),
                 "status_detail": status_detail_value(s.status, s.status_detail),
                 "guardian_name": s.guardian_name,
-                "guardian_phone": s.guardian_phone,
+                "guardian_phone": mask_phone(s.guardian_phone),
                 "days_since_assigned": days,
             }
         )

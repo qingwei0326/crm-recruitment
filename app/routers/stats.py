@@ -2,18 +2,15 @@ import asyncio
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai_analyzer import predict_conversion
 from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.models import (
     DialLog,
     EnrollmentSubStage,
-    FollowUp,
     IntentLevel,
-    Note,
     OperationLog,
     Student,
     StudentStatus,
@@ -23,10 +20,8 @@ from app.models import (
     VisitStatus,
     VisitType,
 )
-from app.permissions import get_accessible_student
 from app.schemas import Response
 from app.status_policy import statuses_for_canonical
-from app.task_stats import TERMINAL_STUDENT_STATUSES
 from app.utils import month_start_cst_as_utc, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/stats", tags=["统计"])
@@ -114,14 +109,36 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     tomorrow = today + timedelta(days=1)
     month_start = month_start_cst_as_utc()
 
-    # DialLog 统计：合并 today_calls + month_calls + avg_duration 为一次查询
+    # DialLog 统计：拨号次数统计全部记录，平均时长只统计已补写的正数时长。
     dial_r = await db.execute(
         select(
             func.count(DialLog.id).filter(
                 DialLog.dialed_at >= today, DialLog.dialed_at < tomorrow
             ).label("today_calls"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                DialLog.duration_seconds > 0,
+            )
+            .label("today_recorded_calls"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None)),
+            )
+            .label("today_unrecorded_calls"),
             func.count(DialLog.id).label("month_calls"),
-            func.avg(DialLog.duration_seconds).label("avg_duration"),
+            func.count(DialLog.id)
+            .filter(DialLog.duration_seconds > 0)
+            .label("month_recorded_calls"),
+            func.count(DialLog.id)
+            .filter(or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None)))
+            .label("month_unrecorded_calls"),
+            func.avg(DialLog.duration_seconds)
+            .filter(DialLog.duration_seconds > 0)
+            .label("avg_duration"),
         ).where(
             DialLog.agent_id == agent_id,
             DialLog.dialed_at >= month_start,
@@ -129,7 +146,11 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     )
     dial_row = dial_r.one()
     today_calls = int(dial_row.today_calls or 0)
+    today_recorded_calls = int(dial_row.today_recorded_calls or 0)
+    today_unrecorded_calls = int(dial_row.today_unrecorded_calls or 0)
     month_calls = int(dial_row.month_calls or 0)
+    month_recorded_calls = int(dial_row.month_recorded_calls or 0)
+    month_unrecorded_calls = int(dial_row.month_unrecorded_calls or 0)
     avg_duration = round(dial_row.avg_duration or 0, 1)
 
     # 合并意向统计：total_contacted + all_a 一次查询
@@ -172,7 +193,13 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
         {
             "agent_id": agent_id,
             "today_calls": today_calls,
+            "today_recorded_calls": today_recorded_calls,
+            "today_unrecorded_calls": today_unrecorded_calls,
             "month_calls": month_calls,
+            "month_recorded_calls": month_recorded_calls,
+            "month_unrecorded_calls": month_unrecorded_calls,
+            "recorded_calls": month_recorded_calls,
+            "unrecorded_calls": month_unrecorded_calls,
             "today_a_count": today_a,
             "month_a_count": month_a,
             "conversion_rate": conversion_rate,
@@ -268,6 +295,26 @@ async def agent_ranking(
         contacted = s.get("contacted", 0)
         a_count = s.get("a_count", 0)
         enrolled = s.get("enrolled", 0)
+        total_visits = v.get("total_visits", 0)
+        visits_done = v.get("visits_done", 0)
+        campus_visits = v.get("campus_visits", 0)
+        home_visits = v.get("home_visits", 0)
+        today_calls = int(today_calls_map.get(a.id, 0))
+        month_calls = int(month_calls_map.get(a.id, 0))
+        has_data = any(
+            [
+                total_leads,
+                contacted,
+                a_count,
+                enrolled,
+                total_visits,
+                visits_done,
+                today_calls,
+                month_calls,
+            ]
+        )
+        if not a.is_active and not has_data:
+            continue
         conversion = round(a_count / contacted * 100, 1) if contacted > 0 else 0
         enroll_rate = round(enrolled / contacted * 100, 1) if contacted > 0 else 0
         a_to_enroll = round(enrolled / a_count * 100, 1) if a_count > 0 else 0
@@ -280,12 +327,12 @@ async def agent_ranking(
                 "contacted": contacted,
                 "a_count": a_count,
                 "enrolled": enrolled,
-                "total_visits": v.get("total_visits", 0),
-                "visits_done": v.get("visits_done", 0),
-                "campus_visits": v.get("campus_visits", 0),
-                "home_visits": v.get("home_visits", 0),
-                "today_calls": int(today_calls_map.get(a.id, 0)),
-                "month_calls": int(month_calls_map.get(a.id, 0)),
+                "total_visits": total_visits,
+                "visits_done": visits_done,
+                "campus_visits": campus_visits,
+                "home_visits": home_visits,
+                "today_calls": today_calls,
+                "month_calls": month_calls,
                 "conversion_rate": conversion,
                 "enroll_rate": enroll_rate,
                 "a_to_enroll": a_to_enroll,
@@ -479,60 +526,6 @@ async def enrollment_substage_distribution(
     )
 
 
-@router.get("/predict-conversion/{student_id}")
-async def predict_student_conversion(
-    student_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    student = await get_accessible_student(db, student_id, current_user)
-
-    notes_r = await db.execute(select(func.count(Note.id)).where(Note.student_id == student_id))
-    total_notes = notes_r.scalar() or 0
-
-    fu_r = await db.execute(select(FollowUp).where(FollowUp.student_id == student_id).limit(1))
-    has_follow_up = fu_r.scalar_one_or_none() is not None
-
-    visit_r = await db.execute(
-        select(Visit)
-        .where(Visit.student_id == student_id, Visit.status == VisitStatus.completed)
-        .limit(1)
-    )
-    has_visit = visit_r.scalar_one_or_none() is not None
-
-    days_since = 30
-    if student.assigned_at:
-        delta = utcnow() - student.assigned_at
-        days_since = max(1, delta.days)
-
-    intent_val = student.intent_level.value if student.intent_level else "无"
-    stage_val = student.stage.value if student.stage else "初次联系"
-
-    prob = predict_conversion(
-        intent_level=intent_val,
-        stage=stage_val,
-        total_notes=total_notes,
-        has_follow_up=has_follow_up,
-        has_visit=has_visit,
-        days_since_assign=days_since,
-    )
-
-    return Response.ok(
-        {
-            "student_id": student_id,
-            "conversion_probability": prob,
-            "factors": {
-                "intent_level": intent_val,
-                "stage": stage_val,
-                "total_notes": total_notes,
-                "has_follow_up": has_follow_up,
-                "has_visit": has_visit,
-                "days_since_assign": days_since,
-            },
-        }
-    )
-
-
 @router.get("/funnel")
 async def funnel_data(
     db: AsyncSession = Depends(get_db),
@@ -611,9 +604,22 @@ async def heatmap_data(
     first_day = datetime(start.year, start.month, start.day)
     last_day_end = datetime(end.year, end.month, end.day) + timedelta(days=1)
 
-    # 获取所有坐席
+    call_agent_ids_r = await db.execute(
+        select(DialLog.agent_id)
+        .where(DialLog.dialed_at >= first_day, DialLog.dialed_at < last_day_end)
+        .group_by(DialLog.agent_id)
+    )
+    agent_ids_with_calls = {int(agent_id) for (agent_id,) in call_agent_ids_r.all()}
+
+    agent_filter = User.is_active
+    if agent_ids_with_calls:
+        agent_filter = or_(User.is_active, User.id.in_(agent_ids_with_calls))
+
+    # 获取活跃坐席；禁用坐席只有在日期范围内有通话时保留历史数据。
     agents_r = await db.execute(
-        select(User.id, User.name).where(User.role == UserRole.agent).order_by(User.name)
+        select(User.id, User.name)
+        .where(User.role == UserRole.agent, agent_filter)
+        .order_by(User.name)
     )
     agent_rows = agents_r.all()
     agents = [{"id": aid, "name": name} for aid, name in agent_rows]
@@ -655,119 +661,6 @@ async def heatmap_data(
             "agents": [a["name"] for a in agents],
             "dates": date_strs,
             "data": matrix,
-        }
-    )
-
-
-@router.get("/predictions")
-async def prediction_distribution(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
-):
-    """活跃学生的转化概率分布统计 — 批量查询避免 N+1"""
-    # 1) 所有活跃学生 (一次查询)
-    result = await db.execute(
-        select(Student).where(
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES)
-        )
-    )
-    students = result.scalars().all()
-    if not students:
-        return Response.ok(
-            {
-                "total": 0,
-                "high": 0,
-                "medium": 0,
-                "low": 0,
-                "avg_probability": 0,
-                "distribution": [
-                    {"name": "高概率 (>70%)", "value": 0, "color": "#22c55e"},
-                    {"name": "中概率 (30-70%)", "value": 0, "color": "#eab308"},
-                    {"name": "低概率 (<30%)", "value": 0, "color": "#ef4444"},
-                ],
-            }
-        )
-
-    # 子查询：活跃学生 ID 集合（避免 IN 列表超 SQLite 变量限制）
-    active_ids = (
-        select(Student.id)
-        .where(
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES)
-        )
-        .scalar_subquery()
-    )
-
-    # 2) 批量查 notes 数
-    notes_r = await db.execute(
-        select(Note.student_id, func.count(Note.id).label("cnt"))
-        .where(Note.student_id.in_(active_ids))
-        .group_by(Note.student_id)
-    )
-    notes_map = {row.student_id: row.cnt for row in notes_r.all()}
-
-    # 3) 批量查 follow_up
-    fu_r = await db.execute(
-        select(func.distinct(FollowUp.student_id)).where(FollowUp.student_id.in_(active_ids))
-    )
-    fu_set = {row[0] for row in fu_r.all()}
-
-    # 4) 批量查 completed visit
-    visit_r = await db.execute(
-        select(func.distinct(Visit.student_id)).where(
-            Visit.student_id.in_(active_ids),
-            Visit.status == VisitStatus.completed,
-        )
-    )
-    visit_set = {row[0] for row in visit_r.all()}
-
-    # 5) 计算每个学生的概率
-    now = utcnow()
-    high = medium = low = 0
-    total_prob = 0.0
-
-    for s in students:
-        total_notes = notes_map.get(s.id, 0)
-        has_follow_up = s.id in fu_set
-        has_visit = s.id in visit_set
-
-        days_since = 30
-        if s.assigned_at:
-            days_since = max(1, (now - s.assigned_at).days)
-
-        intent_val = s.intent_level.value if s.intent_level else "无"
-        stage_val = s.stage.value if s.stage else "初次联系"
-
-        prob = predict_conversion(
-            intent_level=intent_val,
-            stage=stage_val,
-            total_notes=total_notes,
-            has_follow_up=has_follow_up,
-            has_visit=has_visit,
-            days_since_assign=days_since,
-        )
-        total_prob += prob
-        if prob > 0.7:
-            high += 1
-        elif prob >= 0.3:
-            medium += 1
-        else:
-            low += 1
-
-    total = len(students)
-    avg_prob = round(total_prob / total, 4) if total else 0
-
-    return Response.ok(
-        {
-            "total": total,
-            "high": high,
-            "medium": medium,
-            "low": low,
-            "avg_probability": avg_prob,
-            "distribution": [
-                {"name": "高概率 (>70%)", "value": high, "color": "#22c55e"},
-                {"name": "中概率 (30-70%)", "value": medium, "color": "#eab308"},
-                {"name": "低概率 (<30%)", "value": low, "color": "#ef4444"},
-            ],
         }
     )
 

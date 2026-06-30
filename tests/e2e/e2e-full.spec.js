@@ -138,14 +138,14 @@ test.describe('管理员角色', () => {
     }
   });
 
-  test('10. 话务员管理 - 页面加载', async ({ page }) => {
+  test('10. 账号管理 - 页面加载', async ({ page }) => {
     await loginAdmin(page);
     await page.goto(`${BASE}/admin/agents`);
     await page.waitForTimeout(3000);
     const text = await page.textContent('body');
-    expect(text).toContain('话务员');
+    expect(text).toContain('账号管理');
     await page.screenshot({ path: 'D:/招生系统/screenshots/10-agents-page.png', fullPage: true });
-    console.log('✅ 话务员管理页面加载成功');
+    console.log('✅ 账号管理页面加载成功');
   });
 
   test('11. 话务员管理 - 回收弹窗（按学校分组）', async ({ page }) => {

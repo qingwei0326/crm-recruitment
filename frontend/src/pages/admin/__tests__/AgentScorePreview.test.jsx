@@ -41,8 +41,17 @@ function makeItem(overrides = {}) {
     level: 'risk',
     level_label: '风险',
     components: {
-      task_progress: { label: '任务推进', score: 10, max: 30 },
-      call_activity: { label: '今日通话', score: 5, max: 25 },
+      task_progress: {
+        label: '任务推进',
+        score: 10,
+        max: 30,
+        detail: '推进率 33.3%，待联系 8/12',
+        parts: [
+          { label: '推进覆盖', score: 6.7, max: 20 },
+          { label: '待联系清理', score: 3.3, max: 10 },
+        ],
+      },
+      call_activity: { label: '今日通话', score: 5, max: 25, detail: '6/30 通' },
       follow_up_timeliness: { label: '回访及时', score: 0, max: 20 },
       intent_output: { label: '有效产出', score: 8, max: 15 },
       data_completeness: { label: '资料完整', score: 7, max: 10 },
@@ -51,6 +60,9 @@ function makeItem(overrides = {}) {
       active_tasks: 12,
       progress_pct: 33.3,
       today_calls: 6,
+      today_recorded_calls: 4,
+      today_unrecorded_calls: 2,
+      avg_recorded_duration_seconds: 60,
       open_follow_ups: 3,
       overdue_follow_ups: 2,
       a_level_count: 1,
@@ -90,6 +102,9 @@ function scorePayload() {
         level_label: '正常',
         metrics: {
           today_calls: 18,
+          today_recorded_calls: 18,
+          today_unrecorded_calls: 0,
+          avg_recorded_duration_seconds: 90,
           overdue_follow_ups: 0,
         },
         signals: [],
@@ -102,6 +117,9 @@ function scorePayload() {
         level_label: '关注',
         metrics: {
           today_calls: 1,
+          today_recorded_calls: 0,
+          today_unrecorded_calls: 1,
+          avg_recorded_duration_seconds: 0,
           overdue_follow_ups: 0,
         },
         signals: [
@@ -135,8 +153,24 @@ describe('AgentScorePreview', () => {
     expect(screen.getByText('风险')).toBeInTheDocument();
     expect(screen.getByText('2 条逾期回访')).toBeInTheDocument();
     expect(screen.getByText('先处理逾期回访，防止高意向线索流失')).toBeInTheDocument();
+    expect(screen.getByText('有效记录')).toBeInTheDocument();
+    expect(screen.getAllByText('未记录')[0]).toBeInTheDocument();
+    expect(screen.getByText('拨号 6')).toBeInTheDocument();
+    expect(screen.getByText('有效 4')).toBeInTheDocument();
+    expect(screen.getByText('未记录 2')).toBeInTheDocument();
+    expect(screen.getByText('均长 1分')).toBeInTheDocument();
+    expect(screen.getAllByText('推进率 33.3%，待联系 8/12').length).toBeGreaterThan(0);
+    expect(screen.queryByText('推进覆盖 6.7/20')).not.toBeInTheDocument();
+    expect(screen.queryByText('待联系清理 3.3/10')).not.toBeInTheDocument();
+    expect(screen.getAllByText('6/30 通').length).toBeGreaterThan(0);
     expect(screen.getByText('李坐席')).toBeInTheDocument();
     expect(screen.getByText('赵坐席')).toBeInTheDocument();
+    expect(screen.getByText('本次按 30 通/人计算')).toBeInTheDocument();
+    expect(screen.getByText('任务推进 30 = 推进覆盖 20 + 待联系清理 10')).toBeInTheDocument();
+    expect(screen.getByText('今日通话 25 = 实际拨号 / 通话目标，达标封顶')).toBeInTheDocument();
+    expect(screen.getByText('回访及时 20 = 未逾期回访占比')).toBeInTheDocument();
+    expect(screen.getByText('有效产出 15 = A 级意向 + 报名')).toBeInTheDocument();
+    expect(screen.getByText('资料完整 10 = 活跃任务电话完整度')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/admin/agent-score-preview', {
       params: { daily_call_target: 30 },
     });
@@ -150,12 +184,12 @@ describe('AgentScorePreview', () => {
     );
 
     await screen.findByText('王坐席');
-    fireEvent.change(screen.getByLabelText('通话目标'), { target: { value: '40' } });
+    fireEvent.change(screen.getByLabelText('通话目标'), { target: { value: '500' } });
     fireEvent.click(screen.getByRole('button', { name: '重新试算' }));
 
     await waitFor(() =>
       expect(api.get).toHaveBeenLastCalledWith('/admin/agent-score-preview', {
-        params: { daily_call_target: 40 },
+        params: { daily_call_target: 500 },
       }),
     );
   });

@@ -1,23 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import {
-  ArrowLeft,
-  LogOut,
-  Menu,
-  X,
-  Users,
-  ListFilter,
-  BarChart3,
   Sun,
   Moon,
-  LayoutDashboard,
-  TrendingUp,
   Download,
   Loader2,
 } from 'lucide-react';
@@ -62,8 +52,7 @@ function getActiveAgentNames(rows) {
   return [...totals.entries()].filter(([, total]) => total > 0).map(([name]) => name);
 }
 
-export default function TrendReport() {
-  const { user, logout } = useAuth();
+export default function TrendReport({ embedded = false }) {
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -144,46 +133,8 @@ export default function TrendReport() {
 
   const closeSidebar = () => setSidebarOpen(false);
 
-  return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-
-      <main className="flex-1 min-w-0">
-        <header className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <button
-                className="p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">趋势报表</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={exportExcel}
-              disabled={!trendData}
-              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-            >
-              <Download className="w-4 h-4" /> 导出
-            </button>
-            {isMobile && (
-              <button
-                onClick={toggle}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                {dark ? (
-                  <Sun className="w-4 h-4 text-amber-400" />
-                ) : (
-                  <Moon className="w-4 h-4 text-gray-500" />
-                )}
-              </button>
-            )}
-          </div>
-        </header>
-
-        <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-6">
+  const content = (
+        <div className={`${embedded ? '' : 'p-4 lg:p-6'} max-w-6xl mx-auto space-y-6`}>
           {/* Controls */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 flex flex-wrap gap-3 items-center">
             <button
@@ -349,6 +300,38 @@ export default function TrendReport() {
             <div className="text-center py-20 text-gray-400">加载失败</div>
           )}
         </div>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
+      <main className="flex-1 min-w-0">
+        <PageHeader title="趋势报表" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
+          <button
+            type="button"
+            onClick={exportExcel}
+            disabled={!trendData}
+            className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" /> 导出
+          </button>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={toggle}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label={dark ? '亮色模式' : '暗色模式'}
+            >
+              {dark ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-gray-500" />
+              )}
+            </button>
+          )}
+        </PageHeader>
+        {content}
       </main>
     </AdminLayout>
   );
