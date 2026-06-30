@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   CalendarClock,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   Moon,
   RefreshCw,
   Sun,
+  AlertTriangle,
 } from 'lucide-react';
 import api from '../../api';
 import { useTheme } from '../../context/ThemeContext';
@@ -17,6 +18,8 @@ import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
+import { QueueRow } from './AdminWorkflowComponents';
+import { daysUntil, isOverdue } from './adminWorkflow';
 
 function dataList(res) {
   const data = res?.data?.data;
@@ -51,6 +54,8 @@ export default function AdminWorkCenter() {
   const [followUps, setFollowUps] = useState([]);
   const [visits, setVisits] = useState([]);
   const [savingKey, setSavingKey] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queue = searchParams.get('queue') || 'all';
   const closeSidebar = () => setSidebarOpen(false);
 
   const load = async () => {
@@ -117,6 +122,27 @@ export default function AdminWorkCenter() {
     }
   };
 
+  const sortedFollowUps = [...followUps].sort((a, b) => {
+    const aOverdue = isOverdue(a.follow_up_date) ? 1 : 0;
+    const bOverdue = isOverdue(b.follow_up_date) ? 1 : 0;
+    if (aOverdue !== bOverdue) return bOverdue - aOverdue;
+    return String(a.follow_up_date || '').localeCompare(String(b.follow_up_date || ''));
+  });
+  const sortedVisits = [...visits].sort((a, b) => {
+    const aDays = daysUntil(a.scheduled_date);
+    const bDays = daysUntil(b.scheduled_date);
+    return (aDays ?? 9999) - (bDays ?? 9999);
+  });
+  const queueTabs = [
+    { key: 'all', label: '全部', count: helpRequests.length + followUps.length + visits.length },
+    { key: 'help', label: '求助', count: helpRequests.length },
+    { key: 'follow', label: '回访', count: followUps.length },
+    { key: 'visit', label: '到访', count: visits.length },
+  ];
+  const showHelp = queue === 'all' || queue === 'help';
+  const showFollow = queue === 'all' || queue === 'follow';
+  const showVisit = queue === 'all' || queue === 'visit';
+
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
@@ -125,7 +151,6 @@ export default function AdminWorkCenter() {
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
           actionsClassName="flex items-center gap-2"
-          useSafeArea={false}
         >
           <button
             type="button"
@@ -146,7 +171,36 @@ export default function AdminWorkCenter() {
           </button>
         </PageHeader>
 
-        <div className="p-4 lg:p-6 max-w-7xl mx-auto grid gap-4 xl:grid-cols-3">
+        <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
+          <section className="rounded-xl border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="lg:mr-auto">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">处理队列</h2>
+                <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  逾期回访、求助和今日到访会排在前面，处理完后自动从队列中移除。
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {queueTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setSearchParams(tab.key === 'all' ? {} : { queue: tab.key })}
+                    className={`rounded-lg border px-3 py-1.5 text-sm ${
+                      queue === tab.key
+                        ? 'border-blue-600 bg-blue-600 text-white'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    {tab.label} {tab.count}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+          {showHelp && (
           <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -160,34 +214,34 @@ export default function AdminWorkCenter() {
             ) : helpRequests.length === 0 ? (
               <EmptyState text="暂无求助" />
             ) : (
-              <div className="divide-y dark:divide-gray-700">
+              <div className="space-y-2 p-3">
                 {helpRequests.map((student) => (
-                  <div key={student.id} className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <PersonLine name={student.name} region={student.region} agentName={student.agent_name} />
-                      <Link
-                        to={`/admin/leads/${student.id}`}
-                        className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-500 dark:hover:bg-blue-900/20"
-                        aria-label={`查看 ${student.name || '学生'} 详情`}
+                  <QueueRow
+                    key={student.id}
+                    title={student.name || `学生 #${student.id}`}
+                    meta={student.agent_name || '未分配'}
+                    detailParts={[student.region || '未知地区', student.school_name || '未知学校', student.status || '-']}
+                    tone="red"
+                    to={`/admin/leads/${student.id}`}
+                    action={(
+                      <button
+                        type="button"
+                        onClick={() => completeHelp(student.id)}
+                        disabled={savingKey === `help-${student.id}`}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-orange-600 text-white text-sm disabled:opacity-50"
                       >
-                        <ExternalLink className="w-4 h-4" />
-                      </Link>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => completeHelp(student.id)}
-                      disabled={savingKey === `help-${student.id}`}
-                      className="inline-flex min-h-9 items-center gap-1.5 px-3 py-2 rounded-lg bg-orange-600 text-white text-sm disabled:opacity-50"
-                    >
-                      {savingKey === `help-${student.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      已处理求助
-                    </button>
-                  </div>
+                        {savingKey === `help-${student.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        已处理求助
+                      </button>
+                    )}
+                  />
                 ))}
               </div>
             )}
           </section>
+          )}
 
+          {showFollow && (
           <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -201,31 +255,34 @@ export default function AdminWorkCenter() {
             ) : followUps.length === 0 ? (
               <EmptyState text="暂无待回访" />
             ) : (
-              <div className="divide-y dark:divide-gray-700">
-                {followUps.map((item) => (
-                  <div key={item.id} className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <PersonLine name={item.student_name || `学生 #${item.student_id}`} region={item.student_region} agentName={item.agent_name} />
-                      <div className="text-xs text-gray-500 whitespace-nowrap">{formatDateTime(item.follow_up_date)}</div>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {item.follow_up_type || '电话'}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => completeFollowUp(item.id)}
-                      disabled={savingKey === `follow-${item.id}`}
-                      className="inline-flex min-h-9 items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 text-white text-sm disabled:opacity-50"
-                    >
-                      {savingKey === `follow-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      完成回访
-                    </button>
-                  </div>
+              <div className="space-y-2 p-3">
+                {sortedFollowUps.map((item) => (
+                  <QueueRow
+                    key={item.id}
+                    title={item.student_name || `学生 #${item.student_id}`}
+                    meta={isOverdue(item.follow_up_date) ? '逾期回访' : '待回访'}
+                    detailParts={[item.agent_name || '未知坐席', formatDateTime(item.follow_up_date), item.follow_up_type || '电话']}
+                    tone={isOverdue(item.follow_up_date) ? 'red' : 'amber'}
+                    to={`/admin/leads/${item.student_id}`}
+                    action={(
+                      <button
+                        type="button"
+                        onClick={() => completeFollowUp(item.id)}
+                        disabled={savingKey === `follow-${item.id}`}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-amber-600 text-white text-sm disabled:opacity-50"
+                      >
+                        {savingKey === `follow-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        完成回访
+                      </button>
+                    )}
+                  />
                 ))}
               </div>
             )}
           </section>
+          )}
 
+          {showVisit && (
           <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
@@ -239,31 +296,33 @@ export default function AdminWorkCenter() {
             ) : visits.length === 0 ? (
               <EmptyState text="暂无到访" />
             ) : (
-              <div className="divide-y dark:divide-gray-700">
-                {visits.map((item) => (
-                  <div key={item.id} className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <PersonLine name={item.student_name} region={item.student_region} agentName={item.agent_name} />
-                      <div className="text-xs text-gray-500 whitespace-nowrap">{formatDateTime(item.scheduled_date)}</div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                      <span>{item.visit_type || '到访'}</span>
-                      <span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700">{item.status || '待确认'}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => updateVisitStatus(item.id, '已确认')}
-                      disabled={savingKey === `visit-${item.id}` || item.status === '已确认'}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
-                    >
-                      {savingKey === `visit-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      确认到访
-                    </button>
-                  </div>
+              <div className="space-y-2 p-3">
+                {sortedVisits.map((item) => (
+                  <QueueRow
+                    key={item.id}
+                    title={item.student_name || `学生 #${item.student_id}`}
+                    meta={daysUntil(item.scheduled_date) === 0 ? '今日到访' : item.status || '待确认'}
+                    detailParts={[item.agent_name || '未知坐席', item.visit_type || '到访', formatDateTime(item.scheduled_date)]}
+                    tone={daysUntil(item.scheduled_date) === 0 ? 'blue' : 'gray'}
+                    to={item.student_id ? `/admin/leads/${item.student_id}` : undefined}
+                    action={(
+                      <button
+                        type="button"
+                        onClick={() => updateVisitStatus(item.id, '已确认')}
+                        disabled={savingKey === `visit-${item.id}` || item.status === '已确认'}
+                        className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
+                      >
+                        {savingKey === `visit-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        确认到访
+                      </button>
+                    )}
+                  />
                 ))}
               </div>
             )}
           </section>
+          )}
+          </div>
         </div>
       </main>
     </AdminLayout>

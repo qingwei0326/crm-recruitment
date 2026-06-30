@@ -132,9 +132,9 @@ test.describe('Admin Role', () => {
 
   test('Agent Management page loads', async ({ page }) => {
     await page.goto('/admin/agents');
-    await expect(page.getByRole('heading', { name: '话务员管理' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '添加话务员' })).toBeVisible();
-    await expect(page.getByText(/话务员列表/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: '账号管理' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '添加账号' })).toBeVisible();
+    await expect(page.getByText(/账号列表/)).toBeVisible();
   });
 
   test('Governance page loads', async ({ page }) => {
@@ -155,7 +155,7 @@ test.describe('Admin Role', () => {
 
   test('Sidebar navigation works', async ({ page }) => {
     await page.goto('/admin');
-    const links = ['工作中心', '学生管理', '线索治理', '话务员管理', '汇总报表', '趋势报表', '通电量查询', '系统设置'];
+    const links = ['工作中心', '学生管理', '线索治理', '账号管理', '汇总报表', '趋势报表', '通电量查询', '系统设置'];
     for (const name of links) {
       await page.getByRole('link', { name }).click();
       await page.waitForLoadState('domcontentloaded');

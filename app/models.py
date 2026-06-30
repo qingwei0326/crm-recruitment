@@ -93,6 +93,7 @@ class User(Base):
     role = Column(SAEnum(UserRole), nullable=False, default=UserRole.agent)
     name = Column(String(64), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_super_admin = Column(Boolean, default=False, nullable=False)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
     # 首次登录 / 管理员重置密码后置 True，强制用户登录后自行设置新密码
@@ -117,6 +118,7 @@ class Student(Base):
         Index("ix_students_assigned_status", "assigned_to", "status"),
         Index("ix_students_status_school", "status", "school_name"),
         Index("ix_students_guardian_phone", "guardian_phone"),
+        Index("ix_students_guardian2_phone", "guardian2_phone"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)

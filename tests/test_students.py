@@ -125,6 +125,140 @@ class TestListStudents:
         resp = await client.get("/api/students?region=思明区", headers=admin_headers)
         assert resp.json()["data"]["total"] == 2
 
+    async def test_list_search_includes_guardian_phone_fields(self, client, admin_headers, db):
+        from app.models import Student
+
+        db.add(
+            Student(
+                name="第一监护人电话",
+                guardian_phone="13960118706",
+                guardian2_phone="",
+            )
+        )
+        db.add(
+            Student(
+                name="第二监护人电话",
+                guardian_phone="",
+                guardian2_phone="18960100618",
+            )
+        )
+        await db.commit()
+
+        resp = await client.get("/api/students?q=18960100618", headers=admin_headers)
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["total"] == 1
+        assert body["data"]["list"][0]["name"] == "第二监护人电话"
+
+    async def test_list_search_normalizes_numeric_phone_query(self, client, admin_headers):
+        resp = await client.post(
+            "/api/students",
+            json={
+                "name": "格式化号码",
+                "guardian2_phone": "189 6010-0618",
+            },
+            headers=admin_headers,
+        )
+        assert resp.json()["code"] == 0
+
+        resp = await client.get("/api/students?q=18960100618", headers=admin_headers)
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["total"] == 1
+        assert body["data"]["list"][0]["name"] == "格式化号码"
+        assert body["data"]["list"][0]["guardian2_phone"] == "18960100618"
+        assert body["data"]["list"][0]["guardian2_phone_raw"] is None
+
+    async def test_list_search_hides_invalid_students_by_default(
+        self, client, admin_headers, db
+    ):
+        from app.models import Student, StudentStatus
+
+        db.add(
+            Student(
+                name="黄妙娟",
+                status=StudentStatus.child_not_want_study,
+                status_detail="孩子不想读",
+            )
+        )
+        await db.commit()
+
+        resp = await client.get("/api/students?q=黄妙娟", headers=admin_headers)
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["total"] == 0
+
+    async def test_list_status_filter_can_search_invalid_students(
+        self, client, admin_headers, db
+    ):
+        from app.models import Student, StudentStatus
+
+        db.add(
+            Student(
+                name="未删除无效学生",
+                status=StudentStatus.not_interested,
+                status_detail="无意向",
+            )
+        )
+        await db.commit()
+
+        resp = await client.get(
+            "/api/students?status=无效&q=未删除无效学生", headers=admin_headers
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["total"] == 1
+        assert body["data"]["list"][0]["name"] == "未删除无效学生"
+        assert body["data"]["list"][0]["status"] == "无效"
+        assert body["data"]["list"][0]["status_detail"] == "无意向"
+
+    async def test_list_search_excludes_invalid_student_after_delete(
+        self, client, admin_headers, db
+    ):
+        from app.models import Student, StudentStatus
+
+        student = Student(
+            name="删除后搜不到",
+            status=StudentStatus.not_interested,
+            status_detail="无意向",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        delete_resp = await client.delete(f"/api/students/{student.id}", headers=admin_headers)
+        assert delete_resp.json()["code"] == 0
+
+        resp = await client.get("/api/students?q=删除后搜不到", headers=admin_headers)
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["total"] == 0
+
+    async def test_list_returns_phone_fields_without_masking(self, client, admin_headers):
+        resp = await client.post(
+            "/api/students",
+            json={
+                "name": "脱敏号码",
+                "guardian_phone": "13960118706",
+                "guardian2_phone": "18960100618",
+            },
+            headers=admin_headers,
+        )
+        assert resp.json()["code"] == 0
+
+        resp = await client.get("/api/students?q=13960118706", headers=admin_headers)
+        item = resp.json()["data"]["list"][0]
+
+        assert item["guardian_phone"] == "13960118706"
+        assert item["guardian_phone_raw"] is None
+        assert item["guardian2_phone"] == "18960100618"
+        assert item["guardian2_phone_raw"] is None
+
     async def test_list_invalid_page(self, client, admin_headers):
         """Page has ge=1 validation, so -1 returns 422."""
         resp = await client.get("/api/students?page=-1", headers=admin_headers)
@@ -247,6 +381,57 @@ class TestGetStudent:
         resp = await client.get(f"/api/students/{sample_student.id}", headers=admin_headers)
         assert resp.json()["data"]["name"] == "张三"
 
+    async def test_get_returns_phone_fields_without_masking(self, client, admin_headers, db):
+        from app.models import Student
+
+        student = Student(
+            name="详情脱敏",
+            guardian_phone="13960118706",
+            guardian2_phone="18960100618",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.get(f"/api/students/{student.id}", headers=admin_headers)
+        data = resp.json()["data"]
+
+        assert data["guardian_phone"] == "13960118706"
+        assert data["guardian_phone_raw"] is None
+        assert data["guardian2_phone"] == "18960100618"
+        assert data["guardian2_phone_raw"] is None
+
+    async def test_reveal_phone_returns_plaintext_and_writes_audit_log(
+        self, client, admin_headers, db
+    ):
+        from sqlalchemy import select
+
+        from app.models import OperationLog, Student
+
+        student = Student(
+            name="审计取号",
+            guardian_phone="13960118706",
+            guardian2_phone="18960100618",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.get(f"/api/students/{student.id}/phone-plain", headers=admin_headers)
+        data = resp.json()["data"]
+
+        assert data == {
+            "guardian_phone": "13960118706",
+            "guardian2_phone": "18960100618",
+        }
+        logs = await db.execute(
+            select(OperationLog).where(
+                OperationLog.target_student_id == student.id,
+                OperationLog.action == "查看明文电话",
+            )
+        )
+        assert logs.scalar_one_or_none() is not None
+
     async def test_get_not_found(self, client, admin_headers):
         """Backend raises HTTPException 404, not Response wrapper."""
         resp = await client.get("/api/students/99999", headers=admin_headers)
@@ -312,6 +497,169 @@ class TestUpdateStudent:
         assert body["data"]["status"] == "无效"
         assert body["data"]["status_detail"] == "孩子不想读"
         assert body["data"]["invalid_reason"] == "孩子不想读"
+
+    async def test_agent_cannot_write_call_result_without_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import Student, StudentStatus
+
+        student = Student(
+            name="未拨号改状态",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138000",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "无意向"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 403
+        assert "请先通过系统拨号按钮拨打" in resp.json()["detail"]
+
+    async def test_agent_can_write_call_result_after_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Student, StudentStatus
+
+        student = Student(
+            name="已拨号改状态",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138001",
+        )
+        db.add(student)
+        await db.flush()
+        db.add(DialLog(student_id=student.id, agent_id=agent_user.id))
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "无意向"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["status"] == "无效"
+        assert body["data"]["status_detail"] == "无意向"
+
+    async def test_agent_cannot_write_call_result_after_stale_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from datetime import timedelta
+
+        from app.models import DialLog, Student, StudentStatus
+        from app.utils import utcnow
+
+        student = Student(
+            name="过期拨号改状态",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138002",
+        )
+        db.add(student)
+        await db.flush()
+        db.add(
+            DialLog(
+                student_id=student.id,
+                agent_id=agent_user.id,
+                dialed_at=utcnow() - timedelta(hours=25),
+            )
+        )
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "无意向"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 403
+        assert "请先通过系统拨号按钮拨打" in resp.json()["detail"]
+
+    async def test_agent_can_backfill_call_result_for_already_contacted_student_without_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import Student, StudentStatus
+
+        student = Student(
+            name="已联系补录结果",
+            assigned_to=agent_user.id,
+            status=StudentStatus.contacted,
+            guardian_phone="13800138003",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "无意向"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["status"] == "无效"
+        assert body["data"]["status_detail"] == "无意向"
+
+    async def test_admin_can_write_call_result_without_dial_log(
+        self, client, sample_student, admin_headers
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}",
+            json={"status": "无意向"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+
+    async def test_get_phone_deduplicates_immediate_repeat_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from sqlalchemy import select
+
+        from app.models import DialLog, Student, StudentStatus, SystemConfig
+
+        student = Student(
+            name="重复拨号学生",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138000",
+        )
+        db.add(student)
+        db.add(SystemConfig(key="dial_window_start", value="00:00"))
+        db.add(SystemConfig(key="dial_window_end", value="23:59"))
+        await db.commit()
+        await db.refresh(student)
+
+        first = await client.get(f"/api/students/phone/{student.id}", headers=agent_headers)
+        second = await client.get(f"/api/students/phone/{student.id}", headers=agent_headers)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["code"] == 0
+        assert second.json()["code"] == 0
+        rows = (
+            await db.execute(
+                select(DialLog).where(
+                    DialLog.student_id == student.id,
+                    DialLog.agent_id == agent_user.id,
+                )
+            )
+        ).scalars().all()
+        assert len(rows) == 1
 
     async def test_manual_intent_writes_operation_log(
         self, client, admin_headers, sample_student, db
@@ -387,6 +735,14 @@ class TestDeleteStudent:
 
     async def test_delete_requires_admin(self, client, agent_headers, sample_student):
         resp = await client.delete(f"/api/students/{sample_student.id}", headers=agent_headers)
+        assert resp.status_code == 403
+
+    async def test_delete_requires_super_admin(
+        self, client, normal_admin_headers, sample_student
+    ):
+        resp = await client.delete(
+            f"/api/students/{sample_student.id}", headers=normal_admin_headers
+        )
         assert resp.status_code == 403
 
     async def test_delete_not_found(self, client, admin_headers):

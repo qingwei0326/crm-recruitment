@@ -221,6 +221,52 @@ class TestCallEndpoints:
         assert body["data"]["count"] == 1
         assert body["data"]["already_called"] is True
 
+    async def test_update_dial_duration_updates_latest_user_dial_log(
+        self, client, db, admin_headers, admin_user, sample_student
+    ):
+        older = DialLog(
+            student_id=sample_student.id,
+            agent_id=admin_user.id,
+            dialed_at=utcnow() - timedelta(minutes=20),
+            duration_seconds=5,
+        )
+        latest = DialLog(
+            student_id=sample_student.id,
+            agent_id=admin_user.id,
+            dialed_at=utcnow() - timedelta(minutes=2),
+            duration_seconds=0,
+        )
+        db.add_all([older, latest])
+        await db.commit()
+        await db.refresh(older)
+        await db.refresh(latest)
+
+        resp = await client.put(
+            "/api/students/dial-duration",
+            params={"student_id": sample_student.id, "duration_seconds": 73},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["id"] == latest.id
+        assert body["data"]["duration_seconds"] == 73
+        await db.refresh(older)
+        await db.refresh(latest)
+        assert older.duration_seconds == 5
+        assert latest.duration_seconds == 73
+
+    async def test_update_dial_duration_without_dial_log_returns_error(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            "/api/students/dial-duration",
+            params={"student_id": sample_student.id, "duration_seconds": 30},
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 1
+
     async def test_check_today_call_unknown_student(self, client, admin_headers):
         resp = await client.get("/api/calls/check?student_id=99999", headers=admin_headers)
         assert resp.status_code == 404
@@ -291,6 +337,147 @@ class TestNoteEndpoints:
             },
             headers=admin_headers,
         )
+        assert resp.json()["code"] == 0
+
+    async def test_agent_cannot_create_note_without_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import Student, StudentStatus
+
+        student = Student(
+            name="未拨号写备注",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.post(
+            "/api/notes",
+            json={
+                "student_id": student.id,
+                "content": "家长说不考虑",
+            },
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 403
+        assert "请先通过系统拨号按钮拨打" in resp.json()["detail"]
+
+    async def test_agent_can_create_note_after_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Student, StudentStatus
+
+        student = Student(
+            name="已拨号写备注",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+        )
+        db.add(student)
+        await db.flush()
+        db.add(DialLog(student_id=student.id, agent_id=agent_user.id))
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.post(
+            "/api/notes",
+            json={
+                "student_id": student.id,
+                "content": "家长愿意继续了解",
+            },
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+
+    async def test_admin_can_create_note_without_dial_log(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.post(
+            "/api/notes",
+            json={
+                "student_id": sample_student.id,
+                "content": "管理员备注",
+            },
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+
+    async def test_agent_cannot_update_note_without_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import Note, Student, StudentStatus
+
+        student = Student(
+            name="未拨号改备注",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+        )
+        db.add(student)
+        await db.flush()
+        note = Note(student_id=student.id, agent_id=agent_user.id, content="原备注")
+        db.add(note)
+        await db.commit()
+        await db.refresh(note)
+
+        resp = await client.put(
+            f"/api/notes/{note.id}",
+            json={"content": "改成联系结果"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 403
+        assert "请先通过系统拨号按钮拨打" in resp.json()["detail"]
+
+    async def test_agent_can_update_note_after_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Note, Student, StudentStatus
+
+        student = Student(
+            name="已拨号改备注",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+        )
+        db.add(student)
+        await db.flush()
+        note = Note(student_id=student.id, agent_id=agent_user.id, content="原备注")
+        db.add(note)
+        db.add(DialLog(student_id=student.id, agent_id=agent_user.id))
+        await db.commit()
+        await db.refresh(note)
+
+        resp = await client.put(
+            f"/api/notes/{note.id}",
+            json={"content": "改成联系结果"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+
+    async def test_admin_can_update_note_without_dial_log(
+        self, client, db, admin_headers, agent_user, sample_student
+    ):
+        from app.models import Note
+
+        note = Note(student_id=sample_student.id, agent_id=agent_user.id, content="原备注")
+        db.add(note)
+        await db.commit()
+        await db.refresh(note)
+
+        resp = await client.put(
+            f"/api/notes/{note.id}",
+            json={"content": "管理员修正备注"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
         assert resp.json()["code"] == 0
 
     async def test_create_note_empty_content(self, client, admin_headers, sample_student):

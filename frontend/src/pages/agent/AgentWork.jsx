@@ -53,6 +53,7 @@ export default function AgentWork() {
     handleDialModalStatus,
     handleDialModalIntent,
     handleDialModalFollowUp,
+    handleDialModalClose,
   } = useAgentDial({
     state,
     actions,
@@ -117,7 +118,7 @@ export default function AgentWork() {
         onStatusSelect={handleDialModalStatus}
         onIntentSelect={handleDialModalIntent}
         onFollowUpSelect={handleDialModalFollowUp}
-        onClose={() => actions.setDialModal(null)}
+        onClose={handleDialModalClose}
       />
       {state.ui.helpOpen && (
         <HelpModal
@@ -173,9 +174,11 @@ export default function AgentWork() {
     detailLoading: state.detail.loading,
     detailError: state.detail.error,
     detailNotes: state.detail.notes,
+    detailCalls: state.detail.calls,
+    detailFollowUps: state.detail.followUps,
+    detailVisits: state.detail.visits,
+    detailIntentTimeline: state.detail.intentTimeline,
     detailNotesError: state.detail.notesError,
-    noteIdx: state.detail.noteIdx,
-    setNoteIdx: actions.setNoteIdx,
     hasAnalysis: state.detail.hasAnalysis,
     // AI
     showAi: state.ai.show,

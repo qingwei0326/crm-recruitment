@@ -16,7 +16,7 @@ from app.auth import (
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
 from app.database import get_db
 from app.models import LoginAttempt, OperationLog, User
-from app.pushplus import send_pushplus_to_user
+from app.pushplus import send_pushplus_to_user_background
 from app.schemas import LoginReq, Response
 from app.utils import utcnow
 
@@ -144,7 +144,9 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
         # 异步发送推送，不阻塞登录流程
         import asyncio
 
-        asyncio.create_task(send_pushplus_to_user(db, user.id, "新设备登录提醒", content))
+        asyncio.create_task(
+            send_pushplus_to_user_background(user.id, "新设备登录提醒", content)
+        )
 
     token = create_access_token(
         {
@@ -161,6 +163,7 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
                 "id": user.id,
                 "name": user.name,
                 "role": user.role,
+                "is_super_admin": user.is_super_admin,
                 "must_change_password": user.must_change_password,
             },
         }
@@ -193,6 +196,7 @@ async def me(current_user: User = Depends(get_current_user)):
             "username": current_user.username,
             "name": current_user.name,
             "role": current_user.role,
+            "is_super_admin": current_user.is_super_admin,
             "is_active": current_user.is_active,
             "pushplus_token": current_user.pushplus_token,
             "must_change_password": current_user.must_change_password,

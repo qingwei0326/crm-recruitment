@@ -1,0 +1,166 @@
+export function todayDateKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function daysUntil(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return Math.round((date.getTime() - start.getTime()) / 86400000);
+}
+
+export function isOverdue(value) {
+  const days = daysUntil(value);
+  return days !== null && days < 0;
+}
+
+export function urgencyTone(kind, value) {
+  if (kind === 'critical') return 'red';
+  if (kind === 'warning') return 'amber';
+  if (kind === 'success') return 'green';
+  if (value && isOverdue(value)) return 'red';
+  return 'blue';
+}
+
+export function leadFilterUrl(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  });
+  const qs = query.toString();
+  return qs ? `/admin/leads?${qs}` : '/admin/leads';
+}
+
+export function reportTabUrl(tab) {
+  return `/admin/report-center?tab=${encodeURIComponent(tab)}`;
+}
+
+export function formatCount(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n.toLocaleString() : '0';
+}
+
+export function buildDashboardActions({
+  helpCount = 0,
+  followUps = [],
+  visits = [],
+  scoreItems = [],
+  unassignedCount = 0,
+  aIntentCount = 0,
+  notifyFails = 0,
+  canViewSystemSettings = false,
+}) {
+  const overdueFollowUps = followUps.filter((item) => isOverdue(item.follow_up_date)).length;
+  const todayVisits = visits.filter((item) => daysUntil(item.scheduled_date) === 0).length;
+  const lowCallAgents = scoreItems.filter((item) =>
+    item.signals?.some((signal) => signal.key === 'low_call_activity'),
+  ).length;
+  const attentionAgents = scoreItems.filter((item) => ['risk', 'watch'].includes(item.level)).length;
+
+  return [
+    {
+      key: 'help',
+      title: '求助待处理',
+      value: helpCount,
+      detail: '话务员标记需要主管介入',
+      to: '/admin/work-center?queue=help',
+      tone: helpCount > 0 ? 'red' : 'green',
+    },
+    {
+      key: 'follow',
+      title: '逾期回访',
+      value: overdueFollowUps,
+      detail: `${followUps.length} 条未完成回访`,
+      to: '/admin/work-center?queue=follow',
+      tone: overdueFollowUps > 0 ? 'red' : followUps.length > 0 ? 'amber' : 'green',
+    },
+    {
+      key: 'visit',
+      title: '今日到访',
+      value: todayVisits,
+      detail: `${visits.length} 条到访记录待跟进`,
+      to: '/admin/work-center?queue=visit',
+      tone: todayVisits > 0 ? 'blue' : 'gray',
+    },
+    {
+      key: 'unassigned',
+      title: '未分配线索',
+      value: unassignedCount,
+      detail: '需要进入学校分发或学生管理处理',
+      to: leadFilterUrl({ assignment: 'unassigned' }),
+      tone: unassignedCount > 0 ? 'amber' : 'green',
+    },
+    {
+      key: 'agent',
+      title: '需关注坐席',
+      value: attentionAgents,
+      detail: `${lowCallAgents} 人低通话量`,
+      to: '/admin/score-preview?filter=attention',
+      tone: attentionAgents > 0 ? 'amber' : 'green',
+    },
+    {
+      key: 'intent',
+      title: 'A 级意向池',
+      value: aIntentCount,
+      detail: '优先检查未报名和未到访线索',
+      to: leadFilterUrl({ intent: 'A' }),
+      tone: aIntentCount > 0 ? 'blue' : 'gray',
+    },
+    {
+      key: 'notify',
+      title: '通知失败',
+      value: notifyFails,
+      detail: canViewSystemSettings ? 'PushPlus 推送失败需检查配置' : 'PushPlus 推送失败需超管处理',
+      to: canViewSystemSettings ? '/admin/settings' : '/admin/report-center?tab=summary',
+      tone: notifyFails > 0 ? 'red' : 'green',
+    },
+  ];
+}
+
+export function buildReportInsights({ trendData, ranking = [] }) {
+  const daily = trendData?.daily || [];
+  const latest = daily[daily.length - 1];
+  const previous = daily[daily.length - 2];
+  const bestAgent = [...ranking].sort(
+    (a, b) => Number(b.a_to_enroll || 0) - Number(a.a_to_enroll || 0),
+  )[0];
+  const totalCalls = daily.reduce((sum, item) => sum + Number(item.calls || 0), 0);
+  const totalEnroll = daily.reduce((sum, item) => sum + Number(item.enrolled || 0), 0);
+
+  const insights = [];
+  if (latest && previous) {
+    const diff = Number(latest.calls || 0) - Number(previous.calls || 0);
+    insights.push({
+      title: diff >= 0 ? '呼出量上升' : '呼出量下降',
+      detail: `${latest.date} 比前一日${diff >= 0 ? '增加' : '减少'} ${Math.abs(diff)} 通`,
+      tone: diff >= 0 ? 'green' : 'amber',
+    });
+  }
+  if (bestAgent) {
+    insights.push({
+      title: 'A 转报名最佳',
+      detail: `${bestAgent.name} A→报名率 ${bestAgent.a_to_enroll || 0}%`,
+      tone: 'blue',
+    });
+  }
+  if (totalCalls > 0) {
+    insights.push({
+      title: '整体报名效率',
+      detail: `当前区间 ${totalCalls} 通，报名 ${totalEnroll} 人`,
+      tone: totalEnroll > 0 ? 'green' : 'gray',
+    });
+  }
+  if (insights.length === 0) {
+    insights.push({
+      title: '暂无管理结论',
+      detail: '报表数据加载后会显示趋势和转化提醒',
+      tone: 'gray',
+    });
+  }
+  return insights;
+}

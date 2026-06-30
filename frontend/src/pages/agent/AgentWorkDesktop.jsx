@@ -8,6 +8,7 @@ import StudentTable from './desktop/StudentTable';
 import PaginationBar from './desktop/PaginationBar';
 import FollowingView from './desktop/FollowingView';
 import HandledView from './desktop/HandledView';
+import StudentDetailDrawer from './desktop/StudentDetailDrawer';
 import AiPanel from './AiPanel';
 
 export default function AgentWorkDesktop({
@@ -26,9 +27,12 @@ export default function AgentWorkDesktop({
   backlogBanner,
   fetchFollowing, followingData, followingLoading,
   onHelpOpen, onAddStudent, onShowSettings,
+  modals,
   noteText, setNoteText,
   dialCheckByStudent, lockedStudentId,
   handleDial, updateStatus, updateStage, addNote, openAiPanel, updateScore,
+  detailLoading, detailError, detailCalls, detailNotes, detailFollowUps, detailVisits,
+  detailIntentTimeline, hasAnalysis, updateDetailField,
   showDetail, detailStudent, showAi, activeStudent,
   setShowDetail, setShowAi, loadDetail,
 }) {
@@ -69,6 +73,7 @@ export default function AgentWorkDesktop({
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
+      {modals}
       {/* Sidebar */}
       <aside className="w-60 shrink-0 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col">
         <div className="flex items-center gap-3 px-4 h-14 border-b dark:border-gray-700">
@@ -158,6 +163,7 @@ export default function AgentWorkDesktop({
               sortConfig={sortConfig}
               onSort={handleSort}
               onDial={handleDial}
+              onQuickStatus={updateStatus}
               onUpdateStage={updateStage}
               onAddNote={addNote}
               onOpenAi={openAiPanel}
@@ -199,6 +205,23 @@ export default function AgentWorkDesktop({
             />
           </div>
         )}
+
+        <StudentDetailDrawer
+          open={showDetail}
+          student={detailStudent}
+          loading={detailLoading}
+          error={detailError}
+          calls={detailCalls}
+          notes={detailNotes}
+          followUps={detailFollowUps}
+          visits={detailVisits}
+          intentTimeline={detailIntentTimeline}
+          hasAnalysis={hasAnalysis}
+          onClose={() => setShowDetail(false)}
+          onRetry={() => detailStudent && loadDetail(detailStudent.id)}
+          onUpdateField={updateDetailField}
+          onDial={handleDial}
+        />
       </div>
     </div>
   );

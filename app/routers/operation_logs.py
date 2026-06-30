@@ -1,16 +1,17 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.models import OperationLog, User
+from app.models import DialLog, OperationLog, Student, User
 from app.permissions import get_accessible_student
 from app.schemas import Response
 
 router = APIRouter(prefix="/api/operation-logs", tags=["操作日志"])
+_CST = timezone(timedelta(hours=8))
 
 
 def _parse_agent_ids(value: str) -> list[int]:
@@ -26,6 +27,14 @@ def _parse_agent_ids(value: str) -> list[int]:
     return ids
 
 
+def _date_start_cst_as_utc(value: str) -> datetime:
+    try:
+        day = date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="日期格式应为 YYYY-MM-DD")
+    return datetime(day.year, day.month, day.day, tzinfo=_CST).astimezone(UTC).replace(tzinfo=None)
+
+
 @router.get("/call-volume")
 async def call_volume_query(
     db: AsyncSession = Depends(get_db),
@@ -36,58 +45,80 @@ async def call_volume_query(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
-    """通电量查询：按日期+话务员筛选操作日志（不含登录日志）"""
-    conditions = [OperationLog.action.in_(["修改状态", "写备注", "修改信息"])]
+    """通电量查询：按北京时间日期+话务员筛选真实拨号记录。"""
+    conditions = []
 
     if start_date:
-        try:
-            s_date = date.fromisoformat(start_date)
-            conditions.append(
-                OperationLog.created_at >= datetime(s_date.year, s_date.month, s_date.day)
-            )
-        except ValueError:
-            raise HTTPException(status_code=422, detail="start_date 日期格式应为 YYYY-MM-DD")
+        conditions.append(DialLog.dialed_at >= _date_start_cst_as_utc(start_date))
     if end_date:
-        try:
-            e_date = date.fromisoformat(end_date)
-            conditions.append(
-                OperationLog.created_at
-                < datetime(e_date.year, e_date.month, e_date.day) + timedelta(days=1)
-            )
-        except ValueError:
-            raise HTTPException(status_code=422, detail="end_date 日期格式应为 YYYY-MM-DD")
+        conditions.append(DialLog.dialed_at < _date_start_cst_as_utc(end_date) + timedelta(days=1))
 
-    query = select(OperationLog).where(*conditions)
+    query = select(DialLog, User.name.label("agent_name"), Student.name.label("student_name")).join(
+        User, User.id == DialLog.agent_id
+    ).join(Student, Student.id == DialLog.student_id)
+    if conditions:
+        query = query.where(*conditions)
 
     if agent_ids:
         ids = _parse_agent_ids(agent_ids)
         if ids:
-            query = query.where(OperationLog.operator_id.in_(ids))
+            query = query.where(DialLog.agent_id.in_(ids))
 
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar()
 
+    summary_query = select(
+        func.count(DialLog.id).label("total_calls"),
+        func.count(DialLog.id)
+        .filter(DialLog.duration_seconds > 0)
+        .label("recorded_calls"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (DialLog.duration_seconds > 0, DialLog.duration_seconds),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("total_recorded_duration_seconds"),
+    ).join(User, User.id == DialLog.agent_id).join(Student, Student.id == DialLog.student_id)
+    if conditions:
+        summary_query = summary_query.where(*conditions)
+    if agent_ids:
+        ids = _parse_agent_ids(agent_ids)
+        if ids:
+            summary_query = summary_query.where(DialLog.agent_id.in_(ids))
+
+    summary_row = (await db.execute(summary_query)).one()
+    total_calls = int(summary_row.total_calls or 0)
+    recorded_calls = int(summary_row.recorded_calls or 0)
+    total_recorded_duration = int(summary_row.total_recorded_duration_seconds or 0)
+    avg_recorded_duration = (
+        round(total_recorded_duration / recorded_calls, 1) if recorded_calls else 0
+    )
+
     query = (
         query.offset((page - 1) * page_size)
         .limit(page_size)
-        .order_by(OperationLog.created_at.desc())
+        .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
     )
     result = await db.execute(query)
-    logs = result.scalars().all()
+    rows = result.all()
 
     data = []
-    for i, log in enumerate(logs):
+    for i, (dial, agent_name, student_name) in enumerate(rows):
         data.append(
             {
                 "seq": (page - 1) * page_size + i + 1,
-                "operator_name": log.operator_name,
-                "action": log.action,
-                "case_no": log.case_no,
-                "content": log.content,
-                "old_status": log.old_status,
-                "new_status": log.new_status,
-                "note_content": log.note_content,
-                "created_at": str(log.created_at),
+                "id": dial.id,
+                "agent_id": dial.agent_id,
+                "agent_name": agent_name,
+                "operator_name": agent_name,
+                "student_id": dial.student_id,
+                "student_name": student_name,
+                "duration_seconds": dial.duration_seconds,
+                "dialed_at": str(dial.dialed_at),
+                "created_at": str(dial.dialed_at),
             }
         )
 
@@ -96,6 +127,13 @@ async def call_volume_query(
             "total": total,
             "page": page,
             "page_size": page_size,
+            "summary": {
+                "total_calls": total_calls,
+                "recorded_calls": recorded_calls,
+                "unrecorded_calls": total_calls - recorded_calls,
+                "total_recorded_duration_seconds": total_recorded_duration,
+                "avg_recorded_duration_seconds": avg_recorded_duration,
+            },
             "list": data,
         }
     )
