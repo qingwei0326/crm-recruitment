@@ -211,8 +211,11 @@ class TestOffboard:
             role="admin",
             name="另一个管理员",
             is_active=True,
+            is_super_admin=True,
         )
         db.add(other_admin)
+        admin_user.is_super_admin = True
+        db.add(admin_user)
         await db.commit()
         await db.refresh(other_admin)
 
@@ -242,6 +245,16 @@ class TestOffboard:
         resp = await client.post(
             f"/api/admin/users/{departing_agent.id}/offboard",
             headers=agent_headers,
+        )
+        assert resp.status_code == 403
+
+    async def test_offboard_requires_super_admin(
+        self, client, normal_admin_headers, departing_agent
+    ):
+        """普通管理员不能办理离职。"""
+        resp = await client.post(
+            f"/api/admin/users/{departing_agent.id}/offboard",
+            headers=normal_admin_headers,
         )
         assert resp.status_code == 403
 

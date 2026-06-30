@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react';
-import { Download, Eye, EyeOff, Phone, RefreshCw, Save, Sparkles } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Eye,
+  EyeOff,
+  Phone,
+  RefreshCw,
+  Save,
+  Sparkles,
+} from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import { formatDuration } from '../../utils';
 
 function SettingRow({ label, children }) {
   return (
@@ -26,6 +38,36 @@ function RowMessage({ state }) {
 
 const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100';
+
+function StatusPill({ status }) {
+  const normalized = status || 'ok';
+  const style = normalized === 'ok'
+    ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-700'
+    : normalized === 'warning'
+      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700'
+      : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700';
+  const label = normalized === 'ok' ? '正常' : normalized === 'warning' ? '需关注' : '异常';
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${style}`}>
+      {normalized === 'ok' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+      {label}
+    </span>
+  );
+}
+
+function OpsMetric({ label, value, tone = 'default' }) {
+  const valueCls = tone === 'warning'
+    ? 'text-amber-700 dark:text-amber-300'
+    : tone === 'danger'
+      ? 'text-red-700 dark:text-red-300'
+      : 'text-gray-900 dark:text-gray-100';
+  return (
+    <div className="min-w-0 border-l-2 border-gray-200 dark:border-gray-700 pl-3 py-1">
+      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</div>
+      <div className={`mt-1 text-lg font-semibold ${valueCls}`}>{value}</div>
+    </div>
+  );
+}
 
 export default function SystemSettings() {
   const { dark, toggle } = useTheme();
@@ -59,9 +101,18 @@ export default function SystemSettings() {
   const [dialMaxPer24h, setDialMaxPer24h] = useState('3');
   const [dialMessage, setDialMessage] = useState(null);
   const [savingDial, setSavingDial] = useState(false);
+  const [scoreDailyCallTarget, setScoreDailyCallTarget] = useState('30');
+  const [scoreMessage, setScoreMessage] = useState(null);
+  const [savingScore, setSavingScore] = useState(false);
   const [backups, setBackups] = useState([]);
   const [backupMessage, setBackupMessage] = useState(null);
   const [backingUp, setBackingUp] = useState(false);
+  const [opsHealth, setOpsHealth] = useState(null);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [opsMessage, setOpsMessage] = useState(null);
+  const [dataQuality, setDataQuality] = useState(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  const [qualityMessage, setQualityMessage] = useState(null);
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -74,6 +125,32 @@ export default function SystemSettings() {
     }
   };
 
+  const loadOpsHealth = async () => {
+    setOpsLoading(true);
+    setOpsMessage(null);
+    try {
+      const res = await api.get('/admin/ops-health');
+      setOpsHealth(res.data.data || null);
+    } catch (err) {
+      setOpsMessage({ type: 'error', text: err.response?.data?.msg || '运行状态加载失败' });
+    } finally {
+      setOpsLoading(false);
+    }
+  };
+
+  const loadDataQuality = async () => {
+    setQualityLoading(true);
+    setQualityMessage(null);
+    try {
+      const res = await api.get('/admin/data-quality');
+      setDataQuality(res.data.data || null);
+    } catch (err) {
+      setQualityMessage({ type: 'error', text: err.response?.data?.msg || '数据质量加载失败' });
+    } finally {
+      setQualityLoading(false);
+    }
+  };
+
   const triggerBackup = async () => {
     setBackupMessage(null);
     setBackingUp(true);
@@ -81,6 +158,8 @@ export default function SystemSettings() {
       await api.post('/admin/backups');
       setBackupMessage({ type: 'success', text: '备份已生成' });
       await loadBackups();
+      await loadOpsHealth();
+      await loadDataQuality();
     } catch (err) {
       setBackupMessage({ type: 'error', text: err.response?.data?.msg || '备份失败' });
     } finally {
@@ -116,14 +195,33 @@ export default function SystemSettings() {
       setDialWindowStart(cfg.dial_window_start || '08:00');
       setDialWindowEnd(cfg.dial_window_end || '21:00');
       setDialMaxPer24h(cfg.dial_max_per_24h || '3');
+      setScoreDailyCallTarget(cfg.score_daily_call_target || '30');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveScoreSettings = async () => {
+    setScoreMessage(null);
+    setSavingScore(true);
+    try {
+      await api.put('/admin/config', {
+        key: 'score_daily_call_target',
+        value: String(scoreDailyCallTarget),
+      });
+      setScoreMessage({ type: 'success', text: '已保存' });
+    } catch (err) {
+      setScoreMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
+    } finally {
+      setSavingScore(false);
     }
   };
 
   useEffect(() => {
     loadConfig().catch(() => setLoading(false));
     loadBackups();
+    loadOpsHealth();
+    loadDataQuality();
   }, []);
 
   const saveToken = async () => {
@@ -214,6 +312,162 @@ export default function SystemSettings() {
           </button>
         </PageHeader>
         <form onSubmit={(e) => e.preventDefault()} className="p-4 lg:p-6 max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mb-4">
+            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">运行状态</h1>
+                {opsHealth && <StatusPill status={opsHealth.status} />}
+              </div>
+              <button
+                type="button"
+                onClick={loadOpsHealth}
+                disabled={opsLoading}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${opsLoading ? 'animate-spin' : ''}`} />
+                刷新
+              </button>
+            </div>
+            <div className="p-4 lg:p-6">
+              <RowMessage state={opsMessage} />
+              {opsHealth ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <OpsMetric label="数据库延迟" value={`${opsHealth.database?.db_ms ?? '-'} ms`} />
+                    <OpsMetric
+                      label="最新备份"
+                      value={opsHealth.backups?.latest?.modified_at
+                        ? opsHealth.backups.latest.modified_at.replace('T', ' ').slice(0, 19)
+                        : '无备份'}
+                      tone={opsHealth.backups?.latest ? 'default' : 'warning'}
+                    />
+                    <OpsMetric label="备份数量" value={`${opsHealth.backups?.count ?? 0}/${opsHealth.backups?.max_keep ?? '-'}`} />
+                    <OpsMetric
+                      label="逾期回访"
+                      value={opsHealth.business?.overdue_follow_ups ?? 0}
+                      tone={opsHealth.business?.overdue_follow_ups > 0 ? 'warning' : 'default'}
+                    />
+                    <OpsMetric
+                      label="7 天通知失败"
+                      value={opsHealth.business?.notification_failures_7d ?? 0}
+                      tone={opsHealth.business?.notification_failures_7d > 0 ? 'warning' : 'default'}
+                    />
+                    <OpsMetric
+                      label="24 小时前端错误"
+                      value={opsHealth.business?.frontend_errors_24h ?? 0}
+                      tone={opsHealth.business?.frontend_errors_24h > 0 ? 'warning' : 'default'}
+                    />
+                    <OpsMetric label="未分配线索" value={opsHealth.business?.unassigned_active ?? 0} />
+                    <OpsMetric label="活跃话务员" value={opsHealth.business?.active_agents ?? 0} />
+                    <OpsMetric
+                      label="锁定账号"
+                      value={opsHealth.business?.locked_users ?? 0}
+                      tone={opsHealth.business?.locked_users > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+                  <div className="grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-2">
+                    <div>生成时间：{opsHealth.generated_at?.replace('T', ' ').slice(0, 19) || '-'}</div>
+                    <div>日志文件：{opsHealth.logs?.files?.filter((item) => item.exists).length ?? 0} 个可用</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400 py-4">
+                  {opsLoading ? '运行状态加载中…' : '暂未加载运行状态'}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mb-4">
+            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">数据质量</h1>
+                {dataQuality && <StatusPill status={dataQuality.status} />}
+              </div>
+              <button
+                type="button"
+                onClick={loadDataQuality}
+                disabled={qualityLoading}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${qualityLoading ? 'animate-spin' : ''}`} />
+                刷新
+              </button>
+            </div>
+            <div className="p-4 lg:p-6">
+              <RowMessage state={qualityMessage} />
+              {dataQuality ? (
+                <div className="space-y-5">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <OpsMetric label="今日未记录" value={dataQuality.calls?.today?.unrecorded_calls ?? 0} tone={dataQuality.calls?.today?.unrecorded_calls > 0 ? 'warning' : 'default'} />
+                    <OpsMetric label="本月未记录" value={dataQuality.calls?.month?.unrecorded_calls ?? 0} tone={dataQuality.calls?.month?.unrecorded_calls > 0 ? 'warning' : 'default'} />
+                    <OpsMetric label="未记录占比" value={`${dataQuality.calls?.month?.unrecorded_ratio ?? 0}%`} tone={dataQuality.calls?.month?.unrecorded_ratio > 0 ? 'warning' : 'default'} />
+                    <OpsMetric label="平均有效时长" value={formatDuration(dataQuality.calls?.month?.avg_recorded_duration_seconds)} />
+                    <OpsMetric label="缺电话任务" value={dataQuality.students?.missing_phone_tasks ?? 0} tone={dataQuality.students?.missing_phone_tasks > 0 ? 'warning' : 'default'} />
+                    <OpsMetric label="未分配任务" value={dataQuality.students?.unassigned_active ?? 0} />
+                    <OpsMetric label="无效线索" value={dataQuality.students?.invalid_total ?? 0} />
+                    <OpsMetric label="逾期回访" value={dataQuality.follow_ups?.overdue_follow_ups ?? 0} tone={dataQuality.follow_ups?.overdue_follow_ups > 0 ? 'warning' : 'default'} />
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-lg border dark:border-gray-700 p-3">
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">未记录时长排行</div>
+                      {dataQuality.calls?.agents?.length ? (
+                        <div className="space-y-2">
+                          {dataQuality.calls.agents.slice(0, 5).map((agent) => (
+                            <div key={agent.agent_id} className="flex items-center justify-between gap-3 text-sm">
+                              <div className="min-w-0">
+                                <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{agent.agent_name}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  总拨号 {agent.total_calls} · 有效 {agent.recorded_calls} · 均长 {formatDuration(agent.avg_recorded_duration_seconds)}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="font-semibold text-amber-700 dark:text-amber-300">{agent.unrecorded_calls}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{agent.unrecorded_ratio}%</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400">暂无本月拨号记录</div>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border dark:border-gray-700 p-3">
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">无效原因分布</div>
+                      {dataQuality.students?.invalid_reasons?.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {dataQuality.students.invalid_reasons.map((item) => (
+                            <span
+                              key={item.reason}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-700 px-2.5 py-1 text-sm text-gray-700 dark:text-gray-200"
+                            >
+                              {item.reason}
+                              <b>{item.count}</b>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400">暂无无效线索</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    生成时间：{dataQuality.generated_at?.replace('T', ' ').slice(0, 19) || '-'}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-400 py-4">
+                  {qualityLoading ? '数据质量加载中…' : '暂未加载数据质量'}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm">
             <div className="px-4 py-4 border-b dark:border-gray-700">
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">推送配置</h1>
@@ -477,6 +731,42 @@ export default function SystemSettings() {
                 </button>
               </div>
               <RowMessage state={dialMessage} />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
+            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+              <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">评分设置</h1>
+            </div>
+            <div className="p-4 lg:p-6">
+              <SettingRow label="默认通话目标">
+                <label className="sr-only" htmlFor="score-daily-call-target">默认通话目标</label>
+                <input
+                  id="score-daily-call-target"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  className={inputCls}
+                  value={scoreDailyCallTarget}
+                  onChange={(e) => setScoreDailyCallTarget(e.target.value)}
+                />
+              </SettingRow>
+              <div className="flex items-center justify-between pt-4">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  评分预览未手动输入目标时使用该值；页面上仍可临时试算其他目标，最高 1000。
+                </div>
+                <button
+                  type="button"
+                  onClick={saveScoreSettings}
+                  disabled={savingScore || loading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                >
+                  <Save className="w-4 h-4" />
+                  保存
+                </button>
+              </div>
+              <RowMessage state={scoreMessage} />
             </div>
           </div>
 
