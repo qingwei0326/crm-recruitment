@@ -52,6 +52,20 @@ describe('useAgentWorkState', () => {
     expect(result.current.state.currentIdx).toBe(0);
   });
 
+  it('setCurrentIdx should support functional updates', () => {
+    const { result } = renderHook(() => useAgentWorkState());
+
+    act(() => {
+      result.current.actions.setCurrentIdx(5);
+    });
+
+    act(() => {
+      result.current.actions.setCurrentIdx((idx) => Math.min(idx, 2));
+    });
+
+    expect(result.current.state.currentIdx).toBe(2);
+  });
+
   it('updateStudent should merge fields into matching student', () => {
     const { result } = renderHook(() => useAgentWorkState());
 
@@ -68,6 +82,33 @@ describe('useAgentWorkState', () => {
 
     expect(result.current.state.students[0].status).toBe('已联系');
     expect(result.current.state.students[1].status).toBe('未接');
+  });
+
+  it('removeStudentFromQueue should remove a student, clamp currentIdx, and decrement pending stats', () => {
+    const { result } = renderHook(() => useAgentWorkState());
+
+    act(() => {
+      result.current.actions.setStudents([
+        { id: 1, name: 'A', status: '未联系' },
+        { id: 2, name: 'B', status: '未联系' },
+      ]);
+      result.current.actions.setStats({ total: 2, done: 0, pending: 2, follow_up: 0, progress_pct: 0 });
+      result.current.actions.setCurrentIdx(1);
+    });
+
+    act(() => {
+      result.current.actions.removeStudentFromQueue(2);
+    });
+
+    expect(result.current.state.students).toEqual([{ id: 1, name: 'A', status: '未联系' }]);
+    expect(result.current.state.currentIdx).toBe(0);
+    expect(result.current.state.stats).toEqual({
+      total: 1,
+      done: 0,
+      pending: 1,
+      follow_up: 0,
+      progress_pct: 0,
+    });
   });
 
   it('setDialModal should update dial modal', () => {
