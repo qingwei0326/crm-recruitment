@@ -1,6 +1,6 @@
 /**
  * 待处理学生列表
- * 从 /tasks/handled API 加载已联系和未接状态的学生
+ * 从 /tasks/handled API 加载已联系、未接、待回访状态的学生
  * 支持状态筛选、搜索、分页加载
  *
  * @param {Object} props
@@ -16,6 +16,7 @@ const STATUS_FILTERS = [
   { label: '全部', value: null },
   { label: '已联系', value: '已联系' },
   { label: '未接', value: '未接' },
+  { label: '待回访', value: '待回访' },
 ];
 
 export default function HandledView({ onOpenDetail }) {
@@ -64,7 +65,6 @@ export default function HandledView({ onOpenDetail }) {
       <div className="flex flex-wrap gap-2 px-4 py-3 border-b dark:border-gray-700 bg-white dark:bg-gray-800">
         {STATUS_FILTERS.map((st) => {
           const count = st.value ? (counts[st.value] || 0) : total;
-          if (st.value && count === 0) return null;
           return (
             <button
               key={st.value || 'all'}

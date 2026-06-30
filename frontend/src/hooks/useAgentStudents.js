@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import api from '../api';
 import { getApiErrorMessage } from '../utils';
 import { useConfirm } from '../components/ConfirmDialog';
+import { detailForOperatorResult, displayStatusForOperatorResult } from '../operatorResultPolicy';
 
 /**
  * 管理学生列表数据和筛选逻辑
@@ -121,16 +122,8 @@ export default function useAgentStudents({ state, actions, toast }) {
   // 更新学生状态
   const updateStatus = useCallback(async (id, s) => {
     const status = typeof s === 'string' ? s : s.status;
-    const fallbackStatusByDetail = {
-      非常有意向: '已联系',
-      意向了解加微: '待回访',
-      高分段: '无效',
-      无意向: '无效',
-      孩子不想读: '无效',
-      空号: '无效',
-    };
-    const fallbackStatus = fallbackStatusByDetail[status] || status;
-    const fallbackDetail = fallbackStatus === status ? '' : status;
+    const fallbackStatus = displayStatusForOperatorResult(status);
+    const fallbackDetail = detailForOperatorResult(status);
     if (status === '已报名') {
       const ok = await confirm({
         title: '确认报名',
