@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import timedelta
 
@@ -11,7 +12,7 @@ from app.database import get_db
 from app.limiter import limiter
 from app.models import Call, DialLog, IntentLevel, Note, Student, SystemConfig, User, UserRole
 from app.permissions import can_access_student
-from app.pushplus import notify_a_level_change
+from app.pushplus import notify_a_level_change_background
 from app.schemas import CallCreate, Response
 from app.utils import make_operation_log, utcnow
 
@@ -159,7 +160,9 @@ async def create_call(
     await db.commit()
     await db.refresh(call)
     if old_intent != student.intent_level and student.intent_level == IntentLevel.A:
-        await notify_a_level_change(db, student, current_user, "ai")
+        asyncio.create_task(
+            notify_a_level_change_background(student.id, current_user.name, "ai")
+        )
 
     return Response.ok(
         {

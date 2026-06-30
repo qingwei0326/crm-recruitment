@@ -13,7 +13,7 @@ import { useToast } from '../components/Toast';
  * dial(studentId, options?) options: { contactKey?: 'guardian' | 'guardian2', studentName?, onSuccess?, onError? }
  * checkDup(studentId) → { count, last_call_at, message } | null
  *
- * 拨号成功跳起 tel: 前，会把 { studentId, studentName } 写入 sessionStorage('pendingDial')，
+ * 拨号成功跳起 tel: 前，会把 { studentId, studentName, dialStartedAt } 写入 sessionStorage('pendingDial')，
  * 供话务员打完电话返回 App 时由 <MobileDialResult> 弹窗读取，更新联系状况(已联系/待回访/…)。
  */
 export default function useDialFlow() {
@@ -77,7 +77,7 @@ export default function useDialFlow() {
       try {
         sessionStorage.setItem(
           'pendingDial',
-          JSON.stringify({ studentId, studentName }),
+          JSON.stringify({ studentId, studentName, dialStartedAt: Date.now() }),
         );
       } catch {
         // sessionStorage 不可用时不应阻塞拨号

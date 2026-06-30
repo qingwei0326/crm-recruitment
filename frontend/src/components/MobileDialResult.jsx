@@ -3,9 +3,9 @@ import { PhoneCall, X, Loader2, CalendarClock, MessageSquare } from 'lucide-reac
 import api from '../api';
 import logger from '../utils/logger';
 import { useConfirm } from './ConfirmDialog';
+import { isFixedInvalidReason, payloadForOperatorResult } from '../operatorResultPolicy';
 import {
   displayStatusForOperatorResult,
-  OPERATOR_INVALID_DETAIL_LABELS,
   OPERATOR_STATUS_BUTTON_LABELS,
   STATUS_ACTION_BUTTON_CLASSES,
 } from '../labels';
@@ -32,7 +32,9 @@ import {
 function recordCallResult(studentId, dialStartedAt, noteText) {
   const duration = dialStartedAt ? Math.round((Date.now() - dialStartedAt) / 1000) : 0;
   if (duration > 0) {
-    api.put(`/students/dial-duration?student_id=${studentId}&duration_seconds=${duration}`)
+    api.put('/students/dial-duration', null, {
+      params: { student_id: studentId, duration_seconds: duration },
+    })
       .catch((e) => logger.error('记录通话时长失败:', e));
   }
   if (noteText?.trim()) {
@@ -54,7 +56,7 @@ function defaultFollowUp() {
 export const STATUS_BUTTONS = OPERATOR_STATUS_BUTTON_LABELS.map((label) => ({
   label,
   cls: STATUS_ACTION_BUTTON_CLASSES[label],
-  invalidDetail: OPERATOR_INVALID_DETAIL_LABELS.includes(label),
+  invalidDetail: isFixedInvalidReason(label),
 }));
 
 const INTENT_BUTTONS = [
@@ -84,8 +86,10 @@ export default function MobileDialResult({ onUpdated }) {
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
   const [submitting, setSubmitting] = useState(false);
+  const [errorText, setErrorText] = useState('');
   const [noteText, setNoteText] = useState('');
   const callRecordedRef = useRef(false);
+  const submittingRef = useRef(false);
 
   const tryLoadPending = useCallback(() => {
     // 正在处理一通的结果时，别被新的 visibilitychange 覆盖
@@ -105,6 +109,10 @@ export default function MobileDialResult({ onUpdated }) {
         setFlowStatus(null);
         setShowFollowUp(false);
         setFollowUpDate(defaultFollowUp());
+        setSubmitting(false);
+        setErrorText('');
+        setNoteText('');
+        submittingRef.current = false;
         callRecordedRef.current = false;
         setPending(data);
       }
@@ -132,16 +140,32 @@ export default function MobileDialResult({ onUpdated }) {
 
   if (!pending) return null;
 
-  const close = () => {
+  const close = ({ force = false } = {}) => {
+    if (submittingRef.current && !force) return;
+    submittingRef.current = false;
     setPending(null);
     setShowIntent(false);
     setFlowStatus(null);
     setShowFollowUp(false);
     setSubmitting(false);
+    setErrorText('');
     setNoteText('');
   };
 
   const putField = (payload) => api.put(`/students/${pending.studentId}`, payload);
+
+  const beginSubmit = () => {
+    if (submittingRef.current) return false;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setErrorText('');
+    return true;
+  };
+
+  const endSubmit = () => {
+    submittingRef.current = false;
+    setSubmitting(false);
+  };
 
   const recordCallOnce = () => {
     if (callRecordedRef.current) return;
@@ -150,75 +174,86 @@ export default function MobileDialResult({ onUpdated }) {
   };
 
   const pickStatus = async (btn) => {
-    if (submitting) return;
+    if (!beginSubmit()) return;
     const status = btn.label;
-    if (status === '已报名') {
-      const ok = await confirm({
-        title: '确认报名',
-        message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
-        confirmText: '确认报名',
-      });
-      if (!ok) return;
-    }
-    // 乐观更新：先更新 UI，后台同步
-    onUpdated && onUpdated(
-      pending.studentId,
-      displayStatusForOperatorResult(status),
-      btn.invalidDetail ? status : '',
-    );
-    // 后台静默同步
-    putField({ status }).catch((e) => {
+    try {
+      if (status === '已报名') {
+        const ok = await confirm({
+          title: '确认报名',
+          message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
+          confirmText: '确认报名',
+        });
+        if (!ok) {
+          endSubmit();
+          return;
+        }
+      }
+
+      await putField(payloadForOperatorResult(status));
+      onUpdated && onUpdated(
+        pending.studentId,
+        displayStatusForOperatorResult(status),
+        btn.invalidDetail ? status : '',
+      );
+
+      // 接通后可补充意向等级；待回访会在意向后继续设置回访时间。
+      if (status === '非常有意向' || status === '意向了解加微' || status === '已联系' || status === '待回访') {
+        setFlowStatus(status);
+        setShowIntent(true);
+        endSubmit();
+        return; // Don't close yet, show intent step
+      }
+
+      recordCallOnce();
+      close({ force: true });
+    } catch (e) {
       logger.error('状态同步失败:', e);
-      onUpdated && onUpdated(pending.studentId, null);
-    });
-
-    // 接通后可补充意向等级；待回访会在意向后继续设置回访时间。
-    if (status === '非常有意向' || status === '意向了解加微' || status === '已联系' || status === '待回访') {
-      setFlowStatus(status);
-      setShowIntent(true);
-      return; // Don't close yet, show intent step
+      setErrorText('处理结果保存失败，请重试');
+      endSubmit();
     }
-
-    recordCallOnce();
-    close();
   };
 
   const pickIntent = async (level) => {
-    if (submitting) return;
-    // 乐观更新：先更新 UI
-    onUpdated && onUpdated(pending.studentId, null);
-    // 待回访：接着收集回访时间落 /follow-ups；其他：完成
-    if (flowStatus === '待回访' || flowStatus === '意向了解加微') {
-      setShowIntent(false);
-      setShowFollowUp(true);
-    } else {
-      recordCallOnce();
-      close();
-    }
-    // 后台静默同步
-    putField({ intent_level: level }).catch((e) => {
+    if (!beginSubmit()) return;
+    try {
+      await putField({ intent_level: level });
+      onUpdated && onUpdated(pending.studentId, null);
+      // 待回访：接着收集回访时间落 /follow-ups；其他：完成
+      if (flowStatus === '待回访' || flowStatus === '意向了解加微') {
+        setShowIntent(false);
+        setShowFollowUp(true);
+        endSubmit();
+      } else {
+        recordCallOnce();
+        close({ force: true });
+      }
+    } catch (e) {
       logger.error('意向等级同步失败:', e);
-    });
+      setErrorText('意向等级保存失败，请重试');
+      endSubmit();
+    }
   };
 
   const saveFollowUp = async () => {
-    if (submitting) return;
+    if (!beginSubmit()) return;
     if (!followUpDate) {
       recordCallOnce();
-      close();
+      close({ force: true });
       return;
     }
-    // 乐观更新：先更新 UI
-    onUpdated && onUpdated(pending.studentId, null);
     recordCallOnce();
-    close();
-    // 后台静默同步
-    api.post('/follow-ups', {
-      student_id: pending.studentId,
-      follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
-    }).catch((e) => {
+    try {
+      await api.post('/follow-ups', {
+        student_id: pending.studentId,
+        follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
+      });
+      onUpdated && onUpdated(pending.studentId, null);
+      close({ force: true });
+    } catch (e) {
       logger.error('回访记录同步失败:', e);
-    });
+      setErrorText('回访提醒保存失败，请重试');
+      endSubmit();
+    }
   };
 
   return (
@@ -226,6 +261,7 @@ export default function MobileDialResult({ onUpdated }) {
       <div
         className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4"
         onClick={(e) => e.stopPropagation()}
+        aria-busy={submitting}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -236,13 +272,21 @@ export default function MobileDialResult({ onUpdated }) {
               <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
                 {pending.studentName || '本次通话'}
               </div>
-              <div className="text-xs text-gray-500">通话已完成，请选择处理结果</div>
+              <div className="text-xs text-gray-500">
+                {submitting ? '保存中，请稍候' : '通话已完成，请选择处理结果'}
+              </div>
             </div>
           </div>
           <button onClick={close} className="text-gray-400 p-1 -mr-1" aria-label="不记录，关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {errorText && (
+          <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-300">
+            {errorText}
+          </div>
+        )}
 
         {showFollowUp ? (
           <div className="space-y-3">
@@ -261,6 +305,7 @@ export default function MobileDialResult({ onUpdated }) {
                 <button
                   key={q.label}
                   type="button"
+                  disabled={submitting}
                   onClick={() => {
                     const d = new Date();
                     d.setDate(d.getDate() + q.offset.days);
@@ -268,7 +313,7 @@ export default function MobileDialResult({ onUpdated }) {
                     const pad = (n) => String(n).padStart(2, '0');
                     setFollowUpDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`);
                   }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95 disabled:opacity-60"
                 >
                   {q.label}
                 </button>
@@ -278,6 +323,7 @@ export default function MobileDialResult({ onUpdated }) {
               type="datetime-local"
               value={followUpDate}
               onChange={(e) => setFollowUpDate(e.target.value)}
+              disabled={submitting}
               className="w-full border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500"
             />
             <div className="flex gap-2">
@@ -311,7 +357,7 @@ export default function MobileDialResult({ onUpdated }) {
                   key={b.label}
                   type="button"
                   onClick={() => pickStatus(b)}
-                  disabled={submitting}
+                  disabled={submitting || showIntent}
                   className={`min-h-[52px] rounded-xl text-sm font-medium text-white ${b.cls} active:scale-95 disabled:opacity-60`}
                 >
                   {b.label}
@@ -327,6 +373,7 @@ export default function MobileDialResult({ onUpdated }) {
                 onChange={(e) => setNoteText(e.target.value)}
                 placeholder="添加备注（可选）"
                 rows={2}
+                disabled={submitting}
                 className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
