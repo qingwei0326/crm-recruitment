@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import StatusBadge from './StatusBadge';
 import IntentLevelBadge from './IntentLevelBadge';
+import PhoneLink from './PhoneLink';
 import { stageLabel } from '../labels';
 import { formatDateTime, formatDate } from '../utils';
 
@@ -15,16 +16,11 @@ function Field({ label, children }) {
   );
 }
 
-export default memo(function StudentInfoCard({ student }) {
+export default memo(function StudentInfoCard({ student, onDial }) {
   if (!student) return null;
   const phone = (raw, masked) => {
     const value = raw || masked;
-    if (!value) return '-';
-    return (
-      <a href={`tel:${value}`} className="text-blue-600 dark:text-blue-400 hover:underline">
-        {value}
-      </a>
-    );
+    return value || '';
   };
 
   return (
@@ -50,9 +46,21 @@ export default memo(function StudentInfoCard({ student }) {
         <Field label="学校">{student.school_name}</Field>
         <Field label="成绩">{student.score != null ? student.score : '-'}</Field>
         <Field label="监护人">{student.guardian_name}</Field>
-        <Field label="监护人电话">{phone(student.guardian_phone_raw, student.guardian_phone)}</Field>
+        <Field label="监护人电话">
+          <PhoneLink
+            value={phone(student.guardian_phone_raw, student.guardian_phone)}
+            label="拨打监护人电话"
+            onDial={onDial ? () => onDial('guardian') : undefined}
+          />
+        </Field>
         <Field label="监护人2">{student.guardian2_name}</Field>
-        <Field label="监护人2电话">{phone(student.guardian2_phone_raw, student.guardian2_phone)}</Field>
+        <Field label="监护人2电话">
+          <PhoneLink
+            value={phone(student.guardian2_phone_raw, student.guardian2_phone)}
+            label="拨打监护人2电话"
+            onDial={onDial ? () => onDial('guardian2') : undefined}
+          />
+        </Field>
         <Field label="分配时间">{formatDateTime(student.assigned_at)}</Field>
       </div>
 

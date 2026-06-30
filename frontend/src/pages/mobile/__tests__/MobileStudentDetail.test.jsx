@@ -130,12 +130,27 @@ describe('MobileStudentDetail follow-up workflow', () => {
       '非常有意向',
       '意向了解加微',
       '未接',
+      '空号',
       '高分段',
       '无意向',
       '孩子不想读',
       '已报名',
     ].forEach((label) => {
       expect(within(resultButtons).getByRole('button', { name: label })).toBeInTheDocument();
+    });
+  });
+
+  it('saves fixed invalid results with invalid reason from the mobile detail page', async () => {
+    renderPage();
+
+    await screen.findByText('完整时间线');
+    fireEvent.click(screen.getByRole('button', { name: '空号' }));
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/42', {
+        status: '无效',
+        invalid_reason: '空号',
+      });
     });
   });
 

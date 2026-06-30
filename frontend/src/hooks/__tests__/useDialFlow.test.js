@@ -139,8 +139,17 @@ describe('useDialFlow', () => {
       expect(window.location.href).toBe('tel:13800138000');
       expect(sessionStorageSpy.setItem).toHaveBeenCalledWith(
         'pendingDial',
-        JSON.stringify({ studentId: 10, studentName: 'Alice' }),
+        expect.any(String),
       );
+      const pendingDialCall = sessionStorageSpy.setItem.mock.calls.find(
+        ([key]) => key === 'pendingDial',
+      );
+      const pendingDial = JSON.parse(pendingDialCall[1]);
+      expect(pendingDial).toEqual({
+        studentId: 10,
+        studentName: 'Alice',
+        dialStartedAt: expect.any(Number),
+      });
     });
 
     it('returns cancelled when confirm is dismissed at count >= 3', async () => {
