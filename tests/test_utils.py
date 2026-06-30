@@ -1,4 +1,4 @@
-"""Tests for mask_phone utility."""
+"""Tests for phone display utility."""
 
 from app.utils import mask_phone
 
@@ -11,19 +11,19 @@ class TestMaskPhone:
         assert mask_phone(None) == ""
 
     def test_11_digit_mobile(self):
-        assert mask_phone("13800138000") == "138****8000"
+        assert mask_phone("13800138000") == "13800138000"
 
     def test_11_digit_mobile_2(self):
-        assert mask_phone("13912345678") == "139****5678"
+        assert mask_phone("13912345678") == "13912345678"
 
     def test_12_digit_landline(self):
-        assert mask_phone("059187654321") == "059*****4321"
+        assert mask_phone("059187654321") == "059187654321"
 
     def test_7_digit_local(self):
-        assert mask_phone("1234567") == "1****67"
+        assert mask_phone("1234567") == "1234567"
 
     def test_short_number(self):
-        assert mask_phone("12345") == "1**45"
+        assert mask_phone("12345") == "12345"
 
     def test_very_short(self):
         assert mask_phone("12") == "12"

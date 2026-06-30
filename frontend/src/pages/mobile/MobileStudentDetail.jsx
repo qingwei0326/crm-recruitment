@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft,
   Phone,
-  StickyNote,
-  Calendar,
-  MapPin,
   Loader2,
   AlertTriangle,
   Sparkles,
@@ -18,11 +15,12 @@ import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
-import TimelineItem from '../../components/TimelineItem';
+import StudentTimeline from '../../components/StudentTimeline';
 import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { getApiErrorMessage } from '../../utils';
+import { payloadForOperatorResult } from '../../operatorResultPolicy';
 import {
   detailForOperatorResult,
   displayStatusForOperatorResult,
@@ -252,17 +250,7 @@ export default function MobileStudentDetail() {
   const notes = data?.notes || [];
   const followUps = data?.follow_ups || [];
   const visits = data?.visits || [];
-
-  const merged = useMemo(() => {
-    const items = [];
-    calls.forEach((c) => items.push({ kind: 'call', ts: c.created_at || c.call_time, d: c }));
-    notes.forEach((n) => items.push({ kind: 'note', ts: n.created_at, d: n }));
-    followUps.forEach((f) =>
-      items.push({ kind: 'follow_up', ts: f.created_at || f.follow_up_date, d: f }),
-    );
-    visits.forEach((v) => items.push({ kind: 'visit', ts: v.created_at || v.visit_date, d: v }));
-    return items.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')));
-  }, [calls, notes, followUps, visits]);
+  const intentTimeline = data?.intent_timeline || [];
 
   const showToast = (m) => {
     setToast(m);
@@ -318,11 +306,11 @@ export default function MobileStudentDetail() {
     }
   };
 
-  const handleDial = async () => {
+  const handleDial = async (contactKey = 'guardian') => {
     if (!student) return;
     setDialing(true);
     try {
-      await dial(student.id, { studentName: student.name });
+      await dial(student.id, { contactKey, studentName: student.name });
     } finally {
       setDialing(false);
     }
@@ -380,7 +368,7 @@ export default function MobileStudentDetail() {
       if (!ok) return;
     }
     runWorkflowUpdate(
-      () => api.put(`/students/${student.id}`, { status }),
+      () => api.put(`/students/${student.id}`, payloadForOperatorResult(status)),
       '联系状态已更新',
       (updated) => {
         const nextStatus = updated?.status || displayStatusForOperatorResult(status);
@@ -557,151 +545,96 @@ export default function MobileStudentDetail() {
     );
   }
 
-  const renderTimelineItem = (item) => {
-    const { kind, d } = item;
-    if (kind === 'call') {
-      return (
-        <TimelineItem
-          key={`call-${d.id}`}
-          type="通话"
-          icon={Phone}
-          color="blue"
-          title={`通话${d.duration ? ` · ${d.duration}秒` : ''}`}
-          content={d.ai_summary || d.content || d.notes || ''}
-          agentName={d.agent_name}
-          timestamp={d.created_at || d.call_time}
-        />
-      );
-    }
-    if (kind === 'note') {
-      return (
-        <div key={`note-${d.id}`} className="relative group">
-          <TimelineItem
-            type="备注"
-            icon={StickyNote}
-            color={d.source === 'ai' ? 'purple' : 'gray'}
-            title="备注"
-            content={d.content}
-            agentName={d.agent_name}
-            timestamp={d.created_at}
-            source={d.source}
-          />
-          {d.source !== 'ai' && canModify(d) && (
-            <div className="flex gap-3 mt-1 ml-9 text-xs">
-              <button
-                type="button"
-                onClick={() => setEditNote({ id: d.id, content: d.content })}
-                className="inline-flex items-center gap-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                <Pencil className="w-3 h-3" /> 编辑
-              </button>
-              <button
-                type="button"
-                disabled={busyDelete}
-                onClick={() => handleDeleteNote(d.id)}
-                className="inline-flex items-center gap-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-              >
-                <Trash2 className="w-3 h-3" /> 删除
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
-    if (kind === 'follow_up') {
-      return (
-        <div key={`fu-${d.id}`} data-testid={`follow-up-${d.id}`} className="relative">
-          <TimelineItem
-            type="回访"
-            icon={Calendar}
-            color="amber"
-            title={`回访计划 · ${d.follow_up_date || ''}`}
-            content={d.notes || d.note || d.content || ''}
-            agentName={d.agent_name}
-            timestamp={d.created_at}
-          />
-          {canModify(d) && (
-            <div className="flex flex-wrap gap-3 mt-1 ml-9 text-xs">
-              {!d.is_completed && (
-                <button
-                  type="button"
-                  disabled={workflowSaving}
-                  onClick={() => handleCompleteFollowUp(d)}
-                  className="inline-flex items-center gap-1 text-gray-500 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
-                >
-                  完成回访
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={workflowSaving}
-                onClick={() => setEditFollowUp(d)}
-                className="inline-flex items-center gap-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
-              >
-                <Pencil className="w-3 h-3" /> 改期
-              </button>
-              <button
-                type="button"
-                disabled={busyDelete}
-                onClick={() => handleDeleteFollowUp(d.id)}
-                className="inline-flex items-center gap-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-              >
-                <Trash2 className="w-3 h-3" /> 删除
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
-    if (kind === 'visit') {
-      return (
-        <div key={`v-${d.id}`} data-testid={`visit-${d.id}`} className="relative">
-          <TimelineItem
-            type="到访"
-            icon={MapPin}
-            color="teal"
-            title={`${d.visit_type || '到访'} · ${d.status || '待确认'} · ${
-              d.visit_date || d.scheduled_date || ''
-            }`}
-            content={d.notes || d.note || d.content || ''}
-            agentName={d.agent_name}
-            timestamp={d.created_at}
-          />
-          {canModify(d) && (
-            <div className="flex flex-wrap gap-2 mt-1 ml-9 text-xs">
-              {VISIT_STATUSES.filter((status) => status !== d.status).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  disabled={workflowSaving}
-                  onClick={() => handleUpdateVisitStatus(d, status)}
-                  className="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-teal-700 hover:border-teal-300 dark:hover:text-teal-300 disabled:opacity-50"
-                >
-                  {status}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={workflowSaving}
-                onClick={() => setEditVisit(d)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
-              >
-                <Pencil className="w-3 h-3" /> 改期
-              </button>
-              <button
-                type="button"
-                disabled={busyDelete}
-                onClick={() => handleDeleteVisit(d.id)}
-                className="inline-flex items-center gap-1 px-2 py-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-              >
-                <Trash2 className="w-3 h-3" /> 删除
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    }
-    return null;
+  const renderNoteActions = (note) => {
+    if (note.source === 'ai' || !canModify(note)) return null;
+    return (
+      <div className="flex gap-3 mt-1 ml-9 text-xs">
+        <button
+          type="button"
+          onClick={() => setEditNote({ id: note.id, content: note.content })}
+          className="inline-flex items-center gap-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
+        >
+          <Pencil className="w-3 h-3" /> 编辑
+        </button>
+        <button
+          type="button"
+          disabled={busyDelete}
+          onClick={() => handleDeleteNote(note.id)}
+          className="inline-flex items-center gap-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+        >
+          <Trash2 className="w-3 h-3" /> 删除
+        </button>
+      </div>
+    );
+  };
+
+  const renderFollowUpActions = (followUp) => {
+    if (!canModify(followUp)) return null;
+    return (
+      <div className="flex flex-wrap gap-3 mt-1 ml-9 text-xs">
+        {!followUp.is_completed && (
+          <button
+            type="button"
+            disabled={workflowSaving}
+            onClick={() => handleCompleteFollowUp(followUp)}
+            className="inline-flex items-center gap-1 text-gray-500 hover:text-green-600 dark:hover:text-green-400 disabled:opacity-50"
+          >
+            完成回访
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={workflowSaving}
+          onClick={() => setEditFollowUp(followUp)}
+          className="inline-flex items-center gap-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+        >
+          <Pencil className="w-3 h-3" /> 改期
+        </button>
+        <button
+          type="button"
+          disabled={busyDelete}
+          onClick={() => handleDeleteFollowUp(followUp.id)}
+          className="inline-flex items-center gap-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+        >
+          <Trash2 className="w-3 h-3" /> 删除
+        </button>
+      </div>
+    );
+  };
+
+  const renderVisitActions = (visit) => {
+    if (!canModify(visit)) return null;
+    return (
+      <div className="flex flex-wrap gap-2 mt-1 ml-9 text-xs">
+        {VISIT_STATUSES.filter((status) => status !== visit.status).map((status) => (
+          <button
+            key={status}
+            type="button"
+            disabled={workflowSaving}
+            onClick={() => handleUpdateVisitStatus(visit, status)}
+            className="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-teal-700 hover:border-teal-300 dark:hover:text-teal-300 disabled:opacity-50"
+          >
+            {status}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={workflowSaving}
+          onClick={() => setEditVisit(visit)}
+          className="inline-flex items-center gap-1 px-2 py-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
+        >
+          <Pencil className="w-3 h-3" /> 改期
+        </button>
+        <button
+          type="button"
+          disabled={busyDelete}
+          onClick={() => handleDeleteVisit(visit.id)}
+          className="inline-flex items-center gap-1 px-2 py-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+        >
+          <Trash2 className="w-3 h-3" /> 删除
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -725,7 +658,7 @@ export default function MobileStudentDetail() {
 
       <div className="p-3 space-y-3">
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
-          <StudentInfoCard student={student} />
+          <StudentInfoCard student={student} onDial={handleDial} />
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-4">
@@ -802,11 +735,17 @@ export default function MobileStudentDetail() {
             <Sparkles className="w-4 h-4 text-purple-500" />
             完整时间线
           </div>
-          {merged.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-400">暂无记录</div>
-          ) : (
-            <div className="space-y-4">{merged.map((it) => renderTimelineItem(it))}</div>
-          )}
+          <StudentTimeline
+            student={student}
+            calls={calls}
+            notes={notes}
+            followUps={followUps}
+            visits={visits}
+            intentTimeline={intentTimeline}
+            renderNoteActions={renderNoteActions}
+            renderFollowUpActions={renderFollowUpActions}
+            renderVisitActions={renderVisitActions}
+          />
         </div>
       </div>
 
