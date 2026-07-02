@@ -232,6 +232,10 @@ def _campus_visit_payload(task: CampusVisitTask, enrollment_id: int | None = Non
 
 
 def _enrollment_payload(record: EnrollmentRecord) -> dict:
+    home_visit_task = record.home_visit_task
+    if home_visit_task is None and record.campus_visit_task is not None:
+        home_visit_task = record.campus_visit_task.home_visit_task
+    campus_visit_task = record.campus_visit_task
     return {
         "id": record.id,
         "student_id": record.student_id,
@@ -247,7 +251,39 @@ def _enrollment_payload(record: EnrollmentRecord) -> dict:
         else "",
         "source": record.source.value,
         "attribution_method": record.attribution_method.value,
+        "attribution_reason": record.attribution_reason,
+        "first_assigned_agent_id": record.first_assigned_agent_id,
+        "first_assigned_agent_name": record.first_assigned_agent.name
+        if record.first_assigned_agent
+        else "",
+        "current_assigned_agent_id": record.current_assigned_agent_id,
+        "current_assigned_agent_name": record.current_assigned_agent.name
+        if record.current_assigned_agent
+        else "",
+        "last_effective_agent_id": record.last_effective_agent_id,
+        "last_effective_agent_name": record.last_effective_agent.name
+        if record.last_effective_agent
+        else "",
+        "home_visit_task_id": home_visit_task.id if home_visit_task else record.home_visit_task_id,
+        "home_visit_creator_agent_id": home_visit_task.creator_agent_id
+        if home_visit_task
+        else None,
+        "home_visit_creator_agent_name": home_visit_task.creator_agent.name
+        if home_visit_task and home_visit_task.creator_agent
+        else "",
+        "campus_visit_task_id": record.campus_visit_task_id,
+        "campus_visit_creator_user_id": campus_visit_task.creator_user_id
+        if campus_visit_task
+        else None,
+        "campus_visit_creator_user_name": campus_visit_task.creator_user.name
+        if campus_visit_task and campus_visit_task.creator_user
+        else "",
+        "handover_policy": (
+            "工作手机/微信属于公司资产；交接后的同一微信号只能证明沟通渠道连续，"
+            "不能单独证明原话务员促成报名。"
+        ),
         "settlement_status": record.settlement_status.value,
+        "settlement_notes": record.settlement_notes,
         "enrolled_program": record.enrolled_program,
         "enrolled_at": str(record.enrolled_at),
         "amount": record.amount,
@@ -310,6 +346,16 @@ async def _get_enrollment_or_404(db: AsyncSession, record_id: int) -> Enrollment
         .options(
             joinedload(EnrollmentRecord.attributed_agent),
             joinedload(EnrollmentRecord.confirmed_by_admin),
+            joinedload(EnrollmentRecord.first_assigned_agent),
+            joinedload(EnrollmentRecord.current_assigned_agent),
+            joinedload(EnrollmentRecord.last_effective_agent),
+            joinedload(EnrollmentRecord.home_visit_task).joinedload(HomeVisitTask.creator_agent),
+            joinedload(EnrollmentRecord.campus_visit_task).joinedload(
+                CampusVisitTask.creator_user
+            ),
+            joinedload(EnrollmentRecord.campus_visit_task)
+            .joinedload(CampusVisitTask.home_visit_task)
+            .joinedload(HomeVisitTask.creator_agent),
         )
     )
     record = result.scalar_one_or_none()
@@ -1204,6 +1250,16 @@ async def list_enrollments(
         .options(
             joinedload(EnrollmentRecord.attributed_agent),
             joinedload(EnrollmentRecord.confirmed_by_admin),
+            joinedload(EnrollmentRecord.first_assigned_agent),
+            joinedload(EnrollmentRecord.current_assigned_agent),
+            joinedload(EnrollmentRecord.last_effective_agent),
+            joinedload(EnrollmentRecord.home_visit_task).joinedload(HomeVisitTask.creator_agent),
+            joinedload(EnrollmentRecord.campus_visit_task).joinedload(
+                CampusVisitTask.creator_user
+            ),
+            joinedload(EnrollmentRecord.campus_visit_task)
+            .joinedload(CampusVisitTask.home_visit_task)
+            .joinedload(HomeVisitTask.creator_agent),
         )
         .order_by(EnrollmentRecord.enrolled_at.desc())
     )
