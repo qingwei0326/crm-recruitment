@@ -1,15 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  CalendarClock,
   CheckCircle2,
-  ExternalLink,
-  HelpingHand,
   Loader2,
   Moon,
   RefreshCw,
   Sun,
-  AlertTriangle,
 } from 'lucide-react';
 import api from '../../api';
 import { useTheme } from '../../context/ThemeContext';
@@ -19,7 +15,6 @@ import PageHeader from '../../components/PageHeader';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
 import { QueueRow } from './AdminWorkflowComponents';
-import { daysUntil, isOverdue } from './adminWorkflow';
 
 function dataList(res) {
   const data = res?.data?.data;
@@ -27,21 +22,27 @@ function dataList(res) {
   return data?.list || [];
 }
 
-function EmptyState({ text }) {
-  return <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">{text}</div>;
+function normalizeQueue(value) {
+  if (value === 'follow') return 'follow_up';
+  if (value === 'visit') return 'campus_visit';
+  return value || 'all';
 }
 
-function PersonLine({ name, region, agentName }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{name || '-'}</div>
-      <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-        {region && <span>{region}</span>}
-        {agentName && <span>{agentName}</span>}
-        {!region && !agentName && <span>-</span>}
-      </div>
-    </div>
-  );
+function EmptyState({ text }) {
+  return <div className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">{text}</div>;
+}
+
+function toneFor(item) {
+  if (item.priority === 'high') return 'red';
+  if (item.priority === 'low') return 'gray';
+  if (item.queue === 'campus_visit') return 'blue';
+  if (item.queue === 'settlement') return item.status === '争议' ? 'red' : 'amber';
+  if (item.queue === 'help') return 'red';
+  return 'amber';
+}
+
+function compactParts(parts) {
+  return parts.filter((part) => part !== undefined && part !== null && part !== '');
 }
 
 export default function AdminWorkCenter() {
@@ -50,25 +51,19 @@ export default function AdminWorkCenter() {
   const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [helpRequests, setHelpRequests] = useState([]);
-  const [followUps, setFollowUps] = useState([]);
-  const [visits, setVisits] = useState([]);
+  const [items, setItems] = useState([]);
   const [savingKey, setSavingKey] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
-  const queue = searchParams.get('queue') || 'all';
+  const queue = normalizeQueue(searchParams.get('queue'));
   const closeSidebar = () => setSidebarOpen(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [helpRes, followRes, visitRes] = await Promise.all([
-        api.get('/students', { params: { need_help: '1', page_size: 100 } }),
-        api.get('/follow-ups', { params: { is_completed: false, page_size: 100 } }),
-        api.get('/visits', { params: { page_size: 100 } }),
-      ]);
-      setHelpRequests(dataList(helpRes));
-      setFollowUps(dataList(followRes));
-      setVisits(dataList(visitRes));
+      const res = await api.get('/admissions/work-items', {
+        params: { queue: 'all', page_size: 100 },
+      });
+      setItems(dataList(res));
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
     } finally {
@@ -78,14 +73,14 @@ export default function AdminWorkCenter() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [queue]);
 
   const completeHelp = async (studentId) => {
     const key = `help-${studentId}`;
     setSavingKey(key);
     try {
       await api.put(`/students/${studentId}`, { need_help: false });
-      setHelpRequests((prev) => prev.filter((item) => item.id !== studentId));
+      setItems((prev) => prev.filter((item) => !(item.kind === 'help' && item.student_id === studentId)));
       toast?.success('已处理求助');
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
@@ -99,7 +94,7 @@ export default function AdminWorkCenter() {
     setSavingKey(key);
     try {
       await api.put(`/follow-ups/${followUpId}`, { is_completed: true });
-      setFollowUps((prev) => prev.filter((item) => item.id !== followUpId));
+      setItems((prev) => prev.filter((item) => !(item.kind === 'follow_up' && item.source_id === followUpId)));
       toast?.success('已完成回访');
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
@@ -108,40 +103,45 @@ export default function AdminWorkCenter() {
     }
   };
 
-  const updateVisitStatus = async (visitId, status) => {
-    const key = `visit-${visitId}`;
-    setSavingKey(key);
-    try {
-      await api.put(`/visits/${visitId}`, { status });
-      setVisits((prev) => prev.map((item) => (item.id === visitId ? { ...item, status } : item)));
-      toast?.success('已更新到访');
-    } catch (error) {
-      toast?.error(getApiErrorMessage(error));
-    } finally {
-      setSavingKey('');
-    }
-  };
+  const queueTabs = useMemo(() => ([
+    { key: 'all', label: '全部', count: items.length },
+    { key: 'home_visit', label: '家访', count: items.filter((item) => item.queue === 'home_visit').length },
+    { key: 'campus_visit', label: '到校', count: items.filter((item) => item.queue === 'campus_visit').length },
+    { key: 'follow_up', label: '回访', count: items.filter((item) => item.queue === 'follow_up').length },
+    { key: 'settlement', label: '结算', count: items.filter((item) => item.queue === 'settlement').length },
+    { key: 'help', label: '求助', count: items.filter((item) => item.queue === 'help').length },
+  ]), [items]);
+  const visibleItems = queue === 'all' ? items : items.filter((item) => item.queue === queue);
 
-  const sortedFollowUps = [...followUps].sort((a, b) => {
-    const aOverdue = isOverdue(a.follow_up_date) ? 1 : 0;
-    const bOverdue = isOverdue(b.follow_up_date) ? 1 : 0;
-    if (aOverdue !== bOverdue) return bOverdue - aOverdue;
-    return String(a.follow_up_date || '').localeCompare(String(b.follow_up_date || ''));
-  });
-  const sortedVisits = [...visits].sort((a, b) => {
-    const aDays = daysUntil(a.scheduled_date);
-    const bDays = daysUntil(b.scheduled_date);
-    return (aDays ?? 9999) - (bDays ?? 9999);
-  });
-  const queueTabs = [
-    { key: 'all', label: '全部', count: helpRequests.length + followUps.length + visits.length },
-    { key: 'help', label: '求助', count: helpRequests.length },
-    { key: 'follow', label: '回访', count: followUps.length },
-    { key: 'visit', label: '到访', count: visits.length },
-  ];
-  const showHelp = queue === 'all' || queue === 'help';
-  const showFollow = queue === 'all' || queue === 'follow';
-  const showVisit = queue === 'all' || queue === 'visit';
+  const actionFor = (item) => {
+    if (item.kind === 'help') {
+      return (
+        <button
+          type="button"
+          onClick={() => completeHelp(item.student_id)}
+          disabled={savingKey === `help-${item.student_id}`}
+          className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-orange-600 text-white text-sm disabled:opacity-50"
+        >
+          {savingKey === `help-${item.student_id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          已处理求助
+        </button>
+      );
+    }
+    if (item.kind === 'follow_up') {
+      return (
+        <button
+          type="button"
+          onClick={() => completeFollowUp(item.source_id)}
+          disabled={savingKey === `follow-${item.source_id}`}
+          className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-amber-600 text-white text-sm disabled:opacity-50"
+        >
+          {savingKey === `follow-${item.source_id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          完成回访
+        </button>
+      );
+    }
+    return null;
+  };
 
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
@@ -177,7 +177,7 @@ export default function AdminWorkCenter() {
               <div className="lg:mr-auto">
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">处理队列</h2>
                 <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                  逾期回访、求助和今日到访会排在前面，处理完后自动从队列中移除。
+                  家访、到校、回访、结算和求助统一进入待办，优先处理高优先级和超期事项。
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -199,130 +199,39 @@ export default function AdminWorkCenter() {
             </div>
           </section>
 
-          <div className="grid gap-4 xl:grid-cols-3">
-          {showHelp && (
           <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                <HelpingHand className="w-4 h-4 text-orange-500" />
-                求助处理
+              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {queueTabs.find((tab) => tab.key === queue)?.label || '全部'}待办
               </h2>
-              <span className="text-xs text-gray-500">{helpRequests.length}</span>
+              <span className="text-xs text-gray-500">{visibleItems.length}</span>
             </div>
             {loading ? (
               <EmptyState text="加载中..." />
-            ) : helpRequests.length === 0 ? (
-              <EmptyState text="暂无求助" />
+            ) : visibleItems.length === 0 ? (
+              <EmptyState text="暂无待办" />
             ) : (
               <div className="space-y-2 p-3">
-                {helpRequests.map((student) => (
-                  <QueueRow
-                    key={student.id}
-                    title={student.name || `学生 #${student.id}`}
-                    meta={student.agent_name || '未分配'}
-                    detailParts={[student.region || '未知地区', student.school_name || '未知学校', student.status || '-']}
-                    tone="red"
-                    to={`/admin/leads/${student.id}`}
-                    action={(
-                      <button
-                        type="button"
-                        onClick={() => completeHelp(student.id)}
-                        disabled={savingKey === `help-${student.id}`}
-                        className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-orange-600 text-white text-sm disabled:opacity-50"
-                      >
-                        {savingKey === `help-${student.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                        已处理求助
-                      </button>
-                    )}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-          )}
-
-          {showFollow && (
-          <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                <CalendarClock className="w-4 h-4 text-amber-500" />
-                回访管理
-              </h2>
-              <span className="text-xs text-gray-500">{followUps.length}</span>
-            </div>
-            {loading ? (
-              <EmptyState text="加载中..." />
-            ) : followUps.length === 0 ? (
-              <EmptyState text="暂无待回访" />
-            ) : (
-              <div className="space-y-2 p-3">
-                {sortedFollowUps.map((item) => (
+                {visibleItems.map((item) => (
                   <QueueRow
                     key={item.id}
-                    title={item.student_name || `学生 #${item.student_id}`}
-                    meta={isOverdue(item.follow_up_date) ? '逾期回访' : '待回访'}
-                    detailParts={[item.agent_name || '未知坐席', formatDateTime(item.follow_up_date), item.follow_up_type || '电话']}
-                    tone={isOverdue(item.follow_up_date) ? 'red' : 'amber'}
-                    to={`/admin/leads/${item.student_id}`}
-                    action={(
-                      <button
-                        type="button"
-                        onClick={() => completeFollowUp(item.id)}
-                        disabled={savingKey === `follow-${item.id}`}
-                        className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-amber-600 text-white text-sm disabled:opacity-50"
-                      >
-                        {savingKey === `follow-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                        完成回访
-                      </button>
-                    )}
+                    title={item.title || item.student_name || `待办 #${item.source_id}`}
+                    meta={item.reason || item.status || '-'}
+                    detailParts={compactParts([
+                      item.agent_name || '未知坐席',
+                      item.region,
+                      item.school_name,
+                      formatDateTime(item.due_at),
+                      item.status,
+                    ])}
+                    tone={toneFor(item)}
+                    to={item.target_url}
+                    action={actionFor(item)}
                   />
                 ))}
               </div>
             )}
           </section>
-          )}
-
-          {showVisit && (
-          <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                <CalendarClock className="w-4 h-4 text-blue-500" />
-                到访管理
-              </h2>
-              <span className="text-xs text-gray-500">{visits.length}</span>
-            </div>
-            {loading ? (
-              <EmptyState text="加载中..." />
-            ) : visits.length === 0 ? (
-              <EmptyState text="暂无到访" />
-            ) : (
-              <div className="space-y-2 p-3">
-                {sortedVisits.map((item) => (
-                  <QueueRow
-                    key={item.id}
-                    title={item.student_name || `学生 #${item.student_id}`}
-                    meta={daysUntil(item.scheduled_date) === 0 ? '今日到访' : item.status || '待确认'}
-                    detailParts={[item.agent_name || '未知坐席', item.visit_type || '到访', formatDateTime(item.scheduled_date)]}
-                    tone={daysUntil(item.scheduled_date) === 0 ? 'blue' : 'gray'}
-                    to={item.student_id ? `/admin/leads/${item.student_id}` : undefined}
-                    action={(
-                      <button
-                        type="button"
-                        onClick={() => updateVisitStatus(item.id, '已确认')}
-                        disabled={savingKey === `visit-${item.id}` || item.status === '已确认'}
-                        className="inline-flex min-h-9 items-center gap-1.5 px-3 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
-                      >
-                        {savingKey === `visit-${item.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                        确认到访
-                      </button>
-                    )}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-          )}
-          </div>
         </div>
       </main>
     </AdminLayout>
