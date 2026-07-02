@@ -29,63 +29,107 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: () => false,
 }));
 
+const workItems = [
+  {
+    id: 'home_visit:101',
+    kind: 'home_visit',
+    queue: 'home_visit',
+    priority: 'high',
+    title: '张三 家访',
+    student_id: 201,
+    student_name: '张三',
+    region: '龙海',
+    school_name: '长泰二中',
+    agent_name: '王坐席',
+    due_at: '2026-07-02T09:00:00',
+    status: 'pending',
+    reason: '家访待确认',
+    target_url: '/admin/home-visits',
+    action_label: '处理家访',
+    source_id: 101,
+  },
+  {
+    id: 'campus_visit:201',
+    kind: 'campus_visit',
+    queue: 'campus_visit',
+    priority: 'normal',
+    title: '李四 到校参观',
+    student_id: 202,
+    student_name: '李四',
+    region: '芗城',
+    school_name: '芗城一中',
+    agent_name: '赵坐席',
+    due_at: '2026-07-03T10:00:00',
+    status: 'scheduled',
+    reason: '到校待处理',
+    target_url: '/admin/campus-visits',
+    action_label: '处理到校',
+    source_id: 201,
+  },
+  {
+    id: 'follow_up:301',
+    kind: 'follow_up',
+    queue: 'follow_up',
+    priority: 'high',
+    title: '王五 回访',
+    student_id: 203,
+    student_name: '王五',
+    region: '漳浦',
+    school_name: '漳浦三中',
+    agent_name: '陈坐席',
+    due_at: '2026-07-01T15:00:00',
+    status: 'open',
+    reason: '回访已超期',
+    target_url: '/admin/leads/203',
+    action_label: '完成回访',
+    source_id: 301,
+  },
+  {
+    id: 'settlement:401',
+    kind: 'settlement',
+    queue: 'settlement',
+    priority: 'normal',
+    title: '赵六 结算',
+    student_id: 204,
+    student_name: '赵六',
+    region: '南靖',
+    school_name: '南靖一中',
+    agent_name: '林坐席',
+    due_at: null,
+    status: '争议',
+    reason: '结算争议待处理',
+    target_url: '/admin/enrollment-settlement',
+    action_label: '处理结算',
+    source_id: 401,
+  },
+  {
+    id: 'help:501',
+    kind: 'help',
+    queue: 'help',
+    priority: 'high',
+    title: '孙七 求助',
+    student_id: 501,
+    student_name: '孙七',
+    region: '平和',
+    school_name: '平和二中',
+    agent_name: '许坐席',
+    due_at: null,
+    status: 'need_help',
+    reason: '学生请求协助',
+    target_url: '/admin/leads/501',
+    action_label: '已处理求助',
+    source_id: 501,
+  },
+];
+
 function mockLoads() {
   api.get.mockImplementation((url, config = {}) => {
-    if (url === '/students') {
-      expect(config.params.need_help).toBe('1');
+    if (url === '/admissions/work-items') {
+      expect(config.params).toEqual({ queue: 'all', page_size: 100 });
       return Promise.resolve({
         data: {
           data: {
-            list: [
-              {
-                id: 10,
-                name: '张三',
-                region: '龙海',
-                status: '待回访',
-                intent_level: 'A',
-                assigned_to: 2,
-              },
-            ],
-          },
-        },
-      });
-    }
-    if (url === '/follow-ups') {
-      return Promise.resolve({
-        data: {
-          data: {
-            list: [
-              {
-                id: 20,
-                student_id: 10,
-                student_name: '张三',
-                student_region: '龙海',
-                agent_name: '王坐席',
-                follow_up_date: '2026-06-11T10:00:00',
-                follow_up_type: '电话',
-                is_completed: false,
-              },
-            ],
-          },
-        },
-      });
-    }
-    if (url === '/visits') {
-      return Promise.resolve({
-        data: {
-          data: {
-            list: [
-              {
-                id: 30,
-                student_id: 11,
-                student_name: '李四',
-                student_region: '芗城',
-                agent_name: '赵坐席',
-                visit_type: '来校参观',
-                scheduled_date: '2026-06-12T09:00:00',
-                status: '待确认',
-              },
-            ],
+            list: workItems,
           },
         },
       });
@@ -101,35 +145,55 @@ describe('AdminWorkCenter', () => {
     mockLoads();
   });
 
-  it('loads help requests, follow-ups, and visits for admins', async () => {
+  it('loads unified admissions work items for all admin queues', async () => {
     render(
       <MemoryRouter initialEntries={['/admin/work-center']}>
         <AdminWorkCenter />
       </MemoryRouter>,
     );
 
-    expect(await screen.findAllByText('张三')).toHaveLength(2);
-    expect(screen.getByText('李四')).toBeInTheDocument();
-    expect(screen.getByText('王坐席')).toBeInTheDocument();
-    expect(screen.getByText('赵坐席')).toBeInTheDocument();
+    expect(await screen.findByText('张三 家访')).toBeInTheDocument();
+    expect(screen.getByText('李四 到校参观')).toBeInTheDocument();
+    expect(screen.getByText('王五 回访')).toBeInTheDocument();
+    expect(screen.getByText('赵六 结算')).toBeInTheDocument();
+    expect(screen.getByText('孙七 求助')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '全部 5' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '家访 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '到校 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '回访 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '结算 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '求助 1' })).toBeInTheDocument();
   });
 
-  it('lets admins clear help, complete follow-ups, and confirm visits', async () => {
+  it('keeps legacy help and follow-up completion endpoints', async () => {
     render(
       <MemoryRouter initialEntries={['/admin/work-center']}>
         <AdminWorkCenter />
       </MemoryRouter>,
     );
 
-    await screen.findAllByText('张三');
+    await screen.findByText('孙七 求助');
 
     fireEvent.click(screen.getByRole('button', { name: '已处理求助' }));
-    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/students/10', { need_help: false }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/students/501', { need_help: false }));
 
     fireEvent.click(screen.getByRole('button', { name: '完成回访' }));
-    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/follow-ups/20', { is_completed: true }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/follow-ups/301', { is_completed: true }));
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: '确认到访' }));
-    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/visits/30', { status: '已确认' }));
+  it('normalizes legacy follow queue links to follow_up', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/work-center?queue=follow']}>
+        <AdminWorkCenter />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('王五 回访')).toBeInTheDocument();
+    expect(screen.queryByText('张三 家访')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/admissions/work-items', {
+        params: { queue: 'all', page_size: 100 },
+      });
+    });
   });
 });
