@@ -4,8 +4,13 @@ import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
+import { useAuth } from '../../context/AuthContext';
 import { formatDateTime, formatDuration } from '../../utils';
 import logger from '../../utils/logger';
+import {
+  ADMIN_OPERATION_PERMISSIONS,
+  canPerformAdminOperation,
+} from '../../adminPermissions';
 import {
   Download,
   Search,
@@ -25,6 +30,7 @@ const emptySummary = {
 export default function CallVolumeQuery({ embedded = false }) {
   const isMobile = useIsMobile();
   const toast = useToast();
+  const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [agents, setAgents] = useState([]);
   const [selectedAgents, setSelectedAgents] = useState([]);
@@ -36,6 +42,7 @@ export default function CallVolumeQuery({ embedded = false }) {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const pageSize = 50;
+  const canExportReport = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.reportExport);
 
   useEffect(() => {
     api
@@ -93,6 +100,7 @@ export default function CallVolumeQuery({ embedded = false }) {
   };
 
   const exportExcel = async () => {
+    if (!canExportReport) return;
     if (agents.length > 0 && selectedAgents.length === 0) {
       toast?.error('请至少选择一个话务员');
       return;
@@ -154,7 +162,7 @@ export default function CallVolumeQuery({ embedded = false }) {
 
   const content = (
         <div className={`${embedded ? '' : 'p-4 lg:p-6'} max-w-6xl mx-auto space-y-4`}>
-          {embedded && (
+          {embedded && canExportReport && (
             <div className="flex justify-end">
               <button
                 type="button"
@@ -315,14 +323,16 @@ export default function CallVolumeQuery({ embedded = false }) {
           isMobile={isMobile}
           onMenuClick={() => setSidebarOpen(true)}
         >
-          <button
-            type="button"
-            onClick={exportExcel}
-            className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
-          >
-            <Download className="w-4 h-4" />
-            导出
-          </button>
+          {canExportReport && (
+            <button
+              type="button"
+              onClick={exportExcel}
+              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              导出
+            </button>
+          )}
         </PageHeader>
         {content}
       </main>

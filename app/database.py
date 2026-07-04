@@ -51,9 +51,14 @@ async def init_db():
         await conn.run_sync(_migrate_user_device_tracking)
         await conn.run_sync(_migrate_user_must_change_password)
         await conn.run_sync(_migrate_user_super_admin)
+        await conn.run_sync(_migrate_user_page_permissions)
+        await conn.run_sync(_migrate_user_operation_permissions)
         await conn.run_sync(_migrate_operation_log_nullable)
+        await conn.run_sync(_migrate_operation_log_batch_id)
         await conn.run_sync(_migrate_student_status_detail)
         await conn.run_sync(_migrate_legacy_student_status_values)
+        await conn.run_sync(_migrate_legacy_student_stage_values)
+        await conn.run_sync(_migrate_admissions_workflow_tables)
 
 
 def _migrate_user_token_version(sync_connection):
@@ -125,10 +130,7 @@ def _migrate_user_must_change_password(sync_connection):
         )
     else:
         sync_connection.execute(
-            text(
-                "ALTER TABLE users ADD COLUMN must_change_password "
-                "BOOLEAN NOT NULL DEFAULT 0"
-            )
+            text("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT 0")
         )
 
 
@@ -191,6 +193,49 @@ def _migrate_user_super_admin(sync_connection):
                 "SELECT id FROM users WHERE role = 'admin' AND is_active = 1 "
                 "ORDER BY id LIMIT 1"
                 ")"
+            )
+        )
+
+
+def _migrate_user_page_permissions(sync_connection):
+    inspector = inspect(sync_connection)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "page_permissions" in columns:
+        return
+    if DB_ENGINE == "postgresql":
+        sync_connection.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS page_permissions "
+                "VARCHAR(512) NOT NULL DEFAULT ''"
+            )
+        )
+    else:
+        sync_connection.execute(
+            text("ALTER TABLE users ADD COLUMN page_permissions VARCHAR(512) NOT NULL DEFAULT ''")
+        )
+
+
+def _migrate_user_operation_permissions(sync_connection):
+    inspector = inspect(sync_connection)
+    if "users" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "operation_permissions" in columns:
+        return
+    if DB_ENGINE == "postgresql":
+        sync_connection.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS operation_permissions "
+                "VARCHAR(1024) NOT NULL DEFAULT ''"
+            )
+        )
+    else:
+        sync_connection.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN operation_permissions "
+                "VARCHAR(1024) NOT NULL DEFAULT ''"
             )
         )
 
@@ -264,6 +309,30 @@ def _migrate_operation_log_nullable(sync_connection):
         )
 
 
+def _migrate_operation_log_batch_id(sync_connection):
+    inspector = inspect(sync_connection)
+    if "operation_logs" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("operation_logs")}
+    if "batch_id" not in columns:
+        if DB_ENGINE == "postgresql":
+            sync_connection.execute(
+                text(
+                    "ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS batch_id "
+                    "VARCHAR(64) NOT NULL DEFAULT ''"
+                )
+            )
+        else:
+            sync_connection.execute(
+                text(
+                    "ALTER TABLE operation_logs ADD COLUMN batch_id VARCHAR(64) NOT NULL DEFAULT ''"
+                )
+            )
+    sync_connection.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_operation_logs_batch_id ON operation_logs(batch_id)")
+    )
+
+
 def _migrate_legacy_student_status_values(sync_connection):
     inspector = inspect(sync_connection)
     if "students" not in inspector.get_table_names():
@@ -327,6 +396,51 @@ def _migrate_legacy_student_status_values(sync_connection):
         )
 
 
+def _migrate_legacy_student_stage_values(sync_connection):
+    inspector = inspect(sync_connection)
+    if "students" not in inspector.get_table_names():
+        return
+    columns = {col["name"] for col in inspector.get_columns("students")}
+    if "stage" not in columns:
+        return
+
+    if DB_ENGINE == "postgresql":
+        for value in (
+            "home_visit_pending",
+            "home_visit_scheduled",
+            "home_visit_completed",
+            "campus_visit_pending",
+            "campus_visit_scheduled",
+            "campus_visit_arrived",
+        ):
+            sync_connection.execute(
+                text(f"ALTER TYPE studentstage ADD VALUE IF NOT EXISTS '{value}'")
+            )
+        return
+
+    legacy_map = {
+        "初次联系": "initial_contact",
+        "有意向": "interested",
+        "已送资料": "materials_sent",
+        "待家访": "home_visit_pending",
+        "家访已安排": "home_visit_scheduled",
+        "家访完成": "home_visit_completed",
+        "待到校参观": "campus_visit_pending",
+        "到校参观已安排": "campus_visit_scheduled",
+        "已到校参观": "campus_visit_arrived",
+        "预约参观": "campus_visit_scheduled",
+        "visit_scheduled": "campus_visit_scheduled",
+        "已来访": "campus_visit_arrived",
+        "visited": "campus_visit_arrived",
+        "已报名": "enrolled",
+    }
+    for old, new in legacy_map.items():
+        sync_connection.execute(
+            text("UPDATE students SET stage = :new WHERE stage = :old"),
+            {"old": old, "new": new},
+        )
+
+
 def _migrate_student_status_detail(sync_connection):
     inspector = inspect(sync_connection)
     if "students" not in inspector.get_table_names():
@@ -361,6 +475,97 @@ def _ensure_student_indexes(sync_connection):
     sync_connection.execute(
         text("CREATE INDEX IF NOT EXISTS ix_students_guardian2_phone ON students(guardian2_phone)")
     )
+
+
+def _migrate_admissions_workflow_tables(sync_connection):
+    inspector = inspect(sync_connection)
+    tables = set(inspector.get_table_names())
+    if "home_visit_tasks" in tables:
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_home_visit_tasks_student_id "
+                "ON home_visit_tasks(student_id)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_home_visit_tasks_creator_agent_id "
+                "ON home_visit_tasks(creator_agent_id)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_home_visit_tasks_status ON home_visit_tasks(status)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_home_visit_tasks_scheduled_at "
+                "ON home_visit_tasks(scheduled_at)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_home_visit_tasks_region "
+                "ON home_visit_tasks(region_snapshot)"
+            )
+        )
+    if "campus_visit_tasks" in tables:
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_campus_visit_tasks_student_id "
+                "ON campus_visit_tasks(student_id)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_campus_visit_tasks_creator_user_id "
+                "ON campus_visit_tasks(creator_user_id)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_campus_visit_tasks_status "
+                "ON campus_visit_tasks(status)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_campus_visit_tasks_appointment_at "
+                "ON campus_visit_tasks(appointment_at)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_campus_visit_tasks_region "
+                "ON campus_visit_tasks(region_snapshot)"
+            )
+        )
+    if "enrollment_records" in tables:
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_enrollment_records_student_id "
+                "ON enrollment_records(student_id)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_enrollment_records_attributed_agent_id "
+                "ON enrollment_records(attributed_agent_id)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_enrollment_records_enrolled_at "
+                "ON enrollment_records(enrolled_at)"
+            )
+        )
+        sync_connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_enrollment_records_settlement_status "
+                "ON enrollment_records(settlement_status)"
+            )
+        )
 
 
 def _normalize_phone_for_storage(phone) -> str:

@@ -40,4 +40,18 @@ describe('HandledView', () => {
       });
     });
   });
+
+  it('passes intent filter to handled tasks request', async () => {
+    render(<HandledView onOpenDetail={vi.fn()} />);
+
+    expect(await screen.findByRole('button', { name: '全部意向' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'A' }));
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: { limit: 50, offset: 0, intent_level: 'A' },
+      });
+    });
+  });
 });

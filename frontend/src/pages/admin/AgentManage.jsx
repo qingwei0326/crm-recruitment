@@ -10,6 +10,14 @@ import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { adminRecycleStatusBadgeClass, statusLabel } from '../../labels';
 import {
+  ADMIN_OPERATION_PERMISSION_OPTIONS,
+  ADMIN_OPERATION_PERMISSIONS,
+  ADMIN_PAGE_PERMISSION_OPTIONS,
+  canPerformAdminOperation,
+  normalizeAdminOperationPermissions,
+  normalizeAdminPagePermissions,
+} from '../../adminPermissions';
+import {
   ArrowLeft,
   Users,
   UserPlus,
@@ -41,6 +49,10 @@ function isAgentAccount(account) {
   return (account?.role || 'agent') === 'agent';
 }
 
+function isAdminAccount(account) {
+  return account?.role === 'admin';
+}
+
 function getAgentListGroup(agent) {
   if (!agent?.is_active) return 2;
   if (!isAgentAccount(agent)) return 1;
@@ -49,10 +61,35 @@ function getAgentListGroup(agent) {
 
 const inputCls =
   'w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
+const reservedDisplayNames = new Set(['离职', '已离职', '禁用', '停用', '启用']);
+
+function validateDisplayName(name) {
+  const value = (name || '').trim();
+  if (!value) return '请输入姓名';
+  if (reservedDisplayNames.has(value)) return '姓名不能填写离职、禁用等状态词，请填写真实姓名';
+  return '';
+}
 
 function roleLabel(account) {
   if (account?.is_super_admin) return '超管';
   return account?.role === 'admin' ? '管理员' : '话务员';
+}
+
+function permissionSummary(account) {
+  if (account?.role !== 'admin' || account?.is_super_admin) return '';
+  const permissions = normalizeAdminPagePermissions(account?.page_permissions);
+  const labels = ADMIN_PAGE_PERMISSION_OPTIONS
+    .filter((option) => permissions.includes(option.key))
+    .map((option) => option.label);
+  const operationPermissions = normalizeAdminOperationPermissions(account?.operation_permissions);
+  const operationLabels = ADMIN_OPERATION_PERMISSION_OPTIONS.flatMap((group) => group.items)
+    .filter((option) => operationPermissions.includes(option.key))
+    .map((option) => option.label);
+  if (labels.length === 0 && operationLabels.length === 0) return '未开放权限';
+  const parts = [];
+  if (labels.length > 0) parts.push(`页面：${labels.join('、')}`);
+  if (operationLabels.length > 0) parts.push(`操作：${operationLabels.join('、')}`);
+  return parts.join('；');
 }
 
 export default function AgentManage() {
@@ -86,9 +123,24 @@ export default function AgentManage() {
     password: '',
     name: '',
     role: 'agent',
+    is_super_admin: false,
+    page_permissions: [],
+    operation_permissions: [],
   });
   const [formError, setFormError] = useState('');
-  const canManageUsers = Boolean(user?.is_super_admin);
+  const canGrantAdminPermissions = Boolean(user?.is_super_admin);
+  const canCreateUsers = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.userCreate);
+  const canEditUsers = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.userEdit);
+  const canOffboardUsers = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.userOffboard);
+  const canUnlockUsers = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.userUnlock);
+  const canResetPasswords = canPerformAdminOperation(
+    user,
+    ADMIN_OPERATION_PERMISSIONS.userResetPassword,
+  );
+  const canAssignStudents = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentAssign);
+  const canEditAccount = (account) =>
+    canEditUsers && (!isAdminAccount(account) || canGrantAdminPermissions);
+  const canOperateAdminAccount = (account) => !isAdminAccount(account) || canGrantAdminPermissions;
   const activeAgents = useMemo(
     () => agents.filter((agent) => isAgentAccount(agent) && agent.is_active),
     [agents],
@@ -234,7 +286,15 @@ export default function AgentManage() {
 
   const openCreateModal = () => {
     setEditingUser(null);
-    setForm({ username: '', password: '', name: '', role: 'agent', is_super_admin: false });
+    setForm({
+      username: '',
+      password: '',
+      name: '',
+      role: 'agent',
+      is_super_admin: false,
+      page_permissions: [],
+      operation_permissions: [],
+    });
     setFormError('');
     setShowModal(true);
   };
@@ -246,33 +306,81 @@ export default function AgentManage() {
       name: agent.name,
       role: agent.role || 'agent',
       is_super_admin: Boolean(agent.is_super_admin),
+      page_permissions: normalizeAdminPagePermissions(agent.page_permissions),
+      operation_permissions: normalizeAdminOperationPermissions(agent.operation_permissions),
     });
     setFormError('');
     setShowModal(true);
   };
 
+  const togglePagePermission = (permissionKey) => {
+    setForm((prev) => {
+      const permissions = new Set(normalizeAdminPagePermissions(prev.page_permissions));
+      if (permissions.has(permissionKey)) {
+        permissions.delete(permissionKey);
+      } else {
+        permissions.add(permissionKey);
+      }
+      return { ...prev, page_permissions: [...permissions] };
+    });
+  };
+
+  const toggleOperationPermission = (permissionKey) => {
+    setForm((prev) => {
+      const permissions = new Set(
+        normalizeAdminOperationPermissions(prev.operation_permissions),
+      );
+      if (permissions.has(permissionKey)) {
+        permissions.delete(permissionKey);
+      } else {
+        permissions.add(permissionKey);
+      }
+      return { ...prev, operation_permissions: [...permissions] };
+    });
+  };
+
   const handleSave = async () => {
-    if (!form.name) return setFormError('请输入姓名');
+    const nameError = validateDisplayName(form.name);
+    if (nameError) return setFormError(nameError);
     if (!editingUser && !form.username) return setFormError('请输入用户名');
     if (!editingUser && !form.password) return setFormError('请输入密码');
+    if (editingUser && form.password && !canResetPasswords) {
+      return setFormError('无权重置账号密码');
+    }
     try {
       if (editingUser) {
         const body = {
-          name: form.name,
-          role: form.role,
-          is_super_admin: Boolean(form.is_super_admin),
+          name: form.name.trim(),
         };
+        if (canGrantAdminPermissions) {
+          body.role = form.role;
+          body.is_super_admin = Boolean(form.is_super_admin);
+          body.page_permissions =
+            form.role === 'admin' && !form.is_super_admin
+              ? normalizeAdminPagePermissions(form.page_permissions)
+              : [];
+          body.operation_permissions =
+            form.role === 'admin' && !form.is_super_admin
+              ? normalizeAdminOperationPermissions(form.operation_permissions)
+              : [];
+        }
         if (form.password) body.password = form.password;
         await api.put(`/admin/users/${editingUser.id}`, body);
       } else {
         const body = {
           username: form.username,
           password: form.password,
-          name: form.name,
-          role: form.role,
+          name: form.name.trim(),
+          role: canGrantAdminPermissions ? form.role : 'agent',
         };
-        if (form.role === 'admin') {
+        if (canGrantAdminPermissions && form.role === 'admin') {
           body.is_super_admin = Boolean(form.is_super_admin);
+          body.page_permissions = form.is_super_admin
+            ? []
+            : normalizeAdminPagePermissions(form.page_permissions);
+          body.operation_permissions = form.is_super_admin
+            ? []
+            : normalizeAdminOperationPermissions(form.operation_permissions);
         }
         await api.post('/admin/users', body);
       }
@@ -287,7 +395,9 @@ export default function AgentManage() {
     if (agent.is_active) {
       const ok = await confirm({
         title: `禁用「${agent.name}」`,
-        message: '禁用后该话务员将无法登录系统，已分配的学生不会被回收。确认禁用？',
+        message:
+          '禁用后该话务员将无法登录系统，旧登录会立即失效。\n' +
+          '不会回收线索，已分配学生仍保留在该账号名下。',
         confirmText: '禁用',
         tone: 'danger',
       });
@@ -300,8 +410,8 @@ export default function AgentManage() {
     const ok = await confirm({
       title: `为「${agent.name}」办理离职`,
       message:
-        `· 名下未结案的线索会被回收到池\n` +
-        `· 已报名等历史记录会保留并解绑\n` +
+        `· 回收非终态线索，状态/意向/阶段会重置\n` +
+        `· 保留已报名/无效历史记录，只解绑归属\n` +
         `· 账号会被禁用、已登录的会话立即失效\n\n` +
         `账号会保留以便保留历史，如需彻底删除请联系开发者。`,
       confirmText: '办理离职',
@@ -327,7 +437,9 @@ export default function AgentManage() {
   const handleResetPassword = async (agent) => {
     const ok = await confirm({
       title: '重置密码',
-      message: `确定重置「${agent.name}」的密码吗？系统将生成一个随机临时密码。`,
+      message:
+        `确定重置「${agent.name}」的密码吗？系统将生成一个随机临时密码。\n` +
+        '旧登录会立即失效，对方需要用临时密码重新登录并改密。',
       confirmText: '重置密码',
       tone: 'danger',
     });
@@ -439,7 +551,7 @@ export default function AgentManage() {
           onMenuClick={() => setSidebarOpen(true)}
           actionsClassName="flex items-center gap-2"
         >
-          {canManageUsers && (
+          {canCreateUsers && (
             <button
               onClick={openCreateModal}
               aria-label="添加账号"
@@ -534,9 +646,14 @@ export default function AgentManage() {
                             <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
                               @{a.username}
                             </div>
+                            {permissionSummary(a) && (
+                              <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
+                                {permissionSummary(a)}
+                              </div>
+                            )}
                           </div>
                           <div className="shrink-0 flex flex-wrap justify-end gap-1 max-w-[10rem]">
-                            {canManageUsers && isLocked(a) && (
+                            {canUnlockUsers && canOperateAdminAccount(a) && isLocked(a) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -549,7 +666,7 @@ export default function AgentManage() {
                                 解锁
                               </button>
                             )}
-                            {canManageUsers && (
+                            {canEditAccount(a) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -560,7 +677,7 @@ export default function AgentManage() {
                                 <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                               </button>
                             )}
-                            {a.is_active && isAgentAccount(a) && (
+                            {canAssignStudents && a.is_active && isAgentAccount(a) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -572,7 +689,7 @@ export default function AgentManage() {
                                 回收
                               </button>
                             )}
-                            {canManageUsers && a.is_active && isAgentAccount(a) && (
+                            {canOffboardUsers && a.is_active && isAgentAccount(a) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -582,7 +699,7 @@ export default function AgentManage() {
                                 className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs whitespace-nowrap"
                               >
                                 <UserX className="w-3.5 h-3.5" />
-                                禁用
+                                离职
                               </button>
                             )}
                           </div>
@@ -641,27 +758,39 @@ export default function AgentManage() {
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         @{selectedAgent.username} · {roleLabel(selectedAgent)}
                       </p>
+                      {permissionSummary(selectedAgent) && (
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          {permissionSummary(selectedAgent)}
+                        </p>
+                      )}
                     </div>
-                    {canManageUsers && (
+                    {(canEditAccount(selectedAgent)
+                      || (canResetPasswords && canOperateAdminAccount(selectedAgent))) && (
                       <div className="flex flex-wrap justify-end gap-2">
-                        <button
-                          onClick={() => openEditModal(selectedAgent)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => handleResetPassword(selectedAgent)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
-                        >
-                          重置密码
-                        </button>
-                        <button
-                          onClick={() => handleToggleActive(selectedAgent)}
-                          className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
-                        >
-                          {selectedAgent.is_active ? '禁用' : '启用'}
-                        </button>
+                        {canEditAccount(selectedAgent) && (
+                          <button
+                            onClick={() => openEditModal(selectedAgent)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                          >
+                            编辑
+                          </button>
+                        )}
+                        {canResetPasswords && canOperateAdminAccount(selectedAgent) && (
+                          <button
+                            onClick={() => handleResetPassword(selectedAgent)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                          >
+                            重置密码
+                          </button>
+                        )}
+                        {canEditAccount(selectedAgent) && (
+                          <button
+                            onClick={() => handleToggleActive(selectedAgent)}
+                            className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
+                          >
+                            {selectedAgent.is_active ? '禁用' : '启用'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -698,21 +827,28 @@ export default function AgentManage() {
                           @{agentTasks.agent.username}
                         </p>
                       </div>
-                      {canManageUsers && (
+                      {(canEditAccount(selectedAgent)
+                        || (canResetPasswords && canOperateAdminAccount(selectedAgent))
+                        || (canUnlockUsers && canOperateAdminAccount(selectedAgent))
+                        || canAssignStudents) && (
                         <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            onClick={() => openEditModal(selectedAgent)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                          >
-                            编辑
-                          </button>
-                          <button
-                            onClick={() => handleResetPassword(selectedAgent)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
-                          >
-                            重置密码
-                          </button>
-                          {isLocked(selectedAgent) && (
+                          {canEditAccount(selectedAgent) && (
+                            <button
+                              onClick={() => openEditModal(selectedAgent)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                            >
+                              编辑
+                            </button>
+                          )}
+                          {canResetPasswords && canOperateAdminAccount(selectedAgent) && (
+                            <button
+                              onClick={() => handleResetPassword(selectedAgent)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                            >
+                              重置密码
+                            </button>
+                          )}
+                          {canUnlockUsers && canOperateAdminAccount(selectedAgent) && isLocked(selectedAgent) && (
                             <button
                               onClick={() => handleUnlock(selectedAgent)}
                               className="text-xs px-3 py-1.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 inline-flex items-center gap-1"
@@ -721,19 +857,23 @@ export default function AgentManage() {
                               解锁
                             </button>
                           )}
-                          <button
-                            onClick={() => openRecycleModal(selectedAgent)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 inline-flex items-center gap-1"
-                          >
-                            <ArrowRightLeft className="w-3.5 h-3.5" />
-                            回收
-                          </button>
-                          <button
-                            onClick={() => handleToggleActive(selectedAgent)}
-                            className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
-                          >
-                            {selectedAgent.is_active ? '禁用' : '启用'}
-                          </button>
+                          {canAssignStudents && (
+                            <button
+                              onClick={() => openRecycleModal(selectedAgent)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 inline-flex items-center gap-1"
+                            >
+                              <ArrowRightLeft className="w-3.5 h-3.5" />
+                              回收
+                            </button>
+                          )}
+                          {canEditAccount(selectedAgent) && (
+                            <button
+                              onClick={() => handleToggleActive(selectedAgent)}
+                              className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
+                            >
+                              {selectedAgent.is_active ? '禁用' : '启用'}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1091,7 +1231,7 @@ export default function AgentManage() {
           onClick={() => setShowModal(false)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6"
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
@@ -1128,41 +1268,121 @@ export default function AgentManage() {
                   placeholder="显示名称"
                 />
               </div>
-              <div>
-                <label
-                  htmlFor="account-role"
-                  className="block text-sm text-gray-600 dark:text-gray-400 mb-1"
-                >
-                  角色
-                </label>
-                <select
-                  id="account-role"
-                  value={form.role}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      role: e.target.value,
-                      is_super_admin: e.target.value === 'admin' ? form.is_super_admin : false,
-                    })
-                  }
-                  className={inputCls}
-                >
-                  <option value="agent">话务员</option>
-                  <option value="admin">普通管理员</option>
-                </select>
-              </div>
-              {form.role === 'admin' && (
+              {canGrantAdminPermissions && (
+                <div>
+                  <label
+                    htmlFor="account-role"
+                    className="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+                  >
+                    角色
+                  </label>
+                  <select
+                    id="account-role"
+                    value={form.role}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        role: e.target.value,
+                        is_super_admin: e.target.value === 'admin' ? form.is_super_admin : false,
+                        page_permissions:
+                          e.target.value === 'admin' ? form.page_permissions || [] : [],
+                        operation_permissions:
+                          e.target.value === 'admin' ? form.operation_permissions || [] : [],
+                      })
+                    }
+                    className={inputCls}
+                  >
+                    <option value="agent">话务员</option>
+                    <option value="admin">普通管理员</option>
+                  </select>
+                </div>
+              )}
+              {canGrantAdminPermissions && form.role === 'admin' && (
                 <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                   <input
                     type="checkbox"
                     checked={Boolean(form.is_super_admin)}
-                    onChange={(e) => setForm({ ...form, is_super_admin: e.target.checked })}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        is_super_admin: e.target.checked,
+                        page_permissions: e.target.checked ? [] : form.page_permissions || [],
+                        operation_permissions: e.target.checked
+                          ? []
+                          : form.operation_permissions || [],
+                      })
+                    }
                     className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   超级管理员
                 </label>
               )}
-              <div>
+              {canGrantAdminPermissions && form.role === 'admin' && !form.is_super_admin && (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      页面权限
+                    </div>
+                    <div className="mt-2 space-y-2">
+                      {ADMIN_PAGE_PERMISSION_OPTIONS.map((option) => (
+                        <label
+                          key={option.key}
+                          className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={normalizeAdminPagePermissions(form.page_permissions).includes(
+                              option.key,
+                            )}
+                            onChange={() => togglePagePermission(option.key)}
+                            className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="min-w-0">
+                            <span className="block font-medium">{option.label}</span>
+                            <span className="block text-xs leading-5 text-gray-500 dark:text-gray-400">
+                              {option.description}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      操作权限
+                    </div>
+                    <div className="mt-2 space-y-3">
+                      {ADMIN_OPERATION_PERMISSION_OPTIONS.map((group) => (
+                        <div key={group.group}>
+                          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                            {group.group}
+                          </div>
+                          <div className="mt-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                            {group.items.map((option) => (
+                              <label
+                                key={option.key}
+                                className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={normalizeAdminOperationPermissions(
+                                    form.operation_permissions,
+                                  ).includes(option.key)}
+                                  onChange={() => toggleOperationPermission(option.key)}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span>{option.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {(!editingUser || canResetPasswords) && (
+                <div>
                 <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
                   密码{editingUser ? '（留空不修改）' : ''}
                 </label>
@@ -1174,6 +1394,7 @@ export default function AgentManage() {
                   placeholder={editingUser ? '留空则不修改密码' : '设置密码'}
                 />
               </div>
+              )}
               {formError && (
                 <div className="text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-3 py-2 rounded-lg">
                   {formError}

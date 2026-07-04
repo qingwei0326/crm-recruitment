@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -17,6 +18,7 @@ import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import { formatDuration } from '../../utils';
+import { dashboardLeadUrls } from './adminWorkflow';
 
 function SettingRow({ label, children }) {
   return (
@@ -55,17 +57,23 @@ function StatusPill({ status }) {
   );
 }
 
-function OpsMetric({ label, value, tone = 'default' }) {
+function OpsMetric({ label, value, tone = 'default', to }) {
   const valueCls = tone === 'warning'
     ? 'text-amber-700 dark:text-amber-300'
     : tone === 'danger'
       ? 'text-red-700 dark:text-red-300'
       : 'text-gray-900 dark:text-gray-100';
-  return (
+  const body = (
     <div className="min-w-0 border-l-2 border-gray-200 dark:border-gray-700 pl-3 py-1">
       <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</div>
       <div className={`mt-1 text-lg font-semibold ${valueCls}`}>{value}</div>
     </div>
+  );
+  if (!to) return body;
+  return (
+    <Link to={to} className="block rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-700/50">
+      {body}
+    </Link>
   );
 }
 
@@ -347,6 +355,7 @@ export default function SystemSettings() {
                       label="逾期回访"
                       value={opsHealth.business?.overdue_follow_ups ?? 0}
                       tone={opsHealth.business?.overdue_follow_ups > 0 ? 'warning' : 'default'}
+                      to="/admin/work-center?queue=follow"
                     />
                     <OpsMetric
                       label="7 天通知失败"
@@ -358,7 +367,11 @@ export default function SystemSettings() {
                       value={opsHealth.business?.frontend_errors_24h ?? 0}
                       tone={opsHealth.business?.frontend_errors_24h > 0 ? 'warning' : 'default'}
                     />
-                    <OpsMetric label="未分配线索" value={opsHealth.business?.unassigned_active ?? 0} />
+                    <OpsMetric
+                      label="可分配有效线索"
+                      value={opsHealth.business?.unassigned_active ?? 0}
+                      to={dashboardLeadUrls.availableUnassigned}
+                    />
                     <OpsMetric label="活跃话务员" value={opsHealth.business?.active_agents ?? 0} />
                     <OpsMetric
                       label="锁定账号"
@@ -401,14 +414,43 @@ export default function SystemSettings() {
               {dataQuality ? (
                 <div className="space-y-5">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <OpsMetric label="今日未记录" value={dataQuality.calls?.today?.unrecorded_calls ?? 0} tone={dataQuality.calls?.today?.unrecorded_calls > 0 ? 'warning' : 'default'} />
-                    <OpsMetric label="本月未记录" value={dataQuality.calls?.month?.unrecorded_calls ?? 0} tone={dataQuality.calls?.month?.unrecorded_calls > 0 ? 'warning' : 'default'} />
-                    <OpsMetric label="未记录占比" value={`${dataQuality.calls?.month?.unrecorded_ratio ?? 0}%`} tone={dataQuality.calls?.month?.unrecorded_ratio > 0 ? 'warning' : 'default'} />
+                    <OpsMetric
+                      label="今日未记录"
+                      value={dataQuality.calls?.today?.unrecorded_calls ?? 0}
+                      tone={dataQuality.calls?.today?.unrecorded_calls > 0 ? 'warning' : 'default'}
+                      to="/admin/report-center?tab=call-volume"
+                    />
+                    <OpsMetric
+                      label="本月未记录"
+                      value={dataQuality.calls?.month?.unrecorded_calls ?? 0}
+                      tone={dataQuality.calls?.month?.unrecorded_calls > 0 ? 'warning' : 'default'}
+                      to="/admin/report-center?tab=call-volume"
+                    />
+                    <OpsMetric
+                      label="未记录占比"
+                      value={`${dataQuality.calls?.month?.unrecorded_ratio ?? 0}%`}
+                      tone={dataQuality.calls?.month?.unrecorded_ratio > 0 ? 'warning' : 'default'}
+                      to="/admin/report-center?tab=call-volume"
+                    />
                     <OpsMetric label="平均有效时长" value={formatDuration(dataQuality.calls?.month?.avg_recorded_duration_seconds)} />
-                    <OpsMetric label="缺电话任务" value={dataQuality.students?.missing_phone_tasks ?? 0} tone={dataQuality.students?.missing_phone_tasks > 0 ? 'warning' : 'default'} />
-                    <OpsMetric label="未分配任务" value={dataQuality.students?.unassigned_active ?? 0} />
-                    <OpsMetric label="无效线索" value={dataQuality.students?.invalid_total ?? 0} />
-                    <OpsMetric label="逾期回访" value={dataQuality.follow_ups?.overdue_follow_ups ?? 0} tone={dataQuality.follow_ups?.overdue_follow_ups > 0 ? 'warning' : 'default'} />
+                    <OpsMetric
+                      label="无电话数据"
+                      value={dataQuality.students?.missing_phone_tasks ?? 0}
+                      tone={dataQuality.students?.missing_phone_tasks > 0 ? 'warning' : 'default'}
+                      to={dashboardLeadUrls.missingPhone}
+                    />
+                    <OpsMetric
+                      label="可分配有效线索"
+                      value={dataQuality.students?.unassigned_active ?? 0}
+                      to={dashboardLeadUrls.availableUnassigned}
+                    />
+                    <OpsMetric label="无效线索" value={dataQuality.students?.invalid_total ?? 0} to="/admin/invalid-reclaim" />
+                    <OpsMetric
+                      label="逾期回访"
+                      value={dataQuality.follow_ups?.overdue_follow_ups ?? 0}
+                      tone={dataQuality.follow_ups?.overdue_follow_ups > 0 ? 'warning' : 'default'}
+                      to="/admin/work-center?queue=follow"
+                    />
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-2">

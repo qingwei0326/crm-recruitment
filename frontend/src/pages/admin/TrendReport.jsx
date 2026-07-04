@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
+import {
+  ADMIN_OPERATION_PERMISSIONS,
+  canPerformAdminOperation,
+} from '../../adminPermissions';
 import {
   Sun,
   Moon,
@@ -54,6 +59,7 @@ function getActiveAgentNames(rows) {
 
 export default function TrendReport({ embedded = false }) {
   const { dark, toggle } = useTheme();
+  const { user } = useAuth();
   const isMobile = useIsMobile();
   const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -62,6 +68,7 @@ export default function TrendReport({ embedded = false }) {
   const [range, setRange] = useState('month'); // week | month | custom
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const canExportReport = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.reportExport);
 
   const fetchTrend = (params = {}) => {
     setLoading(true);
@@ -94,6 +101,7 @@ export default function TrendReport({ embedded = false }) {
   };
 
   const exportExcel = () => {
+    if (!canExportReport) return;
     if (!trendData?.daily) return;
     const rows = [['日期', '呼出量', '报名数']];
     trendData.daily.forEach((d) => rows.push([d.date, d.calls, d.enrolled]));
@@ -308,14 +316,16 @@ export default function TrendReport({ embedded = false }) {
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
         <PageHeader title="趋势报表" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
-          <button
-            type="button"
-            onClick={exportExcel}
-            disabled={!trendData}
-            className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-          >
-            <Download className="w-4 h-4" /> 导出
-          </button>
+          {canExportReport && (
+            <button
+              type="button"
+              onClick={exportExcel}
+              disabled={!trendData}
+              className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" /> 导出
+            </button>
+          )}
           {isMobile && (
             <button
               type="button"

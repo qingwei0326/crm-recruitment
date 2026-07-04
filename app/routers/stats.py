@@ -5,14 +5,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_admin
+from app.auth import (
+    ADMIN_PAGE_REPORT_CENTER,
+    get_current_user,
+    require_admin,
+    require_page_permission,
+)
 from app.database import get_db
 from app.models import (
+    AttributionMethod,
+    CampusVisitStatus,
+    CampusVisitTask,
     DialLog,
+    EnrollmentRecord,
+    EnrollmentSource,
     EnrollmentSubStage,
+    HomeVisitStatus,
+    HomeVisitTask,
     IntentLevel,
     OperationLog,
+    SettlementStatus,
     Student,
+    StudentStage,
     StudentStatus,
     User,
     UserRole,
@@ -22,9 +36,30 @@ from app.models import (
 )
 from app.schemas import Response
 from app.status_policy import statuses_for_canonical
+from app.task_stats import ACTIVE_TASK_STATUSES
 from app.utils import month_start_cst_as_utc, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/stats", tags=["统计"])
+
+
+def _stage_stats_key(stage) -> str:
+    if stage == StudentStage.visit_scheduled:
+        return StudentStage.campus_visit_scheduled.value
+    if stage == StudentStage.visited:
+        return StudentStage.campus_visit_arrived.value
+    return stage.value if hasattr(stage, "value") else str(stage)
+
+
+def _enum_value(value) -> str:
+    return value.value if hasattr(value, "value") else str(value or "")
+
+
+def _percent(part: int | float, total: int | float) -> float:
+    return round(float(part or 0) / float(total or 0) * 100, 1) if total else 0.0
+
+
+def _region_label(value: str | None) -> str:
+    return (value or "").strip() or "未知"
 
 
 @router.get("/sources")
@@ -70,15 +105,20 @@ async def stage_stats(
 ):
     result = await db.execute(
         select(Student.stage, func.count(Student.id))
-        .where(
-            Student.assigned_to.is_not(None),
-            Student.status != StudentStatus.invalid,
-        )
+        .where(Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)))
         .group_by(Student.stage)
     )
-    by_stage = {row[0]: row[1] for row in result.all()}
+    by_stage = {}
+    for stage, count in result.all():
+        key = _stage_stats_key(stage)
+        by_stage[key] = by_stage.get(key, 0) + count
     unassigned = (
-        await db.execute(select(func.count(Student.id)).where(Student.assigned_to.is_(None)))
+        await db.execute(
+            select(func.count(Student.id)).where(
+                Student.assigned_to.is_(None),
+                Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)),
+            )
+        )
     ).scalar() or 0
     by_stage["未分配"] = unassigned
     return Response.ok(by_stage)
@@ -112,9 +152,9 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     # DialLog 统计：拨号次数统计全部记录，平均时长只统计已补写的正数时长。
     dial_r = await db.execute(
         select(
-            func.count(DialLog.id).filter(
-                DialLog.dialed_at >= today, DialLog.dialed_at < tomorrow
-            ).label("today_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.dialed_at >= today, DialLog.dialed_at < tomorrow)
+            .label("today_calls"),
             func.count(DialLog.id)
             .filter(
                 DialLog.dialed_at >= today,
@@ -211,7 +251,7 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
 @router.get("/agent-ranking")
 async def agent_ranking(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
 ):
     today = today_cst_as_utc()
     month_start = month_start_cst_as_utc()
@@ -349,7 +389,7 @@ async def agent_ranking(
 @router.get("/enrollment-conversion")
 async def enrollment_conversion(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
 ):
     agents_r = await db.execute(select(User).where(User.role == UserRole.agent))
     agents = agents_r.scalars().all()
@@ -406,7 +446,7 @@ async def trend_data(
     start_date: str = Query(None),
     end_date: str = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
 ):
     end = date.today()
     if end_date:
@@ -493,7 +533,7 @@ async def trend_data(
 @router.get("/enrollment-substage-distribution")
 async def enrollment_substage_distribution(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
 ):
     """报名后子阶段分布 + 流失率。"""
     result = await db.execute(
@@ -586,12 +626,438 @@ async def funnel_data(
     )
 
 
+@router.get("/admissions-report")
+async def admissions_report(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
+):
+    """招生经营报表：漏斗、区域、话务员、家访到校、结算归属。"""
+    now = utcnow()
+
+    total_leads = (await db.execute(select(func.count(Student.id)))).scalar() or 0
+    a_intent = (
+        await db.execute(
+            select(func.count(Student.id)).where(Student.intent_level == IntentLevel.A)
+        )
+    ).scalar() or 0
+    home_visit_reported = (
+        await db.execute(select(func.count(func.distinct(HomeVisitTask.student_id))))
+    ).scalar() or 0
+    home_visit_completed = (
+        await db.execute(
+            select(func.count(func.distinct(HomeVisitTask.student_id))).where(
+                HomeVisitTask.status == HomeVisitStatus.completed
+            )
+        )
+    ).scalar() or 0
+    campus_visit_scheduled = (
+        await db.execute(select(func.count(func.distinct(CampusVisitTask.student_id))))
+    ).scalar() or 0
+    campus_visit_arrived = (
+        await db.execute(
+            select(func.count(func.distinct(CampusVisitTask.student_id))).where(
+                CampusVisitTask.status.in_([CampusVisitStatus.arrived, CampusVisitStatus.enrolled])
+            )
+        )
+    ).scalar() or 0
+    enrolled = (
+        await db.execute(
+            select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
+        )
+    ).scalar() or 0
+
+    funnel = [
+        {
+            "key": "leads",
+            "label": "线索",
+            "value": int(total_leads),
+            "rate": 100.0 if total_leads else 0.0,
+        },
+        {
+            "key": "a_intent",
+            "label": "A意向",
+            "value": int(a_intent),
+            "rate": _percent(a_intent, total_leads),
+        },
+        {
+            "key": "home_visit_reported",
+            "label": "已上报家访",
+            "value": int(home_visit_reported),
+            "rate": _percent(home_visit_reported, total_leads),
+        },
+        {
+            "key": "home_visit_completed",
+            "label": "家访完成",
+            "value": int(home_visit_completed),
+            "rate": _percent(home_visit_completed, total_leads),
+        },
+        {
+            "key": "campus_visit_scheduled",
+            "label": "已安排到校",
+            "value": int(campus_visit_scheduled),
+            "rate": _percent(campus_visit_scheduled, total_leads),
+        },
+        {
+            "key": "campus_visit_arrived",
+            "label": "已到校",
+            "value": int(campus_visit_arrived),
+            "rate": _percent(campus_visit_arrived, total_leads),
+        },
+        {
+            "key": "enrolled",
+            "label": "已报名",
+            "value": int(enrolled),
+            "rate": _percent(enrolled, total_leads),
+        },
+    ]
+
+    regions: dict[str, dict] = {}
+
+    def ensure_region(region: str | None) -> dict:
+        label = _region_label(region)
+        if label not in regions:
+            regions[label] = {
+                "region": label,
+                "total_leads": 0,
+                "a_count": 0,
+                "home_visits": 0,
+                "campus_visits": 0,
+                "enrollments": 0,
+                "a_rate": 0.0,
+                "enrollment_rate": 0.0,
+            }
+        return regions[label]
+
+    region_students = await db.execute(
+        select(
+            Student.region,
+            func.count(Student.id),
+            func.sum(case((Student.intent_level == IntentLevel.A, 1), else_=0)),
+            func.sum(case((Student.status == StudentStatus.enrolled, 1), else_=0)),
+        ).group_by(Student.region)
+    )
+    for region, total, a_count, enrolled_count in region_students.all():
+        item = ensure_region(region)
+        item["total_leads"] = int(total or 0)
+        item["a_count"] = int(a_count or 0)
+        item["enrollments"] = int(enrolled_count or 0)
+
+    region_home_visits = await db.execute(
+        select(HomeVisitTask.region_snapshot, func.count(HomeVisitTask.id)).group_by(
+            HomeVisitTask.region_snapshot
+        )
+    )
+    for region, count in region_home_visits.all():
+        ensure_region(region)["home_visits"] = int(count or 0)
+
+    region_campus_visits = await db.execute(
+        select(CampusVisitTask.region_snapshot, func.count(CampusVisitTask.id)).group_by(
+            CampusVisitTask.region_snapshot
+        )
+    )
+    for region, count in region_campus_visits.all():
+        ensure_region(region)["campus_visits"] = int(count or 0)
+
+    for item in regions.values():
+        item["a_rate"] = _percent(item["a_count"], item["total_leads"])
+        item["enrollment_rate"] = _percent(item["enrollments"], item["total_leads"])
+    region_rows = sorted(
+        regions.values(),
+        key=lambda row: (
+            row["enrollments"],
+            row["campus_visits"],
+            row["home_visits"],
+            row["a_count"],
+            row["total_leads"],
+        ),
+        reverse=True,
+    )
+
+    agents_result = await db.execute(
+        select(User.id, User.name, User.is_active)
+        .where(User.role == UserRole.agent)
+        .order_by(User.is_active.desc(), User.name.asc())
+    )
+    agents = {
+        agent_id: {
+            "agent_id": agent_id,
+            "agent_name": name,
+            "is_active": is_active,
+            "calls": 0,
+            "total_leads": 0,
+            "a_count": 0,
+            "home_visit_reports": 0,
+            "campus_visit_appointments": 0,
+            "enrollments": 0,
+            "unsettled": 0,
+            "settlement_pending": 0,
+            "a_rate": 0.0,
+            "enrollment_rate": 0.0,
+        }
+        for agent_id, name, is_active in agents_result.all()
+    }
+
+    def ensure_agent(agent_id: int | None, name: str = "未知话务员") -> dict | None:
+        if agent_id is None:
+            return None
+        if agent_id not in agents:
+            agents[agent_id] = {
+                "agent_id": agent_id,
+                "agent_name": name,
+                "is_active": False,
+                "calls": 0,
+                "total_leads": 0,
+                "a_count": 0,
+                "home_visit_reports": 0,
+                "campus_visit_appointments": 0,
+                "enrollments": 0,
+                "unsettled": 0,
+                "settlement_pending": 0,
+                "a_rate": 0.0,
+                "enrollment_rate": 0.0,
+            }
+        return agents[agent_id]
+
+    agent_calls = await db.execute(
+        select(DialLog.agent_id, func.count(DialLog.id)).group_by(DialLog.agent_id)
+    )
+    for agent_id, count in agent_calls.all():
+        item = ensure_agent(agent_id)
+        if item:
+            item["calls"] = int(count or 0)
+
+    agent_students = await db.execute(
+        select(
+            Student.assigned_to,
+            func.count(Student.id),
+            func.sum(case((Student.intent_level == IntentLevel.A, 1), else_=0)),
+        )
+        .where(Student.assigned_to.is_not(None))
+        .group_by(Student.assigned_to)
+    )
+    for agent_id, total, a_count in agent_students.all():
+        item = ensure_agent(agent_id)
+        if item:
+            item["total_leads"] = int(total or 0)
+            item["a_count"] = int(a_count or 0)
+
+    agent_home_visits = await db.execute(
+        select(HomeVisitTask.creator_agent_id, func.count(HomeVisitTask.id)).group_by(
+            HomeVisitTask.creator_agent_id
+        )
+    )
+    for agent_id, count in agent_home_visits.all():
+        item = ensure_agent(agent_id)
+        if item:
+            item["home_visit_reports"] = int(count or 0)
+
+    agent_campus_visits = await db.execute(
+        select(CampusVisitTask.creator_user_id, func.count(CampusVisitTask.id)).group_by(
+            CampusVisitTask.creator_user_id
+        )
+    )
+    for agent_id, count in agent_campus_visits.all():
+        item = ensure_agent(agent_id)
+        if item:
+            item["campus_visit_appointments"] = int(count or 0)
+
+    agent_enrollments = await db.execute(
+        select(
+            EnrollmentRecord.attributed_agent_id,
+            func.count(EnrollmentRecord.id),
+            func.sum(
+                case(
+                    (EnrollmentRecord.settlement_status == SettlementStatus.unsettled, 1),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
+                    (EnrollmentRecord.settlement_status != SettlementStatus.settled, 1),
+                    else_=0,
+                )
+            ),
+        ).group_by(EnrollmentRecord.attributed_agent_id)
+    )
+    for agent_id, total, unsettled_count, pending_count in agent_enrollments.all():
+        item = ensure_agent(agent_id)
+        if item:
+            item["enrollments"] = int(total or 0)
+            item["unsettled"] = int(unsettled_count or 0)
+            item["settlement_pending"] = int(pending_count or 0)
+
+    agent_rows = []
+    for item in agents.values():
+        item["a_rate"] = _percent(item["a_count"], item["total_leads"])
+        item["enrollment_rate"] = _percent(item["enrollments"], item["total_leads"])
+        has_data = any(
+            [
+                item["calls"],
+                item["total_leads"],
+                item["a_count"],
+                item["home_visit_reports"],
+                item["campus_visit_appointments"],
+                item["enrollments"],
+            ]
+        )
+        if item["is_active"] or has_data:
+            agent_rows.append(item)
+    agent_rows.sort(
+        key=lambda row: (
+            row["enrollments"],
+            row["settlement_pending"],
+            row["campus_visit_appointments"],
+            row["home_visit_reports"],
+            row["a_count"],
+            row["calls"],
+        ),
+        reverse=True,
+    )
+
+    home_status_counts = {
+        status.value: 0
+        for status in (
+            HomeVisitStatus.pending,
+            HomeVisitStatus.confirmed,
+            HomeVisitStatus.scheduled,
+            HomeVisitStatus.completed,
+            HomeVisitStatus.cancelled,
+            HomeVisitStatus.postponed,
+        )
+    }
+    home_status_result = await db.execute(
+        select(HomeVisitTask.status, func.count(HomeVisitTask.id)).group_by(HomeVisitTask.status)
+    )
+    for status, count in home_status_result.all():
+        home_status_counts[_enum_value(status)] = int(count or 0)
+    home_overdue = (
+        await db.execute(
+            select(func.count(HomeVisitTask.id)).where(
+                HomeVisitTask.status.not_in([HomeVisitStatus.completed, HomeVisitStatus.cancelled]),
+                or_(
+                    HomeVisitTask.requested_visit_time < now,
+                    HomeVisitTask.scheduled_at < now,
+                ),
+            )
+        )
+    ).scalar() or 0
+
+    campus_status_counts = {
+        status.value: 0
+        for status in (
+            CampusVisitStatus.pending,
+            CampusVisitStatus.scheduled,
+            CampusVisitStatus.arrived,
+            CampusVisitStatus.no_show,
+            CampusVisitStatus.rescheduled,
+            CampusVisitStatus.cancelled,
+            CampusVisitStatus.enrolled,
+        )
+    }
+    campus_status_result = await db.execute(
+        select(CampusVisitTask.status, func.count(CampusVisitTask.id)).group_by(
+            CampusVisitTask.status
+        )
+    )
+    for status, count in campus_status_result.all():
+        campus_status_counts[_enum_value(status)] = int(count or 0)
+    campus_overdue = (
+        await db.execute(
+            select(func.count(CampusVisitTask.id)).where(
+                CampusVisitTask.status.in_(
+                    [
+                        CampusVisitStatus.pending,
+                        CampusVisitStatus.scheduled,
+                        CampusVisitStatus.rescheduled,
+                    ]
+                ),
+                CampusVisitTask.appointment_at < now,
+            )
+        )
+    ).scalar() or 0
+
+    visits = {
+        "home": {
+            "total": sum(home_status_counts.values()),
+            "pending": home_status_counts.get(HomeVisitStatus.pending.value, 0),
+            "scheduled": home_status_counts.get(HomeVisitStatus.confirmed.value, 0)
+            + home_status_counts.get(HomeVisitStatus.scheduled.value, 0),
+            "completed": home_status_counts.get(HomeVisitStatus.completed.value, 0),
+            "cancelled": home_status_counts.get(HomeVisitStatus.cancelled.value, 0),
+            "postponed": home_status_counts.get(HomeVisitStatus.postponed.value, 0),
+            "overdue": int(home_overdue),
+            "by_status": home_status_counts,
+        },
+        "campus": {
+            "total": sum(campus_status_counts.values()),
+            "pending": campus_status_counts.get(CampusVisitStatus.pending.value, 0),
+            "scheduled": campus_status_counts.get(CampusVisitStatus.scheduled.value, 0)
+            + campus_status_counts.get(CampusVisitStatus.rescheduled.value, 0),
+            "arrived": campus_status_counts.get(CampusVisitStatus.arrived.value, 0)
+            + campus_status_counts.get(CampusVisitStatus.enrolled.value, 0),
+            "no_show": campus_status_counts.get(CampusVisitStatus.no_show.value, 0),
+            "cancelled": campus_status_counts.get(CampusVisitStatus.cancelled.value, 0),
+            "overdue": int(campus_overdue),
+            "by_status": campus_status_counts,
+        },
+    }
+
+    settlement_status_counts = {status.value: 0 for status in SettlementStatus}
+    settlement_result = await db.execute(
+        select(EnrollmentRecord.settlement_status, func.count(EnrollmentRecord.id)).group_by(
+            EnrollmentRecord.settlement_status
+        )
+    )
+    for status, count in settlement_result.all():
+        settlement_status_counts[_enum_value(status)] = int(count or 0)
+
+    source_counts = {source.value: 0 for source in EnrollmentSource}
+    source_result = await db.execute(
+        select(EnrollmentRecord.source, func.count(EnrollmentRecord.id)).group_by(
+            EnrollmentRecord.source
+        )
+    )
+    for source, count in source_result.all():
+        source_counts[_enum_value(source)] = int(count or 0)
+
+    method_counts = {method.value: 0 for method in AttributionMethod}
+    method_result = await db.execute(
+        select(EnrollmentRecord.attribution_method, func.count(EnrollmentRecord.id)).group_by(
+            EnrollmentRecord.attribution_method
+        )
+    )
+    for method, count in method_result.all():
+        method_counts[_enum_value(method)] = int(count or 0)
+
+    settlement = {
+        "total": sum(settlement_status_counts.values()),
+        "unsettled": settlement_status_counts.get(SettlementStatus.unsettled.value, 0),
+        "settled": settlement_status_counts.get(SettlementStatus.settled.value, 0),
+        "postponed": settlement_status_counts.get(SettlementStatus.postponed.value, 0),
+        "disputed": settlement_status_counts.get(SettlementStatus.disputed.value, 0),
+        "manual_attribution": method_counts.get(AttributionMethod.manual.value, 0),
+        "by_source": source_counts,
+        "by_method": method_counts,
+    }
+
+    return Response.ok(
+        {
+            "funnel": funnel,
+            "regions": region_rows,
+            "agents": agent_rows,
+            "visits": visits,
+            "settlement": settlement,
+            "generated_at": str(now),
+        }
+    )
+
+
 @router.get("/heatmap")
 async def heatmap_data(
     start_date: str = Query(None),
     end_date: str = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
 ):
     """坐席工作量热力图：坐席 × 日期 的通话次数矩阵"""
     end = date.today()
@@ -672,6 +1138,7 @@ async def dashboard_summary(
 ):
     """仪表盘首屏统计数字，一个接口替代多个独立请求。"""
     today = today_cst_as_utc()
+    tomorrow = today + timedelta(days=1)
 
     # 总学生数
     total_students = (await db.execute(select(func.count(Student.id)))).scalar() or 0
@@ -694,8 +1161,27 @@ async def dashboard_summary(
 
     # 今日呼出（直接统计通话记录，不拉话务员列表）
     today_calls = (
+        await db.execute(select(func.count(DialLog.id)).where(DialLog.dialed_at >= today))
+    ).scalar() or 0
+
+    available_unassigned = (
         await db.execute(
-            select(func.count(DialLog.id)).where(DialLog.dialed_at >= today)
+            select(func.count(Student.id)).where(
+                Student.assigned_to.is_(None),
+                Student.status.in_(ACTIVE_TASK_STATUSES),
+            )
+        )
+    ).scalar() or 0
+
+    today_a = (
+        await db.execute(
+            select(func.count(func.distinct(OperationLog.target_student_id))).where(
+                OperationLog.action.in_(["AI分析", "手动评级"]),
+                OperationLog.new_status == "A",
+                OperationLog.old_status != "A",
+                OperationLog.created_at >= today,
+                OperationLog.created_at < tomorrow,
+            )
         )
     ).scalar() or 0
 
@@ -716,6 +1202,8 @@ async def dashboard_summary(
             "contacted": contacted,
             "a_level": a_level,
             "today_calls": today_calls,
+            "available_unassigned": available_unassigned,
+            "today_a": today_a,
             "enrolled_total": enrolled_total,
             "enrolled_deposit": enrolled_deposit,
         }
@@ -800,16 +1288,19 @@ async def dashboard_all(
     async def _stages():
         result = await db.execute(
             select(Student.stage, func.count(Student.id))
-            .where(
-                Student.assigned_to.is_not(None),
-                Student.status != StudentStatus.invalid,
-            )
+            .where(Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)))
             .group_by(Student.stage)
         )
-        by_stage = {row[0]: row[1] for row in result.all()}
+        by_stage = {}
+        for stage, count in result.all():
+            key = _stage_stats_key(stage)
+            by_stage[key] = by_stage.get(key, 0) + count
         unassigned = (
             await db.execute(
-                select(func.count(Student.id)).where(Student.assigned_to.is_(None))
+                select(func.count(Student.id)).where(
+                    Student.assigned_to.is_(None),
+                    Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)),
+                )
             )
         ).scalar() or 0
         by_stage["未分配"] = unassigned
@@ -818,9 +1309,7 @@ async def dashboard_all(
     async def _funnel():
         total = (await db.execute(select(func.count(Student.id)))).scalar() or 0
         assigned = (
-            await db.execute(
-                select(func.count(Student.id)).where(Student.assigned_to.is_not(None))
-            )
+            await db.execute(select(func.count(Student.id)).where(Student.assigned_to.is_not(None)))
         ).scalar() or 0
         contacted = (
             await db.execute(

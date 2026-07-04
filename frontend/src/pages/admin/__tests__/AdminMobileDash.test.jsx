@@ -4,6 +4,17 @@ import { MemoryRouter } from 'react-router-dom';
 import AdminMobileDash from '../AdminMobileDash';
 import api from '../../../api';
 
+const mockUser = vi.hoisted(() => ({
+  current: {
+    id: 1,
+    role: 'admin',
+    name: '管理员',
+    is_super_admin: false,
+    page_permissions: ['work_center', 'leads_manage', 'score_preview', 'account_manage', 'report_center'],
+  },
+}));
+const mockHelpModal = vi.hoisted(() => vi.fn(() => null));
+
 vi.mock('../../../api', () => ({
   default: {
     get: vi.fn(),
@@ -19,7 +30,7 @@ vi.mock('../../../context/ThemeContext', () => ({
 
 vi.mock('../../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 1, role: 'admin', name: '管理员' },
+    user: mockUser.current,
     logout: vi.fn(),
   }),
 }));
@@ -34,11 +45,17 @@ vi.mock('../../../components/Toast', () => ({
   }),
 }));
 
+vi.mock('../../../components/HelpModal', () => ({
+  default: mockHelpModal,
+}));
+
 const summaryPayload = {
   total_students: 120,
   contacted: 60,
   a_level: 8,
   today_calls: 12,
+  today_a: 2,
+  available_unassigned: 5,
   enrolled_total: 3,
 };
 
@@ -101,6 +118,13 @@ const scorePayload = {
 describe('AdminMobileDash', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUser.current = {
+      id: 1,
+      role: 'admin',
+      name: '管理员',
+      is_super_admin: false,
+      page_permissions: ['work_center', 'leads_manage', 'score_preview', 'account_manage', 'report_center'],
+    };
     api.get.mockImplementation((url) => {
       if (url === '/stats/dashboard-summary') {
         return Promise.resolve({ data: { data: summaryPayload } });
@@ -127,19 +151,44 @@ describe('AdminMobileDash', () => {
 
     expect(await screen.findByText('移动管理')).toBeInTheDocument();
     expect(screen.getByText('今日有事项需要处理')).toBeInTheDocument();
-    expect(screen.getByText('今日拨号')).toBeInTheDocument();
+    expect(screen.getByText('今日呼出')).toBeInTheDocument();
     expect(screen.getByText('有效 9 · 未记录 3')).toBeInTheDocument();
-    expect(screen.getByText('逾期回访')).toBeInTheDocument();
-    expect(screen.getByText('未分配线索')).toBeInTheDocument();
+    expect(screen.getByText('今日新增 A')).toBeInTheDocument();
+    expect(screen.getByText('今日评级进入 A')).toBeInTheDocument();
+    expect(screen.getByText('可分配有效线索')).toBeInTheDocument();
+    expect(screen.getByText('未分配且仍需跟进')).toBeInTheDocument();
     expect(screen.getByText('需关注坐席')).toBeInTheDocument();
-    expect(screen.getByText('缺电话任务')).toBeInTheDocument();
-    expect(screen.getByText('2 条待补手机号')).toBeInTheDocument();
+    expect(screen.getByText('逾期回访')).toBeInTheDocument();
+    expect(screen.getByText('逾期 1 条 · 未完成 6 条')).toBeInTheDocument();
+    expect(screen.getByText('无电话数据')).toBeInTheDocument();
+    expect(screen.getByText('2 条线索没有可拨电话')).toBeInTheDocument();
     expect(screen.getByText('未记录通话')).toBeInTheDocument();
     expect(screen.getByText('今日 3 通，本月占比 25%')).toBeInTheDocument();
     expect(screen.getByText('蒲安琪')).toBeInTheDocument();
     expect(screen.getByText('先补齐通话记录并处理待回访')).toBeInTheDocument();
-    expect(screen.getByText('A 级意向')).toBeInTheDocument();
-    expect(screen.getByText('8 条重点线索')).toBeInTheDocument();
+    expect(screen.getByText('A 级线索')).toBeInTheDocument();
+    expect(screen.getByText('当前 8 条重点线索')).toBeInTheDocument();
+  });
+
+  it('routes mobile lead metrics to matching filtered lead lists', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AdminMobileDash />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('link', { name: /今日新增 A/ })).toHaveAttribute(
+      'href',
+      '/admin/leads?intent=A&today_a=1',
+    );
+    expect(screen.getByRole('link', { name: /可分配有效线索/ })).toHaveAttribute(
+      'href',
+      '/admin/leads?assignment=unassigned&active=1',
+    );
+    expect(screen.getByRole('link', { name: /无电话数据/ })).toHaveAttribute(
+      'href',
+      '/admin/leads?active=1&missing_phone=1',
+    );
   });
 
   it('loads the existing admin summary, data quality, ops and score APIs', async () => {
@@ -158,5 +207,31 @@ describe('AdminMobileDash', () => {
         params: { daily_call_target: 30 },
       });
     });
+  });
+
+  it('uses the admin guide on mobile for normal admins', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AdminMobileDash />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('移动管理');
+
+    expect(mockHelpModal.mock.calls.some(([props]) => props.role === 'admin')).toBe(true);
+  });
+
+  it('uses the super admin guide on mobile for super admins', async () => {
+    mockUser.current = { id: 2, role: 'admin', name: '超管', is_super_admin: true };
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AdminMobileDash />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('移动管理');
+
+    expect(mockHelpModal.mock.calls.some(([props]) => props.role === 'super_admin')).toBe(true);
   });
 });

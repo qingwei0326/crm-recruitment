@@ -16,14 +16,34 @@ from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_admin, require_agent, require_super_admin
+from app.auth import (
+    ADMIN_OP_ENROLLMENT_SETTLEMENT,
+    ADMIN_OP_STUDENT_ASSIGN,
+    ADMIN_OP_STUDENT_CREATE,
+    ADMIN_OP_STUDENT_DELETE,
+    ADMIN_OP_STUDENT_EDIT,
+    ADMIN_OP_STUDENT_IMPORT,
+    ADMIN_OP_STUDENT_PHONE,
+    ADMIN_PAGE_ENROLLMENT_SETTLEMENT,
+    ADMIN_PAGE_LEADS_MANAGE,
+    get_current_user,
+    require_admin,
+    require_agent,
+    require_operation_permission,
+    require_page_permission,
+    user_has_operation_permission,
+    user_has_page_permission,
+)
 from app.database import get_db
 from app.dial_guard import require_recent_agent_dial
 from app.models import (
     Call,
+    CampusVisitTask,
     DialLog,
+    EnrollmentRecord,
     EnrollmentSubStage,
     FollowUp,
+    HomeVisitTask,
     IntentLevel,
     LeadViewLog,
     Note,
@@ -53,18 +73,53 @@ from app.status_policy import (
     status_detail_value,
     statuses_for_canonical,
 )
-from app.task_stats import TERMINAL_STUDENT_STATUSES
-from app.utils import is_phone_query, make_operation_log, mask_phone, normalize_phone, utcnow
+from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
+from app.utils import (
+    assignment_state_label,
+    is_phone_query,
+    make_assignment_rollback_note,
+    make_batch_id,
+    make_operation_log,
+    mask_phone,
+    normalize_phone,
+    today_cst_as_utc,
+    utcnow,
+)
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
 
 logger = logging.getLogger(__name__)
 
 
-STAGE_ORDER = ["初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"]
+STAGE_ORDER = [
+    "初次联系",
+    "有意向",
+    "已送资料",
+    "待家访",
+    "家访已安排",
+    "家访完成",
+    "待到校参观",
+    "到校参观已安排",
+    "已到校参观",
+    "已报名",
+]
 
 # Excel import: limit memory DoS from huge uploads
 MAX_STUDENT_IMPORT_BYTES = 10 * 1024 * 1024
+
+
+def _require_admin_leads_manage(current_user: User) -> None:
+    if is_admin(current_user) and not user_has_page_permission(
+        current_user, ADMIN_PAGE_LEADS_MANAGE
+    ):
+        raise HTTPException(status_code=403, detail="无权访问该管理模块")
+
+
+def _require_admin_operation(current_user: User, permission: str) -> None:
+    if is_admin(current_user) and not user_has_operation_permission(current_user, permission):
+        raise HTTPException(status_code=403, detail="无权执行该操作")
+
+
 IMPORT_COLUMN_ALIASES = {
     "name": {"name", "student", "student_name", "\u59d3\u540d", "\u5b66\u751f\u59d3\u540d"},
     "region": {"region", "area", "\u5730\u533a", "\u533a\u57df", "\u5730\u57df"},
@@ -177,11 +232,31 @@ def _enum_or_error(enum_cls, value: str, label: str):
         raise ValueError(f"无效的{label}: {value}")
 
 
+def _has_any_phone(guardian_phone: str | None, guardian2_phone: str | None) -> bool:
+    return bool((guardian_phone or "").strip() or (guardian2_phone or "").strip())
+
+
+def _display_stage(stage: StudentStage) -> str:
+    if stage == StudentStage.visit_scheduled:
+        return StudentStage.campus_visit_scheduled.value
+    if stage == StudentStage.visited:
+        return StudentStage.campus_visit_arrived.value
+    return stage.value
+
+
+def _stage_filter_values(stage: StudentStage) -> list[StudentStage]:
+    if stage == StudentStage.campus_visit_scheduled:
+        return [StudentStage.campus_visit_scheduled, StudentStage.visit_scheduled]
+    if stage == StudentStage.campus_visit_arrived:
+        return [StudentStage.campus_visit_arrived, StudentStage.visited]
+    return [stage]
+
+
 def _student_payload(student: Student) -> dict:
     status = canonical_status_value(student.status)
     detail = status_detail_value(student.status, getattr(student, "status_detail", ""))
     intent_level = student.intent_level.value
-    stage = student.stage.value
+    stage = _display_stage(student.stage)
     payload = {
         "id": student.id,
         "name": student.name,
@@ -228,6 +303,13 @@ def _allows_call_result_backfill_without_recent_dial(
     old_status: StudentStatus | str | None,
 ) -> bool:
     return canonical_student_status(old_status) == StudentStatus.contacted
+
+
+def _is_enrolled_student(student: Student) -> bool:
+    return (
+        canonical_student_status(student.status) == StudentStatus.enrolled
+        or student.stage == StudentStage.enrolled
+    )
 
 
 def _normalize_import_header(value) -> str:
@@ -419,8 +501,9 @@ async def import_students_excel(
     file: UploadFile = File(...),
     default_agent_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
+    _require_admin_operation(current_user, ADMIN_OP_STUDENT_IMPORT)
     filename = file.filename or ""
     if not filename.lower().endswith(".xlsx"):
         return Response.error(code=1, msg="仅支持 .xlsx 文件")
@@ -497,10 +580,21 @@ async def import_students_excel(
 
         seen_in_file: set[str] = set()
         student_rows = []
+        no_phone_rows = []
         for row_idx, parsed in parsed_rows:
             phone = parsed.get("guardian_phone", "") or ""
             phone2 = parsed.get("guardian2_phone", "") or ""
             row_phones = [p for p in (phone, phone2) if p]
+
+            if not row_phones:
+                item = {
+                    "row": row_idx,
+                    "name": parsed["name"],
+                    "reason": "无电话数据",
+                }
+                no_phone_rows.append(item)
+                skipped_rows.append(item)
+                continue
 
             dup_db = next((p for p in row_phones if p in existing_phones), None)
             if dup_db:
@@ -558,6 +652,8 @@ async def import_students_excel(
                 "imported": imported_count,
                 "success": imported_count,
                 "skipped": len(skipped_rows),
+                "no_phone": len(no_phone_rows),
+                "no_phone_rows": no_phone_rows,
                 "skipped_rows": skipped_rows,
                 "errors": skipped_rows,
             }
@@ -631,6 +727,8 @@ async def create_student(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_leads_manage(current_user)
+    _require_admin_operation(current_user, ADMIN_OP_STUDENT_CREATE)
     raw = body.model_dump(exclude_unset=True)
     if not is_admin(current_user):
         agent_create_fields = {
@@ -683,6 +781,11 @@ async def create_student(
     if not region_value and body.school_name:
         region_value = extract_region(body.school_name)
 
+    guardian_phone = normalize_phone(body.guardian_phone)
+    guardian2_phone = normalize_phone(body.guardian2_phone)
+    if not _has_any_phone(guardian_phone, guardian2_phone):
+        return Response.error(code=1, msg="至少需要一个可拨电话")
+
     student = Student(
         name=body.name,
         region=region_value,
@@ -698,9 +801,9 @@ async def create_student(
         deposit=body.deposit,
         score=body.score,
         guardian_name=body.guardian_name or "",
-        guardian_phone=normalize_phone(body.guardian_phone),
+        guardian_phone=guardian_phone,
         guardian2_name=body.guardian2_name or "",
-        guardian2_phone=normalize_phone(body.guardian2_phone),
+        guardian2_phone=guardian2_phone,
         school_name=body.school_name or "",
         school_address=body.school_address or "",
         need_help=body.need_help or False,
@@ -736,9 +839,13 @@ async def list_students(
     stage: str = Query(""),
     need_help: str = Query(""),
     school_name: str = Query(""),
+    active: str = Query(""),
+    today_a: str = Query(""),
+    missing_phone: str = Query(""),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_leads_manage(current_user)
     query = apply_student_scope(select(Student), current_user)
     if q:
         q = q.strip()
@@ -794,9 +901,38 @@ async def list_students(
             stage_enum = StudentStage(stage)
         except ValueError:
             return Response.ok({"total": 0, "page": page, "page_size": page_size, "list": []})
-        query = query.where(Student.stage == stage_enum)
+        query = query.where(Student.stage.in_(_stage_filter_values(stage_enum)))
     if need_help == "1":
         query = query.where(Student.need_help)
+    if active == "1":
+        query = query.where(Student.status.in_(ACTIVE_TASK_STATUSES))
+    if missing_phone == "1":
+        query = query.where(
+            or_(
+                Student.guardian_phone == "",
+                Student.guardian_phone.is_(None),
+            ),
+            or_(
+                Student.guardian2_phone == "",
+                Student.guardian2_phone.is_(None),
+            ),
+        )
+    if today_a == "1":
+        today = today_cst_as_utc()
+        tomorrow = today + timedelta(days=1)
+        today_a_student_ids = (
+            select(OperationLog.target_student_id)
+            .where(
+                OperationLog.action.in_(["AI分析", "手动评级"]),
+                OperationLog.new_status == "A",
+                OperationLog.old_status != "A",
+                OperationLog.created_at >= today,
+                OperationLog.created_at < tomorrow,
+                OperationLog.target_student_id.is_not(None),
+            )
+            .distinct()
+        )
+        query = query.where(Student.id.in_(today_a_student_ids))
 
     count_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_q)).scalar()
@@ -878,7 +1014,7 @@ async def enrolled_students(
 @router.get("/dispatch-regions")
 async def list_dispatch_regions(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
     """获取「未分配且有学校名」学生的区县列表及其未分配人数。"""
     result = await db.execute(
@@ -899,7 +1035,7 @@ async def list_dispatch_regions(
 async def list_schools(
     regions: list[str] = Query(default=[]),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
     """获取有未分配学生的学校列表及其未分配数量。
 
@@ -937,6 +1073,19 @@ def _parse_hhmm(value: str) -> tuple[int, int]:
         return 0, 0
 
 
+def _minutes_since_midnight(value: str) -> int:
+    hh, mm = _parse_hhmm(value)
+    return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
+
+
+def _is_within_dial_window(current_minutes: int, window_start: str, window_end: str) -> bool:
+    start_minutes = _minutes_since_midnight(window_start)
+    end_minutes = _minutes_since_midnight(window_end)
+    if start_minutes <= end_minutes:
+        return start_minutes <= current_minutes <= end_minutes
+    return current_minutes >= start_minutes or current_minutes <= end_minutes
+
+
 @router.get("/phone/{student_id}")
 async def get_student_phone(
     student_id: int,
@@ -944,6 +1093,7 @@ async def get_student_phone(
     current_user: User = Depends(get_current_user),
 ):
     student = await get_accessible_student(db, student_id, current_user)
+    _require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
 
     # 1. 拨号窗口校验
     window_start = await _get_system_config(db, "dial_window_start", "08:00")
@@ -955,12 +1105,8 @@ async def get_student_phone(
         max_per_24h = 3
 
     now_cst = datetime.now(_CST)
-    start_h, start_m = _parse_hhmm(window_start)
-    end_h, end_m = _parse_hhmm(window_end)
     cur_minutes = now_cst.hour * 60 + now_cst.minute
-    start_minutes = start_h * 60 + start_m
-    end_minutes = end_h * 60 + end_m
-    if cur_minutes < start_minutes or cur_minutes >= end_minutes:
+    if not _is_within_dial_window(cur_minutes, window_start, window_end):
         raise HTTPException(
             status_code=403,
             detail=f"当前为禁拨时段（拨号窗口 {window_start}-{window_end}）",
@@ -1056,8 +1202,9 @@ async def update_dial_duration(
 async def reveal_student_phone_plain(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
+    _require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
     student = await get_student_or_404(db, student_id)
     db.add(
         make_operation_log(
@@ -1124,6 +1271,8 @@ async def update_enrollment_substage(
 ):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="无权修改报名后状态")
+    if not user_has_page_permission(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT):
+        raise HTTPException(status_code=403, detail="无权访问该管理模块")
     student = await get_student_or_404(db, student_id)
 
     old_value = str(student.enrollment_substage) if student.enrollment_substage else ""
@@ -1170,6 +1319,7 @@ async def get_student_detail(
     current_user: User = Depends(get_current_user),
 ):
     """聚合学生所有维度信息：基本资料 + 通话 + 备注 + 回访 + 到访 + 意向轨迹。"""
+    _require_admin_leads_manage(current_user)
     student = await get_accessible_student(db, student_id, current_user)
 
     log = LeadViewLog(student_id=student.id, viewer_id=current_user.id)
@@ -1268,6 +1418,75 @@ async def get_student_detail(
         for v, agent_name in visits_r.all()
     ]
 
+    home_visits_r = await db.execute(
+        select(HomeVisitTask, User.name)
+        .outerjoin(User, HomeVisitTask.creator_agent_id == User.id)
+        .where(HomeVisitTask.student_id == student.id)
+        .order_by(HomeVisitTask.created_at.desc())
+    )
+    home_visit_events = [
+        {
+            "type": "home_visit",
+            "id": task.id,
+            "title": "申请家访",
+            "status": task.status.value,
+            "result": task.result.value if task.result else "",
+            "operator_name": agent_name or "",
+            "occurred_at": str(task.created_at),
+            "scheduled_at": str(task.scheduled_at) if task.scheduled_at else None,
+            "summary": task.address or task.notes or "",
+        }
+        for task, agent_name in home_visits_r.all()
+    ]
+
+    campus_visits_r = await db.execute(
+        select(CampusVisitTask, User.name)
+        .outerjoin(User, CampusVisitTask.creator_user_id == User.id)
+        .where(CampusVisitTask.student_id == student.id)
+        .order_by(CampusVisitTask.created_at.desc())
+    )
+    campus_visit_events = [
+        {
+            "type": "campus_visit",
+            "id": task.id,
+            "title": "预约到校",
+            "status": task.status.value,
+            "result": task.result.value if task.result else "",
+            "operator_name": user_name or "",
+            "occurred_at": str(task.created_at),
+            "scheduled_at": str(task.appointment_at) if task.appointment_at else None,
+            "summary": task.current_concerns or task.notes or "",
+        }
+        for task, user_name in campus_visits_r.all()
+    ]
+
+    enrollments_r = await db.execute(
+        select(EnrollmentRecord, User.name)
+        .outerjoin(User, EnrollmentRecord.attributed_agent_id == User.id)
+        .where(EnrollmentRecord.student_id == student.id)
+        .order_by(EnrollmentRecord.enrolled_at.desc())
+    )
+    enrollment_events = [
+        {
+            "type": "enrollment",
+            "id": record.id,
+            "title": "报名登记",
+            "status": record.settlement_status.value,
+            "result": record.source.value,
+            "operator_name": agent_name or "",
+            "occurred_at": str(record.enrolled_at),
+            "scheduled_at": None,
+            "summary": record.enrolled_program or record.intent_program or "",
+        }
+        for record, agent_name in enrollments_r.all()
+    ]
+
+    admissions_timeline = sorted(
+        home_visit_events + campus_visit_events + enrollment_events,
+        key=lambda item: item.get("occurred_at") or "",
+        reverse=True,
+    )
+
     # 意向轨迹：合并 AI 分析（Call）和手动评级（OperationLog）
     intent_r = await db.execute(
         select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
@@ -1319,6 +1538,7 @@ async def get_student_detail(
             "notes": notes,
             "follow_ups": follow_ups,
             "visits": visits,
+            "admissions_timeline": admissions_timeline,
             "intent_timeline": intent_timeline,
         }
     )
@@ -1330,6 +1550,7 @@ async def get_student(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_leads_manage(current_user)
     student = await get_accessible_student(db, student_id, current_user)
 
     log = LeadViewLog(student_id=student.id, viewer_id=current_user.id)
@@ -1346,6 +1567,8 @@ async def update_student(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_leads_manage(current_user)
+    _require_admin_operation(current_user, ADMIN_OP_STUDENT_EDIT)
     student = await get_accessible_student(db, student_id, current_user)
     raw = body.model_dump(exclude_unset=True)
     # invalid_reason is persisted as status_detail for 无效 so admins can filter by reason.
@@ -1365,10 +1588,15 @@ async def update_student(
     old_status_detail = student.status_detail or ""
     old_stage = student.stage
     old_assigned = student.assigned_to
+    next_guardian_phone = student.guardian_phone
+    next_guardian2_phone = student.guardian2_phone
+    was_enrolled = _is_enrolled_student(student)
     for k, v in raw.items():
         if k == "status" and v is not None:
             try:
                 v, implicit_status_detail = normalize_status_for_write(v)
+                if was_enrolled and canonical_student_status(v) != StudentStatus.enrolled:
+                    return Response.error(code=1, msg="已报名学生不能通过普通编辑改回非报名状态")
                 student.status_detail = status_detail_for_write(
                     v,
                     implicit_status_detail,
@@ -1379,6 +1607,8 @@ async def update_student(
         elif k == "stage" and v is not None:
             try:
                 v = _enum_or_error(StudentStage, v, "阶段")
+                if was_enrolled and v != StudentStage.enrolled:
+                    return Response.error(code=1, msg="已报名学生不能通过普通编辑改回非报名状态")
             except ValueError as e:
                 return Response.error(code=1, msg=str(e))
         elif k == "intent_level" and v is not None:
@@ -1388,7 +1618,20 @@ async def update_student(
                 return Response.error(code=1, msg=str(e))
         elif k in {"guardian_phone", "guardian2_phone"} and v is not None:
             v = normalize_phone(v)
+            if k == "guardian_phone":
+                next_guardian_phone = v
+            else:
+                next_guardian2_phone = v
         setattr(student, k, v)
+
+    if was_enrolled and not _is_enrolled_student(student):
+        return Response.error(code=1, msg="已报名学生不能通过普通编辑改回非报名状态")
+
+    if {"guardian_phone", "guardian2_phone"} & set(raw) and not _has_any_phone(
+        next_guardian_phone,
+        next_guardian2_phone,
+    ):
+        return Response.error(code=1, msg="至少需要一个可拨电话")
 
     if student.stage == StudentStage.enrolled:
         student.status = StudentStatus.enrolled
@@ -1473,23 +1716,54 @@ async def update_stage(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_leads_manage(current_user)
     student = await get_accessible_student(db, student_id, current_user)
+    old_stage = student.stage
+    old_status = student.status
 
     try:
-        student.stage = _enum_or_error(StudentStage, body.stage, "阶段")
+        new_stage = _enum_or_error(StudentStage, body.stage, "阶段")
     except ValueError as e:
         return Response.error(msg=str(e))
+    if _is_enrolled_student(student) and new_stage != StudentStage.enrolled:
+        return Response.error(code=1, msg="已报名学生不能通过普通编辑改回非报名状态")
+    student.stage = new_stage
 
     # Auto-update status when stage is "已报名"
-    if body.stage == "已报名":
+    if new_stage == StudentStage.enrolled:
         student.status = StudentStatus.enrolled
         student.status_detail = ""
         if not student.enrolled_at:
             student.enrolled_at = date.today()
 
+    stage_changed = old_stage != student.stage
+    status_changed = old_status != student.status
+    if stage_changed or status_changed:
+        parts = []
+        if stage_changed:
+            parts.append(f"阶段 {old_stage} → {student.stage}")
+        if status_changed:
+            parts.append(
+                f"状态 {canonical_status_value(old_status)} → "
+                f"{canonical_status_value(student.status)}"
+            )
+        db.add(
+            make_operation_log(
+                current_user,
+                student.id,
+                student.case_no or "",
+                "修改状态" if status_changed else "修改信息",
+                content="; ".join(parts),
+                old_status=canonical_status_value(old_status) if status_changed else "",
+                new_status=canonical_status_value(student.status) if status_changed else "",
+            )
+        )
+
     await db.commit()
     await db.refresh(student)
-    return Response.ok({"stage": student.stage, "status": canonical_status_value(student.status)})
+    return Response.ok(
+        {"stage": _display_stage(student.stage), "status": canonical_status_value(student.status)}
+    )
 
 
 @router.put("/{student_id}/enroll")
@@ -1501,7 +1775,15 @@ async def set_enroll_info(
 ):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="无权设置报名信息")
+    if not user_has_page_permission(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT):
+        raise HTTPException(status_code=403, detail="无权访问该管理模块")
+    _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
     student = await get_student_or_404(db, student_id)
+    old_status = student.status
+    old_stage = student.stage
+    old_enrolled_at = student.enrolled_at
+    old_program = student.program
+    old_deposit = student.deposit
 
     student.enrolled_at = body.enrolled_at or date.today()
     student.program = body.program
@@ -1511,6 +1793,29 @@ async def set_enroll_info(
     student.stage = StudentStage.enrolled
     if student.enrollment_substage is None:
         student.enrollment_substage = EnrollmentSubStage.deposit_pending
+
+    parts = [
+        f"状态 {canonical_status_value(old_status)} → {canonical_status_value(student.status)}",
+        f"阶段 {old_stage} → {student.stage}",
+        f"报名日 {old_enrolled_at or '-'} → {student.enrolled_at}",
+    ]
+    if old_program != student.program:
+        parts.append(f"专业 {old_program or '-'} → {student.program or '-'}")
+    if old_deposit != student.deposit:
+        old_deposit_text = old_deposit if old_deposit is not None else "-"
+        new_deposit_text = student.deposit if student.deposit is not None else "-"
+        parts.append(f"定金 {old_deposit_text} → {new_deposit_text}")
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "报名登记",
+            content="; ".join(parts),
+            old_status=canonical_status_value(old_status),
+            new_status=canonical_status_value(student.status),
+        )
+    )
 
     await db.commit()
     await db.refresh(student)
@@ -1561,11 +1866,78 @@ class SchoolAssignReq(BaseModel):
         return [region.strip() for region in value if isinstance(region, str) and region.strip()]
 
 
+def _add_assignment_logs(
+    db: AsyncSession,
+    current_user: User,
+    students: list[Student],
+    assigned_by_student_id: dict[int, int],
+    *,
+    action: str,
+    content_prefix: str = "分配给话务员",
+    batch_id: str = "",
+    old_assignment_by_student_id: dict[int, tuple[int | None, datetime | None]] | None = None,
+    assigned_at_by_student_id: dict[int, datetime] | None = None,
+):
+    for student in students:
+        agent_id = assigned_by_student_id.get(student.id)
+        if agent_id is None:
+            continue
+        old_agent_id, old_assigned_at = (old_assignment_by_student_id or {}).get(
+            student.id,
+            (None, None),
+        )
+        new_assigned_at = (assigned_at_by_student_id or {}).get(student.id)
+        db.add(
+            make_operation_log(
+                current_user,
+                student.id,
+                student.case_no or "",
+                action,
+                content=f"{content_prefix} {agent_id}",
+                old_status=assignment_state_label(old_agent_id),
+                new_status=assignment_state_label(agent_id),
+                note_content=make_assignment_rollback_note(
+                    old_assigned_to=old_agent_id,
+                    old_assigned_at=old_assigned_at,
+                    new_assigned_to=agent_id,
+                    new_assigned_at=new_assigned_at,
+                ),
+                batch_id=batch_id,
+            )
+        )
+
+
+def _student_names_preview(students: list[Student], limit: int = 5) -> str:
+    names = [student.name or f"学生{student.id}" for student in students[:limit]]
+    suffix = f" 等 {len(students)} 人" if len(students) > limit else ""
+    return "、".join(names) + suffix
+
+
+def _add_batch_summary_log(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    action: str,
+    content: str,
+    batch_id: str = "",
+):
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action=action,
+            content=content,
+            batch_id=batch_id,
+        )
+    )
+
+
 @router.post("/assign")
 async def assign_students(
     body: AssignReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_STUDENT_ASSIGN)),
 ):
     if not body.student_ids:
         return Response.error(code=1, msg="student_ids不能为空")
@@ -1574,25 +1946,58 @@ async def assign_students(
     if not agent_result.scalar_one_or_none():
         return Response.error(code=1, msg="话务员不存在或已禁用")
 
+    students_result = await db.execute(select(Student).where(Student.id.in_(body.student_ids)))
+    students = students_result.scalars().all()
+    if not students:
+        return Response.error(code=1, msg="未找到指定的学生")
+    enrolled_students = [student for student in students if _is_enrolled_student(student)]
+    if enrolled_students:
+        names = "、".join(student.name for student in enrolled_students[:3])
+        suffix = f" 等 {len(enrolled_students)} 人" if len(enrolled_students) > 3 else ""
+        return Response.error(code=1, msg=f"已报名学生不能重新分配：{names}{suffix}")
+
     now = utcnow()
+    batch_id = make_batch_id("assign")
+    old_assignment_by_student_id = {
+        student.id: (student.assigned_to, student.assigned_at) for student in students
+    }
+    assigned_at_by_student_id = {student.id: now for student in students}
     await db.execute(
         update(Student)
         .where(Student.id.in_(body.student_ids))
         .values(assigned_to=body.agent_id, assigned_at=now)
     )
+    _add_assignment_logs(
+        db,
+        current_user,
+        students,
+        {student.id: body.agent_id for student in students},
+        action="手动分配",
+        batch_id=batch_id,
+        old_assignment_by_student_id=old_assignment_by_student_id,
+        assigned_at_by_student_id=assigned_at_by_student_id,
+    )
+    _add_batch_summary_log(
+        db,
+        current_user,
+        action="批量分配",
+        content=(
+            f"共 {len(students)} 名学生分配给话务员 {body.agent_id}；"
+            f"样例：{_student_names_preview(students)}"
+        ),
+        batch_id=batch_id,
+    )
     await db.commit()
 
-    count_result = await db.execute(
-        select(func.count(Student.id)).where(Student.id.in_(body.student_ids))
+    return Response.ok(
+        {"assigned_count": len(students), "agent_id": body.agent_id, "batch_id": batch_id}
     )
-    count = count_result.scalar()
-    return Response.ok({"assigned_count": count, "agent_id": body.agent_id})
 
 
 @router.post("/auto-assign")
 async def auto_assign(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_STUDENT_ASSIGN)),
 ):
     agent_result = await db.execute(select(User).where(User.is_active, User.role == UserRole.agent))
     agents = agent_result.scalars().all()
@@ -1610,18 +2015,30 @@ async def auto_assign(
         load[a.id] = cnt.scalar() or 0
 
     unassigned_result = await db.execute(
-        select(Student.id).where(Student.assigned_to.is_(None)).order_by(Student.created_at.asc())
+        select(Student)
+        .where(
+            Student.assigned_to.is_(None),
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+        )
+        .order_by(Student.created_at.asc())
     )
-    unassigned_ids = [row[0] for row in unassigned_result.all()]
-    if not unassigned_ids:
+    unassigned = unassigned_result.scalars().all()
+    if not unassigned:
         return Response.ok({"message": "没有未分配的学生", "distribution": {}})
 
     distribution = {a.id: 0 for a in agents}
     now = utcnow()
+    batch_id = make_batch_id("auto-assign")
+    old_assignment_by_student_id = {
+        student.id: (student.assigned_to, student.assigned_at) for student in unassigned
+    }
+    assigned_at_by_student_id = {student.id: now for student in unassigned}
     by_agent: dict[int, list[int]] = {}
-    for sid in unassigned_ids:
+    assigned_by_student_id: dict[int, int] = {}
+    for student in unassigned:
         min_agent_id = min(load, key=load.get)
-        by_agent.setdefault(min_agent_id, []).append(sid)
+        by_agent.setdefault(min_agent_id, []).append(student.id)
+        assigned_by_student_id[student.id] = min_agent_id
         load[min_agent_id] += 1
         distribution[min_agent_id] += 1
 
@@ -1632,6 +2049,30 @@ async def auto_assign(
             update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
         )
 
+    _add_assignment_logs(
+        db,
+        current_user,
+        unassigned,
+        assigned_by_student_id,
+        action="自动分配",
+        batch_id=batch_id,
+        old_assignment_by_student_id=old_assignment_by_student_id,
+        assigned_at_by_student_id=assigned_at_by_student_id,
+    )
+    distribution_text = ", ".join(
+        f"{a.id}:{distribution.get(a.id, 0)}" for a in agents if distribution.get(a.id, 0) > 0
+    )
+    _add_batch_summary_log(
+        db,
+        current_user,
+        action="自动分配汇总",
+        content=(
+            f"自动均摊未分配线索，共 {len(unassigned)} 名；"
+            f"分布：{distribution_text}；"
+            f"样例：{_student_names_preview(unassigned)}"
+        ),
+        batch_id=batch_id,
+    )
     await db.commit()
     # 按 agent_id 聚合返回，避免重名话务员被合并（name 非唯一）
     result = [
@@ -1640,13 +2081,15 @@ async def auto_assign(
         if distribution.get(a.id, 0) > 0
     ]
 
-    return Response.ok({"total_assigned": len(unassigned_ids), "distribution": result})
+    return Response.ok(
+        {"total_assigned": len(unassigned), "distribution": result, "batch_id": batch_id}
+    )
 
 
 @router.post("/region-assign")
 async def region_assign(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_STUDENT_ASSIGN)),
 ):
     agent_result = await db.execute(select(User).where(User.is_active, User.role == UserRole.agent))
     agents = agent_result.scalars().all()
@@ -1675,14 +2118,25 @@ async def region_assign(
     agent_name_by_id = {a.id: a.name for a in agents}
 
     unassigned_result = await db.execute(
-        select(Student).where(Student.assigned_to.is_(None)).order_by(Student.created_at.asc())
+        select(Student)
+        .where(
+            Student.assigned_to.is_(None),
+            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+        )
+        .order_by(Student.created_at.asc())
     )
     unassigned = unassigned_result.scalars().all()
 
     distribution = {a.name: {"matched": 0, "fallback": 0} for a in agents}
     now = utcnow()
+    batch_id = make_batch_id("region-assign")
+    old_assignment_by_student_id = {
+        student.id: (student.assigned_to, student.assigned_at) for student in unassigned
+    }
+    assigned_at_by_student_id = {student.id: now for student in unassigned}
     total_assigned = 0
     by_agent: dict[int, list[int]] = {}
+    assigned_by_student_id: dict[int, int] = {}
 
     for student in unassigned:
         matched_candidates = region_map.get(student.region or "", [])
@@ -1698,6 +2152,7 @@ async def region_assign(
                 distribution[name]["fallback"] += 1
 
         by_agent.setdefault(agent_id, []).append(student.id)
+        assigned_by_student_id[student.id] = agent_id
         load[agent_id] += 1
         total_assigned += 1
 
@@ -1708,11 +2163,32 @@ async def region_assign(
             update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
         )
 
+    _add_assignment_logs(
+        db,
+        current_user,
+        unassigned,
+        assigned_by_student_id,
+        action="区域分配",
+        batch_id=batch_id,
+        old_assignment_by_student_id=old_assignment_by_student_id,
+        assigned_at_by_student_id=assigned_at_by_student_id,
+    )
+    _add_batch_summary_log(
+        db,
+        current_user,
+        action="区域分配汇总",
+        content=(
+            f"区域分配未分配线索，共 {total_assigned} 名；"
+            f"样例：{_student_names_preview(unassigned)}"
+        ),
+        batch_id=batch_id,
+    )
     await db.commit()
     return Response.ok(
         {
             "total_assigned": total_assigned,
             "distribution": distribution,
+            "batch_id": batch_id,
         }
     )
 
@@ -1721,7 +2197,7 @@ async def region_assign(
 async def school_assign(
     body: SchoolAssignReq,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_STUDENT_ASSIGN)),
 ):
     """按学校分发：选学校、可选区县过滤、选多个话务员ID、轮询分配"""
     school = body.school_name
@@ -1740,6 +2216,7 @@ async def school_assign(
     conditions = [
         Student.school_name == school,
         Student.assigned_to.is_(None),
+        Student.status.not_in(TERMINAL_STUDENT_STATUSES),
     ]
     if regions:
         conditions.append(Student.region.in_(regions))
@@ -1754,6 +2231,11 @@ async def school_assign(
         )
 
     now = utcnow()
+    batch_id = make_batch_id("school-assign")
+    old_assignment_by_student_id = {
+        student.id: (student.assigned_to, student.assigned_at) for student in students
+    }
+    assigned_at_by_student_id = {student.id: now for student in students}
     by_agent: dict[int, list[int]] = {}
     agent_id_list = [a.id for a in agents]
     counts = {a_id: 0 for a_id in agent_id_list}
@@ -1769,11 +2251,35 @@ async def school_assign(
             update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
         )
 
+    _add_assignment_logs(
+        db,
+        current_user,
+        students,
+        {student_id: agent_id for agent_id, ids in by_agent.items() for student_id in ids},
+        action="学校分配",
+        content_prefix=f"学校「{school}」分配给话务员",
+        batch_id=batch_id,
+        old_assignment_by_student_id=old_assignment_by_student_id,
+        assigned_at_by_student_id=assigned_at_by_student_id,
+    )
+    _add_batch_summary_log(
+        db,
+        current_user,
+        action="学校分配汇总",
+        content=(
+            f"学校「{school}」分发，共 {len(students)} 名；"
+            f"区县：{('、'.join(regions) if regions else '全部')}；"
+            f"话务员：{', '.join(str(a.id) for a in agents)}；"
+            f"样例：{_student_names_preview(students)}"
+        ),
+        batch_id=batch_id,
+    )
     await db.commit()
     return Response.ok(
         {
             "total_assigned": len(students),
             "distribution": {f"agent_{a_id}": len(ids) for a_id, ids in by_agent.items()},
+            "batch_id": batch_id,
         }
     )
 
@@ -1803,7 +2309,7 @@ async def toggle_need_help(
 async def delete_student(
     student_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_super_admin),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_STUDENT_DELETE)),
 ):
     student = await get_student_or_404(db, student_id)
     db.add(

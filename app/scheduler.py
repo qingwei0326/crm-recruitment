@@ -65,8 +65,7 @@ async def scan_follow_up_reminders():
                         action="通知失败",
                         content=(
                             f"CRM 回访提醒|||agent_id={agent.id}|||"
-                            f"follow_up_id={follow_up.id}|||"
-                            + content
+                            f"follow_up_id={follow_up.id}|||" + content
                         ),
                     )
                 )

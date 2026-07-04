@@ -41,8 +41,32 @@ vi.mock('../pages/admin/AdminMobileDash', () => ({
   default: () => <div>mobile admin dashboard page</div>,
 }));
 
+vi.mock('../pages/admin/AdminWorkCenter', () => ({
+  default: () => <div>work center page</div>,
+}));
+
+vi.mock('../pages/admin/LeadsManage', () => ({
+  default: () => <div>leads manage page</div>,
+}));
+
+vi.mock('../pages/admin/GlobalSearch', () => ({
+  default: () => <div>global search page</div>,
+}));
+
+vi.mock('../pages/admin/StudentDetail', () => ({
+  default: () => <div>student detail page</div>,
+}));
+
 vi.mock('../pages/admin/LeadGovernance', () => ({
   default: () => <div>lead governance page</div>,
+}));
+
+vi.mock('../pages/admin/AgentScorePreview', () => ({
+  default: () => <div>agent score preview page</div>,
+}));
+
+vi.mock('../pages/admin/AgentManage', () => ({
+  default: () => <div>agent manage page</div>,
 }));
 
 vi.mock('../pages/admin/InvalidStudentReclaim', () => ({
@@ -62,6 +86,22 @@ vi.mock('../pages/admin/ReportCenter', () => ({
 
 vi.mock('../pages/admin/SystemSettings', () => ({
   default: () => <div>system settings page</div>,
+}));
+
+vi.mock('../pages/admin/AuditLogs', () => ({
+  default: () => <div>audit logs page</div>,
+}));
+
+vi.mock('../pages/admin/HomeVisitManage', () => ({
+  default: () => <div>home visit manage page</div>,
+}));
+
+vi.mock('../pages/admin/CampusVisitManage', () => ({
+  default: () => <div>campus visit manage page</div>,
+}));
+
+vi.mock('../pages/admin/EnrollmentSettlement', () => ({
+  default: () => <div>enrollment settlement page</div>,
 }));
 
 describe('admin compatibility routes', () => {
@@ -125,6 +165,30 @@ describe('admin compatibility routes', () => {
     expect(await screen.findByText('distribute schools page')).toBeInTheDocument();
   });
 
+  it('routes audit logs to the operation log page', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/audit-logs']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('audit logs page')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['/admin/home-visits', 'home visit manage page'],
+    ['/admin/campus-visits', 'campus visit manage page'],
+    ['/admin/enrollment-settlement', 'enrollment settlement page'],
+  ])('routes %s to the admissions workflow page', async (path, text) => {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
   it.each([
     ['/admin/report', '?tab=summary'],
     ['/admin/trend', '?tab=trend'],
@@ -156,5 +220,75 @@ describe('admin compatibility routes', () => {
 
     expect(await screen.findByText('admin dashboard page')).toBeInTheDocument();
     expect(screen.queryByText('system settings page')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['/admin/score-preview', 'agent score preview page'],
+    ['/admin/agents', 'agent manage page'],
+    ['/admin/report-center', 'report center page '],
+    ['/admin/audit-logs', 'audit logs page'],
+    ['/admin/work-center', 'work center page'],
+    ['/admin/search', 'global search page'],
+    ['/admin/leads', 'leads manage page'],
+    ['/admin/governance', 'lead governance page'],
+    ['/admin/invalid-reclaim', 'invalid reclaim page'],
+    ['/admin/distribute', 'distribute schools page'],
+    ['/admin/home-visits', 'home visit manage page'],
+    ['/admin/campus-visits', 'campus visit manage page'],
+    ['/admin/enrollment-settlement', 'enrollment settlement page'],
+    ['/admin/report', 'report center page ?tab=summary'],
+    ['/admin/trend', 'report center page ?tab=trend'],
+    ['/admin/call-volume', 'report center page ?tab=call-volume'],
+  ])('redirects normal admins away from protected module %s without permission', async (path, text) => {
+    mockUser = {
+      id: 2,
+      role: 'admin',
+      name: '普通管理员',
+      must_change_password: false,
+      is_super_admin: false,
+      page_permissions: [],
+    };
+
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('admin dashboard page')).toBeInTheDocument();
+    expect(screen.queryByText(text)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['/admin/work-center', ['work_center'], 'work center page'],
+    ['/admin/search', ['leads_manage'], 'global search page'],
+    ['/admin/leads', ['leads_manage'], 'leads manage page'],
+    ['/admin/governance', ['lead_governance'], 'lead governance page'],
+    ['/admin/invalid-reclaim', ['invalid_reclaim'], 'invalid reclaim page'],
+    ['/admin/distribute', ['school_distribution'], 'distribute schools page'],
+    ['/admin/home-visits', ['home_visits'], 'home visit manage page'],
+    ['/admin/campus-visits', ['campus_visits'], 'campus visit manage page'],
+    ['/admin/enrollment-settlement', ['enrollment_settlement'], 'enrollment settlement page'],
+    ['/admin/score-preview', ['score_preview'], 'agent score preview page'],
+    ['/admin/agents', ['account_manage'], 'agent manage page'],
+    ['/admin/report-center', ['report_center'], /report center page/],
+    ['/admin/audit-logs', ['audit_logs'], 'audit logs page'],
+  ])('allows normal admins with page permission to open %s', async (path, permissions, text) => {
+    mockUser = {
+      id: 3,
+      role: 'admin',
+      name: '授权管理员',
+      must_change_password: false,
+      is_super_admin: false,
+      page_permissions: permissions,
+    };
+
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText(text)).toBeInTheDocument();
   });
 });

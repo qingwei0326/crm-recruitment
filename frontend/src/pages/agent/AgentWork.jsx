@@ -19,6 +19,7 @@ import StudentCreateModal from './StudentCreateModal';
 import SettingsModal from './desktop/SettingsModal';
 import DialResultModal from './desktop/DialResultModal';
 import HelpModal from '../../components/HelpModal';
+import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
 
 export default function AgentWork() {
   const { user, logout } = useAuth();
@@ -127,6 +128,14 @@ export default function AgentWork() {
           role="agent"
         />
       )}
+      <YesterdayUncontactedPrompt
+        user={user}
+        onHandleNow={() => {
+          actions.setViewTab('today');
+          actions.setCurrentIdx(0);
+          fetchToday();
+        }}
+      />
     </>
   );
 
@@ -178,6 +187,7 @@ export default function AgentWork() {
     detailFollowUps: state.detail.followUps,
     detailVisits: state.detail.visits,
     detailIntentTimeline: state.detail.intentTimeline,
+    detailAdmissionsTimeline: state.detail.admissionsTimeline,
     detailNotesError: state.detail.notesError,
     hasAnalysis: state.detail.hasAnalysis,
     // AI
@@ -206,6 +216,7 @@ export default function AgentWork() {
     updateScore,
     loadDetail,
     updateDetailField,
+    onAdmissionsStageSynced: (id, stage) => actions.updateStudentField(id, 'stage', stage),
     prev,
     next,
     toggleNeedHelp,
