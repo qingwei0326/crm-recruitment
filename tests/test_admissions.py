@@ -119,7 +119,9 @@ async def test_agent_can_create_home_visit_for_assigned_student(
 
 
 @pytest.mark.asyncio
-async def test_home_visit_creation_triggers_pushplus(client, db, agent_user, agent_headers, monkeypatch):
+async def test_home_visit_creation_triggers_pushplus(
+    client, db, agent_user, agent_headers, monkeypatch
+):
     student = await _create_assigned_student(db, agent_user, name="推送家访学生")
     called = {}
 
@@ -178,7 +180,14 @@ async def test_home_visit_pushplus_sends_to_active_admins_and_super_admins(
         is_active=False,
         pushplus_token="inactive-token",
     )
-    db.add_all([normal_admin, super_admin, inactive_admin, SystemConfig(key="pushplus_token", value="global-token")])
+    db.add_all(
+        [
+            normal_admin,
+            super_admin,
+            inactive_admin,
+            SystemConfig(key="pushplus_token", value="global-token"),
+        ]
+    )
     await db.commit()
 
     student = await _create_assigned_student(db, agent_user, name="通知目标学生")
@@ -300,9 +309,7 @@ async def test_home_visit_enrolled_result_updates_student_status_and_stage(
 
 
 @pytest.mark.asyncio
-async def test_agent_cannot_create_home_visit_for_other_agent_student(
-    client, db, agent_headers
-):
+async def test_agent_cannot_create_home_visit_for_other_agent_student(client, db, agent_headers):
     other_agent = await _create_agent(db, "other-agent")
     student = await _create_assigned_student(db, other_agent, name="其他学生")
 
@@ -589,9 +596,7 @@ async def test_enrollment_from_home_visit_attributes_to_home_visit_creator(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_student_enrollment_is_rejected(
-    client, db, admin_headers, agent_user
-):
+async def test_duplicate_student_enrollment_is_rejected(client, db, admin_headers, agent_user):
     student = await _create_assigned_student(db, agent_user, name="重复报名学生")
 
     first = await client.post(
@@ -651,9 +656,7 @@ async def test_reassigning_student_does_not_change_enrollment_attribution(
 
 
 @pytest.mark.asyncio
-async def test_manual_attribution_change_requires_reason(
-    client, db, admin_headers, agent_user
-):
+async def test_manual_attribution_change_requires_reason(client, db, admin_headers, agent_user):
     student = await _create_assigned_student(db, agent_user, name="手动归属学生")
     enrollment_resp = await client.post(
         "/api/admissions/enrollments",
@@ -681,9 +684,7 @@ async def test_manual_attribution_change_requires_reason(
 
 
 @pytest.mark.asyncio
-async def test_enrollment_summary_groups_by_attributed_agent(
-    client, db, admin_headers, agent_user
-):
+async def test_enrollment_summary_groups_by_attributed_agent(client, db, admin_headers, agent_user):
     student1 = await _create_assigned_student(db, agent_user, name="汇总学生1")
     student2 = await _create_assigned_student(db, agent_user, name="汇总学生2")
     for student in (student1, student2):
@@ -700,6 +701,59 @@ async def test_enrollment_summary_groups_by_attributed_agent(
     assert row["attributed_agent_id"] == agent_user.id
     assert row["total"] == 2
     assert row["unsettled"] == 2
+
+
+@pytest.mark.asyncio
+async def test_settlement_batch_preview_exports_filtered_unsettled_records(
+    client, db, admin_headers, agent_user
+):
+    from app.models import OperationLog
+
+    unsettled_student = await _create_assigned_student(db, agent_user, name="批次未结算")
+    settled_student = await _create_assigned_student(db, agent_user, name="批次已结算")
+    first_resp = await client.post(
+        "/api/admissions/enrollments",
+        json={"student_id": unsettled_student.id, "source": "管理员补录", "amount": 500},
+        headers=admin_headers,
+    )
+    await client.post(
+        "/api/admissions/enrollments",
+        json={"student_id": settled_student.id, "source": "管理员补录", "amount": 300},
+        headers=admin_headers,
+    )
+    settled_id = (
+        await db.execute(
+            select(EnrollmentRecord.id).where(EnrollmentRecord.student_id == settled_student.id)
+        )
+    ).scalar_one()
+    await client.patch(
+        f"/api/admissions/enrollments/{settled_id}",
+        json={"settlement_status": "已结算"},
+        headers=admin_headers,
+    )
+
+    resp = await client.get(
+        "/api/admissions/enrollments/settlement-batch",
+        params={"status": "未结算", "agent_name": agent_user.name},
+        headers=admin_headers,
+    )
+    data = resp.json()["data"]
+
+    assert resp.status_code == 200
+    assert data["record_count"] == 1
+    assert data["amount_total"] == 500
+    assert data["list"][0]["id"] == first_resp.json()["data"]["id"]
+    assert data["agent_counts"][agent_user.name] == 1
+    log = (
+        await db.execute(
+            select(OperationLog).where(
+                OperationLog.action == "生成结算批次",
+                OperationLog.batch_id == data["batch_id"],
+            )
+        )
+    ).scalar_one()
+    assert log.old_status == "1"
+    assert "金额 500.00" in log.content
 
 
 @pytest.mark.asyncio
@@ -744,6 +798,57 @@ async def test_enrollment_payload_includes_attribution_evidence(
     assert row["home_visit_creator_agent_name"] == agent_user.name
     assert row["campus_visit_creator_user_name"] == agent_user.name
     assert "工作手机/微信属于公司资产" in row["handover_policy"]
+    recommendation = row["attribution_recommendation"]
+    assert recommendation["agent_id"] == agent_user.id
+    assert recommendation["agent_name"] == agent_user.name
+    assert recommendation["confidence"] == "high"
+    assert "到校预约" in recommendation["reason"]
+    assert recommendation["warning"] == ""
+    evidence_labels = {item["label"] for item in recommendation["evidence"]}
+    assert {"首次分配", "当前负责", "最后跟进", "家访申请", "到校预约"}.issubset(evidence_labels)
+
+
+@pytest.mark.asyncio
+async def test_enrollment_recommendation_warns_when_attribution_differs(
+    client, db, admin_headers, agent_user, agent_headers
+):
+    student = await _create_assigned_student(db, agent_user, name="交接归因学生")
+    home_resp = await client.post(
+        "/api/admissions/home-visits",
+        json={"student_id": student.id, "address": "交接家访地址"},
+        headers=agent_headers,
+    )
+    home_id = home_resp.json()["data"]["id"]
+    campus_resp = await client.post(
+        "/api/admissions/campus-visits",
+        json={
+            "student_id": student.id,
+            "home_visit_task_id": home_id,
+            "source": "家访后",
+            "appointment_at": "2026-07-04T09:30:00",
+        },
+        headers=admin_headers,
+    )
+    campus_id = campus_resp.json()["data"]["id"]
+    other_agent = await _create_agent(db, "manual-recommendation-agent", name="新接手坐席")
+
+    enrollment_resp = await client.post(
+        "/api/admissions/enrollments",
+        json={
+            "student_id": student.id,
+            "source": "到校参观后",
+            "campus_visit_task_id": campus_id,
+            "attributed_agent_id": other_agent.id,
+            "attribution_reason": "管理员确认由后续接手话务员促成",
+        },
+        headers=admin_headers,
+    )
+
+    row = enrollment_resp.json()["data"]
+    recommendation = row["attribution_recommendation"]
+    assert row["attributed_agent_id"] == other_agent.id
+    assert recommendation["agent_id"] == agent_user.id
+    assert "当前结算归属与系统建议不一致" in recommendation["warning"]
 
 
 @pytest.mark.asyncio
@@ -774,13 +879,17 @@ async def test_dispute_resolution_change_writes_operation_log(
 
     assert resp.status_code == 200
     logs = (
-        await db.execute(
-            select(OperationLog).where(
-                OperationLog.target_student_id == student.id,
-                OperationLog.action == "修改报名结算",
+        (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.target_student_id == student.id,
+                    OperationLog.action == "修改报名结算",
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert logs
     assert "工作手机微信已交接" in logs[-1].note_content
 

@@ -624,8 +624,7 @@ def main():
         context = browser.new_context(
             viewport={"width": 390, "height": 844},  # iPhone 14 Pro
             user_agent=(
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
-                "AppleWebKit/605.1.15"
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
             ),
             is_mobile=True,
             has_touch=True,

@@ -19,6 +19,17 @@ vi.mock('../../../hooks/useIsMobile', () => ({
   default: () => false,
 }));
 
+vi.mock('../../../context/AuthContext', () => ({
+  useAuth: () => ({
+    user: {
+      id: 1,
+      role: 'admin',
+      is_super_admin: true,
+      operation_permissions: '',
+    },
+  }),
+}));
+
 const agents = [{ id: 7, name: '蒲安琪' }];
 
 describe('CallVolumeQuery', () => {

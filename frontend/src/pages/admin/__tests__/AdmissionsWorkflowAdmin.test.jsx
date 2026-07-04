@@ -124,6 +124,18 @@ const enrollmentRows = [
     home_visit_creator_agent_name: '离职话务员',
     campus_visit_creator_user_name: '王坐席',
     handover_policy: '工作手机/微信属于公司资产；交接后的同一微信号只能证明沟通渠道连续，不能单独证明原话务员促成报名。',
+    attribution_recommendation: {
+      agent_id: 8,
+      agent_name: '赵坐席',
+      confidence: 'high',
+      reason: '报名来自到校参观，优先建议归属到校预约话务员。',
+      warning: '存在交接或多人推进，请管理员结合通话、家访、到校记录确认。 当前结算归属与系统建议不一致，结算前请复核。',
+      evidence: [
+        { label: '首次分配', agent_id: 6, agent_name: '离职话务员' },
+        { label: '当前负责', agent_id: 7, agent_name: '王坐席' },
+        { label: '到校预约', agent_id: 8, agent_name: '赵坐席' },
+      ],
+    },
   },
 ];
 
@@ -206,6 +218,19 @@ function mockAdmissionsApis() {
     if (url === '/admissions/enrollments/summary') {
       return Promise.resolve({ data: { data: { list: summaryRows } } });
     }
+    if (url === '/admissions/enrollments/settlement-batch') {
+      return Promise.resolve({
+        data: {
+          data: {
+            batch_id: 'settlement-test-batch',
+            record_count: 1,
+            amount_total: 500,
+            list: enrollmentRows,
+            agent_counts: { 王坐席: 1 },
+          },
+        },
+      });
+    }
     if (url === '/admin/agents') {
       return Promise.resolve({ data: { data: [{ id: 7, name: '王坐席' }, { id: 8, name: '赵坐席' }] } });
     }
@@ -224,6 +249,8 @@ function mockAdmissionsApis() {
 describe('Admissions workflow admin pages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    global.URL.createObjectURL = vi.fn(() => 'blob:settlement-batch');
+    global.URL.revokeObjectURL = vi.fn();
     mockUser = { id: 1, role: 'admin', name: '管理员', is_super_admin: true };
     mockAdmissionsApis();
   });
@@ -379,6 +406,9 @@ describe('Admissions workflow admin pages', () => {
     expect(screen.getAllByRole('heading', { name: '报名结算' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('自动到校预约人')).toBeInTheDocument();
     expect(screen.getByText('工作微信交接待确认')).toBeInTheDocument();
+    expect(screen.getByText('系统建议')).toBeInTheDocument();
+    expect(screen.getByText(/赵坐席 · 置信度 高/)).toBeInTheDocument();
+    expect(screen.getByText(/当前结算归属与系统建议不一致/)).toBeInTheDocument();
     expect(screen.getAllByText(/离职话务员/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/工作手机\/微信属于公司资产/)).toBeInTheDocument();
 
@@ -411,6 +441,44 @@ describe('Admissions workflow admin pages', () => {
         attributed_agent_id: 8,
         attribution_reason: '管理员确认归属赵坐席',
       });
+    });
+  });
+
+  it('applies the settlement attribution recommendation into the edit form', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/enrollment-settlement']}>
+        <EnrollmentSettlement />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('系统建议')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '采用建议' }));
+
+    expect(screen.getByLabelText('归属话务员 301')).toHaveValue('8');
+    expect(screen.getByLabelText('归属原因 301').value).toContain('按系统建议确认归属');
+  });
+
+  it('generates a settlement batch export from current filters', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/enrollment-settlement']}>
+        <EnrollmentSettlement />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('系统建议')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('状态'), { target: { value: '争议' } });
+    fireEvent.click(screen.getByRole('button', { name: /生成结算批次/ }));
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenCalledWith('/admissions/enrollments/settlement-batch', {
+        params: {
+          status: '争议',
+          region: undefined,
+          agent_name: undefined,
+        },
+      });
+      expect(screen.getByText(/结算批次 settlement-test-batch/)).toBeInTheDocument();
+      expect(global.URL.createObjectURL).toHaveBeenCalled();
     });
   });
 

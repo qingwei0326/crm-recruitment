@@ -3,6 +3,7 @@ import api from '../api';
 import { getApiErrorMessage } from '../utils';
 import { useConfirm } from '../components/ConfirmDialog';
 import { detailForOperatorResult, displayStatusForOperatorResult } from '../operatorResultPolicy';
+import { STAGES } from '../labels';
 
 /**
  * 管理学生列表数据和筛选逻辑
@@ -101,7 +102,7 @@ export default function useAgentStudents({ state, actions, toast }) {
         switch (key) {
           case 'name': return s.name || '';
           case 'school_name': return s.school_name || '';
-          case 'stage': return ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'].indexOf(s.stage);
+          case 'stage': return STAGES.indexOf(s.stage);
           case 'intent_level': return s.intent_level === '无' ? -1 : (s.intent_level === 'A' ? 0 : s.intent_level === 'B' ? 1 : 2);
           case 'status': return s.status || '';
           case 'days': return s.days_since_assigned ?? 999;

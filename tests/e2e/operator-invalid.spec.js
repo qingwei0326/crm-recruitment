@@ -64,6 +64,9 @@ test.describe('operator invalid result flow', () => {
     await page.route('**/api/auth/me', async (route) => {
       await route.fulfill({ json: { code: 0, data: agentUser } });
     });
+    await page.route('**/api/tasks/yesterday', async (route) => {
+      await route.fulfill({ json: { code: 0, data: { stale_unconcat: [] } } });
+    });
     await page.route('**/api/tasks/today', async (route) => {
       await route.fulfill({
         json: {

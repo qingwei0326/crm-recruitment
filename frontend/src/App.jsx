@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionStatus from './components/ConnectionStatus';
 import { setGlobalToast } from './api';
 import { useEffect } from 'react';
+import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from './adminPermissions';
 
 const Login = lazy(() => import('./pages/Login'));
 const ChangePassword = lazy(() => import('./pages/ChangePassword'));
@@ -15,6 +16,7 @@ const AdminDash = lazy(() => import('./pages/admin/AdminDash'));
 const AdminWorkCenter = lazy(() => import('./pages/admin/AdminWorkCenter'));
 const AgentScorePreview = lazy(() => import('./pages/admin/AgentScorePreview'));
 const LeadsManage = lazy(() => import('./pages/admin/LeadsManage'));
+const GlobalSearch = lazy(() => import('./pages/admin/GlobalSearch'));
 const StudentDetail = lazy(() => import('./pages/admin/StudentDetail'));
 const LeadGovernance = lazy(() => import('./pages/admin/LeadGovernance'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
@@ -23,6 +25,10 @@ const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
 const ReportCenter = lazy(() => import('./pages/admin/ReportCenter'));
 const DistributeBySchools = lazy(() => import('./pages/admin/DistributeBySchools'));
+const AuditLogs = lazy(() => import('./pages/admin/AuditLogs'));
+const HomeVisitManage = lazy(() => import('./pages/admin/HomeVisitManage'));
+const CampusVisitManage = lazy(() => import('./pages/admin/CampusVisitManage'));
+const EnrollmentSettlement = lazy(() => import('./pages/admin/EnrollmentSettlement'));
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazy(() => import('./pages/mobile/MobileStudentDetail'));
 const MobileCallForm = lazy(() => import('./pages/mobile/MobileCallForm'));
@@ -43,7 +49,7 @@ function defaultRouteFor(user, isMobile) {
   return '/login';
 }
 
-function Protected({ children, role, superAdmin = false }) {
+function Protected({ children, role, superAdmin = false, permission }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   if (!user) return <Navigate to="/login" replace />;
@@ -53,6 +59,9 @@ function Protected({ children, role, superAdmin = false }) {
     return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
   }
   if (superAdmin && !user.is_super_admin) {
+    return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
+  }
+  if (permission && !canAccessAdminPage(user, permission)) {
     return <Navigate to={defaultRouteFor(user, isMobile)} replace />;
   }
   return children;
@@ -124,7 +133,7 @@ export default function App() {
         <Route
           path="/admin/work-center"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.workCenter}>
               <RouteError><AdminWorkCenter /></RouteError>
             </Protected>
           }
@@ -132,15 +141,23 @@ export default function App() {
         <Route
           path="/admin/score-preview"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.scorePreview}>
               <RouteError><AgentScorePreview /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/search"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadsManage}>
+              <RouteError><GlobalSearch /></RouteError>
             </Protected>
           }
         />
         <Route
           path="/admin/leads"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadsManage}>
               <RouteError><LeadsManage /></RouteError>
             </Protected>
           }
@@ -148,7 +165,7 @@ export default function App() {
         <Route
           path="/admin/leads/:id"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadsManage}>
               <RouteError><StudentDetail /></RouteError>
             </Protected>
           }
@@ -156,7 +173,7 @@ export default function App() {
         <Route
           path="/admin/governance"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
               <RouteError><LeadGovernance /></RouteError>
             </Protected>
           }
@@ -164,7 +181,7 @@ export default function App() {
         <Route
           path="/admin/recycle-center"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
               <Navigate to="/admin/governance" replace />
             </Protected>
           }
@@ -172,7 +189,7 @@ export default function App() {
         <Route
           path="/admin/recycle"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
               <Navigate to="/admin/governance" replace />
             </Protected>
           }
@@ -180,7 +197,7 @@ export default function App() {
         <Route
           path="/admin/agents"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.accountManage}>
               <RouteError><AgentManage /></RouteError>
             </Protected>
           }
@@ -188,7 +205,7 @@ export default function App() {
         <Route
           path="/admin/report-center"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.reportCenter}>
               <RouteError><ReportCenter /></RouteError>
             </Protected>
           }
@@ -196,7 +213,7 @@ export default function App() {
         <Route
           path="/admin/report"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.reportCenter}>
               <Navigate to="/admin/report-center?tab=summary" replace />
             </Protected>
           }
@@ -204,7 +221,7 @@ export default function App() {
         <Route
           path="/admin/trend"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.reportCenter}>
               <Navigate to="/admin/report-center?tab=trend" replace />
             </Protected>
           }
@@ -212,7 +229,7 @@ export default function App() {
         <Route
           path="/admin/call-volume"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.reportCenter}>
               <Navigate to="/admin/report-center?tab=call-volume" replace />
             </Protected>
           }
@@ -228,7 +245,7 @@ export default function App() {
         <Route
           path="/admin/invalid-reclaim"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.invalidReclaim}>
               <RouteError><InvalidStudentReclaim /></RouteError>
             </Protected>
           }
@@ -236,7 +253,7 @@ export default function App() {
         <Route
           path="/admin/distribute"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.schoolDistribution}>
               <RouteError><DistributeBySchools /></RouteError>
             </Protected>
           }
@@ -244,8 +261,40 @@ export default function App() {
         <Route
           path="/admin/distribute-by-schools"
           element={
-            <Protected role="admin">
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.schoolDistribution}>
               <RouteError><DistributeBySchools /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/audit-logs"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.auditLogs}>
+              <RouteError><AuditLogs /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/home-visits"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.homeVisits}>
+              <RouteError><HomeVisitManage /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/campus-visits"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.campusVisits}>
+              <RouteError><CampusVisitManage /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/enrollment-settlement"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.enrollmentSettlement}>
+              <RouteError><EnrollmentSettlement /></RouteError>
             </Protected>
           }
         />

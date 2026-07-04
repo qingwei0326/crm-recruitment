@@ -51,9 +51,53 @@ describe('AdminSidebar', () => {
     );
 
     expect(screen.queryByRole('link', { name: '系统设置' })).not.toBeInTheDocument();
-    ADMIN_NAV_ITEMS.filter((item) => !item.superOnly).forEach((item) => {
-      expect(screen.getByRole('link', { name: item.label })).toHaveAttribute('href', item.to);
+    ADMIN_NAV_ITEMS.filter((item) => item.permission).forEach((item) => {
+      expect(screen.queryByRole('link', { name: item.label })).not.toBeInTheDocument();
     });
+    ADMIN_NAV_ITEMS.filter((item) => !item.superOnly).forEach((item) => {
+      if (!item.permission) {
+        expect(screen.getByRole('link', { name: item.label })).toHaveAttribute('href', item.to);
+      }
+    });
+  });
+  it('shows granted page-permission entries for normal admins', () => {
+    mockUser = {
+      id: 3,
+      role: 'admin',
+      name: '普通管理员',
+      is_super_admin: false,
+      page_permissions: ['score_preview', 'report_center', 'home_visits', 'leads_manage'],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AdminSidebar onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: '评分预览' })).toHaveAttribute(
+      'href',
+      '/admin/score-preview',
+    );
+    expect(screen.getByRole('link', { name: '报表中心' })).toHaveAttribute(
+      'href',
+      '/admin/report-center',
+    );
+    expect(screen.getByRole('link', { name: '家访任务' })).toHaveAttribute(
+      'href',
+      '/admin/home-visits',
+    );
+    expect(screen.getByRole('link', { name: '学生管理' })).toHaveAttribute(
+      'href',
+      '/admin/leads',
+    );
+    expect(screen.getByRole('link', { name: '全局搜索' })).toHaveAttribute(
+      'href',
+      '/admin/search',
+    );
+    expect(screen.queryByRole('link', { name: '账号管理' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '操作记录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '系统设置' })).not.toBeInTheDocument();
   });
   it('uses one lead governance entry instead of separate reclaim/distribute entries', () => {
     render(

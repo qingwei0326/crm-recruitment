@@ -21,7 +21,20 @@ _VALID_STATUSES = {
     "孩子不想读",
 }
 _VALID_INTENT_LEVELS = {"A", "B", "C", "无"}
-_VALID_STAGES = {"初次联系", "有意向", "已送资料", "预约参观", "已来访", "已报名"}
+_VALID_STAGES = {
+    "初次联系",
+    "有意向",
+    "已送资料",
+    "待家访",
+    "家访已安排",
+    "家访完成",
+    "待到校参观",
+    "到校参观已安排",
+    "已到校参观",
+    "预约参观",
+    "已来访",
+    "已报名",
+}
 
 
 class Response:
@@ -208,6 +221,96 @@ class VisitUpdate(BaseModel):
     scheduled_date: datetime | None = None
     status: Literal["待确认", "已确认", "已完成", "已取消"] | None = None
     notes: str | None = None
+
+
+# ── Admissions workflow ───────────────────────────────────
+
+
+class HomeVisitCreate(BaseModel):
+    student_id: int
+    intent_program: str = Field(default="", max_length=128)
+    exam_score: float | None = None
+    usual_score: float | None = None
+    parent_intent: str = ""
+    student_situation: str = ""
+    is_wechat_added: bool = False
+    is_confirmed_with_guardian: bool = False
+    requested_visit_time: datetime | None = None
+    address: str = Field(default="", max_length=256)
+    priority: Literal["高", "中", "低"] = "中"
+    notes: str = ""
+
+
+class HomeVisitUpdate(BaseModel):
+    status: Literal["待确认", "已确认", "已安排", "已完成", "已取消", "暂缓"] | None = None
+    result: Literal["成功", "考虑中", "等成绩", "无效", "已报名", "安排到校参观"] | None = None
+    assigned_admin_id: int | None = None
+    requested_visit_time: datetime | None = None
+    scheduled_at: datetime | None = None
+    address: str | None = Field(default=None, max_length=256)
+    priority: Literal["高", "中", "低"] | None = None
+    postpone_reason: str | None = Field(default=None, max_length=64)
+    guardian_attitude: str | None = None
+    student_attitude: str | None = None
+    concerns: str | None = None
+    next_action: str | None = Field(default=None, max_length=64)
+    next_follow_up_at: datetime | None = None
+    notes: str | None = None
+    result_notes: str | None = None
+
+
+class CampusVisitCreate(BaseModel):
+    student_id: int
+    home_visit_task_id: int | None = None
+    source: Literal["电话外呼", "家访后", "管理员补录"] = "电话外呼"
+    intent_program: str = Field(default="", max_length=128)
+    appointment_at: datetime | None = None
+    needs_pickup: bool = False
+    visitor_count: int = Field(default=1, ge=1, le=20)
+    current_concerns: str = ""
+    reception_admin_id: int | None = None
+    notes: str = ""
+
+
+class CampusVisitUpdate(BaseModel):
+    status: Literal["待预约", "已预约", "已到校", "未到校", "已改期", "已取消", "已报名"] | None = (
+        None
+    )
+    result: Literal["已到校", "未到校", "改期", "取消", "现场报名", "继续考虑"] | None = None
+    appointment_at: datetime | None = None
+    needs_pickup: bool | None = None
+    visitor_count: int | None = Field(default=None, ge=1, le=20)
+    current_concerns: str | None = None
+    reception_admin_id: int | None = None
+    reception_content: str | None = None
+    guardian_attitude: str | None = None
+    student_attitude: str | None = None
+    onsite_enrolled: bool | None = None
+    not_enrolled_reason: str | None = None
+    next_action: str | None = Field(default=None, max_length=64)
+    next_follow_up_at: datetime | None = None
+    notes: str | None = None
+    result_notes: str | None = None
+
+
+class EnrollmentCreate(BaseModel):
+    student_id: int
+    source: Literal["电话外呼", "家访后", "到校参观后", "管理员补录"] = "管理员补录"
+    home_visit_task_id: int | None = None
+    campus_visit_task_id: int | None = None
+    attributed_agent_id: int | None = None
+    attribution_reason: str = ""
+    enrolled_program: str = Field(default="", max_length=128)
+    enrolled_at: datetime | None = None
+    amount: float | None = Field(default=None, ge=0)
+    settlement_notes: str = ""
+
+
+class EnrollmentUpdate(BaseModel):
+    attributed_agent_id: int | None = None
+    attribution_reason: str | None = None
+    settlement_status: Literal["未结算", "已结算", "暂缓", "争议"] | None = None
+    settlement_notes: str | None = None
 
 
 # ── Student Response (API payload) ─────────────────────────
