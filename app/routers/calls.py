@@ -160,9 +160,7 @@ async def create_call(
     await db.commit()
     await db.refresh(call)
     if old_intent != student.intent_level and student.intent_level == IntentLevel.A:
-        asyncio.create_task(
-            notify_a_level_change_background(student.id, current_user.name, "ai")
-        )
+        asyncio.create_task(notify_a_level_change_background(student.id, current_user.name, "ai"))
 
     return Response.ok(
         {

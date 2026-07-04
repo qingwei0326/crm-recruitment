@@ -1,18 +1,30 @@
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.auth import get_current_user
+from app.auth import (
+    ADMIN_OP_ENROLLMENT_ATTRIBUTION,
+    ADMIN_OP_ENROLLMENT_CREATE,
+    ADMIN_OP_ENROLLMENT_SETTLEMENT,
+    ADMIN_OP_REPORT_EXPORT,
+    ADMIN_PAGE_CAMPUS_VISITS,
+    ADMIN_PAGE_ENROLLMENT_SETTLEMENT,
+    ADMIN_PAGE_HOME_VISITS,
+    ADMIN_PAGE_WORK_CENTER,
+    get_current_user,
+    user_has_operation_permission,
+    user_has_page_permission,
+)
 from app.database import get_db
 from app.models import (
     AttributionMethod,
-    CampusVisitTask,
     CampusVisitResult,
     CampusVisitStatus,
+    CampusVisitTask,
     EnrollmentRecord,
     EnrollmentSource,
     FollowUp,
@@ -37,7 +49,7 @@ from app.schemas import (
     HomeVisitUpdate,
     Response,
 )
-from app.utils import make_operation_log
+from app.utils import make_batch_id, make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
 
@@ -143,6 +155,16 @@ def _advance_student_stage(student: Student, stage: StudentStage) -> None:
         student.stage = stage
 
 
+def _require_admin_module(current_user: User, permission: str) -> None:
+    if is_admin(current_user) and not user_has_page_permission(current_user, permission):
+        raise HTTPException(status_code=403, detail="无权访问该管理模块")
+
+
+def _require_admin_operation(current_user: User, permission: str) -> None:
+    if is_admin(current_user) and not user_has_operation_permission(current_user, permission):
+        raise HTTPException(status_code=403, detail="无权执行该操作")
+
+
 def _mark_student_enrolled(student: Student, enrolled_at=None) -> None:
     student.status = StudentStatus.enrolled
     student.stage = StudentStage.enrolled
@@ -178,7 +200,9 @@ def _home_visit_payload(task: HomeVisitTask, enrollment_id: int | None = None) -
         "student_situation": task.student_situation,
         "is_wechat_added": task.is_wechat_added,
         "is_confirmed_with_guardian": task.is_confirmed_with_guardian,
-        "requested_visit_time": str(task.requested_visit_time) if task.requested_visit_time else None,
+        "requested_visit_time": str(task.requested_visit_time)
+        if task.requested_visit_time
+        else None,
         "scheduled_at": str(task.scheduled_at) if task.scheduled_at else None,
         "address": task.address,
         "postpone_reason": task.postpone_reason,
@@ -236,6 +260,11 @@ def _enrollment_payload(record: EnrollmentRecord) -> dict:
     if home_visit_task is None and record.campus_visit_task is not None:
         home_visit_task = record.campus_visit_task.home_visit_task
     campus_visit_task = record.campus_visit_task
+    attribution_recommendation = _build_attribution_recommendation(
+        record,
+        home_visit_task,
+        campus_visit_task,
+    )
     return {
         "id": record.id,
         "student_id": record.student_id,
@@ -282,6 +311,7 @@ def _enrollment_payload(record: EnrollmentRecord) -> dict:
             "工作手机/微信属于公司资产；交接后的同一微信号只能证明沟通渠道连续，"
             "不能单独证明原话务员促成报名。"
         ),
+        "attribution_recommendation": attribution_recommendation,
         "settlement_status": record.settlement_status.value,
         "settlement_notes": record.settlement_notes,
         "enrolled_program": record.enrolled_program,
@@ -289,6 +319,119 @@ def _enrollment_payload(record: EnrollmentRecord) -> dict:
         "amount": record.amount,
         "created_at": str(record.created_at),
         "updated_at": str(record.updated_at),
+    }
+
+
+def _agent_name(user: User | None, fallback_id: int | None = None) -> str:
+    if user is not None and user.name:
+        return user.name
+    return f"话务员 #{fallback_id}" if fallback_id else ""
+
+
+def _build_attribution_recommendation(
+    record: EnrollmentRecord,
+    home_visit_task: HomeVisitTask | None,
+    campus_visit_task: CampusVisitTask | None,
+) -> dict:
+    evidence = []
+    seen_agent_ids: dict[int, str] = {}
+
+    def add_evidence(label: str, agent_id: int | None, agent_name: str) -> None:
+        evidence.append(
+            {
+                "label": label,
+                "agent_id": agent_id,
+                "agent_name": agent_name or "",
+                "matches_current_attribution": (
+                    agent_id is not None and agent_id == record.attributed_agent_id
+                ),
+            }
+        )
+        if agent_id is not None:
+            seen_agent_ids.setdefault(agent_id, agent_name or f"话务员 #{agent_id}")
+
+    add_evidence(
+        "首次分配",
+        record.first_assigned_agent_id,
+        _agent_name(record.first_assigned_agent, record.first_assigned_agent_id),
+    )
+    add_evidence(
+        "当前负责",
+        record.current_assigned_agent_id,
+        _agent_name(record.current_assigned_agent, record.current_assigned_agent_id),
+    )
+    add_evidence(
+        "最后跟进",
+        record.last_effective_agent_id,
+        _agent_name(record.last_effective_agent, record.last_effective_agent_id),
+    )
+    add_evidence(
+        "家访申请",
+        home_visit_task.creator_agent_id if home_visit_task else None,
+        _agent_name(
+            home_visit_task.creator_agent if home_visit_task else None,
+            home_visit_task.creator_agent_id if home_visit_task else None,
+        ),
+    )
+    campus_creator_is_agent = (
+        campus_visit_task is not None
+        and campus_visit_task.creator_user is not None
+        and campus_visit_task.creator_user.role == UserRole.agent
+    )
+    add_evidence(
+        "到校预约",
+        campus_visit_task.creator_user_id if campus_creator_is_agent else None,
+        _agent_name(campus_visit_task.creator_user) if campus_creator_is_agent else "",
+    )
+
+    suggested_id: int | None = None
+    suggested_name = ""
+    reason = ""
+    confidence = "low"
+
+    if (
+        campus_visit_task is not None
+        and campus_visit_task.creator_user is not None
+        and campus_visit_task.creator_user.role == UserRole.agent
+    ):
+        suggested_id = campus_visit_task.creator_user_id
+        suggested_name = campus_visit_task.creator_user.name
+        reason = "报名来自到校参观，优先建议归属到校预约话务员。"
+        confidence = "high"
+    elif home_visit_task is not None:
+        suggested_id = home_visit_task.creator_agent_id
+        suggested_name = _agent_name(home_visit_task.creator_agent, suggested_id)
+        reason = "报名链路包含家访任务，优先建议归属家访申请话务员。"
+        confidence = "high"
+    elif record.current_assigned_agent_id is not None:
+        suggested_id = record.current_assigned_agent_id
+        suggested_name = _agent_name(record.current_assigned_agent, suggested_id)
+        reason = "没有家访/到校归因证据，建议按报名时当前负责人确认。"
+        confidence = "medium"
+    elif record.last_effective_agent_id is not None:
+        suggested_id = record.last_effective_agent_id
+        suggested_name = _agent_name(record.last_effective_agent, suggested_id)
+        reason = "没有家访/到校归因证据，建议按最后有效跟进人确认。"
+        confidence = "medium"
+    elif record.first_assigned_agent_id is not None:
+        suggested_id = record.first_assigned_agent_id
+        suggested_name = _agent_name(record.first_assigned_agent, suggested_id)
+        reason = "没有后续归因证据，建议按首次分配话务员复核。"
+        confidence = "low"
+
+    warnings = []
+    if len(seen_agent_ids) > 1:
+        warnings.append("存在交接或多人推进，请管理员结合通话、家访、到校记录确认。")
+    if suggested_id is not None and suggested_id != record.attributed_agent_id:
+        warnings.append("当前结算归属与系统建议不一致，结算前请复核。")
+
+    return {
+        "agent_id": suggested_id,
+        "agent_name": suggested_name,
+        "reason": reason,
+        "confidence": confidence,
+        "warning": " ".join(warnings),
+        "evidence": evidence,
     }
 
 
@@ -350,9 +493,7 @@ async def _get_enrollment_or_404(db: AsyncSession, record_id: int) -> Enrollment
             joinedload(EnrollmentRecord.current_assigned_agent),
             joinedload(EnrollmentRecord.last_effective_agent),
             joinedload(EnrollmentRecord.home_visit_task).joinedload(HomeVisitTask.creator_agent),
-            joinedload(EnrollmentRecord.campus_visit_task).joinedload(
-                CampusVisitTask.creator_user
-            ),
+            joinedload(EnrollmentRecord.campus_visit_task).joinedload(CampusVisitTask.creator_user),
             joinedload(EnrollmentRecord.campus_visit_task)
             .joinedload(CampusVisitTask.home_visit_task)
             .joinedload(HomeVisitTask.creator_agent),
@@ -638,9 +779,7 @@ async def _build_campus_visit_work_items(
     rows = []
     for task in result.scalars().unique().all():
         if task.status in {CampusVisitStatus.arrived, CampusVisitStatus.no_show} and not (
-            task.next_follow_up_at
-            or task.next_action
-            or task.result in CAMPUS_VISIT_NEXT_RESULTS
+            task.next_follow_up_at or task.next_action or task.result in CAMPUS_VISIT_NEXT_RESULTS
         ):
             continue
 
@@ -812,6 +951,7 @@ async def list_work_items(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_module(current_user, ADMIN_PAGE_WORK_CENTER)
     normalized_queue = WORK_ITEM_QUEUE_ALIASES.get(queue, queue)
     if normalized_queue not in WORK_ITEM_QUEUES:
         raise HTTPException(status_code=422, detail="不支持的待办队列")
@@ -855,6 +995,7 @@ async def list_home_visits(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_module(current_user, ADMIN_PAGE_HOME_VISITS)
     conditions = []
     if not is_admin(current_user):
         conditions.append(Student.assigned_to == current_user.id)
@@ -885,10 +1026,7 @@ async def list_home_visits(
             for home_visit_id, enrollment_id in enrollment_rows.all()
             if home_visit_id is not None
         }
-    rows = [
-        _home_visit_payload(task, enrollment_by_home_visit.get(task.id))
-        for task in tasks
-    ]
+    rows = [_home_visit_payload(task, enrollment_by_home_visit.get(task.id)) for task in tasks]
     return Response.ok(_page_payload(total, page, page_size, rows))
 
 
@@ -898,6 +1036,7 @@ async def create_home_visit(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_module(current_user, ADMIN_PAGE_HOME_VISITS)
     student = await get_accessible_student(db, body.student_id, current_user)
     creator_agent_id = current_user.id
     if is_admin(current_user) and student.assigned_to:
@@ -950,6 +1089,8 @@ async def update_home_visit(
     task = await _get_home_visit_or_404(db, task_id)
     student = await get_accessible_student(db, task.student_id, current_user)
     changed_fields = body.model_fields_set
+    if is_admin(current_user):
+        _require_admin_module(current_user, ADMIN_PAGE_HOME_VISITS)
 
     if not is_admin(current_user):
         if task.creator_agent_id != current_user.id:
@@ -960,9 +1101,13 @@ async def update_home_visit(
         if disallowed:
             raise HTTPException(status_code=403, detail="家访结果只能由管理员填写")
     else:
-        disallowed = changed_fields - (AGENT_HOME_VISIT_EDIT_FIELDS | ADMIN_HOME_VISIT_RESULT_FIELDS)
+        disallowed = changed_fields - (
+            AGENT_HOME_VISIT_EDIT_FIELDS | ADMIN_HOME_VISIT_RESULT_FIELDS
+        )
         if disallowed:
-            raise HTTPException(status_code=422, detail=f"不支持的字段: {', '.join(sorted(disallowed))}")
+            raise HTTPException(
+                status_code=422, detail=f"不支持的字段: {', '.join(sorted(disallowed))}"
+            )
 
     old_status = task.status
     old_result = task.result
@@ -1036,6 +1181,7 @@ async def list_campus_visits(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_module(current_user, ADMIN_PAGE_CAMPUS_VISITS)
     conditions = []
     if not is_admin(current_user):
         conditions.append(Student.assigned_to == current_user.id)
@@ -1069,10 +1215,7 @@ async def list_campus_visits(
             for campus_visit_id, enrollment_id in enrollment_rows.all()
             if campus_visit_id is not None
         }
-    rows = [
-        _campus_visit_payload(task, enrollment_by_campus_visit.get(task.id))
-        for task in tasks
-    ]
+    rows = [_campus_visit_payload(task, enrollment_by_campus_visit.get(task.id)) for task in tasks]
     return Response.ok(_page_payload(total, page, page_size, rows))
 
 
@@ -1082,6 +1225,8 @@ async def create_campus_visit(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if is_admin(current_user):
+        _require_admin_module(current_user, ADMIN_PAGE_CAMPUS_VISITS)
     student = await get_accessible_student(db, body.student_id, current_user)
     open_result = await db.execute(
         select(CampusVisitTask.id).where(
@@ -1153,6 +1298,8 @@ async def update_campus_visit(
     task = await _get_campus_visit_or_404(db, task_id)
     student = await get_accessible_student(db, task.student_id, current_user)
     changed_fields = body.model_fields_set
+    if is_admin(current_user):
+        _require_admin_module(current_user, ADMIN_PAGE_CAMPUS_VISITS)
 
     if not is_admin(current_user):
         if task.creator_user_id != current_user.id:
@@ -1167,7 +1314,9 @@ async def update_campus_visit(
             AGENT_CAMPUS_VISIT_EDIT_FIELDS | ADMIN_CAMPUS_VISIT_RESULT_FIELDS
         )
         if disallowed:
-            raise HTTPException(status_code=422, detail=f"不支持的字段: {', '.join(sorted(disallowed))}")
+            raise HTTPException(
+                status_code=422, detail=f"不支持的字段: {', '.join(sorted(disallowed))}"
+            )
 
     old_status = task.status
     old_result = task.result
@@ -1240,6 +1389,7 @@ async def list_enrollments(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
     conditions = []
     if not is_admin(current_user):
         conditions.append(EnrollmentRecord.attributed_agent_id == current_user.id)
@@ -1254,9 +1404,7 @@ async def list_enrollments(
             joinedload(EnrollmentRecord.current_assigned_agent),
             joinedload(EnrollmentRecord.last_effective_agent),
             joinedload(EnrollmentRecord.home_visit_task).joinedload(HomeVisitTask.creator_agent),
-            joinedload(EnrollmentRecord.campus_visit_task).joinedload(
-                CampusVisitTask.creator_user
-            ),
+            joinedload(EnrollmentRecord.campus_visit_task).joinedload(CampusVisitTask.creator_user),
             joinedload(EnrollmentRecord.campus_visit_task)
             .joinedload(CampusVisitTask.home_visit_task)
             .joinedload(HomeVisitTask.creator_agent),
@@ -1278,6 +1426,7 @@ async def enrollment_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="无权查看报名结算汇总")
 
@@ -1339,6 +1488,108 @@ async def enrollment_summary(
     return Response.ok({"list": rows})
 
 
+@router.get("/enrollments/settlement-batch")
+async def settlement_batch_preview(
+    status: str = Query("未结算"),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    agent_id: int | None = Query(None),
+    agent_name: str = Query(""),
+    region: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
+    _require_admin_operation(current_user, ADMIN_OP_REPORT_EXPORT)
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="无权生成结算批次")
+
+    conditions = []
+    if status and status != "全部":
+        try:
+            settlement_status = SettlementStatus(status)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="结算状态无效") from exc
+        conditions.append(EnrollmentRecord.settlement_status == settlement_status)
+    if start_date is not None:
+        conditions.append(
+            EnrollmentRecord.enrolled_at >= datetime.combine(start_date, datetime.min.time())
+        )
+    if end_date is not None:
+        conditions.append(
+            EnrollmentRecord.enrolled_at
+            < datetime.combine(end_date, datetime.min.time()) + timedelta(days=1)
+        )
+    if agent_id is not None:
+        conditions.append(EnrollmentRecord.attributed_agent_id == agent_id)
+    if agent_name.strip():
+        conditions.append(
+            EnrollmentRecord.attributed_agent.has(User.name.contains(agent_name.strip()))
+        )
+    if region.strip():
+        conditions.append(EnrollmentRecord.region_snapshot.contains(region.strip()))
+
+    query = (
+        select(EnrollmentRecord)
+        .options(
+            joinedload(EnrollmentRecord.attributed_agent),
+            joinedload(EnrollmentRecord.confirmed_by_admin),
+            joinedload(EnrollmentRecord.first_assigned_agent),
+            joinedload(EnrollmentRecord.current_assigned_agent),
+            joinedload(EnrollmentRecord.last_effective_agent),
+            joinedload(EnrollmentRecord.home_visit_task).joinedload(HomeVisitTask.creator_agent),
+            joinedload(EnrollmentRecord.campus_visit_task).joinedload(CampusVisitTask.creator_user),
+            joinedload(EnrollmentRecord.campus_visit_task)
+            .joinedload(CampusVisitTask.home_visit_task)
+            .joinedload(HomeVisitTask.creator_agent),
+        )
+        .order_by(EnrollmentRecord.enrolled_at.asc(), EnrollmentRecord.id.asc())
+    )
+    if conditions:
+        query = query.where(*conditions)
+    result = await db.execute(query)
+    rows = [_enrollment_payload(record) for record in result.scalars().unique().all()]
+    amount_total = sum(float(row["amount"] or 0) for row in rows)
+    agent_counts: dict[str, int] = {}
+    for row in rows:
+        name = row["attributed_agent_name"] or f"话务员 #{row['attributed_agent_id']}"
+        agent_counts[name] = agent_counts.get(name, 0) + 1
+
+    batch_id = make_batch_id("settlement")
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="生成结算批次",
+            content=(
+                f"批次 {batch_id}：{len(rows)} 条；状态 {status or '全部'}；金额 {amount_total:.2f}"
+            ),
+            old_status=str(len(rows)),
+            new_status=status or "全部",
+            batch_id=batch_id,
+        )
+    )
+    await db.commit()
+    return Response.ok(
+        {
+            "batch_id": batch_id,
+            "record_count": len(rows),
+            "amount_total": amount_total,
+            "agent_counts": agent_counts,
+            "filters": {
+                "status": status,
+                "start_date": start_date.isoformat() if start_date else "",
+                "end_date": end_date.isoformat() if end_date else "",
+                "agent_id": agent_id,
+                "agent_name": agent_name.strip(),
+                "region": region.strip(),
+            },
+            "list": rows,
+        }
+    )
+
+
 @router.post("/enrollments")
 async def create_enrollment(
     body: EnrollmentCreate,
@@ -1347,6 +1598,8 @@ async def create_enrollment(
 ):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="只有管理员可以确认报名")
+    _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
+    _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_CREATE)
 
     student = await get_accessible_student(db, body.student_id, current_user)
     record = await _create_enrollment_record(db, body, student, current_user)
@@ -1364,9 +1617,14 @@ async def update_enrollment(
 ):
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="只有管理员可以修改报名结算")
+    _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
+    changed_fields = body.model_fields_set
+    if "attributed_agent_id" in changed_fields:
+        _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_ATTRIBUTION)
+    if {"settlement_status", "settlement_notes"} & changed_fields:
+        _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
 
     record = await _get_enrollment_or_404(db, record_id)
-    changed_fields = body.model_fields_set
     old_agent_id = record.attributed_agent_id
     old_settlement = record.settlement_status
 

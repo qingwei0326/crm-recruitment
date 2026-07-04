@@ -28,6 +28,29 @@ function normalizeQueue(value) {
   return value || 'all';
 }
 
+function staleAWorkItems(students) {
+  return dataList(students).map((student) => {
+    const daysSince = Number(student.days_since || 0);
+    return {
+      id: `stale-a:${student.id}`,
+      kind: 'stale_a',
+      queue: 'stale-a',
+      priority: 'high',
+      title: `${student.name || '未命名学生'} A 级超时`,
+      student_id: student.id,
+      student_name: student.name,
+      region: student.region,
+      school_name: student.school_name,
+      agent_id: student.assigned_to,
+      agent_name: student.agent_name,
+      due_at: student.last_activity_at,
+      status: student.status,
+      reason: `${Number.isFinite(daysSince) ? daysSince : 0}天未推进`,
+      target_url: `/admin/leads/${student.id}`,
+    };
+  });
+}
+
 function EmptyState({ text }) {
   return <div className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">{text}</div>;
 }
@@ -35,6 +58,7 @@ function EmptyState({ text }) {
 function toneFor(item) {
   if (item.priority === 'high') return 'red';
   if (item.priority === 'low') return 'gray';
+  if (item.queue === 'stale-a') return 'red';
   if (item.queue === 'campus_visit') return 'blue';
   if (item.queue === 'settlement') return item.status === '争议' ? 'red' : 'amber';
   if (item.queue === 'help') return 'red';
@@ -60,10 +84,22 @@ export default function AdminWorkCenter() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admissions/work-items', {
-        params: { queue: 'all', page_size: 100 },
-      });
-      setItems(dataList(res));
+      const [workResult, staleAResult] = await Promise.allSettled([
+        api.get('/admissions/work-items', {
+          params: { queue: 'all', page_size: 100 },
+        }),
+        api.get('/admin/stale-a', { params: { days: 3 } }),
+      ]);
+      if (workResult.status === 'rejected') {
+        throw workResult.reason;
+      }
+      if (staleAResult.status === 'rejected') {
+        toast?.error(getApiErrorMessage(staleAResult.reason));
+      }
+      setItems([
+        ...dataList(workResult.value),
+        ...(staleAResult.status === 'fulfilled' ? staleAWorkItems(staleAResult.value) : []),
+      ]);
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
     } finally {
@@ -110,6 +146,7 @@ export default function AdminWorkCenter() {
     { key: 'follow_up', label: '回访', count: items.filter((item) => item.queue === 'follow_up').length },
     { key: 'settlement', label: '结算', count: items.filter((item) => item.queue === 'settlement').length },
     { key: 'help', label: '求助', count: items.filter((item) => item.queue === 'help').length },
+    { key: 'stale-a', label: 'A超时', count: items.filter((item) => item.queue === 'stale-a').length },
   ]), [items]);
   const visibleItems = queue === 'all' ? items : items.filter((item) => item.queue === queue);
 

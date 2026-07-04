@@ -11,6 +11,8 @@ from app.auth import (
     get_current_user,
     hash_password,
     invalidate_user_tokens,
+    normalize_operation_permissions,
+    normalize_page_permissions,
     verify_password,
 )
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, COOKIE_SECURE, TRUST_PROXY_HEADERS
@@ -144,9 +146,7 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
         # 异步发送推送，不阻塞登录流程
         import asyncio
 
-        asyncio.create_task(
-            send_pushplus_to_user_background(user.id, "新设备登录提醒", content)
-        )
+        asyncio.create_task(send_pushplus_to_user_background(user.id, "新设备登录提醒", content))
 
     token = create_access_token(
         {
@@ -164,6 +164,10 @@ async def login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_
                 "name": user.name,
                 "role": user.role,
                 "is_super_admin": user.is_super_admin,
+                "page_permissions": normalize_page_permissions(user.page_permissions),
+                "operation_permissions": normalize_operation_permissions(
+                    user.operation_permissions
+                ),
                 "must_change_password": user.must_change_password,
             },
         }
@@ -197,6 +201,10 @@ async def me(current_user: User = Depends(get_current_user)):
             "name": current_user.name,
             "role": current_user.role,
             "is_super_admin": current_user.is_super_admin,
+            "page_permissions": normalize_page_permissions(current_user.page_permissions),
+            "operation_permissions": normalize_operation_permissions(
+                current_user.operation_permissions
+            ),
             "is_active": current_user.is_active,
             "pushplus_token": current_user.pushplus_token,
             "must_change_password": current_user.must_change_password,

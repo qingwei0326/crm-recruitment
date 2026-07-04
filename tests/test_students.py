@@ -4,6 +4,17 @@ from io import BytesIO
 
 import pytest
 from openpyxl import Workbook
+from sqlalchemy import select
+
+from app.models import OperationLog, Student
+from app.routers.students import _is_within_dial_window
+
+
+def test_dial_window_includes_end_minute_and_cross_midnight():
+    assert _is_within_dial_window(23 * 60 + 59, "00:00", "23:59")
+    assert _is_within_dial_window(23 * 60 + 30, "22:00", "01:00")
+    assert _is_within_dial_window(30, "22:00", "01:00")
+    assert not _is_within_dial_window(2 * 60, "22:00", "01:00")
 
 
 @pytest.mark.asyncio
@@ -14,6 +25,7 @@ class TestCreateStudent:
             json={
                 "name": "李四",
                 "region": "湖里区",
+                "guardian_phone": "13800138000",
             },
             headers=admin_headers,
         )
@@ -27,6 +39,7 @@ class TestCreateStudent:
             "/api/students",
             json={
                 "name": "王五",
+                "guardian_phone": "13800138001",
             },
             headers=admin_headers,
         )
@@ -43,6 +56,9 @@ class TestCreateStudent:
     async def test_create_without_phone(self, client, admin_headers):
         resp = await client.post("/api/students", json={"name": "测试"}, headers=admin_headers)
         assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 1
+        assert body["msg"] == "至少需要一个可拨电话"
 
     async def test_create_empty_body(self, client, admin_headers):
         resp = await client.post("/api/students", json={}, headers=admin_headers)
@@ -58,17 +74,19 @@ class TestCreateStudent:
             json={
                 "name": "𩷶测试",
                 "region": "𩸽区",
+                "guardian_phone": "13800138002",
             },
             headers=admin_headers,
         )
         assert resp.status_code == 200
 
-    async def test_create_same_name_allowed_without_phone(self, client, admin_headers):
+    async def test_create_same_name_allowed_with_different_phone(self, client, admin_headers):
         """Students no longer require phone-based uniqueness."""
         resp1 = await client.post(
             "/api/students",
             json={
                 "name": "重复电话",
+                "guardian_phone": "13800138003",
             },
             headers=admin_headers,
         )
@@ -78,6 +96,7 @@ class TestCreateStudent:
             "/api/students",
             json={
                 "name": "重复电话2",
+                "guardian_phone": "13800138004",
             },
             headers=admin_headers,
         )
@@ -171,9 +190,7 @@ class TestListStudents:
         assert body["data"]["list"][0]["guardian2_phone"] == "18960100618"
         assert body["data"]["list"][0]["guardian2_phone_raw"] is None
 
-    async def test_list_search_hides_invalid_students_by_default(
-        self, client, admin_headers, db
-    ):
+    async def test_list_search_hides_invalid_students_by_default(self, client, admin_headers, db):
         from app.models import Student, StudentStatus
 
         db.add(
@@ -191,9 +208,7 @@ class TestListStudents:
         assert body["code"] == 0
         assert body["data"]["total"] == 0
 
-    async def test_list_status_filter_can_search_invalid_students(
-        self, client, admin_headers, db
-    ):
+    async def test_list_status_filter_can_search_invalid_students(self, client, admin_headers, db):
         from app.models import Student, StudentStatus
 
         db.add(
@@ -205,9 +220,7 @@ class TestListStudents:
         )
         await db.commit()
 
-        resp = await client.get(
-            "/api/students?status=无效&q=未删除无效学生", headers=admin_headers
-        )
+        resp = await client.get("/api/students?status=无效&q=未删除无效学生", headers=admin_headers)
         body = resp.json()
 
         assert body["code"] == 0
@@ -320,15 +333,17 @@ class TestImportStudents:
 
         body = resp.json()
         assert body["code"] == 0
-        assert body["data"]["imported"] == 2
-        assert body["data"]["skipped"] == 2
+        assert body["data"]["imported"] == 1
+        assert body["data"]["skipped"] == 3
+        assert body["data"]["no_phone"] == 1
+        assert body["data"]["no_phone_rows"] == [
+            {"row": 2, "name": "Alice", "reason": "无电话数据"}
+        ]
 
         result = await db.execute(select(Student).order_by(Student.name))
         students = result.scalars().all()
-        assert [student.name for student in students] == ["Alice", "Carol"]
-        assert students[0].guardian_phone == ""
-        assert students[0].score is None
-        assert students[1].score == 610
+        assert [student.name for student in students] == ["Carol"]
+        assert students[0].score == 610
 
     async def test_import_requires_xlsx(self, client, admin_headers):
         resp = await client.post(
@@ -338,7 +353,7 @@ class TestImportStudents:
         )
         assert resp.json()["code"] == 1
 
-    async def test_import_infers_unlabeled_guardians_and_school(self, client, admin_headers, db):
+    async def test_import_skips_unlabeled_row_without_phone(self, client, admin_headers, db):
         from sqlalchemy import select
 
         from app.models import Student
@@ -364,15 +379,12 @@ class TestImportStudents:
 
         body = resp.json()
         assert body["code"] == 0
-        assert body["data"]["imported"] == 1
+        assert body["data"]["imported"] == 0
+        assert body["data"]["no_phone"] == 1
+        assert body["data"]["no_phone_rows"][0]["name"] == "张三"
 
         result = await db.execute(select(Student).where(Student.name == "张三"))
-        student = result.scalar_one()
-        assert student.guardian_name == "张父"
-        assert student.guardian2_name == "李母"
-        assert student.guardian_phone == ""
-        assert student.guardian2_phone == ""
-        assert student.school_name == "第一中学"
+        assert result.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
@@ -432,6 +444,32 @@ class TestGetStudent:
         )
         assert logs.scalar_one_or_none() is not None
 
+    async def test_reveal_phone_requires_student_phone_operation_permission(
+        self, client, db, normal_admin_user, normal_admin_headers
+    ):
+        student = Student(
+            name="普通管理员取号",
+            guardian_phone="13960118706",
+            guardian2_phone="18960100618",
+        )
+        normal_admin_user.page_permissions = "leads_manage"
+        db.add(student)
+        await db.commit()
+
+        resp = await client.get(
+            f"/api/students/{student.id}/phone-plain", headers=normal_admin_headers
+        )
+        assert resp.status_code == 403
+
+        normal_admin_user.operation_permissions = "student_phone"
+        await db.commit()
+
+        resp = await client.get(
+            f"/api/students/{student.id}/phone-plain", headers=normal_admin_headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["guardian_phone"] == "13960118706"
+
     async def test_get_not_found(self, client, admin_headers):
         """Backend raises HTTPException 404, not Response wrapper."""
         resp = await client.get("/api/students/99999", headers=admin_headers)
@@ -445,6 +483,32 @@ class TestGetStudent:
 
 @pytest.mark.asyncio
 class TestUpdateStudent:
+    async def test_update_rejects_clearing_all_phone_fields(self, client, admin_headers, db):
+        from app.models import Student
+
+        student = Student(
+            name="禁止清空电话",
+            guardian_phone="13800138005",
+            guardian2_phone="13900139005",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"guardian_phone": "", "guardian2_phone": ""},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert resp.status_code == 200
+        assert body["code"] == 1
+        assert body["msg"] == "至少需要一个可拨电话"
+        await db.refresh(student)
+        assert student.guardian_phone == "13800138005"
+        assert student.guardian2_phone == "13900139005"
+
     async def test_update_status(self, client, admin_headers, sample_student):
         resp = await client.put(
             f"/api/students/{sample_student.id}",
@@ -652,13 +716,17 @@ class TestUpdateStudent:
         assert first.json()["code"] == 0
         assert second.json()["code"] == 0
         rows = (
-            await db.execute(
-                select(DialLog).where(
-                    DialLog.student_id == student.id,
-                    DialLog.agent_id == agent_user.id,
+            (
+                await db.execute(
+                    select(DialLog).where(
+                        DialLog.student_id == student.id,
+                        DialLog.agent_id == agent_user.id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
 
     async def test_manual_intent_writes_operation_log(
@@ -704,6 +772,146 @@ class TestUpdateStudent:
         assert resp.json()["code"] == 0
         assert resp.json()["data"]["stage"] == "有意向"
 
+    async def test_update_stage_accepts_home_visit_stage(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}/stage",
+            json={"stage": "待家访"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+        assert resp.json()["data"]["stage"] == "待家访"
+
+    async def test_list_filter_accepts_home_visit_stage(self, client, db, admin_headers):
+        from app.models import Student, StudentStage
+
+        db.add_all(
+            [
+                Student(name="待家访学生", stage=StudentStage.home_visit_pending),
+                Student(name="普通阶段学生", stage=StudentStage.initial_contact),
+            ]
+        )
+        await db.commit()
+
+        resp = await client.get(
+            "/api/students",
+            params={"stage": "待家访"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        assert [item["name"] for item in body["data"]["list"]] == ["待家访学生"]
+
+    async def test_list_filter_merges_legacy_visit_stage(self, client, db, admin_headers):
+        from app.models import Student, StudentStage
+
+        db.add_all(
+            [
+                Student(name="旧预约参观学生", stage=StudentStage.visit_scheduled),
+                Student(name="新到校预约学生", stage=StudentStage.campus_visit_scheduled),
+            ]
+        )
+        await db.commit()
+
+        resp = await client.get(
+            "/api/students",
+            params={"stage": "到校参观已安排"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        rows = body["data"]["list"]
+        assert {item["name"] for item in rows} == {"旧预约参观学生", "新到校预约学生"}
+        assert {item["stage"] for item in rows} == {"到校参观已安排"}
+
+    async def test_enrolled_student_cannot_be_reopened_by_generic_status_update(
+        self, client, db, admin_headers
+    ):
+        from app.models import Student, StudentStage, StudentStatus
+
+        student = Student(
+            name="已报名保护",
+            status=StudentStatus.enrolled,
+            stage=StudentStage.enrolled,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "未联系"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "已报名" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.status == StudentStatus.enrolled
+        assert student.stage == StudentStage.enrolled
+
+    async def test_update_stage_to_enrolled_writes_operation_log(
+        self, client, db, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}/stage",
+            json={"stage": "已报名"},
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 0
+        assert resp.json()["data"]["stage"] == "已报名"
+        assert resp.json()["data"]["status"] == "已报名"
+
+        log = (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.target_student_id == sample_student.id,
+                    OperationLog.action == "修改状态",
+                )
+            )
+        ).scalar_one()
+        assert log.old_status == "未联系"
+        assert log.new_status == "已报名"
+        assert "阶段 初次联系 → 已报名" in log.content
+        assert "状态 未联系 → 已报名" in log.content
+
+    async def test_set_enroll_info_writes_operation_log(
+        self, client, db, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}/enroll",
+            json={"program": "护理", "deposit": 500, "enrolled_at": "2026-06-30"},
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 0
+        assert resp.json()["data"]["program"] == "护理"
+
+        log = (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.target_student_id == sample_student.id,
+                    OperationLog.action == "报名登记",
+                )
+            )
+        ).scalar_one()
+        assert log.old_status == "未联系"
+        assert log.new_status == "已报名"
+        assert "状态 未联系 → 已报名" in log.content
+        assert "阶段 初次联系 → 已报名" in log.content
+        assert "报名日 - → 2026-06-30" in log.content
+        assert "专业 - → 护理" in log.content
+        assert "定金 - → 500.0" in log.content
+
     async def test_update_invalid_stage(self, client, admin_headers, sample_student):
         """Historical bug: invalid stage crashed with 500. Now returns code=1."""
         resp = await client.put(
@@ -728,6 +936,141 @@ class TestUpdateStudent:
 
 
 @pytest.mark.asyncio
+class TestAssignStudent:
+    async def test_manual_assign_writes_operation_log(
+        self, client, db, admin_headers, sample_student, agent_user
+    ):
+        resp = await client.post(
+            "/api/students/assign",
+            json={"student_ids": [sample_student.id], "agent_id": agent_user.id},
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 0
+        await db.refresh(sample_student)
+        assert sample_student.assigned_to == agent_user.id
+        log = (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.target_student_id == sample_student.id,
+                    OperationLog.action == "手动分配",
+                )
+            )
+        ).scalar_one()
+        assert log.content == f"分配给话务员 {agent_user.id}"
+
+    async def test_manual_assign_writes_batch_summary_log(
+        self, client, db, admin_headers, agent_user
+    ):
+        from app.models import Student, StudentStatus
+
+        students = [
+            Student(name="批量学生1", status=StudentStatus.not_contacted),
+            Student(name="批量学生2", status=StudentStatus.not_contacted),
+        ]
+        db.add_all(students)
+        await db.commit()
+        for student in students:
+            await db.refresh(student)
+
+        resp = await client.post(
+            "/api/students/assign",
+            json={"student_ids": [s.id for s in students], "agent_id": agent_user.id},
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 0
+        summary = (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.action == "批量分配",
+                    OperationLog.target_student_id.is_(None),
+                )
+            )
+        ).scalar_one()
+        assert "共 2 名" in summary.content
+        assert f"话务员 {agent_user.id}" in summary.content
+        assert "批量学生1、批量学生2" in summary.content
+
+    async def test_manual_assign_rejects_enrolled_students(
+        self, client, db, admin_headers, agent_user
+    ):
+        from app.models import Student, StudentStage, StudentStatus
+
+        student = Student(
+            name="已报名不能分配",
+            status=StudentStatus.enrolled,
+            stage=StudentStage.enrolled,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.post(
+            "/api/students/assign",
+            json={"student_ids": [student.id], "agent_id": agent_user.id},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "已报名" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.assigned_to is None
+
+    async def test_auto_assign_skips_unassigned_enrolled_students(
+        self, client, db, admin_headers, agent_user
+    ):
+        from app.models import Student, StudentStage, StudentStatus
+
+        enrolled = Student(
+            name="未分配已报名",
+            status=StudentStatus.enrolled,
+            stage=StudentStage.enrolled,
+        )
+        active = Student(name="未分配有效", status=StudentStatus.not_contacted)
+        db.add_all([enrolled, active])
+        await db.commit()
+
+        resp = await client.post("/api/students/auto-assign", headers=admin_headers)
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+        assert resp.json()["data"]["total_assigned"] == 1
+        await db.refresh(enrolled)
+        await db.refresh(active)
+        assert enrolled.assigned_to is None
+        assert active.assigned_to == agent_user.id
+
+    async def test_auto_assign_writes_batch_summary_log(
+        self, client, db, admin_headers, agent_user
+    ):
+        from app.models import Student, StudentStatus
+
+        students = [
+            Student(name="自动学生1", status=StudentStatus.not_contacted),
+            Student(name="自动学生2", status=StudentStatus.not_contacted),
+        ]
+        db.add_all(students)
+        await db.commit()
+
+        resp = await client.post("/api/students/auto-assign", headers=admin_headers)
+
+        assert resp.json()["code"] == 0
+        summary = (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.action == "自动分配汇总",
+                    OperationLog.target_student_id.is_(None),
+                )
+            )
+        ).scalar_one()
+        assert "共 2 名" in summary.content
+        assert f"{agent_user.id}:2" in summary.content
+        assert "自动学生1、自动学生2" in summary.content
+
+
+@pytest.mark.asyncio
 class TestDeleteStudent:
     async def test_delete_success(self, client, admin_headers, sample_student):
         resp = await client.delete(f"/api/students/{sample_student.id}", headers=admin_headers)
@@ -737,9 +1080,7 @@ class TestDeleteStudent:
         resp = await client.delete(f"/api/students/{sample_student.id}", headers=agent_headers)
         assert resp.status_code == 403
 
-    async def test_delete_requires_super_admin(
-        self, client, normal_admin_headers, sample_student
-    ):
+    async def test_delete_requires_super_admin(self, client, normal_admin_headers, sample_student):
         resp = await client.delete(
             f"/api/students/{sample_student.id}", headers=normal_admin_headers
         )

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
@@ -29,6 +29,52 @@ router = APIRouter(prefix="/api/tasks", tags=["任务"])
 TODAY_TASK_LIMIT = 1000
 
 
+def _student_search_predicate(q: str):
+    if is_phone_query(q):
+        phone_q = normalize_phone(q)
+        return or_(
+            Student.guardian_phone == phone_q,
+            Student.guardian2_phone == phone_q,
+        )
+
+    phone_digits = normalize_phone(q)
+    if phone_digits and len(phone_digits) >= 4:
+        like_q = f"%{phone_digits}%"
+        return or_(
+            Student.name.ilike(f"%{q}%"),
+            Student.guardian_phone.like(like_q),
+            Student.guardian2_phone.like(like_q),
+        )
+
+    return Student.name.ilike(f"%{q}%")
+
+
+def _intent_priority_expr():
+    return case(
+        (Student.intent_level == IntentLevel.A, 0),
+        (Student.intent_level == IntentLevel.B, 1),
+        (Student.intent_level == IntentLevel.C, 2),
+        else_=3,
+    )
+
+
+def _today_status_priority_expr():
+    return case(
+        (Student.status == StudentStatus.new_lead, 0),
+        (Student.status == StudentStatus.not_contacted, 1),
+        else_=2,
+    )
+
+
+def _handled_status_priority_expr():
+    return case(
+        (Student.status.in_(statuses_for_canonical(StudentStatus.pending_visit)), 0),
+        (Student.status.in_(statuses_for_canonical(StudentStatus.not_reached)), 1),
+        (Student.status.in_(statuses_for_canonical(StudentStatus.contacted)), 2),
+        else_=3,
+    )
+
+
 @router.get("/today")
 async def today_tasks(
     limit: int = Query(50, ge=1, le=200),
@@ -39,7 +85,7 @@ async def today_tasks(
     current_user: User = Depends(get_current_user),
 ):
     # 统计范围与列表一致：话务员端主任务只展示未联系学生。
-    # 缺电话的学生也留在任务池里，由前端显示“无联系人电话”。
+    # 无电话数据在导入入口直接拒绝，不在任务层重复维护一套过滤口径。
     stats_where = (
         Student.assigned_to == current_user.id,
         Student.status.in_(AGENT_TODAY_TASK_STATUSES),
@@ -56,14 +102,7 @@ async def today_tasks(
     search_pred = None
     if search and search.strip():
         q = search.strip()
-        if is_phone_query(q):
-            phone_q = normalize_phone(q)
-            search_pred = or_(
-                Student.guardian_phone == phone_q,
-                Student.guardian2_phone == phone_q,
-            )
-        else:
-            search_pred = Student.name.ilike(f"%{q}%")
+        search_pred = _student_search_predicate(q)
         filters.append(search_pred)
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
@@ -94,7 +133,14 @@ async def today_tasks(
     result = await db.execute(
         select(Student)
         .where(*filters)
-        .order_by(Student.updated_at.desc())
+        .order_by(
+            _intent_priority_expr(),
+            _today_status_priority_expr(),
+            Student.assigned_at.is_(None),
+            Student.assigned_at.asc(),
+            Student.updated_at.asc(),
+            Student.id.asc(),
+        )
         .offset(offset)
         .limit(limit)
     )
@@ -148,7 +194,9 @@ async def today_tasks(
 @router.get("/handled")
 async def handled_students(
     status: str = Query(None),
+    intent_level: str = Query(None),
     search: str = Query(None),
+    region: str = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -160,33 +208,52 @@ async def handled_students(
         Student.assigned_to == current_user.id,
         Student.status.in_(handled_statuses),
     )
+    shared_filters = []
+    status_filter = None
     filters = list(base_where)
+
+    if intent_level:
+        try:
+            intent_enum = IntentLevel(intent_level)
+        except ValueError:
+            return Response.ok(
+                {
+                    "total": 0,
+                    "list_total": 0,
+                    "counts": {"已联系": 0, "未接": 0, "待回访": 0},
+                    "list": [],
+                }
+            )
+        shared_filters.append(Student.intent_level == intent_enum)
 
     if status:
         try:
             status_enum = canonical_student_status(StudentStatus(status))
-            filters.append(Student.status.in_(statuses_for_canonical(status_enum)))
+            status_filter = Student.status.in_(statuses_for_canonical(status_enum))
+            filters.append(status_filter)
         except ValueError:
             pass
 
     if search and search.strip():
         q = search.strip()
-        if is_phone_query(q):
-            phone_q = normalize_phone(q)
-            filters.append(
-                or_(
-                    Student.guardian_phone == phone_q,
-                    Student.guardian2_phone == phone_q,
-                )
-            )
-        else:
-            filters.append(Student.name.ilike(f"%{q}%"))
+        shared_filters.append(_student_search_predicate(q))
 
-    # 统计各状态数量
+    region_filter = None
+    if region and region.strip():
+        region_filter = Student.region == region.strip()
+        filters.append(region_filter)
+
+    filters.extend(shared_filters)
+    count_filters = list(base_where) + shared_filters
+    if region_filter is not None:
+        count_filters.append(region_filter)
+    region_group_filters = list(base_where) + shared_filters
+    if status_filter is not None:
+        region_group_filters.append(status_filter)
+
+    # 统计各状态数量：受搜索和意向筛选影响，但不受当前状态标签影响。
     counts_r = await db.execute(
-        select(Student.status, func.count())
-        .where(Student.assigned_to == current_user.id, Student.status.in_(handled_statuses))
-        .group_by(Student.status)
+        select(Student.status, func.count()).where(*count_filters).group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
     stats = build_task_stats(
@@ -205,36 +272,72 @@ async def handled_students(
             for status in statuses_for_canonical(StudentStatus.pending_visit)
         ),
     }
+    list_total = (
+        await db.execute(select(func.count(Student.id)).where(*filters))
+    ).scalar_one() or 0
+
+    regions_r = await db.execute(
+        select(Student.region, func.count()).where(*region_group_filters).group_by(Student.region)
+    )
+    regions = sorted(
+        ({"name": name or "未知区域", "count": cnt} for name, cnt in regions_r.all()),
+        key=lambda x: (-x["count"], x["name"]),
+    )
+
+    next_follow_up = (
+        select(
+            FollowUp.student_id,
+            func.min(FollowUp.follow_up_date).label("next_follow_up_at"),
+        )
+        .where(
+            FollowUp.agent_id == current_user.id,
+            FollowUp.is_completed.is_(False),
+        )
+        .group_by(FollowUp.student_id)
+        .subquery()
+    )
 
     result = await db.execute(
         select(Student)
+        .outerjoin(next_follow_up, next_follow_up.c.student_id == Student.id)
         .where(*filters)
-        .order_by(Student.updated_at.desc())
+        .order_by(
+            next_follow_up.c.next_follow_up_at.is_(None),
+            next_follow_up.c.next_follow_up_at.asc(),
+            _handled_status_priority_expr(),
+            _intent_priority_expr(),
+            Student.updated_at.asc(),
+            Student.id.asc(),
+        )
         .offset(offset)
         .limit(limit)
     )
     students = result.scalars().all()
 
-    return Response.ok({
-        "total": total,
-        "counts": count_payload,
-        "list": [
-            {
-                "id": s.id,
-                "name": s.name,
-                "region": s.region,
-                "score": s.score,
-                "guardian_name": s.guardian_name,
-                "guardian_phone": mask_phone(s.guardian_phone),
-                "school_name": s.school_name,
-                "status": canonical_status_value(s.status),
-                "status_detail": status_detail_value(s.status, s.status_detail),
-                "stage": s.stage,
-                "intent_level": s.intent_level,
-            }
-            for s in students
-        ],
-    })
+    return Response.ok(
+        {
+            "total": total,
+            "list_total": list_total,
+            "counts": count_payload,
+            "regions": regions,
+            "list": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "region": s.region,
+                    "score": s.score,
+                    "guardian_name": s.guardian_name,
+                    "guardian_phone": mask_phone(s.guardian_phone),
+                    "school_name": s.school_name,
+                    "status": canonical_status_value(s.status),
+                    "status_detail": status_detail_value(s.status, s.status_detail),
+                    "stage": s.stage,
+                    "intent_level": s.intent_level,
+                }
+                for s in students
+            ],
+        }
+    )
 
 
 @router.get("/yesterday")

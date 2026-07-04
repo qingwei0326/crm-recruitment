@@ -1,12 +1,14 @@
 // @ts-check
 const { defineConfig } = require('@playwright/test');
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173';
+
 module.exports = defineConfig({
   testDir: './tests/e2e',
   timeout: 60_000,
   retries: 0,
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL,
     headless: true,
     viewport: { width: 1280, height: 720 },
     screenshot: 'only-on-failure',

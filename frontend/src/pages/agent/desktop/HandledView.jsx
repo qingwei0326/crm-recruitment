@@ -19,21 +19,32 @@ const STATUS_FILTERS = [
   { label: '待回访', value: '待回访' },
 ];
 
+const INTENT_FILTERS = [
+  { label: '全部意向', value: null },
+  { label: 'A', value: 'A' },
+  { label: 'B', value: 'B' },
+  { label: 'C', value: 'C' },
+  { label: '无', value: '无' },
+];
+
 export default function HandledView({ onOpenDetail }) {
   const [students, setStudents] = useState([]);
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(null);
+  const [selectedIntent, setSelectedIntent] = useState(null);
   const [total, setTotal] = useState(0);
+  const [listTotal, setListTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchData = useCallback(async (statusFilter = null, searchQuery = '', reset = true) => {
+  const fetchData = useCallback(async (statusFilter = null, searchQuery = '', intentFilter = null, reset = true) => {
     if (reset) setLoading(true);
     else setLoadingMore(true);
     try {
       const params = { limit: 50, offset: reset ? 0 : students.length };
       if (statusFilter) params.status = statusFilter;
+      if (intentFilter) params.intent_level = intentFilter;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       const res = await api.get('/tasks/handled', { params });
       if (res.data.code === 0) {
@@ -41,6 +52,7 @@ export default function HandledView({ onOpenDetail }) {
         setStudents(prev => reset ? list : [...prev, ...list]);
         setCounts(res.data.data.counts || {});
         setTotal(res.data.data.total || 0);
+        setListTotal(res.data.data.list_total ?? res.data.data.total ?? 0);
       }
     } catch {
       // silently fail
@@ -52,12 +64,12 @@ export default function HandledView({ onOpenDetail }) {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchData(selectedStatus, search, true);
+      fetchData(selectedStatus, search, selectedIntent, true);
     }, 300);
     return () => clearTimeout(timer);
-  }, [selectedStatus, search]);
+  }, [selectedStatus, selectedIntent, search]);
 
-  const hasMore = students.length < total;
+  const hasMore = students.length < listTotal;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -75,6 +87,20 @@ export default function HandledView({ onOpenDetail }) {
             </button>
           );
         })}
+      </div>
+
+      {/* Intent pills */}
+      <div className="flex flex-wrap gap-2 px-4 py-2 border-b dark:border-gray-700 bg-white dark:bg-gray-800">
+        {INTENT_FILTERS.map((filter) => (
+          <button
+            key={filter.value || 'all-intent'}
+            type="button"
+            onClick={() => setSelectedIntent(selectedIntent === filter.value ? null : filter.value)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition ${selectedIntent === filter.value ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          >
+            {filter.label}
+          </button>
+        ))}
       </div>
 
       {/* Search */}
@@ -130,7 +156,7 @@ export default function HandledView({ onOpenDetail }) {
             ))}
             {hasMore && (
               <button
-                onClick={() => fetchData(selectedStatus, search, false)}
+                onClick={() => fetchData(selectedStatus, search, selectedIntent, false)}
                 disabled={loadingMore}
                 className="w-full py-3 text-sm text-blue-600 dark:text-blue-400"
               >
