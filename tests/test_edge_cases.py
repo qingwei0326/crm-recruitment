@@ -71,6 +71,7 @@ class TestEncodingEdgeCases:
             json={
                 "name": "中文测试姓名",
                 "region": "中文区域",
+                "guardian_phone": "13800138100",
             },
             headers=admin_headers,
         )
@@ -83,6 +84,7 @@ class TestEncodingEdgeCases:
             json={
                 "name": "Special",
                 "region": "区/县-街道·村#号&室",
+                "guardian_phone": "13800138101",
             },
             headers=admin_headers,
         )
@@ -93,6 +95,7 @@ class TestEncodingEdgeCases:
             "/api/students",
             json={
                 "name": "测试🌟✨",
+                "guardian_phone": "13800138102",
             },
             headers=admin_headers,
         )
@@ -106,7 +109,8 @@ class TestEncodingEdgeCases:
             },
             headers=admin_headers,
         )
-        assert resp.json()["code"] == 0
+        assert resp.json()["code"] == 1
+        assert resp.json()["msg"] == "至少需要一个可拨电话"
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,41 @@
+服务器访问说明
+
+1. 樱花穿透 SSH
+
+连接命令：
+
+ssh -p 30002 qingwei@frp-end.com
+
+如果连不上，先到 natfrp.com 控制台确认 SSH/TCP 隧道是否在线，以及远程端口是否还是 30002。
+
+2. CRM 网页访问
+
+公网地址：
+
+https://crm.qing-wei.com
+
+樱花穿透临时地址：
+
+https://frp-end.com:22735
+
+本机后端：
+
+http://127.0.0.1:8000
+
+健康检查：
+
+http://127.0.0.1:8000/api/health
+https://frp-end.com:22735/api/health
+
+樱花穿透隧道：
+
+SSH 隧道 ID：27484322，对外端口 30002
+CRM 隧道 ID：27613344，对外端口 22735
+服务器 frpc 目标：27484322,27613344
+
+3. 常用检查命令
+
+sudo systemctl status crm
+sudo systemctl status frpc
+sudo systemctl status cloudflared
+curl http://127.0.0.1:8000/api/health

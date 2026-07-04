@@ -1,21 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { BarChart3, TrendingUp, Phone } from 'lucide-react';
+import { BarChart3, MapPin, Phone, Receipt, Route, School, TrendingUp, Users } from 'lucide-react';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import useIsMobile from '../../hooks/useIsMobile';
-import Report from './Report';
+import AdmissionsReport from './AdmissionsReport';
 import TrendReport from './TrendReport';
 import CallVolumeQuery from './CallVolumeQuery';
 import { InsightStrip } from './AdminWorkflowComponents';
 import { buildReportInsights } from './adminWorkflow';
 
 const TABS = [
-  { key: 'summary', label: '汇总报表', icon: BarChart3 },
+  { key: 'admissions-overview', label: '招生总览', icon: BarChart3, view: 'overview' },
+  { key: 'admissions-regions', label: '区域转化', icon: MapPin, view: 'regions' },
+  { key: 'admissions-agents', label: '话务员转化', icon: Users, view: 'agents' },
+  { key: 'admissions-visits', label: '家访到校', icon: Route, view: 'visits' },
+  { key: 'admissions-settlement', label: '结算归属', icon: Receipt, view: 'settlement' },
   { key: 'trend', label: '趋势报表', icon: TrendingUp },
   { key: 'call-volume', label: '通电量查询', icon: Phone },
+  { key: 'summary', label: '汇总报表', icon: School, view: 'overview', hidden: true },
+  { key: 'settlement', label: '结算报表', icon: Receipt, view: 'settlement', hidden: true },
 ];
+const VISIBLE_TABS = TABS.filter((tab) => !tab.hidden);
 
 export default function ReportCenter() {
   const isMobile = useIsMobile();
@@ -23,9 +30,12 @@ export default function ReportCenter() {
   const [insightData, setInsightData] = useState({ trendData: null, ranking: [] });
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = useMemo(() => {
-    const tab = searchParams.get('tab') || 'summary';
-    return TABS.some((item) => item.key === tab) ? tab : 'summary';
+    const tab = searchParams.get('tab') || 'admissions-overview';
+    if (tab === 'summary') return 'admissions-overview';
+    if (tab === 'settlement') return 'admissions-settlement';
+    return TABS.some((item) => item.key === tab) ? tab : 'admissions-overview';
   }, [searchParams]);
+  const activeTab = useMemo(() => TABS.find((tab) => tab.key === currentTab), [currentTab]);
 
   useEffect(() => {
     if (searchParams.get('tab') !== currentTab) {
@@ -74,7 +84,7 @@ export default function ReportCenter() {
           <InsightStrip items={insights} />
 
           <div className="flex gap-2 border-b dark:border-gray-700 overflow-x-auto">
-            {TABS.map((tab) => {
+            {VISIBLE_TABS.map((tab) => {
               const Icon = tab.icon;
               const active = currentTab === tab.key;
               return (
@@ -95,7 +105,7 @@ export default function ReportCenter() {
             })}
           </div>
 
-          {currentTab === 'summary' && <Report embedded />}
+          {activeTab?.view && <AdmissionsReport view={activeTab.view} />}
           {currentTab === 'trend' && <TrendReport embedded />}
           {currentTab === 'call-volume' && <CallVolumeQuery embedded />}
         </div>

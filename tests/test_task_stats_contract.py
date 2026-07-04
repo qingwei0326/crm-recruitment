@@ -1,6 +1,8 @@
+from datetime import timedelta
+
 import pytest
 
-from app.models import FollowUp, Student, StudentStatus
+from app.models import FollowUp, IntentLevel, Student, StudentStatus
 from app.task_stats import build_task_stats
 from app.utils import utcnow
 
@@ -31,8 +33,18 @@ class TestAdminAgentTaskStats:
         self, client, db, admin_headers, agent_headers, agent_user
     ):
         students = [
-            Student(name="新线索", assigned_to=agent_user.id, status=StudentStatus.new_lead),
-            Student(name="未联系", assigned_to=agent_user.id, status=StudentStatus.not_contacted),
+            Student(
+                name="新线索",
+                assigned_to=agent_user.id,
+                status=StudentStatus.new_lead,
+                guardian_phone="13800138001",
+            ),
+            Student(
+                name="未联系",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                guardian_phone="13800138002",
+            ),
             Student(
                 name="非常有意向",
                 assigned_to=agent_user.id,
@@ -183,6 +195,129 @@ class TestAdminAgentTaskStats:
         assert follow_up_data["total"] == 6
         assert {item["status"] for item in follow_up_data["list"]} == {"待回访"}
 
+    async def test_agent_handled_tasks_filter_by_intent_level(
+        self, client, db, agent_headers, agent_user
+    ):
+        students = [
+            Student(
+                name="A已联系",
+                assigned_to=agent_user.id,
+                status=StudentStatus.contacted,
+                intent_level=IntentLevel.A,
+            ),
+            Student(
+                name="A待回访",
+                assigned_to=agent_user.id,
+                status=StudentStatus.pending_visit,
+                intent_level=IntentLevel.A,
+            ),
+            Student(
+                name="B待回访",
+                assigned_to=agent_user.id,
+                status=StudentStatus.pending_visit,
+                intent_level=IntentLevel.B,
+            ),
+            Student(
+                name="无未接",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_reached,
+                intent_level=IntentLevel.none,
+            ),
+        ]
+        db.add_all(students)
+        await db.commit()
+
+        resp = await client.get("/api/tasks/handled?intent_level=A", headers=agent_headers)
+        data = resp.json()["data"]
+
+        assert data["total"] == 2
+        assert data["list_total"] == 2
+        assert data["counts"] == {"已联系": 1, "未接": 0, "待回访": 1}
+        assert {item["name"] for item in data["list"]} == {"A已联系", "A待回访"}
+        assert {item["intent_level"] for item in data["list"]} == {"A"}
+
+        filtered_resp = await client.get(
+            "/api/tasks/handled?intent_level=A&status=待回访",
+            headers=agent_headers,
+        )
+        filtered_data = filtered_resp.json()["data"]
+
+        assert filtered_data["total"] == 2
+        assert filtered_data["list_total"] == 1
+        assert filtered_data["counts"] == {"已联系": 1, "未接": 0, "待回访": 1}
+        assert [item["name"] for item in filtered_data["list"]] == ["A待回访"]
+
+    async def test_agent_handled_tasks_search_matches_phone_tail(
+        self, client, db, agent_headers, agent_user
+    ):
+        db.add_all(
+            [
+                Student(
+                    name="尾号匹配待办",
+                    assigned_to=agent_user.id,
+                    status=StudentStatus.pending_visit,
+                    guardian_phone="13800138888",
+                ),
+                Student(
+                    name="其他待办",
+                    assigned_to=agent_user.id,
+                    status=StudentStatus.pending_visit,
+                    guardian_phone="13800139999",
+                ),
+            ]
+        )
+        await db.commit()
+
+        resp = await client.get("/api/tasks/handled?search=8888", headers=agent_headers)
+        data = resp.json()["data"]
+
+        assert data["total"] == 1
+        assert data["list_total"] == 1
+        assert [item["name"] for item in data["list"]] == ["尾号匹配待办"]
+
+    async def test_agent_handled_tasks_filter_by_region_with_region_buckets(
+        self, client, db, agent_headers, agent_user
+    ):
+        students = [
+            Student(
+                name="长泰待办",
+                region="长泰县",
+                assigned_to=agent_user.id,
+                status=StudentStatus.pending_visit,
+                intent_level=IntentLevel.A,
+            ),
+            Student(
+                name="漳浦待办",
+                region="漳浦县",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_reached,
+                intent_level=IntentLevel.A,
+            ),
+            Student(
+                name="芗城无关",
+                region="芗城区",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_reached,
+                intent_level=IntentLevel.B,
+            ),
+        ]
+        db.add_all(students)
+        await db.commit()
+
+        resp = await client.get(
+            "/api/tasks/handled?intent_level=A&region=长泰县",
+            headers=agent_headers,
+        )
+        data = resp.json()["data"]
+
+        assert data["total"] == 1
+        assert data["list_total"] == 1
+        assert [item["name"] for item in data["list"]] == ["长泰待办"]
+        assert data["regions"] == [
+            {"name": "漳浦县", "count": 1},
+            {"name": "长泰县", "count": 1},
+        ]
+
     async def test_agent_today_search_matches_normalized_guardian2_phone(
         self, client, db, agent_headers, agent_user
     ):
@@ -211,6 +346,117 @@ class TestAdminAgentTaskStats:
         assert [item["name"] for item in data["list"]] == ["第二电话任务"]
         assert data["list"][0]["guardian2_phone"] == "18960100618"
         assert data["list"][0]["guardian2_phone_raw"] is None
+
+    async def test_agent_today_tasks_are_sorted_by_priority(
+        self, client, db, agent_headers, agent_user
+    ):
+        now = utcnow()
+        students = [
+            Student(
+                name="普通最新",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                intent_level=IntentLevel.none,
+                guardian_phone="13800138110",
+                assigned_at=now - timedelta(hours=1),
+                updated_at=now,
+            ),
+            Student(
+                name="B意向",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                intent_level=IntentLevel.B,
+                guardian_phone="13800138111",
+                assigned_at=now - timedelta(hours=2),
+                updated_at=now - timedelta(hours=2),
+            ),
+            Student(
+                name="A意向",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                intent_level=IntentLevel.A,
+                guardian_phone="13800138112",
+                assigned_at=now - timedelta(hours=3),
+                updated_at=now - timedelta(hours=3),
+            ),
+            Student(
+                name="普通更久",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                intent_level=IntentLevel.none,
+                guardian_phone="13800138113",
+                assigned_at=now - timedelta(days=3),
+                updated_at=now - timedelta(days=3),
+            ),
+        ]
+        db.add_all(students)
+        await db.commit()
+
+        resp = await client.get("/api/tasks/today?limit=10", headers=agent_headers)
+        names = [item["name"] for item in resp.json()["data"]["list"]]
+
+        assert names[:4] == ["A意向", "B意向", "普通更久", "普通最新"]
+
+    async def test_agent_handled_tasks_prioritize_due_follow_up_and_intent(
+        self, client, db, agent_headers, agent_user
+    ):
+        now = utcnow()
+        overdue = Student(
+            name="逾期回访",
+            assigned_to=agent_user.id,
+            status=StudentStatus.pending_visit,
+            intent_level=IntentLevel.C,
+            guardian_phone="13800138120",
+            updated_at=now,
+        )
+        future_a = Student(
+            name="未来A回访",
+            assigned_to=agent_user.id,
+            status=StudentStatus.pending_visit,
+            intent_level=IntentLevel.A,
+            guardian_phone="13800138121",
+            updated_at=now - timedelta(hours=1),
+        )
+        missed_b = Student(
+            name="B未接",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_reached,
+            intent_level=IntentLevel.B,
+            guardian_phone="13800138122",
+            updated_at=now - timedelta(hours=2),
+        )
+        contacted_latest = Student(
+            name="普通已联系最新",
+            assigned_to=agent_user.id,
+            status=StudentStatus.contacted,
+            intent_level=IntentLevel.none,
+            guardian_phone="13800138123",
+            updated_at=now + timedelta(hours=1),
+        )
+        db.add_all([overdue, future_a, missed_b, contacted_latest])
+        await db.flush()
+        db.add_all(
+            [
+                FollowUp(
+                    student_id=overdue.id,
+                    agent_id=agent_user.id,
+                    follow_up_date=now - timedelta(hours=2),
+                    is_completed=False,
+                ),
+                FollowUp(
+                    student_id=future_a.id,
+                    agent_id=agent_user.id,
+                    follow_up_date=now + timedelta(days=1),
+                    is_completed=False,
+                ),
+            ]
+        )
+        await db.commit()
+
+        resp = await client.get("/api/tasks/handled?limit=10", headers=agent_headers)
+        names = [item["name"] for item in resp.json()["data"]["list"]]
+
+        assert names[:4] == ["逾期回访", "未来A回访", "B未接", "普通已联系最新"]
 
 
 @pytest.mark.asyncio

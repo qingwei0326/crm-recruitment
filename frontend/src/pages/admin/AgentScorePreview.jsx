@@ -18,9 +18,11 @@ import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import { formatDuration, getApiErrorMessage } from '../../utils';
-import { leadFilterUrl } from './adminWorkflow';
+import { dashboardLeadUrls, leadFilterUrl, reportTabUrl } from './adminWorkflow';
+import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from '../../adminPermissions';
 
 const levelClass = {
   excellent: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
@@ -54,8 +56,98 @@ const scoringRules = [
   '今日通话 25 = 实际拨号 / 通话目标，达标封顶',
   '回访及时 20 = 未逾期回访占比',
   '有效产出 15 = A 级意向 + 报名',
-  '资料完整 10 = 活跃任务电话完整度',
+  '资料完整 10 = 数据电话质量',
 ];
+
+const recommendationLinkClass = {
+  amber:
+    'border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20',
+  blue:
+    'border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-900/20',
+  gray:
+    'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700',
+};
+
+function addRecommendationLink(links, seen, link) {
+  if (seen.has(link.key)) return;
+  seen.add(link.key);
+  links.push(link);
+}
+
+function buildRecommendationLinks(
+  item,
+  {
+    canViewAccountManage = false,
+    canViewReportCenter = false,
+    canViewWorkCenter = false,
+    canViewLeadsManage = false,
+  } = {},
+) {
+  const metrics = item.metrics || {};
+  const signalKeys = new Set((item.signals || []).map((signal) => signal.key));
+  const links = [];
+  const seen = new Set();
+
+  if (
+    canViewWorkCenter &&
+    (Number(metrics.overdue_follow_ups || 0) > 0 || signalKeys.has('overdue_follow_ups'))
+  ) {
+    addRecommendationLink(links, seen, {
+      key: 'overdue-follow-ups',
+      label: '看逾期回访',
+      to: '/admin/work-center?queue=follow',
+      tone: 'amber',
+    });
+  }
+  if (
+    canViewLeadsManage &&
+    (Number(metrics.missing_phone_tasks || 0) > 0 || signalKeys.has('missing_phone_tasks'))
+  ) {
+    addRecommendationLink(links, seen, {
+      key: 'missing-phone',
+      label: '看无电话数据',
+      to: dashboardLeadUrls.missingPhone,
+      tone: 'amber',
+    });
+  }
+  if (
+    canViewReportCenter &&
+    (signalKeys.has('low_call_activity') || signalKeys.has('unrecorded_call_duration'))
+  ) {
+    addRecommendationLink(links, seen, {
+      key: 'call-volume',
+      label: '看通话报表',
+      to: reportTabUrl('call-volume'),
+      tone: 'blue',
+    });
+  }
+  if (canViewAccountManage && signalKeys.has('low_progress')) {
+    addRecommendationLink(links, seen, {
+      key: 'low-progress',
+      label: '看低推进任务',
+      to: '/admin/agents',
+      tone: 'gray',
+    });
+  }
+  if (canViewLeadsManage && Number(metrics.a_level_count || 0) > 0) {
+    addRecommendationLink(links, seen, {
+      key: 'a-level',
+      label: '看 A 级线索',
+      to: leadFilterUrl({ intent: 'A' }),
+      tone: 'blue',
+    });
+  }
+  if (canViewAccountManage) {
+    addRecommendationLink(links, seen, {
+      key: 'agent-tasks',
+      label: '看坐席任务',
+      to: '/admin/agents',
+      tone: 'gray',
+    });
+  }
+
+  return links;
+}
 
 function StatCell({ icon: Icon, label, value }) {
   return (
@@ -132,6 +224,7 @@ function SignalList({ signals }) {
 
 export default function AgentScorePreview() {
   const { dark, toggle } = useTheme();
+  const { user } = useAuth();
   const isMobile = useIsMobile();
   const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -142,6 +235,10 @@ export default function AgentScorePreview() {
   const [sortBy, setSortBy] = useState('score_asc');
   const [data, setData] = useState({ items: [] });
   const closeSidebar = () => setSidebarOpen(false);
+  const canViewAccountManage = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.accountManage);
+  const canViewReportCenter = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.reportCenter);
+  const canViewWorkCenter = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.workCenter);
+  const canViewLeadsManage = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.leadsManage);
 
   const load = async (target = dailyCallTarget) => {
     const safeTarget = Math.min(MAX_DAILY_CALL_TARGET, Math.max(1, Number(target) || 1));
@@ -264,7 +361,7 @@ export default function AgentScorePreview() {
             <StatCell icon={Activity} label="话务员" value={summary.total} />
             <StatCell icon={AlertTriangle} label="需关注" value={summary.attention} />
             <StatCell icon={Clock3} label="逾期回访" value={summary.overdue} />
-            <StatCell icon={Phone} label="今日拨号" value={summary.calls} />
+            <StatCell icon={Phone} label="今日呼出" value={summary.calls} />
             <StatCell icon={CheckCircle2} label="有效记录" value={summary.recordedCalls} />
             <StatCell icon={Clock3} label="未记录" value={summary.unrecordedCalls} />
           </div>
@@ -421,28 +518,22 @@ export default function AgentScorePreview() {
                           <div className="space-y-2">
                             <div>{item.recommended_action}</div>
                             <div className="flex flex-wrap gap-2">
-                              {Number(item.metrics?.overdue_follow_ups || 0) > 0 && (
+                              {buildRecommendationLinks(item, {
+                                canViewAccountManage,
+                                canViewReportCenter,
+                                canViewWorkCenter,
+                                canViewLeadsManage,
+                              }).map((link) => (
                                 <Link
-                                  to={`/admin/work-center?queue=follow`}
-                                  className="rounded-lg border border-amber-200 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20"
+                                  key={link.key}
+                                  to={link.to}
+                                  className={`rounded-lg border px-2 py-1 text-xs ${
+                                    recommendationLinkClass[link.tone] || recommendationLinkClass.gray
+                                  }`}
                                 >
-                                  看逾期回访
+                                  {link.label}
                                 </Link>
-                              )}
-                              {Number(item.metrics?.a_level_count || 0) > 0 && (
-                                <Link
-                                  to={leadFilterUrl({ intent: 'A' })}
-                                  className="rounded-lg border border-blue-200 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                                >
-                                  看 A 级线索
-                                </Link>
-                              )}
-                              <Link
-                                to={`/admin/agents`}
-                                className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
-                              >
-                                坐席任务
-                              </Link>
+                              ))}
                             </div>
                           </div>
                         </td>

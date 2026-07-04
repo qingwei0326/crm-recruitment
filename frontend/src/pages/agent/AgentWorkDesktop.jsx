@@ -10,6 +10,7 @@ import FollowingView from './desktop/FollowingView';
 import HandledView from './desktop/HandledView';
 import StudentDetailDrawer from './desktop/StudentDetailDrawer';
 import AiPanel from './AiPanel';
+import { STAGES } from '../../labels';
 
 export default function AgentWorkDesktop({
   user, dark, toggleTheme, logout,
@@ -32,9 +33,10 @@ export default function AgentWorkDesktop({
   dialCheckByStudent, lockedStudentId,
   handleDial, updateStatus, updateStage, addNote, openAiPanel, updateScore,
   detailLoading, detailError, detailCalls, detailNotes, detailFollowUps, detailVisits,
-  detailIntentTimeline, hasAnalysis, updateDetailField,
+  detailIntentTimeline, detailAdmissionsTimeline, hasAnalysis, updateDetailField,
   showDetail, detailStudent, showAi, activeStudent,
   setShowDetail, setShowAi, loadDetail,
+  onAdmissionsStageSynced,
 }) {
   const handleSort = (key) => {
     setSortConfig((prev) => ({
@@ -51,7 +53,7 @@ export default function AgentWorkDesktop({
         switch (key) {
           case 'name': return s.name || '';
           case 'school_name': return s.school_name || '';
-          case 'stage': return ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'].indexOf(s.stage);
+          case 'stage': return STAGES.indexOf(s.stage);
           case 'intent_level': return s.intent_level === '无' ? -1 : (s.intent_level === 'A' ? 0 : s.intent_level === 'B' ? 1 : 2);
           case 'status': return s.status || '';
           case 'days': return s.days_since_assigned ?? 999;
@@ -216,11 +218,14 @@ export default function AgentWorkDesktop({
           followUps={detailFollowUps}
           visits={detailVisits}
           intentTimeline={detailIntentTimeline}
+          admissionsTimeline={detailAdmissionsTimeline}
           hasAnalysis={hasAnalysis}
           onClose={() => setShowDetail(false)}
           onRetry={() => detailStudent && loadDetail(detailStudent.id)}
           onUpdateField={updateDetailField}
           onDial={handleDial}
+          onStageSynced={onAdmissionsStageSynced}
+          onRefreshDetail={() => detailStudent && loadDetail(detailStudent.id)}
         />
       </div>
     </div>

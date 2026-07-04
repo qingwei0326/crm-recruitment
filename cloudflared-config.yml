@@ -12,10 +12,8 @@
 #   cloudflared tunnel --url http://127.0.0.1:8000
 # ============================================================
 
-tunnel: <TUNNEL_ID>          # Replace with: cloudflared tunnel list
-# Replace <USERNAME> with the actual Windows user running cloudflared on this machine
-# (e.g. Administrator, qingwei). Get it with: echo %USERPROFILE%
-credentials-file: C:\Users\<USERNAME>\.cloudflared\<TUNNEL_ID>.json
+tunnel: 5dd5b752-a226-4d4e-bb65-7a2541806a62
+credentials-file: C:/Users/青微/.cloudflared/5dd5b752-a226-4d4e-bb65-7a2541806a62.json
 
 ingress:
   # Map the public CRM domain to the local J1900 CRM service

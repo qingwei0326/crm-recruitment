@@ -7,6 +7,7 @@ const adminUser = {
   name: '移动管理员',
   role: 'admin',
   is_active: true,
+  is_super_admin: true,
   must_change_password: false,
 };
 
@@ -29,6 +30,8 @@ test.describe('admin mobile dashboard', () => {
             contacted: 60,
             a_level: 8,
             today_calls: 12,
+            today_a: 2,
+            available_unassigned: 5,
             enrolled_total: 3,
           },
         },
@@ -116,12 +119,15 @@ test.describe('admin mobile dashboard', () => {
 
     await expect(page.getByRole('heading', { name: '移动管理' })).toBeVisible();
     await expect(page.getByText('今日有事项需要处理')).toBeVisible();
-    await expect(page.getByText('今日拨号')).toBeVisible();
+    await expect(page.getByText('今日呼出')).toBeVisible();
     await expect(page.getByText('有效 9 · 未记录 3')).toBeVisible();
+    await expect(page.getByText('今日新增 A')).toBeVisible();
+    await expect(page.getByText('今日评级进入 A')).toBeVisible();
+    await expect(page.getByText('可分配有效线索')).toBeVisible();
+    await expect(page.getByText('未分配且仍需跟进')).toBeVisible();
     await expect(page.getByText('逾期回访')).toBeVisible();
-    await expect(page.getByText('未分配线索')).toBeVisible();
-    await expect(page.getByText('缺电话任务')).toBeVisible();
-    await expect(page.getByText('2 条待补手机号')).toBeVisible();
+    await expect(page.getByText('无电话数据')).toBeVisible();
+    await expect(page.getByText('2 条线索没有可拨电话')).toBeVisible();
     await expect(page.getByText('今日 3 通，本月占比 25%')).toBeVisible();
     await expect(page.getByText('蒲安琪')).toBeVisible();
     await expect(page.getByText('先补齐通话记录并处理待回访')).toBeVisible();

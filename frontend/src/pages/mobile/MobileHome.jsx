@@ -26,6 +26,8 @@ import { formatDateTime } from '../../utils';
 import { useToast } from '../../components/Toast';
 import HelpModal from '../../components/HelpModal';
 import PhoneLink from '../../components/PhoneLink';
+import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
+import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
 
 function StatCard({ label, value, color = 'blue' }) {
   const colorMap = {
@@ -54,7 +56,7 @@ function ProgressBar({ pct }) {
   );
 }
 
-function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
+export function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
   const overLimit = (dialCount ?? 0) >= dialMax;
   const contacts = [
     {
@@ -68,22 +70,25 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
       phone: s.guardian2_phone,
     },
   ].filter((contact) => contact.phone);
+  const nextAction = getStudentNextAction(s, contacts.length > 0);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-3.5 min-[380px]:p-4 space-y-3">
       <button
         type="button"
         onClick={() => onDetail(s.id)}
-        className="w-full text-left flex items-start gap-3"
+        className="w-full text-left grid grid-cols-[44px_minmax(0,1fr)_20px] gap-3"
       >
         <div className="shrink-0 w-11 h-11 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 flex items-center justify-center font-semibold text-lg">
           {(s.name || '?').slice(0, 1)}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center flex-wrap gap-2">
-            <span className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+            <span className="min-w-0 truncate text-base font-semibold text-gray-900 dark:text-gray-100">
               {s.name}
             </span>
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
             <StatusBadge status={s.status} />
             {s.status_detail && (
               <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
@@ -99,6 +104,13 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
         </div>
         <ChevronRight className="w-5 h-5 text-gray-300 dark:text-gray-600 shrink-0 mt-1" />
       </button>
+      <div className="ml-14">
+        <span
+          className={`inline-flex max-w-full items-center rounded-lg border px-2.5 py-1 text-xs font-medium leading-4 break-words ${NEXT_ACTION_TONE_CLASSES[nextAction.tone] || NEXT_ACTION_TONE_CLASSES.slate}`}
+        >
+          {nextAction.label}
+        </span>
+      </div>
       {s.guardian_name && (
         <div className="text-xs text-gray-400 -mt-1 ml-14 truncate flex items-center gap-1">
           <span>{s.guardian_name}</span>
@@ -110,7 +122,7 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
           />
         </div>
       )}
-      <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
         {contacts.length > 0 ? (
           contacts.map((contact) => (
             <button
@@ -118,7 +130,7 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
               type="button"
               disabled={dialing}
               onClick={() => onDial(s.id, contact.key)}
-              className={`inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition active:scale-95 ${
+              className={`inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition active:scale-95 ${
                 overLimit
                   ? 'bg-red-600 text-white'
                   : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -135,7 +147,7 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
           <button
             type="button"
             disabled
-            className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-gray-100 text-sm font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-500"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gray-100 text-sm font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-500"
           >
             <Phone className="w-5 h-5" />
             无电话
@@ -143,9 +155,9 @@ function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
         )}
       </div>
       {overLimit && (
-        <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-300">
-          <AlertTriangle className="w-3.5 h-3.5" />
-          24h 内已拨打 {dialCount} 次，注意频次
+        <div className="flex items-start gap-1.5 text-xs leading-5 text-red-600 dark:text-red-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>24h 内已拨打 {dialCount} 次，注意频次</span>
         </div>
       )}
     </div>
@@ -189,6 +201,14 @@ const PENDING_STATUS_FILTERS = [
   { label: '已联系', value: '已联系' },
   { label: '未接', value: '未接' },
   { label: '待回访', value: '待回访' },
+];
+
+const PENDING_INTENT_FILTERS = [
+  { label: '全部意向', value: null },
+  { label: 'A', value: 'A' },
+  { label: 'B', value: 'B' },
+  { label: 'C', value: 'C' },
+  { label: '无', value: '无' },
 ];
 
 function SettingsSheet({ open, onClose }) {
@@ -299,8 +319,12 @@ function SettingsSheet({ open, onClose }) {
 export function PendingList() {
   const [items, setItems] = useState([]);
   const [counts, setCounts] = useState({});
+  const [regions, setRegions] = useState([]);
   const [total, setTotal] = useState(0);
   const [selectedStatus, setSelectedStatus] = useState(null);
+  const [selectedIntent, setSelectedIntent] = useState(null);
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [pendingSearch, setPendingSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -310,6 +334,10 @@ export function PendingList() {
     setError('');
     const params = { limit: 100 };
     if (selectedStatus) params.status = selectedStatus;
+    if (selectedIntent) params.intent_level = selectedIntent;
+    if (selectedRegion) params.region = selectedRegion;
+    const trimmedSearch = pendingSearch.trim();
+    if (trimmedSearch) params.search = trimmedSearch;
     api
       .get('/tasks/handled', { params })
       .then((r) => {
@@ -317,6 +345,7 @@ export function PendingList() {
           const d = r.data.data;
           setItems(d?.list ?? (Array.isArray(d) ? d : []));
           setCounts(d?.counts ?? {});
+          setRegions(d?.regions ?? []);
           setTotal(d?.total ?? 0);
         } else setError(r.data.msg || '加载失败');
       })
@@ -324,29 +353,95 @@ export function PendingList() {
         setError(e?.response?.data?.detail || e?.response?.data?.msg || '加载失败'),
       )
       .finally(() => setLoading(false));
-  }, [selectedStatus]);
+  }, [selectedStatus, selectedIntent, selectedRegion, pendingSearch]);
 
   const visibleTotal = total || items.length;
 
   const filters = (
-    <div className="flex gap-2 overflow-x-auto pb-2">
-      {PENDING_STATUS_FILTERS.map((filter) => {
-        const count = filter.value ? (counts[filter.value] || 0) : visibleTotal;
-        return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-gray-400" />
+        <input
+          value={pendingSearch}
+          onChange={(e) => setPendingSearch(e.target.value)}
+          placeholder="搜索姓名或手机号尾号"
+          className="w-full min-h-[44px] rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-900/30"
+        />
+        {pendingSearch && (
           <button
-            key={filter.value || 'all'}
             type="button"
-            onClick={() => setSelectedStatus(selectedStatus === filter.value ? null : filter.value)}
+            onClick={() => setPendingSearch('')}
+            className="absolute right-2 top-1/2 flex min-w-9 min-h-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:text-gray-600"
+            aria-label="清空待处理搜索"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {PENDING_STATUS_FILTERS.map((filter) => {
+          const count = filter.value ? (counts[filter.value] || 0) : visibleTotal;
+          return (
+            <button
+              key={filter.value || 'all'}
+              type="button"
+              onClick={() => setSelectedStatus(selectedStatus === filter.value ? null : filter.value)}
+              className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
+                selectedStatus === filter.value
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+              }`}
+            >
+              {filter.label} {count}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {PENDING_INTENT_FILTERS.map((filter) => (
+          <button
+            key={filter.value || 'all-intent'}
+            type="button"
+            onClick={() => setSelectedIntent(selectedIntent === filter.value ? null : filter.value)}
             className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
-              selectedStatus === filter.value
+              selectedIntent === filter.value
                 ? 'bg-blue-600 text-white'
                 : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
             }`}
           >
-            {filter.label} {count}
+            {filter.label}
           </button>
-        );
-      })}
+        ))}
+      </div>
+      {regions.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          <button
+            type="button"
+            onClick={() => setSelectedRegion(null)}
+            className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
+              !selectedRegion
+                ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+            }`}
+          >
+            全部区域
+          </button>
+          {regions.map((item) => (
+            <button
+              key={item.name}
+              type="button"
+              onClick={() => setSelectedRegion(selectedRegion === item.name ? null : item.name)}
+              className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
+                selectedRegion === item.name
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+              }`}
+            >
+              {item.name} {item.count}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -385,16 +480,18 @@ export function PendingList() {
             key={it.id}
             type="button"
             onClick={() => navigate(`/mobile/student/${it.id}`)}
-            className={`w-full text-left bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4`}
+            className="w-full text-left bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-3.5 min-[380px]:p-4"
           >
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            <div className="flex min-w-0 items-start gap-2">
+              <span className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-gray-100">
                 {it.name}
               </span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <StatusBadge status={it.status} />
               <IntentLevelBadge level={it.intent_level} />
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
               {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
             </div>
             {it.notes && (
@@ -731,6 +828,14 @@ export default function MobileHome() {
 
       <TabBar active={tab} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <YesterdayUncontactedPrompt
+        user={user}
+        onHandleNow={() => {
+          setTab('tasks');
+          navigate('/mobile', { replace: true });
+          refetch();
+        }}
+      />
 
       {/* 打完电话返回后弹“选择处理结果”，更新联系状况并刷新待拨打列表 */}
       <MobileDialResult onUpdated={() => refetch()} />
