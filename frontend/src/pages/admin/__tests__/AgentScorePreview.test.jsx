@@ -171,7 +171,7 @@ describe('AgentScorePreview', () => {
 
   it('loads and renders agent score preview data', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/score-preview']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/score-preview']}>
         <AgentScorePreview />
       </MemoryRouter>,
     );
@@ -205,7 +205,7 @@ describe('AgentScorePreview', () => {
 
   it('turns score recommendations into executable links', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/score-preview']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/score-preview']}>
         <AgentScorePreview />
       </MemoryRouter>,
     );
@@ -237,7 +237,7 @@ describe('AgentScorePreview', () => {
 
   it('reloads with adjusted preview parameters', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/score-preview']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/score-preview']}>
         <AgentScorePreview />
       </MemoryRouter>,
     );
@@ -255,7 +255,7 @@ describe('AgentScorePreview', () => {
 
   it('filters overdue follow-up agents locally', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/score-preview']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/score-preview']}>
         <AgentScorePreview />
       </MemoryRouter>,
     );
@@ -271,7 +271,7 @@ describe('AgentScorePreview', () => {
 
   it('sorts agents by low call volume locally', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/score-preview']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/score-preview']}>
         <AgentScorePreview />
       </MemoryRouter>,
     );

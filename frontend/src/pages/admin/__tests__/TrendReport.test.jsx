@@ -65,7 +65,7 @@ function renderTrendReport(daily) {
   });
 
   render(
-    <MemoryRouter initialEntries={['/admin/trend']}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/trend']}>
       <TrendReport />
     </MemoryRouter>,
   );

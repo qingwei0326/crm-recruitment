@@ -257,7 +257,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('exposes home visit, campus visit, and settlement entries in admin navigation', () => {
     render(
-      <MemoryRouter initialEntries={['/admin/home-visits']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/home-visits']}>
         <AdminSidebar />
       </MemoryRouter>,
     );
@@ -269,7 +269,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('loads and processes home visit tasks', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/home-visits']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/home-visits']}>
         <HomeVisitManage />
       </MemoryRouter>,
     );
@@ -294,7 +294,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('lets admins schedule campus visits from a home visit row', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/home-visits']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/home-visits']}>
         <HomeVisitManage />
       </MemoryRouter>,
     );
@@ -317,7 +317,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('lets admins register enrollment from a home visit row', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/home-visits']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/home-visits']}>
         <HomeVisitManage />
       </MemoryRouter>,
     );
@@ -340,7 +340,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('loads and processes campus visit results and enrollments', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/campus-visits']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/campus-visits']}>
         <CampusVisitManage />
       </MemoryRouter>,
     );
@@ -386,7 +386,7 @@ describe('Admissions workflow admin pages', () => {
     });
 
     render(
-      <MemoryRouter initialEntries={['/admin/campus-visits']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/campus-visits']}>
         <CampusVisitManage />
       </MemoryRouter>,
     );
@@ -397,7 +397,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('renders settlement summary rows and updates settlement status', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/enrollment-settlement']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/enrollment-settlement']}>
         <EnrollmentSettlement />
       </MemoryRouter>,
     );
@@ -446,7 +446,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('applies the settlement attribution recommendation into the edit form', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/enrollment-settlement']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/enrollment-settlement']}>
         <EnrollmentSettlement />
       </MemoryRouter>,
     );
@@ -460,7 +460,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('generates a settlement batch export from current filters', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/enrollment-settlement']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/enrollment-settlement']}>
         <EnrollmentSettlement />
       </MemoryRouter>,
     );
@@ -484,7 +484,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('shows admissions report tabs and renders overview metrics', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/report-center?tab=admissions-overview']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/report-center?tab=admissions-overview']}>
         <ReportCenter />
       </MemoryRouter>,
     );
@@ -500,7 +500,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('renders region conversion and visit execution report tabs', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/report-center?tab=admissions-regions']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/report-center?tab=admissions-regions']}>
         <ReportCenter />
       </MemoryRouter>,
     );
@@ -518,7 +518,7 @@ describe('Admissions workflow admin pages', () => {
 
   it('shows settlement attribution as a report center tab', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/report-center?tab=settlement']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/report-center?tab=settlement']}>
         <ReportCenter />
       </MemoryRouter>,
     );

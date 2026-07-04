@@ -86,7 +86,7 @@ describe('DistributeBySchools', () => {
 
   it('loads expanded unassigned students from the students endpoint', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <DistributeBySchools />
       </MemoryRouter>,
     );
@@ -116,7 +116,7 @@ describe('DistributeBySchools', () => {
     });
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <DistributeBySchools />
       </MemoryRouter>,
     );

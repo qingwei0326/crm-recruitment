@@ -119,7 +119,7 @@ describe('AgentManage mobile navigation', () => {
 
   it('stays on the agent list after tapping the mobile back button', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -188,7 +188,7 @@ describe('AgentManage mobile navigation', () => {
     });
 
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -216,7 +216,7 @@ describe('AgentManage mobile navigation', () => {
     mockUser = { id: 100, role: 'admin', name: '普通管理员', is_super_admin: false };
 
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -231,7 +231,7 @@ describe('AgentManage mobile navigation', () => {
     api.post.mockResolvedValue({ data: { code: 0 } });
 
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -269,7 +269,7 @@ describe('AgentManage mobile navigation', () => {
     api.post.mockResolvedValue({ data: { code: 0 } });
 
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -307,7 +307,7 @@ describe('AgentManage mobile navigation', () => {
     api.post.mockResolvedValue({ data: { code: 0 } });
 
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -349,7 +349,7 @@ describe('AgentManage mobile navigation', () => {
     api.put.mockResolvedValue({ data: { code: 0 } });
 
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -376,7 +376,7 @@ describe('AgentManage mobile navigation', () => {
 
   it('does not save status words as account display names', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );
@@ -400,7 +400,7 @@ describe('AgentManage mobile navigation', () => {
 
   it('uses strong confirmations for disable, reset password, and offboard actions', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/agents']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
       </MemoryRouter>,
     );

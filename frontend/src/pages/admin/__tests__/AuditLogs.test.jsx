@@ -172,7 +172,7 @@ describe('AuditLogs', () => {
 
   it('renders login, assignment, and delete audit rows', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/audit-logs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/audit-logs']}>
         <AuditLogs />
       </MemoryRouter>,
     );
@@ -191,7 +191,7 @@ describe('AuditLogs', () => {
 
   it('sends filters to the operation log API', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/audit-logs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/audit-logs']}>
         <AuditLogs />
       </MemoryRouter>,
     );
@@ -223,7 +223,7 @@ describe('AuditLogs', () => {
 
   it('filters operation logs by category chip', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/audit-logs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/audit-logs']}>
         <AuditLogs />
       </MemoryRouter>,
     );
@@ -244,7 +244,7 @@ describe('AuditLogs', () => {
 
   it('loads batch id from route query string', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/audit-logs?batch_id=phone-dedupe-test']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/audit-logs?batch_id=phone-dedupe-test']}>
         <AuditLogs />
       </MemoryRouter>,
     );
@@ -263,7 +263,7 @@ describe('AuditLogs', () => {
 
   it('previews and confirms assignment rollback for super admin batches', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/audit-logs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/audit-logs']}>
         <AuditLogs />
       </MemoryRouter>,
     );

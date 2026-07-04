@@ -114,7 +114,7 @@ describe('admin compatibility routes', () => {
 
   it('routes admin home to the admin dashboard', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <App />
       </MemoryRouter>,
     );
@@ -127,7 +127,7 @@ describe('admin compatibility routes', () => {
     useIsMobile.mockReturnValue(true);
 
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <App />
       </MemoryRouter>,
     );
@@ -137,7 +137,7 @@ describe('admin compatibility routes', () => {
 
   it('redirects recycle aliases to lead governance', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/recycle-center']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/recycle-center']}>
         <App />
       </MemoryRouter>,
     );
@@ -147,7 +147,7 @@ describe('admin compatibility routes', () => {
 
   it('routes invalid reclaim to the invalid reclaim page', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/invalid-reclaim']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim']}>
         <App />
       </MemoryRouter>,
     );
@@ -157,7 +157,7 @@ describe('admin compatibility routes', () => {
 
   it('keeps the historical distribute-by-schools path working', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/distribute-by-schools']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/distribute-by-schools']}>
         <App />
       </MemoryRouter>,
     );
@@ -167,7 +167,7 @@ describe('admin compatibility routes', () => {
 
   it('routes audit logs to the operation log page', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/audit-logs']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/audit-logs']}>
         <App />
       </MemoryRouter>,
     );
@@ -181,7 +181,7 @@ describe('admin compatibility routes', () => {
     ['/admin/enrollment-settlement', 'enrollment settlement page'],
   ])('routes %s to the admissions workflow page', async (path, text) => {
     render(
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <App />
       </MemoryRouter>,
     );
@@ -195,7 +195,7 @@ describe('admin compatibility routes', () => {
     ['/admin/call-volume', '?tab=call-volume'],
   ])('redirects %s to report center %s', async (path, tab) => {
     render(
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <App />
       </MemoryRouter>,
     );
@@ -213,7 +213,7 @@ describe('admin compatibility routes', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/admin/settings']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/settings']}>
         <App />
       </MemoryRouter>,
     );
@@ -250,7 +250,7 @@ describe('admin compatibility routes', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <App />
       </MemoryRouter>,
     );
@@ -284,7 +284,7 @@ describe('admin compatibility routes', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[path]}>
         <App />
       </MemoryRouter>,
     );

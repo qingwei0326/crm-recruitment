@@ -144,7 +144,7 @@ describe('AdminMobileDash', () => {
 
   it('renders the mobile admin command center with key risk metrics', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminMobileDash />
       </MemoryRouter>,
     );
@@ -172,7 +172,7 @@ describe('AdminMobileDash', () => {
 
   it('routes mobile lead metrics to matching filtered lead lists', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminMobileDash />
       </MemoryRouter>,
     );
@@ -193,7 +193,7 @@ describe('AdminMobileDash', () => {
 
   it('loads the existing admin summary, data quality, ops and score APIs', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminMobileDash />
       </MemoryRouter>,
     );
@@ -211,7 +211,7 @@ describe('AdminMobileDash', () => {
 
   it('uses the admin guide on mobile for normal admins', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminMobileDash />
       </MemoryRouter>,
     );
@@ -225,7 +225,7 @@ describe('AdminMobileDash', () => {
     mockUser.current = { id: 2, role: 'admin', name: '超管', is_super_admin: true };
 
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminMobileDash />
       </MemoryRouter>,
     );

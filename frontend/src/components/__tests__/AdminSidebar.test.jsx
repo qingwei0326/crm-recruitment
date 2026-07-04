@@ -30,7 +30,7 @@ describe('AdminSidebar', () => {
 
   it('contains every admin entry in one shared navigation', () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <AdminSidebar onClose={vi.fn()} />
       </MemoryRouter>,
     );
@@ -45,7 +45,7 @@ describe('AdminSidebar', () => {
     mockUser = { id: 2, role: 'admin', name: '普通管理员', is_super_admin: false };
 
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminSidebar onClose={vi.fn()} />
       </MemoryRouter>,
     );
@@ -70,7 +70,7 @@ describe('AdminSidebar', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/admin']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
         <AdminSidebar onClose={vi.fn()} />
       </MemoryRouter>,
     );
@@ -101,7 +101,7 @@ describe('AdminSidebar', () => {
   });
   it('uses one lead governance entry instead of separate reclaim/distribute entries', () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <AdminSidebar onClose={vi.fn()} />
       </MemoryRouter>,
     );

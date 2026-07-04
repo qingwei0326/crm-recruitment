@@ -55,7 +55,6 @@ export function formatCount(value) {
 export function buildDashboardActions({
   helpCount = 0,
   followUps = [],
-  visits = [],
   scoreItems = [],
   missingPhoneCount = 0,
   staleAItems = [],

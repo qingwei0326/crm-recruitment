@@ -80,6 +80,7 @@ export function getApiErrorMessage(error) {
 
 export function getContactOptions(student) {
   if (!student) return [];
+  const seenPhones = new Set();
   return [
     {
       key: 'guardian',
@@ -93,5 +94,10 @@ export function getContactOptions(student) {
       name: student.guardian2_name || '联系人2',
       phone: student.guardian2_phone || '',
     },
-  ].filter((item) => item.phone);
+  ].filter((item) => {
+    const phoneKey = String(item.phone || '').replace(/\D+/g, '');
+    if (!phoneKey || seenPhones.has(phoneKey)) return false;
+    seenPhones.add(phoneKey);
+    return true;
+  });
 }
