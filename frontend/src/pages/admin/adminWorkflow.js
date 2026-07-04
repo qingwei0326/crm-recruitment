@@ -36,6 +36,13 @@ export function leadFilterUrl(params = {}) {
   return qs ? `/admin/leads?${qs}` : '/admin/leads';
 }
 
+export const dashboardLeadUrls = {
+  availableUnassigned: leadFilterUrl({ assignment: 'unassigned', active: 1 }),
+  todayA: leadFilterUrl({ intent: 'A', today_a: 1 }),
+  missingPhone: leadFilterUrl({ active: 1, missing_phone: 1 }),
+  allA: leadFilterUrl({ intent: 'A' }),
+};
+
 export function reportTabUrl(tab) {
   return `/admin/report-center?tab=${encodeURIComponent(tab)}`;
 }
@@ -50,76 +57,85 @@ export function buildDashboardActions({
   followUps = [],
   visits = [],
   scoreItems = [],
-  unassignedCount = 0,
-  aIntentCount = 0,
+  missingPhoneCount = 0,
+  staleAItems = [],
   notifyFails = 0,
   canViewSystemSettings = false,
+  canViewWorkCenter = false,
+  canViewLeadsManage = false,
+  canViewScorePreview = false,
+  canViewReportCenter = false,
 }) {
   const overdueFollowUps = followUps.filter((item) => isOverdue(item.follow_up_date)).length;
-  const todayVisits = visits.filter((item) => daysUntil(item.scheduled_date) === 0).length;
   const lowCallAgents = scoreItems.filter((item) =>
     item.signals?.some((signal) => signal.key === 'low_call_activity'),
   ).length;
   const attentionAgents = scoreItems.filter((item) => ['risk', 'watch'].includes(item.level)).length;
+  const staleAReviewCount = Array.isArray(staleAItems) ? staleAItems.length : 0;
+  const actions = [];
 
-  return [
-    {
+  if (helpCount > 0) {
+    actions.push({
       key: 'help',
       title: '求助待处理',
       value: helpCount,
       detail: '话务员标记需要主管介入',
-      to: '/admin/work-center?queue=help',
-      tone: helpCount > 0 ? 'red' : 'green',
-    },
-    {
+      to: canViewWorkCenter ? '/admin/work-center?queue=help' : '',
+      tone: 'red',
+    });
+  }
+  if (overdueFollowUps > 0) {
+    actions.push({
       key: 'follow',
       title: '逾期回访',
       value: overdueFollowUps,
-      detail: `${followUps.length} 条未完成回访`,
-      to: '/admin/work-center?queue=follow',
-      tone: overdueFollowUps > 0 ? 'red' : followUps.length > 0 ? 'amber' : 'green',
-    },
-    {
-      key: 'visit',
-      title: '今日到访',
-      value: todayVisits,
-      detail: `${visits.length} 条到访记录待跟进`,
-      to: '/admin/work-center?queue=visit',
-      tone: todayVisits > 0 ? 'blue' : 'gray',
-    },
-    {
-      key: 'unassigned',
-      title: '未分配线索',
-      value: unassignedCount,
-      detail: '需要进入学校分发或学生管理处理',
-      to: leadFilterUrl({ assignment: 'unassigned' }),
-      tone: unassignedCount > 0 ? 'amber' : 'green',
-    },
-    {
+      detail: `${overdueFollowUps} 条逾期，${followUps.length} 条未完成回访`,
+      to: canViewWorkCenter ? '/admin/work-center?queue=follow' : '',
+      tone: 'red',
+    });
+  }
+  if (missingPhoneCount > 0 && canViewLeadsManage) {
+    actions.push({
+      key: 'missing-phone',
+      title: '无电话数据',
+      value: missingPhoneCount,
+      detail: '导入或存量中缺少电话',
+      to: dashboardLeadUrls.missingPhone,
+      tone: 'amber',
+    });
+  }
+  if (canViewScorePreview && attentionAgents > 0) {
+    actions.push({
       key: 'agent',
       title: '需关注坐席',
       value: attentionAgents,
       detail: `${lowCallAgents} 人低通话量`,
       to: '/admin/score-preview?filter=attention',
-      tone: attentionAgents > 0 ? 'amber' : 'green',
-    },
-    {
-      key: 'intent',
-      title: 'A 级意向池',
-      value: aIntentCount,
-      detail: '优先检查未报名和未到访线索',
-      to: leadFilterUrl({ intent: 'A' }),
-      tone: aIntentCount > 0 ? 'blue' : 'gray',
-    },
-    {
+      tone: 'amber',
+    });
+  }
+  if (staleAReviewCount > 0 && (canViewWorkCenter || canViewLeadsManage)) {
+    actions.push({
+      key: 'stale-a',
+      title: 'A 级待复盘',
+      value: staleAReviewCount,
+      detail: '3 天未跟进的高意向线索',
+      to: canViewWorkCenter ? '/admin/work-center?queue=stale-a' : leadFilterUrl({ intent: 'A' }),
+      tone: 'amber',
+    });
+  }
+  if (notifyFails > 0 && (canViewSystemSettings || canViewReportCenter)) {
+    actions.push({
       key: 'notify',
       title: '通知失败',
       value: notifyFails,
       detail: canViewSystemSettings ? 'PushPlus 推送失败需检查配置' : 'PushPlus 推送失败需超管处理',
       to: canViewSystemSettings ? '/admin/settings' : '/admin/report-center?tab=summary',
-      tone: notifyFails > 0 ? 'red' : 'green',
-    },
-  ];
+      tone: 'red',
+    });
+  }
+
+  return actions;
 }
 
 export function buildReportInsights({ trendData, ranking = [] }) {

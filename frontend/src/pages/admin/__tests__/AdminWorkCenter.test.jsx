@@ -122,6 +122,23 @@ const workItems = [
   },
 ];
 
+const staleAItems = [
+  {
+    id: 601,
+    name: '周八',
+    region: '云霄',
+    school_name: '云霄一中',
+    status: '跟进中',
+    status_detail: '持续跟进',
+    stage: 'interested',
+    intent_level: 'A',
+    assigned_to: 12,
+    agent_name: '吴坐席',
+    last_activity_at: '2026-06-29T08:30:00',
+    days_since: 4,
+  },
+];
+
 function mockLoads() {
   api.get.mockImplementation((url, config = {}) => {
     if (url === '/admissions/work-items') {
@@ -133,6 +150,10 @@ function mockLoads() {
           },
         },
       });
+    }
+    if (url === '/admin/stale-a') {
+      expect(config.params).toEqual({ days: 3 });
+      return Promise.resolve({ data: { data: staleAItems } });
     }
     return Promise.resolve({ data: { data: {} } });
   });
@@ -157,12 +178,14 @@ describe('AdminWorkCenter', () => {
     expect(screen.getByText('王五 回访')).toBeInTheDocument();
     expect(screen.getByText('赵六 结算')).toBeInTheDocument();
     expect(screen.getByText('孙七 求助')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '全部 5' })).toBeInTheDocument();
+    expect(screen.getByText('周八 A 级超时')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '全部 6' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '家访 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '到校 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '回访 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '结算 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '求助 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'A超时 1' })).toBeInTheDocument();
   });
 
   it('keeps legacy help and follow-up completion endpoints', async () => {
@@ -195,5 +218,18 @@ describe('AdminWorkCenter', () => {
         params: { queue: 'all', page_size: 100 },
       });
     });
+  });
+
+  it('shows stale A students from daily ops queue links', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/work-center?queue=stale-a']}>
+        <AdminWorkCenter />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('周八 A 级超时')).toBeInTheDocument();
+    expect(screen.getByText('4天未推进')).toBeInTheDocument();
+    expect(screen.queryByText('张三 家访')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '查看' })).toHaveAttribute('href', '/admin/leads/601');
   });
 });

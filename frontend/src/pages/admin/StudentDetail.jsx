@@ -25,6 +25,7 @@ import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import StudentTimeline from '../../components/StudentTimeline';
+import AdmissionsFlowStrip from '../../components/admissions/AdmissionsFlowStrip';
 import { formatDateTime, formatDuration, getApiErrorMessage } from '../../utils';
 
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
@@ -76,6 +77,7 @@ export default function StudentDetail() {
   const followUps = data?.follow_ups || [];
   const visits = data?.visits || [];
   const intentTimeline = data?.intent_timeline || [];
+  const admissionsTimeline = data?.admissions_timeline || [];
 
   const intentChartData = useMemo(() => {
     return intentTimeline.map((it) => {
@@ -213,6 +215,11 @@ export default function StudentDetail() {
         {tab === 'info' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6 space-y-4">
             <StudentInfoCard student={student} onDial={handleDial} />
+            <AdmissionsFlowStrip
+              student={student}
+              calls={calls}
+              admissionsTimeline={admissionsTimeline}
+            />
 
             {student.status === '已报名' && (
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
@@ -257,6 +264,7 @@ export default function StudentDetail() {
               followUps={followUps}
               visits={visits}
               intentTimeline={intentTimeline}
+              admissionsTimeline={admissionsTimeline}
               emptyText="暂无记录"
             />
           </div>

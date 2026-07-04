@@ -1,4 +1,8 @@
-import { AlertTriangle, Loader2, Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Home, Loader2, MapPin, Sparkles, X } from 'lucide-react';
+import api from '../../../api';
+import HomeVisitForm from '../../../components/admissions/HomeVisitForm';
+import CampusVisitForm from '../../../components/admissions/CampusVisitForm';
 import StudentInfoCard from '../../../components/StudentInfoCard';
 import StudentTimeline from '../../../components/StudentTimeline';
 
@@ -24,12 +28,42 @@ export default function StudentDetailDrawer({
   followUps = [],
   visits = [],
   intentTimeline = [],
+  admissionsTimeline = [],
   hasAnalysis,
   onClose,
   onRetry,
   onUpdateField,
   onDial,
+  onStageSynced,
+  onRefreshDetail,
 }) {
+  const [activeForm, setActiveForm] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submitHomeVisit = async (payload) => {
+    setSubmitting(true);
+    try {
+      await api.post('/admissions/home-visits', payload);
+      setActiveForm(null);
+      onStageSynced?.(student.id, '待家访');
+      onRefreshDetail?.();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitCampusVisit = async (payload) => {
+    setSubmitting(true);
+    try {
+      await api.post('/admissions/campus-visits', payload);
+      setActiveForm(null);
+      onStageSynced?.(student.id, '到校参观已安排');
+      onRefreshDetail?.();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (!open || !student) return null;
 
   return (
@@ -75,6 +109,53 @@ export default function StudentDetailDrawer({
             onDial={onDial ? (contactKey) => onDial(contactKey, student.id) : undefined}
           />
 
+          <section className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  招生推进
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  提交家访申请或预约家长到校
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveForm(activeForm === 'home' ? null : 'home')}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white"
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  申请家访
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveForm(activeForm === 'campus' ? null : 'campus')}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  预约到校
+                </button>
+              </div>
+            </div>
+            {activeForm === 'home' && (
+              <HomeVisitForm
+                student={student}
+                submitting={submitting}
+                onSubmit={submitHomeVisit}
+                onCancel={() => setActiveForm(null)}
+              />
+            )}
+            {activeForm === 'campus' && (
+              <CampusVisitForm
+                student={student}
+                submitting={submitting}
+                onSubmit={submitCampusVisit}
+                onCancel={() => setActiveForm(null)}
+              />
+            )}
+          </section>
+
           <div className="bg-gray-50 dark:bg-gray-900/40 rounded-lg p-3">
             <div className="text-xs text-gray-500 mb-2">意向等级（手动评级）</div>
             <div className="flex flex-wrap gap-2">
@@ -116,6 +197,7 @@ export default function StudentDetailDrawer({
               followUps={followUps}
               visits={visits}
               intentTimeline={intentTimeline}
+              admissionsTimeline={admissionsTimeline}
             />
           </section>
         </div>

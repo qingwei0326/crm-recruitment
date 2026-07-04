@@ -21,6 +21,7 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         followUps: [],
         visits: [],
         intentTimeline: [],
+        admissionsTimeline: [],
       });
     } else {
       actions.setDetail({
@@ -33,6 +34,7 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         followUps: [],
         visits: [],
         intentTimeline: [],
+        admissionsTimeline: [],
       });
     }
 
@@ -50,6 +52,7 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         followUps: data.follow_ups || [],
         visits: data.visits || [],
         intentTimeline: data.intent_timeline || [],
+        admissionsTimeline: data.admissions_timeline || [],
         noteIdx: 0,
         hasAnalysis: calls.some((c) => c.ai_summary || c.ai_intent || c.ai_confidence != null),
       });

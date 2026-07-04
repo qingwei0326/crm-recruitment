@@ -1,5 +1,8 @@
 # tests/test_config.py
 import pytest
+from sqlalchemy import select
+
+from app.models import OperationLog, SystemConfig
 
 
 @pytest.mark.asyncio
@@ -131,3 +134,28 @@ async def test_config_requires_super_admin(client, normal_admin_headers):
         headers=normal_admin_headers,
     )
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_config_update_writes_masked_audit_log(client, admin_headers, db, admin_user):
+    db.add(SystemConfig(key="deepseek_api_key", value="sk-oldsecret1234"))
+    await db.commit()
+
+    r = await client.put(
+        "/api/admin/config",
+        json={"key": "deepseek_api_key", "value": "sk-newsecret5678"},
+        headers=admin_headers,
+    )
+
+    assert r.status_code == 200
+    assert r.json()["code"] == 0
+    log = (
+        await db.execute(select(OperationLog).where(OperationLog.action == "修改系统配置"))
+    ).scalar_one()
+    assert log.operator_id == admin_user.id
+    assert log.operator_name == admin_user.name
+    assert "deepseek_api_key" in log.content
+    assert "sk-oldsecret1234" not in log.content
+    assert "sk-newsecret5678" not in log.content
+    assert "****1234" in log.content
+    assert "****5678" in log.content

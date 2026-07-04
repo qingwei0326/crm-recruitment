@@ -13,7 +13,7 @@ vi.mock('../../../api', () => ({
 
 vi.mock('../../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 1, role: 'admin', name: '管理员' },
+    user: { id: 1, role: 'admin', name: '管理员', is_super_admin: true },
     logout: vi.fn(),
   }),
 }));
@@ -45,9 +45,14 @@ const highScoreStudents = [
     id: 10,
     name: '高分段学生',
     region: '龙海',
+    guardian_name: '家长甲',
     guardian_phone: '8001',
+    guardian2_name: '家长乙',
+    guardian2_phone: '13960043037',
     agent_name: '王坐席',
     invalid_reason: '高分段',
+    invalid_operator_name: '王坐席',
+    invalid_at: '2026-06-26T09:00:00',
     updated_at: '2026-06-26T10:00:00',
   },
 ];
@@ -148,5 +153,33 @@ describe('InvalidStudentReclaim', () => {
         student_ids: [10],
       }),
     );
+  });
+
+  it('passes url search query to invalid groups and expanded students', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/invalid-reclaim?q=3037']}>
+        <InvalidStudentReclaim />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith('/admin/invalid-school-groups', {
+        params: { q: '3037' },
+      }),
+    );
+
+    fireEvent.click(await screen.findByText('龙海一中'));
+
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith('/admin/invalid-students', {
+        params: {
+          page: 1,
+          page_size: 200,
+          school_name: '龙海一中',
+          q: '3037',
+        },
+      }),
+    );
+    expect(await screen.findByText(/13960043037/)).toBeInTheDocument();
   });
 });
