@@ -1,5 +1,14 @@
 import { memo, useMemo } from 'react';
-import { Calendar, GitBranch, MapPin, Phone, StickyNote, UserCheck } from 'lucide-react';
+import {
+  Calendar,
+  GitBranch,
+  GraduationCap,
+  Home,
+  MapPin,
+  Phone,
+  StickyNote,
+  UserCheck,
+} from 'lucide-react';
 import TimelineItem from './TimelineItem';
 import { formatDuration } from '../utils';
 
@@ -19,6 +28,7 @@ export function buildStudentTimeline({
   followUps = [],
   visits = [],
   intentTimeline = [],
+  admissionsTimeline = [],
 } = {}) {
   const items = [];
 
@@ -67,6 +77,14 @@ export function buildStudentTimeline({
       kind: 'intent',
       ts: firstValue(intent.created_at, intent.at, intent.date),
       data: intent,
+    });
+  });
+
+  admissionsTimeline.forEach((event) => {
+    items.push({
+      kind: 'admission',
+      ts: firstValue(event.occurred_at, event.created_at),
+      data: event,
     });
   });
 
@@ -170,6 +188,23 @@ function renderItem(item) {
     );
   }
 
+  if (item.kind === 'admission') {
+    const icon = d.type === 'home_visit' ? Home : d.type === 'enrollment' ? GraduationCap : MapPin;
+    const color = d.type === 'home_visit' ? 'blue' : d.type === 'enrollment' ? 'green' : 'teal';
+    const title = `${d.title || '招生推进'} · ${d.status || ''}`.trim();
+    return (
+      <TimelineItem
+        type="招生"
+        icon={icon}
+        color={color}
+        title={title}
+        content={firstValue(d.summary, d.result)}
+        agentName={d.operator_name}
+        timestamp={firstValue(d.occurred_at, d.created_at)}
+      />
+    );
+  }
+
   return null;
 }
 
@@ -183,6 +218,7 @@ function actionFor(item, renderNoteActions, renderFollowUpActions, renderVisitAc
 function testIdFor(item) {
   if (item.kind === 'follow_up') return `follow-up-${item.data.id}`;
   if (item.kind === 'visit') return `visit-${item.data.id}`;
+  if (item.kind === 'admission') return `admission-${item.data.type}-${item.data.id}`;
   if (item.kind === 'note') return `note-${item.data.id}`;
   return undefined;
 }
@@ -194,6 +230,7 @@ export default memo(function StudentTimeline({
   followUps = [],
   visits = [],
   intentTimeline = [],
+  admissionsTimeline = [],
   limit,
   emptyText = '暂无记录',
   className = 'space-y-4',
@@ -209,9 +246,10 @@ export default memo(function StudentTimeline({
       followUps,
       visits,
       intentTimeline,
+      admissionsTimeline,
     });
     return limit ? timeline.slice(0, limit) : timeline;
-  }, [student, calls, notes, followUps, visits, intentTimeline, limit]);
+  }, [student, calls, notes, followUps, visits, intentTimeline, admissionsTimeline, limit]);
 
   if (items.length === 0) {
     return <div className="py-10 text-center text-sm text-gray-400">{emptyText}</div>;

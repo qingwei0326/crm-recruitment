@@ -134,6 +134,26 @@ describe('SystemSettings ops health', () => {
     expect(screen.getByText('1分15秒')).toBeInTheDocument();
     expect(screen.getByText('蒲安琪')).toBeInTheDocument();
     expect(screen.getByText('空号')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /可分配有效线索/ })[0]).toHaveAttribute(
+      'href',
+      '/admin/leads?assignment=unassigned&active=1',
+    );
+    expect(screen.getByRole('link', { name: /无电话数据/ })).toHaveAttribute(
+      'href',
+      '/admin/leads?active=1&missing_phone=1',
+    );
+    expect(screen.getAllByRole('link', { name: /逾期回访/ })[0]).toHaveAttribute(
+      'href',
+      '/admin/work-center?queue=follow',
+    );
+    expect(screen.getByRole('link', { name: /今日未记录/ })).toHaveAttribute(
+      'href',
+      '/admin/report-center?tab=call-volume',
+    );
+    expect(screen.getByRole('link', { name: /无效线索/ })).toHaveAttribute(
+      'href',
+      '/admin/invalid-reclaim',
+    );
   });
 
   it('saves the default score call target', async () => {

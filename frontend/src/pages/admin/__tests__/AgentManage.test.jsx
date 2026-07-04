@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AgentManage from '../AgentManage';
 import api from '../../../api';
 
 let mockUser;
+const mockConfirm = vi.fn();
 
 vi.mock('../../../api', () => ({
   default: {
@@ -34,7 +36,7 @@ vi.mock('../../../hooks/useIsMobile', () => ({
 }));
 
 vi.mock('../../../components/ConfirmDialog', () => ({
-  useConfirm: () => vi.fn(),
+  useConfirm: () => mockConfirm,
 }));
 
 vi.mock('../../../components/Toast', () => ({
@@ -65,6 +67,17 @@ const agents = [
     month_calls: 10,
     total_tasks: 5,
   },
+  {
+    id: 7,
+    name: '普通管理',
+    username: 'normal-admin',
+    role: 'admin',
+    is_active: true,
+    is_super_admin: false,
+    page_permissions: ['audit_logs'],
+    today_calls: 0,
+    total_tasks: 0,
+  },
 ];
 
 function taskPayload(agent = agents[0]) {
@@ -87,6 +100,9 @@ describe('AgentManage mobile navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUser = { id: 99, role: 'admin', name: '管理员', is_super_admin: true };
+    mockConfirm.mockResolvedValue(true);
+    api.put.mockResolvedValue({ data: { code: 0 } });
+    api.post.mockResolvedValue({ data: { code: 0, data: {} } });
     api.get.mockImplementation((url) => {
       if (url === '/admin/users') {
         return Promise.resolve({ data: { data: agents } });
@@ -118,7 +134,7 @@ describe('AgentManage mobile navigation', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(screen.queryByRole('button', { name: /返回列表/ })).not.toBeInTheDocument();
-    expect(screen.getByText('账号列表 (2)')).toBeInTheDocument();
+    expect(screen.getByText('账号列表 (3)')).toBeInTheDocument();
   });
 
   it('shows only active agents by default and keeps inactive agents under the offboard tab', async () => {
@@ -283,6 +299,139 @@ describe('AgentManage mobile navigation', () => {
       name: '新增超管',
       role: 'admin',
       is_super_admin: true,
+      page_permissions: [],
+    });
+  });
+
+  it('can grant page modules when creating a normal admin account', async () => {
+    api.post.mockResolvedValue({ data: { code: 0 } });
+
+    render(
+      <MemoryRouter initialEntries={['/admin/agents']}>
+        <AgentManage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('叶')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '添加账号' }));
+    fireEvent.change(screen.getByPlaceholderText('登录账号'), {
+      target: { value: 'admin-module' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('显示名称'), {
+      target: { value: '模块管理员' },
+    });
+    fireEvent.change(screen.getByLabelText('角色'), {
+      target: { value: 'admin' },
+    });
+    expect(screen.getByRole('checkbox', { name: /工作中心/ })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /学生管理/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /评分预览/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /学生管理/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /报表中心/ }));
+    fireEvent.change(screen.getByPlaceholderText('设置密码'), {
+      target: { value: 'pw123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '创建账号' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/admin/users', expect.any(Object)));
+    const [, payload] = api.post.mock.calls[0];
+    expect(payload).toMatchObject({
+      username: 'admin-module',
+      password: 'pw123456',
+      name: '模块管理员',
+      role: 'admin',
+      is_super_admin: false,
+      page_permissions: ['score_preview', 'leads_manage', 'report_center'],
+    });
+  });
+
+  it('can edit page module permissions for an existing normal admin', async () => {
+    api.put.mockResolvedValue({ data: { code: 0 } });
+
+    render(
+      <MemoryRouter initialEntries={['/admin/agents']}>
+        <AgentManage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('普通管理')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('普通管理'));
+    fireEvent.click(await screen.findByText('编辑'));
+
+    const pagePermissionPanel = screen.getByText('页面权限').parentElement;
+    expect(within(pagePermissionPanel).getByRole('checkbox', { name: /操作记录/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: /报表中心/ }));
+    fireEvent.click(within(pagePermissionPanel).getByRole('checkbox', { name: /操作记录/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/admin/users/7', expect.any(Object)));
+    const [, payload] = api.put.mock.calls[0];
+    expect(payload).toMatchObject({
+      name: '普通管理',
+      role: 'admin',
+      is_super_admin: false,
+      page_permissions: ['report_center'],
+    });
+  });
+
+  it('does not save status words as account display names', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/agents']}>
+        <AgentManage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('叶')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '添加账号' }));
+    fireEvent.change(screen.getByPlaceholderText('登录账号'), {
+      target: { value: 'bad-name' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('显示名称'), {
+      target: { value: '离职' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('设置密码'), {
+      target: { value: 'pw123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '创建账号' }));
+
+    expect(await screen.findByText('姓名不能填写离职、禁用等状态词，请填写真实姓名')).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalledWith('/admin/users', expect.any(Object));
+  });
+
+  it('uses strong confirmations for disable, reset password, and offboard actions', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/agents']}>
+        <AgentManage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText('叶'));
+    fireEvent.click(await screen.findByRole('button', { name: '重置密码' }));
+
+    await waitFor(() => {
+      expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: '重置密码',
+        message: expect.stringContaining('旧登录会立即失效'),
+      }));
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '禁用' }));
+
+    await waitFor(() => {
+      expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: '禁用「叶」',
+        message: expect.stringContaining('不会回收线索'),
+      }));
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /返回列表/ }));
+    fireEvent.click(screen.getAllByTitle('办理离职：回收线索、禁用账号、保留历史')[0]);
+
+    await waitFor(() => {
+      expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: '为「叶」办理离职',
+        message: expect.stringContaining('回收非终态线索'),
+      }));
     });
   });
 });
