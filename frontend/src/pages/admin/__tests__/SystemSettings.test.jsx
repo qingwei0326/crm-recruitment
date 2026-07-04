@@ -112,7 +112,7 @@ describe('SystemSettings ops health', () => {
 
   it('loads and renders admin ops health metrics', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/settings']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/settings']}>
         <SystemSettings />
       </MemoryRouter>,
     );
@@ -159,7 +159,7 @@ describe('SystemSettings ops health', () => {
   it('saves the default score call target', async () => {
     api.put.mockResolvedValue({ data: { code: 0, data: { key: 'score_daily_call_target', value: '42' } } });
     render(
-      <MemoryRouter initialEntries={['/admin/settings']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/settings']}>
         <SystemSettings />
       </MemoryRouter>,
     );

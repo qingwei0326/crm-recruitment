@@ -168,7 +168,7 @@ describe('AdminWorkCenter', () => {
 
   it('loads unified admissions work items for all admin queues', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/work-center']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/work-center']}>
         <AdminWorkCenter />
       </MemoryRouter>,
     );
@@ -190,7 +190,7 @@ describe('AdminWorkCenter', () => {
 
   it('keeps legacy help and follow-up completion endpoints', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/work-center']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/work-center']}>
         <AdminWorkCenter />
       </MemoryRouter>,
     );
@@ -206,7 +206,7 @@ describe('AdminWorkCenter', () => {
 
   it('normalizes legacy follow queue links to follow_up', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/work-center?queue=follow']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/work-center?queue=follow']}>
         <AdminWorkCenter />
       </MemoryRouter>,
     );
@@ -222,7 +222,7 @@ describe('AdminWorkCenter', () => {
 
   it('shows stale A students from daily ops queue links', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/work-center?queue=stale-a']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/work-center?queue=stale-a']}>
         <AdminWorkCenter />
       </MemoryRouter>,
     );

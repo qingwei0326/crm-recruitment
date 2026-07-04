@@ -99,7 +99,7 @@ describe('InvalidStudentReclaim', () => {
 
   it('filters invalid leads by reason and batch reclaims selected rows', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/invalid-reclaim']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim']}>
         <InvalidStudentReclaim />
       </MemoryRouter>,
     );
@@ -137,7 +137,7 @@ describe('InvalidStudentReclaim', () => {
 
   it('deletes selected invalid leads after confirmation', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/invalid-reclaim']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim']}>
         <InvalidStudentReclaim />
       </MemoryRouter>,
     );
@@ -157,7 +157,7 @@ describe('InvalidStudentReclaim', () => {
 
   it('passes url search query to invalid groups and expanded students', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/invalid-reclaim?q=3037']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim?q=3037']}>
         <InvalidStudentReclaim />
       </MemoryRouter>,
     );

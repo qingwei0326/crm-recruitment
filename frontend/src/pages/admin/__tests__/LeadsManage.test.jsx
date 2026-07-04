@@ -169,7 +169,7 @@ describe('LeadsManage privacy', () => {
 
   it('loads plaintext phone through the audited endpoint before editing', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -194,7 +194,7 @@ describe('LeadsManage privacy', () => {
 
     try {
       render(
-        <MemoryRouter initialEntries={['/admin/leads']}>
+        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
           <LeadsManage />
         </MemoryRouter>,
       );
@@ -216,7 +216,7 @@ describe('LeadsManage privacy', () => {
 
   it('renders compact filters and applies ownership filters from the dropdown', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -259,7 +259,7 @@ describe('LeadsManage privacy', () => {
 
   it('applies dashboard lead filters from the URL', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads?assignment=unassigned&active=1&intent=A&today_a=1&missing_phone=1']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads?assignment=unassigned&active=1&intent=A&today_a=1&missing_phone=1']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -288,7 +288,7 @@ describe('LeadsManage privacy', () => {
 
   it('does not show global stage distribution while a list filter is active', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads?stage=已报名']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads?stage=已报名']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -301,7 +301,7 @@ describe('LeadsManage privacy', () => {
 
   it('shows global stage distribution only when no list filter is active', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -313,7 +313,7 @@ describe('LeadsManage privacy', () => {
 
   it('shows admissions workflow stages in filters, distribution, and row selectors', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -335,7 +335,7 @@ describe('LeadsManage privacy', () => {
 
   it('creates a campus visit task from the expanded admin student row', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads?stage=待到校参观']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads?stage=待到校参观']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -358,7 +358,7 @@ describe('LeadsManage privacy', () => {
     studentStageMock = '待家访';
 
     render(
-      <MemoryRouter initialEntries={['/admin/leads?stage=待家访']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads?stage=待家访']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -382,7 +382,7 @@ describe('LeadsManage privacy', () => {
     isMobileMock = true;
 
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -398,7 +398,7 @@ describe('LeadsManage privacy', () => {
 
   it('blocks batch assignment when selected students include enrolled records', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads?status=已报名']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads?status=已报名']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -413,7 +413,7 @@ describe('LeadsManage privacy', () => {
 
   it('confirms batch assignment before calling the assign API', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );
@@ -440,7 +440,7 @@ describe('LeadsManage privacy', () => {
 
   it('confirms student deletion with a danger prompt', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/leads']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
         <LeadsManage />
       </MemoryRouter>,
     );

@@ -102,6 +102,30 @@ class TestCreateStudent:
         )
         assert resp2.json()["code"] == 0
 
+    async def test_create_clears_duplicate_second_contact_phone(self, client, admin_headers, db):
+        resp = await client.post(
+            "/api/students",
+            json={
+                "name": "同号新建",
+                "guardian_name": "联系人甲",
+                "guardian_phone": "138 0013 8005",
+                "guardian2_name": "联系人乙",
+                "guardian2_phone": "13800138005",
+            },
+            headers=admin_headers,
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["guardian_phone"] == "13800138005"
+        assert body["data"]["guardian2_name"] == "联系人乙"
+        assert body["data"]["guardian2_phone"] == ""
+
+        student = (await db.execute(select(Student).where(Student.name == "同号新建"))).scalar_one()
+        assert student.guardian_phone == "13800138005"
+        assert student.guardian2_name == "联系人乙"
+        assert student.guardian2_phone == ""
+
 
 @pytest.mark.asyncio
 class TestListStudents:
@@ -386,6 +410,46 @@ class TestImportStudents:
         result = await db.execute(select(Student).where(Student.name == "张三"))
         assert result.scalar_one_or_none() is None
 
+    async def test_import_clears_duplicate_second_contact_phone(self, client, admin_headers, db):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(
+            [
+                "name",
+                "guardian_name",
+                "guardian_phone",
+                "guardian2_name",
+                "guardian2_phone",
+                "school_name",
+            ]
+        )
+        ws.append(["导入同号", "联系人甲", "13800138006", "联系人乙", "138 0013 8006", "学校A"])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        resp = await client.post(
+            "/api/students/import",
+            headers=admin_headers,
+            files={
+                "file": (
+                    "students.xlsx",
+                    buf.getvalue(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["imported"] == 1
+        assert body["data"]["skipped"] == 0
+
+        student = (await db.execute(select(Student).where(Student.name == "导入同号"))).scalar_one()
+        assert student.guardian_phone == "13800138006"
+        assert student.guardian2_name == "联系人乙"
+        assert student.guardian2_phone == ""
+
 
 @pytest.mark.asyncio
 class TestGetStudent:
@@ -508,6 +572,34 @@ class TestUpdateStudent:
         await db.refresh(student)
         assert student.guardian_phone == "13800138005"
         assert student.guardian2_phone == "13900139005"
+
+    async def test_update_clears_duplicate_second_contact_phone(self, client, admin_headers, db):
+        student = Student(
+            name="编辑同号",
+            guardian_name="联系人甲",
+            guardian_phone="13800138007",
+            guardian2_name="联系人乙",
+            guardian2_phone="13900139007",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"guardian2_phone": "138 0013 8007"},
+            headers=admin_headers,
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["guardian_phone"] == "13800138007"
+        assert body["data"]["guardian2_name"] == "联系人乙"
+        assert body["data"]["guardian2_phone"] == ""
+        await db.refresh(student)
+        assert student.guardian_phone == "13800138007"
+        assert student.guardian2_name == "联系人乙"
+        assert student.guardian2_phone == ""
 
     async def test_update_status(self, client, admin_headers, sample_student):
         resp = await client.put(

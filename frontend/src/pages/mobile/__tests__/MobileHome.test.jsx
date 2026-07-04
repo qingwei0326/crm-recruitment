@@ -32,7 +32,7 @@ describe('MobileHome PendingList', () => {
 
   it('renders status filters and requests follow-up items on selection', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <PendingList />
       </MemoryRouter>,
     );
@@ -55,7 +55,7 @@ describe('MobileHome PendingList', () => {
 
   it('requests pending items by intent level', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <PendingList />
       </MemoryRouter>,
     );
@@ -73,7 +73,7 @@ describe('MobileHome PendingList', () => {
 
   it('requests pending items by name or phone tail search', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <PendingList />
       </MemoryRouter>,
     );
@@ -99,7 +99,7 @@ describe('MobileHome PendingList', () => {
 
   it('requests pending items by region with existing filters', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <PendingList />
       </MemoryRouter>,
     );
@@ -158,7 +158,7 @@ describe('MobileHome StudentRow next action', () => {
     const onDial = vi.fn();
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <StudentRow
           s={{ ...baseStudent, status: '未接' }}
           dialCount={1}
@@ -177,7 +177,7 @@ describe('MobileHome StudentRow next action', () => {
 
   it('falls back to no-phone data when a legacy no-contact card is rendered', () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <StudentRow
           s={{ ...baseStudent, guardian_phone: '', guardian_name: '', status: '未联系' }}
           dialCount={0}

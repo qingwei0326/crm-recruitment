@@ -215,7 +215,7 @@ describe('LeadGovernance', () => {
 
   it('groups all lead governance workflows in one admin entry page', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <LeadGovernance />
       </MemoryRouter>,
     );
@@ -238,7 +238,7 @@ describe('LeadGovernance', () => {
 
   it('renders duplicate groups and risk alerts with review links', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <LeadGovernance />
       </MemoryRouter>,
     );
@@ -279,7 +279,7 @@ describe('LeadGovernance', () => {
 
   it('acknowledges health signal reviews and reloads governance data', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <LeadGovernance />
       </MemoryRouter>,
     );
@@ -300,7 +300,7 @@ describe('LeadGovernance', () => {
 
   it('acknowledges risk alert reviews', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <LeadGovernance />
       </MemoryRouter>,
     );
@@ -328,7 +328,7 @@ describe('LeadGovernance', () => {
       operation_permissions: ['duplicate_cleanup', 'governance_review'],
     };
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <LeadGovernance />
       </MemoryRouter>,
     );
@@ -349,7 +349,7 @@ describe('LeadGovernance', () => {
 
   it('keeps cleanup preview read-only for normal admins', async () => {
     render(
-      <MemoryRouter initialEntries={['/admin/governance']}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
         <LeadGovernance />
       </MemoryRouter>,
     );

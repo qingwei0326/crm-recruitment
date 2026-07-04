@@ -80,7 +80,7 @@ function mockDetailLoads() {
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={['/mobile/student/42']}>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/mobile/student/42']}>
       <Routes>
         <Route path="/mobile/student/:id" element={<MobileStudentDetail />} />
       </Routes>

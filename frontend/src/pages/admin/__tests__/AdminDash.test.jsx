@@ -150,7 +150,7 @@ describe('AdminDash responsive entry', () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AdminDash />
       </MemoryRouter>,
     );
@@ -165,7 +165,7 @@ describe('AdminDash responsive entry', () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AdminDash />
       </MemoryRouter>,
     );
@@ -184,7 +184,7 @@ describe('AdminDash responsive entry', () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AdminDash />
       </MemoryRouter>,
     );
@@ -231,7 +231,7 @@ describe('AdminDash responsive entry', () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AdminDash />
       </MemoryRouter>,
     );
@@ -258,7 +258,7 @@ describe('AdminDash responsive entry', () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AdminDash />
       </MemoryRouter>,
     );
@@ -279,7 +279,7 @@ describe('AdminDash responsive entry', () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AdminDash />
       </MemoryRouter>,
     );

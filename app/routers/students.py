@@ -236,6 +236,16 @@ def _has_any_phone(guardian_phone: str | None, guardian2_phone: str | None) -> b
     return bool((guardian_phone or "").strip() or (guardian2_phone or "").strip())
 
 
+def _dedupe_contact_phones(
+    guardian_phone: str | None, guardian2_phone: str | None
+) -> tuple[str, str]:
+    phone = normalize_phone(guardian_phone)
+    phone2 = normalize_phone(guardian2_phone)
+    if phone and phone2 and phone == phone2:
+        phone2 = ""
+    return phone, phone2
+
+
 def _display_stage(stage: StudentStage) -> str:
     if stage == StudentStage.visit_scheduled:
         return StudentStage.campus_visit_scheduled.value
@@ -493,6 +503,10 @@ def _parse_import_row(row, header_map: dict[str, int]) -> tuple[dict | None, str
 
     if not parsed.get("region") and parsed.get("school_name"):
         parsed["region"] = extract_region(parsed["school_name"])
+    parsed["guardian_phone"], parsed["guardian2_phone"] = _dedupe_contact_phones(
+        parsed.get("guardian_phone"),
+        parsed.get("guardian2_phone"),
+    )
     return parsed, None
 
 
@@ -781,8 +795,10 @@ async def create_student(
     if not region_value and body.school_name:
         region_value = extract_region(body.school_name)
 
-    guardian_phone = normalize_phone(body.guardian_phone)
-    guardian2_phone = normalize_phone(body.guardian2_phone)
+    guardian_phone, guardian2_phone = _dedupe_contact_phones(
+        body.guardian_phone,
+        body.guardian2_phone,
+    )
     if not _has_any_phone(guardian_phone, guardian2_phone):
         return Response.error(code=1, msg="至少需要一个可拨电话")
 
@@ -1627,11 +1643,15 @@ async def update_student(
     if was_enrolled and not _is_enrolled_student(student):
         return Response.error(code=1, msg="已报名学生不能通过普通编辑改回非报名状态")
 
-    if {"guardian_phone", "guardian2_phone"} & set(raw) and not _has_any_phone(
-        next_guardian_phone,
-        next_guardian2_phone,
-    ):
-        return Response.error(code=1, msg="至少需要一个可拨电话")
+    if {"guardian_phone", "guardian2_phone"} & set(raw):
+        next_guardian_phone, next_guardian2_phone = _dedupe_contact_phones(
+            next_guardian_phone,
+            next_guardian2_phone,
+        )
+        if not _has_any_phone(next_guardian_phone, next_guardian2_phone):
+            return Response.error(code=1, msg="至少需要一个可拨电话")
+        student.guardian_phone = next_guardian_phone
+        student.guardian2_phone = next_guardian2_phone
 
     if student.stage == StudentStage.enrolled:
         student.status = StudentStatus.enrolled
