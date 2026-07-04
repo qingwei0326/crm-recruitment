@@ -1,6 +1,8 @@
 """Shared utility functions"""
 
+import json
 import re
+import secrets
 from datetime import UTC, datetime, timedelta, timezone
 
 from app.models import OperationLog
@@ -19,6 +21,12 @@ def today_cst_as_utc() -> datetime:
     now_cst = datetime.now(_CST)
     midnight_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0)
     return midnight_cst.astimezone(UTC).replace(tzinfo=None)
+
+
+def make_batch_id(prefix: str) -> str:
+    """Generate a short operation batch id for audit and rollback links."""
+    safe_prefix = re.sub(r"[^a-zA-Z0-9_-]+", "-", prefix.strip())[:24] or "batch"
+    return f"{safe_prefix}-{utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}"
 
 
 def month_start_cst_as_utc() -> datetime:
@@ -53,6 +61,41 @@ def is_phone_query(value) -> bool:
     return bool(_PHONE_QUERY_RE.fullmatch(text)) and len(normalize_phone(text)) >= 7
 
 
+def assignment_state_label(agent_id: int | None) -> str:
+    return f"agent:{agent_id}" if agent_id is not None else "unassigned"
+
+
+def make_assignment_rollback_note(
+    *,
+    old_assigned_to: int | None,
+    old_assigned_at,
+    new_assigned_to: int | None,
+    new_assigned_at,
+) -> str:
+    """Serialize assignment state needed to safely rollback a batch assignment."""
+    return json.dumps(
+        {
+            "rollback_type": "assignment",
+            "old_assigned_to": old_assigned_to,
+            "old_assigned_at": old_assigned_at.isoformat() if old_assigned_at else None,
+            "new_assigned_to": new_assigned_to,
+            "new_assigned_at": new_assigned_at.isoformat() if new_assigned_at else None,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def parse_assignment_rollback_note(value: str) -> dict | None:
+    try:
+        payload = json.loads(value or "")
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if payload.get("rollback_type") != "assignment":
+        return None
+    return payload
+
+
 def make_operation_log(
     operator,
     target_student_id: int,
@@ -62,6 +105,7 @@ def make_operation_log(
     old_status: str = "",
     new_status: str = "",
     note_content: str = "",
+    batch_id: str = "",
 ) -> OperationLog:
     """Create (but do not add/commit) an OperationLog row."""
     return OperationLog(
@@ -74,4 +118,5 @@ def make_operation_log(
         old_status=old_status,
         new_status=new_status,
         note_content=note_content,
+        batch_id=batch_id,
     )

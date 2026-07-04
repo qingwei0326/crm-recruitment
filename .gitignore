@@ -71,6 +71,16 @@ forward.js
 # Runtime data
 data/
 
+# E2E/browser artifacts
+screenshots/
+playwright-report/
+frontend/test-results/
+tests/e2e/.auth*.json
+
+# Local frontend dev logs
+frontend/frontend_*.log
+frontend/vite-dev.*.log
+
 # Local tunnel credentials/config
 frpc.ini
 start-tunnel.bat

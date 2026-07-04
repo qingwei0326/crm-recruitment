@@ -18,6 +18,12 @@ const STAGE_LABEL_MAP = {
   初次联系: '新线索',
   有意向: '意向跟进',
   已送资料: '已送资料',
+  待家访: '待家访',
+  家访已安排: '家访已安排',
+  家访完成: '家访完成',
+  待到校参观: '待到校参观',
+  到校参观已安排: '到校参观已安排',
+  已到校参观: '已到校参观',
   预约参观: '预约参观',
   已来访: '已到访',
   已报名: '已报名',
@@ -35,7 +41,18 @@ export function statusLabel(value) {
   return STATUS_LABEL_MAP[value] || value;
 }
 
-export const STAGES = ['初次联系', '有意向', '已送资料', '预约参观', '已来访', '已报名'];
+export const STAGES = [
+  '初次联系',
+  '有意向',
+  '已送资料',
+  '待家访',
+  '家访已安排',
+  '家访完成',
+  '待到校参观',
+  '到校参观已安排',
+  '已到校参观',
+  '已报名',
+];
 
 export const INTENT_BADGES = {
   A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',

@@ -87,6 +87,9 @@ test.describe('mobile dial result flow', () => {
     await page.route('**/api/students/agent/settings', async (route) => {
       await route.fulfill({ json: { code: 0, data: { dial_max_per_24h: 3 } } });
     });
+    await page.route('**/api/tasks/yesterday', async (route) => {
+      await route.fulfill({ json: { code: 0, data: { stale_unconcat: [] } } });
+    });
     await page.route('**/api/tasks/today**', async (route) => {
       await route.fulfill({
         json: refreshedAfterInvalid

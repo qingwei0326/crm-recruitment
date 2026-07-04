@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   Phone, Sparkles, Menu, Sun, Moon, Plus, X, Loader2,
   AlertTriangle, StickyNote, ChevronLeft, ChevronRight,
-  Target, User, History, RefreshCw, CalendarClock,
+  Target, User, History, RefreshCw, CalendarClock, Home, MapPin,
 } from 'lucide-react';
+import api from '../../api';
 import { stageLabel, statusLabel, STAGES, INTENT_BADGES } from '../../labels';
 import {
   STATUS_STYLE, QUICK_STATUSES, inputCls, getContactOptions,
@@ -14,6 +16,9 @@ import AgentSidebar from './desktop/AgentSidebar';
 import HandledView from './desktop/HandledView';
 import PhoneLink from '../../components/PhoneLink';
 import StudentTimeline from '../../components/StudentTimeline';
+import HomeVisitForm from '../../components/admissions/HomeVisitForm';
+import CampusVisitForm from '../../components/admissions/CampusVisitForm';
+import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
 
 export default function AgentWorkMobile({
   // State
@@ -27,6 +32,7 @@ export default function AgentWorkMobile({
   showDetail, setShowDetail,
   detailStudent, detailLoading, detailError,
   detailCalls, detailNotes, detailFollowUps, detailVisits, detailIntentTimeline,
+  detailAdmissionsTimeline,
   hasAnalysis,
   showAi, setShowAi, activeStudent,
   noteText, setNoteText,
@@ -37,6 +43,7 @@ export default function AgentWorkMobile({
   handleDial, updateStatus, updateStage,
   addNote, openAiPanel,
   loadDetail, updateDetailField,
+  onAdmissionsStageSynced,
   prev, next,
   toggleNeedHelp,
   fetchFollowing,
@@ -46,6 +53,12 @@ export default function AgentWorkMobile({
   backlogBanner,
 }) {
   const { logout } = useAuth();
+  const [admissionForm, setAdmissionForm] = useState(null);
+  const [admissionSubmitting, setAdmissionSubmitting] = useState(false);
+  const currentContacts = getContactOptions(current);
+  const currentNextAction = current
+    ? getStudentNextAction(current, currentContacts.length > 0)
+    : null;
 
   const Sidebar = () => (
     <AgentSidebar
@@ -56,6 +69,30 @@ export default function AgentWorkMobile({
       isMobile={true} onCloseMenu={() => setShowMenu(false)}
     />
   );
+
+  const submitHomeVisit = async (payload) => {
+    setAdmissionSubmitting(true);
+    try {
+      await api.post('/admissions/home-visits', payload);
+      setAdmissionForm(null);
+      if (detailStudent?.id) onAdmissionsStageSynced?.(detailStudent.id, '待家访');
+      if (detailStudent?.id) loadDetail(detailStudent.id);
+    } finally {
+      setAdmissionSubmitting(false);
+    }
+  };
+
+  const submitCampusVisit = async (payload) => {
+    setAdmissionSubmitting(true);
+    try {
+      await api.post('/admissions/campus-visits', payload);
+      setAdmissionForm(null);
+      if (detailStudent?.id) onAdmissionsStageSynced?.(detailStudent.id, '到校参观已安排');
+      if (detailStudent?.id) loadDetail(detailStudent.id);
+    } finally {
+      setAdmissionSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -138,6 +175,13 @@ export default function AgentWorkMobile({
                         )}
                       </div>
                     </div>
+                    {currentNextAction && (
+                      <div className="mb-3">
+                        <span className={`inline-flex max-w-full items-center rounded-lg border px-2.5 py-1 text-xs font-medium ${NEXT_ACTION_TONE_CLASSES[currentNextAction.tone] || NEXT_ACTION_TONE_CLASSES.slate}`}>
+                          {currentNextAction.label}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1 mb-3">
                       {STAGES.map((s, i) => {
                         const idx = STAGES.indexOf(current.stage);
@@ -158,11 +202,11 @@ export default function AgentWorkMobile({
                       ))}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                      {getContactOptions(current).map((contact) => {
+                      {currentContacts.map((contact) => {
                         const dc = dialCheckByStudent[current.id]; const cnt = dc?.count ?? 0; const warn = cnt >= 3;
                         return <button key={contact.key} onClick={() => handleDial(contact.key, current.id)} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium text-white ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`} title={contact.phone}><Phone className="w-4 h-4" /> {contact.label} {contact.name}{dc && <span className="text-[10px] opacity-90">(24h 已 {cnt} 次)</span>}</button>;
                       })}
-                      {getContactOptions(current).length === 0 && <button disabled className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm font-medium"><Phone className="w-4 h-4" /> 无联系人电话</button>}
+                      {currentContacts.length === 0 && <button disabled className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm font-medium"><Phone className="w-4 h-4" /> 无联系人电话</button>}
                       <button onClick={() => openAiPanel(current)} disabled={lockedStudentId === current.id} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"><Sparkles className="w-4 h-4" /> AI分析</button>
                     </div>
                     <div className="flex gap-2 relative">
@@ -246,6 +290,38 @@ export default function AgentWorkMobile({
               <span className="text-xs text-gray-500">AI分析状态</span>
               <span className={`text-xs px-2 py-1 rounded-full font-medium ${hasAnalysis ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>{hasAnalysis ? '✓ AI分析已完成' : '暂未分析'}</span>
             </div>
+            <section className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">招生推进</div>
+                  <div className="text-xs text-gray-500">家访申请 / 到校预约</div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'home' ? null : 'home')} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white">
+                    <Home className="w-3.5 h-3.5" />申请家访
+                  </button>
+                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'campus' ? null : 'campus')} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white">
+                    <MapPin className="w-3.5 h-3.5" />预约到校
+                  </button>
+                </div>
+              </div>
+              {admissionForm === 'home' && (
+                <HomeVisitForm
+                  student={detailStudent}
+                  submitting={admissionSubmitting}
+                  onSubmit={submitHomeVisit}
+                  onCancel={() => setAdmissionForm(null)}
+                />
+              )}
+              {admissionForm === 'campus' && (
+                <CampusVisitForm
+                  student={detailStudent}
+                  submitting={admissionSubmitting}
+                  onSubmit={submitCampusVisit}
+                  onCancel={() => setAdmissionForm(null)}
+                />
+              )}
+            </section>
             {[
               ['score', '成绩'],
               ['guardian_name', '监护人'],
@@ -278,6 +354,7 @@ export default function AgentWorkMobile({
                 followUps={detailFollowUps}
                 visits={detailVisits}
                 intentTimeline={detailIntentTimeline}
+                admissionsTimeline={detailAdmissionsTimeline}
               />
             </div>
           </div>

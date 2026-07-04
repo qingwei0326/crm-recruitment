@@ -24,6 +24,9 @@ export function AuthProvider({ children }) {
           const u = res.data.data;
           localStorage.setItem('crm_user', JSON.stringify(u));
           setUser(u);
+        } else {
+          localStorage.removeItem('crm_user');
+          setUser(null);
         }
       })
       .catch(() => {

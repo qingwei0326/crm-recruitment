@@ -12,6 +12,12 @@ import PhoneLink from '../../components/PhoneLink';
 import { stageLabel, statusLabel, STAGES } from '../../labels';
 import { formatDateTime, buildStudentPayload, getApiErrorMessage } from '../../utils';
 import {
+  ADMIN_PAGE_PERMISSIONS,
+  ADMIN_OPERATION_PERMISSIONS,
+  canAccessAdminPage,
+  canPerformAdminOperation,
+} from '../../adminPermissions';
+import {
   ArrowLeft,
   Search,
   ChevronLeft,
@@ -31,6 +37,7 @@ import {
   Calendar,
   Sun,
   Moon,
+  Home as HomeIcon,
   MapPin,
   BarChart3,
   TrendingUp,
@@ -57,6 +64,13 @@ const STATUS_DETAIL_OPTS = [
 const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
 const STAGE_STAT_KEYS = ['未分配', ...STAGES];
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
+const INLINE_CAMPUS_STAGE_LABELS = {
+  待到校参观: '待到校',
+  到校参观已安排: '已预约',
+  已到校参观: '已到校',
+};
+const HOME_ACTION_STAGES = new Set(['有意向', '已送资料', '待家访', '家访已安排', '家访完成']);
+const CAMPUS_ACTION_STAGES = new Set(['待到校参观', '到校参观已安排']);
 const inputCls =
   'w-full px-3 py-2.5 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400';
 const emptyStudentForm = {
@@ -108,6 +122,10 @@ function getAssignedToFromOwnershipFilter(value) {
   return value?.startsWith('agent:') ? value.slice('agent:'.length) : '';
 }
 
+function compactStageLabel(value) {
+  return INLINE_CAMPUS_STAGE_LABELS[value] || stageLabel(value);
+}
+
 export default function LeadsManage() {
   const { user, logout } = useAuth();
   const { dark, toggle } = useTheme();
@@ -118,6 +136,14 @@ export default function LeadsManage() {
   const searchParamString = searchParams.toString();
   const navigate = useNavigate();
   const [autoAssigning, setAutoAssigning] = useState(false);
+  const canCreateStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentCreate);
+  const canEditStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentEdit);
+  const canDeleteStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentDelete);
+  const canImportStudents = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentImport);
+  const canAssignStudents = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentAssign);
+  const canViewStudentPhone = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentPhone);
+  const canManageHomeVisits = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.homeVisits);
+  const canManageCampusVisits = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.campusVisits);
 
   const [students, setStudents] = useState([]);
   const [total, setTotal] = useState(0);
@@ -130,6 +156,9 @@ export default function LeadsManage() {
   const [intent, setIntent] = useState(searchParams.get('intent') || '');
   const [assignmentFilter, setAssignmentFilter] = useState(getOwnershipFilterFromParams(searchParams));
   const [needHelp, setNeedHelp] = useState(searchParams.get('need_help') === '1');
+  const [activeOnly, setActiveOnly] = useState(searchParams.get('active') === '1');
+  const [todayAOnly, setTodayAOnly] = useState(searchParams.get('today_a') === '1');
+  const [missingPhoneOnly, setMissingPhoneOnly] = useState(searchParams.get('missing_phone') === '1');
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selected, setSelected] = useState(new Set());
@@ -175,13 +204,16 @@ export default function LeadsManage() {
   // Inline note
   const [noteText, setNoteText] = useState({});
   const [followUpDate, setFollowUpDate] = useState({});
+  const [homeSubmittingId, setHomeSubmittingId] = useState(null);
+  const [campusSubmittingId, setCampusSubmittingId] = useState(null);
 
   // Edit modal
   const [editStudent, setEditStudent] = useState(null);
 
-  // Delete confirmation
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const selectedStudents = students.filter((student) => selected.has(student.id));
+  const selectedEnrolledStudents = selectedStudents.filter(
+    (student) => student.status === '已报名' || student.stage === '已报名',
+  );
   const selectedAgent = agents.find((agent) => String(agent.id) === String(assignAgentId));
   const selectedAssignmentAgentId = getAssignedToFromOwnershipFilter(assignmentFilter);
   const selectedAssignmentAgent = agents.find((agent) => String(agent.id) === selectedAssignmentAgentId);
@@ -198,6 +230,9 @@ export default function LeadsManage() {
         intent,
         assignment: assignmentFilter,
         needHelp,
+        activeOnly,
+        todayAOnly,
+        missingPhoneOnly,
         ...overrides,
       };
       const params = { page: p || page, page_size: pageSize };
@@ -211,6 +246,9 @@ export default function LeadsManage() {
       const assignedTo = getAssignedToFromOwnershipFilter(filters.assignment);
       if (assignedTo) params.assigned_to = assignedTo;
       if (filters.needHelp) params.need_help = '1';
+      if (filters.activeOnly) params.active = '1';
+      if (filters.todayAOnly) params.today_a = '1';
+      if (filters.missingPhoneOnly) params.missing_phone = '1';
       api
         .get('/students', { params })
         .then((res) => {
@@ -221,14 +259,14 @@ export default function LeadsManage() {
         .catch(() => { toast?.error('数据加载失败'); })
         .finally(() => setLoading(false));
     },
-    [page, q, status, statusDetail, region, stage, intent, assignmentFilter, needHelp],
+    [page, q, status, statusDetail, region, stage, intent, assignmentFilter, needHelp, activeOnly, todayAOnly, missingPhoneOnly],
   );
 
   useEffect(() => {
     fetchStudents(1);
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, statusDetail, region, stage, intent, assignmentFilter, needHelp]);
+  }, [status, statusDetail, region, stage, intent, assignmentFilter, needHelp, activeOnly, todayAOnly, missingPhoneOnly]);
 
   useEffect(() => {
     setQ(searchParams.get('q') || '');
@@ -239,6 +277,9 @@ export default function LeadsManage() {
     setIntent(searchParams.get('intent') || '');
     setAssignmentFilter(getOwnershipFilterFromParams(searchParams));
     setNeedHelp(searchParams.get('need_help') === '1');
+    setActiveOnly(searchParams.get('active') === '1');
+    setTodayAOnly(searchParams.get('today_a') === '1');
+    setMissingPhoneOnly(searchParams.get('missing_phone') === '1');
   }, [searchParamString]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -277,10 +318,10 @@ export default function LeadsManage() {
       });
   }, [showSchoolAssign, schoolAssignRegions]);
 
-  const loadExpandData = async (id) => {
+  const loadExpandData = async (id, { force = false } = {}) => {
     setExpandCache((prev) => {
       const current = prev[id];
-      if (current && !current.error) return prev;
+      if (!force && current && !current.error) return prev;
       return { ...prev, [id]: { loading: true } };
     });
     try {
@@ -324,7 +365,7 @@ export default function LeadsManage() {
   };
 
   const refreshExpand = () => {
-    if (expandedId) loadExpandData(expandedId);
+    if (expandedId) loadExpandData(expandedId, { force: true });
   };
 
   const clearSingleFilter = (key) => {
@@ -341,6 +382,9 @@ export default function LeadsManage() {
     if (key === 'intent') setIntent('');
     if (key === 'assignment') setAssignmentFilter('');
     if (key === 'needHelp') setNeedHelp(false);
+    if (key === 'activeOnly') setActiveOnly(false);
+    if (key === 'todayAOnly') setTodayAOnly(false);
+    if (key === 'missingPhoneOnly') setMissingPhoneOnly(false);
   };
 
   const clearAllFilters = () => {
@@ -352,6 +396,9 @@ export default function LeadsManage() {
     setIntent('');
     setAssignmentFilter('');
     setNeedHelp(false);
+    setActiveOnly(false);
+    setTodayAOnly(false);
+    setMissingPhoneOnly(false);
     setPage(1);
     fetchStudents(1, {
       q: '',
@@ -362,6 +409,9 @@ export default function LeadsManage() {
       intent: '',
       assignment: '',
       needHelp: false,
+      activeOnly: false,
+      todayAOnly: false,
+      missingPhoneOnly: false,
     });
     if (searchParamString) navigate('/admin/leads', { replace: true });
   };
@@ -380,7 +430,12 @@ export default function LeadsManage() {
     statusDetail && { key: 'statusDetail', label: `结果：${statusDetail}` },
     intent && { key: 'intent', label: `意向：${intent}` },
     needHelp && { key: 'needHelp', label: '需协助' },
+    activeOnly && { key: 'activeOnly', label: '仍需跟进' },
+    todayAOnly && { key: 'todayAOnly', label: '今日新增 A' },
+    missingPhoneOnly && { key: 'missingPhoneOnly', label: '无电话数据' },
   ].filter(Boolean);
+  const showGlobalStageStats =
+    activeFilterChips.length === 0 && Object.keys(stageStats).length > 0;
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -400,6 +455,7 @@ export default function LeadsManage() {
 
   // ── Actions ──
   const handleImport = async () => {
+    if (!canImportStudents) return;
     if (!importFile) return;
     setImporting(true);
     try {
@@ -416,6 +472,7 @@ export default function LeadsManage() {
   };
 
   const handleCreate = async () => {
+    if (!canCreateStudent) return;
     if (!newStudent.name) return setCreateErr('????');
     try {
       const res = await api.post('/students', buildStudentPayload(newStudent));
@@ -430,7 +487,22 @@ export default function LeadsManage() {
   };
 
   const handleAssign = async () => {
+    if (!canAssignStudents) return;
     if (selected.size === 0 || !assignAgentId) return;
+    if (selectedEnrolledStudents.length > 0) {
+      toast?.error('已报名学生不能重新分配，请先取消选择已报名记录');
+      return;
+    }
+    const sample = selectedStudents.slice(0, 5).map((student) => student.name || `学生 ${student.id}`).join('、');
+    const ok = await confirm({
+      title: '确认批量分配',
+      message:
+        `将 ${selected.size} 名学生分配给「${selectedAgent?.name || assignAgentId}」。\n` +
+        `样例：${sample}${selectedStudents.length > 5 ? ' 等' : ''}\n` +
+        '已报名学生会被系统拒绝，请确认当前选择无误。',
+      confirmText: '确认分配',
+    });
+    if (!ok) return;
     await api.post('/students/assign', { student_ids: [...selected], agent_id: parseInt(assignAgentId) });
     setShowAssign(false);
     fetchStudents(page);
@@ -438,11 +510,12 @@ export default function LeadsManage() {
   };
 
   const handleAutoAssign = async () => {
+    if (!canAssignStudents) return;
     const ok = await confirm({
       title: '自动均摊未分配线索',
       message:
         '把当前所有「未分配」的学生，按各话务员现有在跟数量从少到多自动均摊。\n' +
-        '只影响未分配的线索，不会动已分配的。',
+        '只影响未分配且未报名/未无效的线索，不会动已分配或已报名数据。',
       confirmText: '开始均摊',
     });
     if (!ok) return;
@@ -472,6 +545,7 @@ export default function LeadsManage() {
   };
 
   const handleRegionAssign = async () => {
+    if (!canAssignStudents) return;
     setSchoolAssignSchool('');
     setSchoolAssignAgents([]);
     setSchoolAssignRegions([]);
@@ -492,9 +566,20 @@ export default function LeadsManage() {
   };
 
   const handleSchoolAssign = async () => {
+    if (!canAssignStudents) return;
     if (schoolAssignRegions.length === 0) return toast?.warning('请先选择区县');
     if (!schoolAssignSchool) return toast?.warning('请选择学校');
     if (schoolAssignAgents.length === 0) return toast?.warning('请选择至少一个话务员');
+    const ok = await confirm({
+      title: '确认学校分发',
+      message:
+        `学校：${schoolAssignSchool}\n` +
+        `区县：${schoolAssignRegions.join('、')}\n` +
+        `话务员：${schoolAssignAgents.length} 人\n` +
+        '只会分发未分配且未报名/未无效的线索。',
+      confirmText: '确认分发',
+    });
+    if (!ok) return;
     const res = await api.post('/students/school-assign', {
       school_name: schoolAssignSchool,
       regions: schoolAssignRegions,
@@ -509,6 +594,7 @@ export default function LeadsManage() {
   };
 
   const quickStatus = async (id, s) => {
+    if (!canEditStudent) return;
     let payload = { status: s };
     if (s === '无效') {
       const reason = window.prompt(
@@ -526,25 +612,41 @@ export default function LeadsManage() {
     refreshExpand();
   };
   const quickStage = async (id, s) => {
+    if (!canEditStudent) return;
     await api.put(`/students/${id}/stage`, { stage: s });
     fetchStudents(page);
     refreshExpand();
   };
   const quickIntent = async (id, v) => {
+    if (!canEditStudent) return;
     await api.put(`/students/${id}`, { intent_level: v });
     fetchStudents(page);
     refreshExpand();
   };
 
   const handleDelete = async (id) => {
+    if (!canDeleteStudent) return;
     try {
       await api.delete(`/students/${id}`);
-      setDeleteConfirm(null);
       if (expandedId === id) setExpandedId(null);
       fetchStudents(page);
     } catch (e) {
       toast?.error('删除失败: ' + (e.response?.data?.msg || e.message));
     }
+  };
+
+  const requestDelete = async (student) => {
+    const ok = await confirm({
+      title: '确认删除学生',
+      message:
+        `将删除「${student.name || `学生 ${student.id}`}」。\n` +
+        '会同时删除该学生的通话、备注、回访、到访和查看记录。\n' +
+        '此操作不可恢复，需具备删除学生操作权限。',
+      confirmText: '确认删除',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    handleDelete(student.id);
   };
 
   const addNote = async (id) => {
@@ -562,13 +664,61 @@ export default function LeadsManage() {
     setFollowUpDate((prev) => ({ ...prev, [id]: '' }));
   };
 
+  const createHomeVisitTask = async (student) => {
+    if (!canManageHomeVisits) return;
+    setHomeSubmittingId(student.id);
+    try {
+      await api.post('/admissions/home-visits', {
+        student_id: student.id,
+        intent_program: student.program || '',
+        exam_score: student.score ?? null,
+        address: '',
+        priority: '中',
+        notes: '管理员从学生管理页生成家访任务',
+      });
+      toast?.success('已生成家访任务');
+      fetchStudents(page);
+      refreshExpand();
+      navigate('/admin/home-visits');
+    } catch (e) {
+      toast?.error('生成家访任务失败: ' + getApiErrorMessage(e));
+    } finally {
+      setHomeSubmittingId(null);
+    }
+  };
+
+  const createCampusVisitTask = async (student) => {
+    if (!canManageCampusVisits) return;
+    setCampusSubmittingId(student.id);
+    try {
+      await api.post('/admissions/campus-visits', {
+        student_id: student.id,
+        source: '管理员补录',
+        intent_program: student.program || '',
+        visitor_count: 1,
+        notes: '管理员从学生管理页生成到校任务',
+      });
+      toast?.success('已生成到校任务');
+      fetchStudents(page);
+      refreshExpand();
+      api.get('/stats/stages').then((r) => setStageStats(r.data.data || {})).catch((e) => logger.error('加载阶段统计失败:', e));
+      navigate('/admin/campus-visits');
+    } catch (e) {
+      toast?.error('生成到校任务失败: ' + getApiErrorMessage(e));
+    } finally {
+      setCampusSubmittingId(null);
+    }
+  };
+
   const updateField = async (id, field, value) => {
+    if (!canEditStudent) return;
     await api.put(`/students/${id}`, { [field]: value });
     fetchStudents(page);
     refreshExpand();
   };
 
   const handleAssignAgent = async (id, agentId) => {
+    if (!canAssignStudents) return;
     if (!agentId) return;
     await api.post('/students/assign', { student_ids: [id], agent_id: parseInt(agentId) });
     fetchStudents(page);
@@ -576,6 +726,7 @@ export default function LeadsManage() {
   };
 
   const handleSubstageChange = async (id, value) => {
+    if (!canEditStudent) return;
     try {
       await api.put(`/students/${id}/enrollment-substage`, {
         enrollment_substage: value === '' ? null : value,
@@ -606,6 +757,7 @@ export default function LeadsManage() {
   };
 
   const handleEditSave = async () => {
+    if (!canEditStudent) return;
     if (!editStudent) return;
     const { id, name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name } = editStudent;
     await api.put(`/students/${id}`, { name, region, score, guardian_name, guardian_phone, guardian2_name, guardian2_phone, school_name });
@@ -616,6 +768,7 @@ export default function LeadsManage() {
   };
 
   const openEditStudent = async (s) => {
+    if (!canEditStudent) return;
     try {
       const res = await api.get(`/students/${s.id}/phone-plain`);
       const phoneData = res.data?.data || {};
@@ -637,6 +790,7 @@ export default function LeadsManage() {
   };
 
   const handleDialStudent = async (studentId, contactKey = 'guardian') => {
+    if (!canViewStudentPhone) return;
     try {
       const res = await api.get(`/students/phone/${studentId}`);
       if (res.data.code !== 0) {
@@ -714,7 +868,7 @@ export default function LeadsManage() {
                   <div key={k} className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
                     <div className="text-xs text-gray-400">{k}</div>
                     <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {contactKey ? (
+                      {contactKey && canViewStudentPhone ? (
                         <PhoneLink
                           value={v}
                           label={`拨打${k}`}
@@ -778,10 +932,13 @@ export default function LeadsManage() {
                       <button
                         key={st}
                         onClick={() => quickStage(s.id, st)}
+                        disabled={!canEditStudent}
                         title={st}
                         className={`flex-1 h-2 rounded-full transition-colors ${
                           i <= curIdx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'
-                        } ${st === s.stage ? 'ring-2 ring-blue-300' : ''}`}
+                        } ${st === s.stage ? 'ring-2 ring-blue-300' : ''} ${
+                          canEditStudent ? '' : 'cursor-not-allowed opacity-60'
+                        }`}
                       />
                     );
                   })}
@@ -789,11 +946,48 @@ export default function LeadsManage() {
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
                   {STAGES.map((st) => (
                     <span key={st} className="truncate max-w-[16%] text-center">
-                      {(() => { const lab = stageLabel(st); return lab.length > 2 ? lab.slice(0, 2) : lab; })()}
+                      {compactStageLabel(st)}
                     </span>
                   ))}
                 </div>
               </div>
+
+              {(canManageHomeVisits || canManageCampusVisits) && (
+                <div className="border-t dark:border-gray-600 pt-3">
+                  <div className="mb-2">
+                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                      招生任务
+                    </div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                      一键生成任务后进入对应管理页继续安排时间和填写结果。
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {canManageHomeVisits && HOME_ACTION_STAGES.has(s.stage) && (
+                      <button
+                        type="button"
+                        onClick={() => createHomeVisitTask(s)}
+                        disabled={homeSubmittingId === s.id}
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+                      >
+                        {homeSubmittingId === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <HomeIcon className="w-3.5 h-3.5" />}
+                        生成家访任务
+                      </button>
+                    )}
+                    {canManageCampusVisits && CAMPUS_ACTION_STAGES.has(s.stage) && (
+                      <button
+                        type="button"
+                        onClick={() => createCampusVisitTask(s)}
+                        disabled={campusSubmittingId === s.id}
+                        className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-60"
+                      >
+                        {campusSubmittingId === s.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                        生成到校任务
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 border-t dark:border-gray-600 pt-3">
                 {/* Status */}
@@ -803,6 +997,7 @@ export default function LeadsManage() {
                     aria-label={`设置 ${s.name || '学生'} 状态`}
                     value={s.status}
                     onChange={(e) => quickStatus(s.id, e.target.value)}
+                    disabled={!canEditStudent}
                     className={`${inputCls} text-xs`}
                   >
                     {STATUS_OPTS.filter(Boolean).map((o) => (
@@ -818,6 +1013,7 @@ export default function LeadsManage() {
                     aria-label={`设置 ${s.name || '学生'} 意向等级`}
                     value={s.intent_level}
                     onChange={(e) => quickIntent(s.id, e.target.value)}
+                    disabled={!canEditStudent}
                     className={`${inputCls} text-xs`}
                   >
                     {INTENT_OPTS.filter(Boolean).map((o) => (
@@ -869,7 +1065,7 @@ export default function LeadsManage() {
               </div>
 
               {/* Assign agent (admin only) */}
-              {user?.role === 'admin' && (
+              {canAssignStudents && (
                 <div className="border-t dark:border-gray-600 pt-3">
                   <label className="text-xs text-gray-500 mb-1 block">分配话务员</label>
                   <select
@@ -915,17 +1111,19 @@ export default function LeadsManage() {
                   <ExternalLink className="w-3.5 h-3.5" />
                   查看详情
                 </Link>
-                <button
-                  onClick={() => openEditStudent(s)}
-                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs hover:bg-gray-200 dark:hover:bg-gray-600"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  编辑信息
-                </button>
-
-                {user?.role === 'admin' && (
+                {canEditStudent && (
                   <button
-                    onClick={() => setDeleteConfirm(s.id)}
+                    onClick={() => openEditStudent(s)}
+                    className="flex items-center gap-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-xs hover:bg-gray-200 dark:hover:bg-gray-600"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    编辑信息
+                  </button>
+                )}
+
+                {canDeleteStudent && (
+                  <button
+                    onClick={() => requestDelete(s)}
                     className="flex items-center gap-1 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg text-xs hover:bg-red-100 dark:hover:bg-red-900/40"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -943,7 +1141,7 @@ export default function LeadsManage() {
                     <div>定金: {s.deposit != null ? s.deposit : '-'}</div>
                     <div>报名日: {s.enrolled_at || '-'}</div>
                   </div>
-                  {user?.role === 'admin' && (
+                  {canEditStudent && (
                     <div className="flex items-center gap-2 pt-2 border-t border-green-200 dark:border-green-800">
                       <label className="text-xs text-green-700 dark:text-green-300 font-medium">
                         报名后状态
@@ -1041,6 +1239,7 @@ export default function LeadsManage() {
                 quickStage(l.id, e.target.value);
               }}
               onClick={(e) => e.stopPropagation()}
+              disabled={!canEditStudent}
               className="min-h-9 text-xs px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 cursor-pointer"
             >
               {STAGES.map((st) => (
@@ -1052,13 +1251,14 @@ export default function LeadsManage() {
             <div className="flex flex-col items-start gap-1">
               <select
                 aria-label={`设置 ${l.name || '学生'} 状态`}
-                value={l.status}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  quickStatus(l.id, e.target.value);
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className={`min-h-9 text-xs px-2 py-1.5 rounded-lg border-0 cursor-pointer ${
+              value={l.status}
+              onChange={(e) => {
+                e.stopPropagation();
+                quickStatus(l.id, e.target.value);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              disabled={!canEditStudent}
+              className={`min-h-9 text-xs px-2 py-1.5 rounded-lg border-0 cursor-pointer ${
                   l.status === '已报名'
                     ? 'bg-green-100 dark:bg-green-900/40 text-green-700'
                     : l.status === '未联系'
@@ -1096,7 +1296,22 @@ export default function LeadsManage() {
               '-'
             )}
           </td>
-          <td className="px-1 py-2.5 w-4" />
+          <td className="px-1 py-2.5 w-4">
+            {canDeleteStudent && (
+              <button
+                type="button"
+                aria-label={`删除 ${l.name || '学生'}`}
+                title="删除"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requestDelete(l);
+                }}
+                className="inline-flex min-w-8 min-h-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </td>
         </tr>
         {renderExpandContent(l)}
       </Fragment>
@@ -1175,32 +1390,22 @@ export default function LeadsManage() {
           </button>
         </div>
 
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          <PhoneLink
-            value={l.guardian_phone_raw || l.guardian_phone || ''}
-            label="拨打联系人1"
-            onDial={() => handleDialStudent(l.id, 'guardian')}
-            className="min-h-10 justify-center rounded-lg bg-green-50 px-2 text-sm no-underline dark:bg-green-900/20"
-          />
-          <PhoneLink
-            value={l.guardian2_phone_raw || l.guardian2_phone || ''}
-            label="拨打联系人2"
-            onDial={() => handleDialStudent(l.id, 'guardian2')}
-            className="min-h-10 justify-center rounded-lg bg-green-50 px-2 text-sm no-underline dark:bg-green-900/20"
-          />
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <Link
             to={`/admin/leads/${l.id}`}
             className="inline-flex min-h-10 items-center justify-center rounded-lg bg-blue-50 px-2 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
           >
             详情
           </Link>
-          <button
-            type="button"
-            onClick={() => openEditStudent(l)}
-            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-gray-100 px-2 text-sm text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-          >
-            编辑
-          </button>
+          {canEditStudent && (
+            <button
+              type="button"
+              onClick={() => openEditStudent(l)}
+              className="inline-flex min-h-10 items-center justify-center rounded-lg bg-gray-100 px-2 text-sm text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+            >
+              编辑
+            </button>
+          )}
         </div>
 
         {isExpanded && (
@@ -1210,6 +1415,7 @@ export default function LeadsManage() {
                 aria-label={`设置 ${l.name || '学生'} 状态`}
                 value={l.status}
                 onChange={(e) => quickStatus(l.id, e.target.value)}
+                disabled={!canEditStudent}
                 className={`${inputCls} text-sm`}
               >
                 {STATUS_OPTS.filter(Boolean).map((st) => (
@@ -1220,6 +1426,7 @@ export default function LeadsManage() {
                 aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
                 value={l.stage}
                 onChange={(e) => quickStage(l.id, e.target.value)}
+                disabled={!canEditStudent}
                 className={`${inputCls} text-sm`}
               >
                 {STAGES.map((st) => (
@@ -1244,6 +1451,42 @@ export default function LeadsManage() {
                 提交
               </button>
             </div>
+            {(canManageHomeVisits || canManageCampusVisits) && (
+              <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-900/50 dark:bg-blue-900/10">
+                <div className="mb-2">
+                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                    招生任务
+                  </div>
+                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                    生成后进入对应管理页继续处理
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {canManageHomeVisits && HOME_ACTION_STAGES.has(l.stage) && (
+                    <button
+                      type="button"
+                      onClick={() => createHomeVisitTask(l)}
+                      disabled={homeSubmittingId === l.id}
+                      className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white disabled:opacity-60"
+                    >
+                      {homeSubmittingId === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <HomeIcon className="w-3.5 h-3.5" />}
+                      生成家访任务
+                    </button>
+                  )}
+                  {canManageCampusVisits && CAMPUS_ACTION_STAGES.has(l.stage) && (
+                    <button
+                      type="button"
+                      onClick={() => createCampusVisitTask(l)}
+                      disabled={campusSubmittingId === l.id}
+                      className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-green-600 px-3 text-xs font-medium text-white disabled:opacity-60"
+                    >
+                      {campusSubmittingId === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                      生成到校任务
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="mt-2 flex items-center justify-between">
               <button
                 type="button"
@@ -1256,10 +1499,11 @@ export default function LeadsManage() {
               >
                 {l.need_help ? '取消协助' : '需要协助'}
               </button>
-              {user?.role === 'admin' && (
+              {canDeleteStudent && (
                 <button
                   type="button"
-                  onClick={() => setDeleteConfirm(l.id)}
+                  aria-label={`删除 ${l.name || '学生'}`}
+                  onClick={() => requestDelete(l)}
                   className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
                 >
                   删除
@@ -1302,7 +1546,7 @@ export default function LeadsManage() {
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">学生管理</h2>
           </div>
           <div className="flex min-h-10 items-center gap-1.5">
-            {selected.size > 0 && (
+            {canAssignStudents && selected.size > 0 && (
               <button
                 type="button"
                 onClick={() => setShowAssign(true)}
@@ -1314,54 +1558,62 @@ export default function LeadsManage() {
                 {!isMobile && '分配(' + selected.size + ')'}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreate(true);
-                setCreateErr('');
-              }}
-              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
-              aria-label="新建学生"
-              title="新建学生"
-            >
-              <Plus className="w-4 h-4" />
-              {!isMobile && '新建'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowImport(true);
-                setImportResult(null);
-                setImportFile(null);
-              }}
-              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm"
-              aria-label="导入学生"
-              title="导入学生"
-            >
-              <FileUp className="w-4 h-4" />
-              {!isMobile && '导入'}
-            </button>
-            <button
-              type="button"
-              onClick={handleRegionAssign}
-              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm"
-              aria-label="按学校分发"
-              title="按学校分发"
-            >
-              <MapPin className="w-4 h-4" />
-              {!isMobile && '学校分发'}
-            </button>
-            <button
-              type="button"
-              onClick={handleAutoAssign}
-              disabled={autoAssigning}
-              className="flex min-h-10 items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50"
-              aria-label="自动均摊分配"
-              title="自动均摊分配"
-            >
-              {autoAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              {!isMobile && '自动均摊'}
-            </button>
+            {canCreateStudent && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreate(true);
+                  setCreateErr('');
+                }}
+                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+                aria-label="新建学生"
+                title="新建学生"
+              >
+                <Plus className="w-4 h-4" />
+                {!isMobile && '新建'}
+              </button>
+            )}
+            {canImportStudents && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImport(true);
+                  setImportResult(null);
+                  setImportFile(null);
+                }}
+                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm"
+                aria-label="导入学生"
+                title="导入学生"
+              >
+                <FileUp className="w-4 h-4" />
+                {!isMobile && '导入'}
+              </button>
+            )}
+            {canAssignStudents && (
+              <button
+                type="button"
+                onClick={handleRegionAssign}
+                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm"
+                aria-label="按学校分发"
+                title="按学校分发"
+              >
+                <MapPin className="w-4 h-4" />
+                {!isMobile && '学校分发'}
+              </button>
+            )}
+            {canAssignStudents && (
+              <button
+                type="button"
+                onClick={handleAutoAssign}
+                disabled={autoAssigning}
+                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50"
+                aria-label="自动均摊分配"
+                title="自动均摊分配"
+              >
+                {autoAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                {!isMobile && '自动均摊'}
+              </button>
+            )}
             {isMobile && (
               <button
                 onClick={toggle}
@@ -1490,7 +1742,7 @@ export default function LeadsManage() {
           </div>
 
           {/* Stage stats bar */}
-          {Object.keys(stageStats).length > 0 && (
+          {showGlobalStageStats && (
             <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
               <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 font-medium">跟进阶段分布</div>
               <div className="flex gap-1.5 h-16 items-end">
@@ -1501,6 +1753,9 @@ export default function LeadsManage() {
                   return (
                     <div
                       key={s}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${s === '未分配' ? s : stageLabel(s)} ${cnt}人`}
                       className="flex-1 text-center flex flex-col items-center justify-end h-full cursor-pointer hover:opacity-80 transition-opacity"
                       onClick={() => {
                         if (s === '未分配') {
@@ -1513,6 +1768,12 @@ export default function LeadsManage() {
                         } else {
                           setStage(s);
                           navigate(`/admin/leads?stage=${encodeURIComponent(s)}`);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.currentTarget.click();
                         }
                       }}
                     >
@@ -1680,6 +1941,23 @@ export default function LeadsManage() {
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm">
                   <div className="text-green-600">成功: {importResult.success} 条</div>
                   <div className="text-amber-600">跳过: {importResult.skipped} 条</div>
+                  {Number(importResult.no_phone || 0) > 0 && (
+                    <div className="mt-1 text-red-600">
+                      无电话数据: {importResult.no_phone} 条
+                    </div>
+                  )}
+                  {importResult.no_phone_rows?.length > 0 && (
+                    <div className="mt-2 max-h-28 overflow-y-auto rounded border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+                      {importResult.no_phone_rows.slice(0, 8).map((row) => (
+                        <div key={`${row.row}-${row.name || ''}`}>
+                          第 {row.row} 行{row.name ? ` · ${row.name}` : ''}: 无电话数据
+                        </div>
+                      ))}
+                      {importResult.no_phone_rows.length > 8 && (
+                        <div>还有 {importResult.no_phone_rows.length - 8} 条未显示</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1791,7 +2069,20 @@ export default function LeadsManage() {
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                 确认后会把已选学生分配给「{selectedAgent?.name || '未选择'}」，原坐席将不再处理这些线索。
               </div>
-              <button onClick={handleAssign} disabled={!assignAgentId} className="w-full py-2.5 bg-green-600 text-white rounded-lg text-sm disabled:opacity-50">确认分配</button>
+              {selectedEnrolledStudents.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
+                  已选中 {selectedEnrolledStudents.length} 名已报名学生，不能重新分配：
+                  {selectedEnrolledStudents.slice(0, 3).map((student) => student.name).join('、')}
+                  {selectedEnrolledStudents.length > 3 ? ' 等' : ''}
+                </div>
+              )}
+              <button
+                onClick={handleAssign}
+                disabled={!assignAgentId || selectedEnrolledStudents.length > 0}
+                className="w-full py-2.5 bg-green-600 text-white rounded-lg text-sm disabled:opacity-50"
+              >
+                确认分配
+              </button>
             </div>
           </div>
         </div>
@@ -1828,23 +2119,6 @@ export default function LeadsManage() {
                 </div>
               ))}
               <button onClick={handleEditSave} className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm">保存</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="text-center">
-              <Trash2 className="w-10 h-10 text-red-500 mx-auto mb-3" />
-              <h3 className="text-lg font-semibold mb-2">确认删除</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">此操作不可恢复，确定要删除该学生吗？</p>
-              <div className="flex gap-2">
-                <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm">取消</button>
-                <button onClick={() => handleDelete(deleteConfirm)} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm">确认删除</button>
-              </div>
             </div>
           </div>
         </div>

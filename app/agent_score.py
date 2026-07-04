@@ -29,9 +29,7 @@ def score_agent_work(
     missing_phone_tasks = _as_int(metrics.get("missing_phone_tasks"))
 
     progress_ratio = progress_pct / 100 if active_tasks else 1
-    pending_clearance_ratio = (
-        (active_tasks - pending_tasks) / active_tasks if active_tasks else 1
-    )
+    pending_clearance_ratio = (active_tasks - pending_tasks) / active_tasks if active_tasks else 1
     progress_coverage = _points(20.0, progress_ratio)
     pending_clearance = _points(10.0, pending_clearance_ratio)
     task_progress = round(progress_coverage + pending_clearance, 1)
@@ -91,7 +89,7 @@ def score_agent_work(
             "资料完整",
             data_completeness,
             COMPONENT_MAX["data_completeness"],
-            "active task phone completeness",
+            "active data phone quality",
         ),
     }
     total_score = round(sum(item["score"] for item in components.values()), 1)
@@ -195,7 +193,7 @@ def _build_signals(
             {
                 "key": "missing_phone_tasks",
                 "severity": "warning",
-                "label": f"{missing_phone_tasks} 条活跃任务缺少电话",
+                "label": f"{missing_phone_tasks} 条无电话数据",
                 "count": missing_phone_tasks,
             }
         )
@@ -247,7 +245,7 @@ def _recommended_action(
     if _as_int(metrics.get("overdue_follow_ups")) > 0:
         return "先处理逾期回访，防止高意向线索流失"
     if _as_int(metrics.get("missing_phone_tasks")) > 0:
-        return "补齐活跃任务的联系电话"
+        return "先清理无电话数据，避免进入拨打流程"
     if _as_int(metrics.get("active_tasks")) == 0:
         return "检查是否需要补充分配或回收复查"
     if _as_int(metrics.get("today_calls")) < daily_call_target:

@@ -12,7 +12,12 @@ vi.mock('../../../api', () => ({
 
 vi.mock('../../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 1, role: 'admin', name: '管理员' },
+    user: {
+      id: 1,
+      role: 'admin',
+      name: '管理员',
+      page_permissions: ['work_center', 'leads_manage', 'account_manage', 'report_center'],
+    },
     logout: vi.fn(),
   }),
 }));
@@ -65,6 +70,7 @@ function makeItem(overrides = {}) {
       avg_recorded_duration_seconds: 60,
       open_follow_ups: 3,
       overdue_follow_ups: 2,
+      missing_phone_tasks: 0,
       a_level_count: 1,
       enrolled_count: 1,
       notes_today: 4,
@@ -106,6 +112,7 @@ function scorePayload() {
           today_unrecorded_calls: 0,
           avg_recorded_duration_seconds: 90,
           overdue_follow_ups: 0,
+          a_level_count: 0,
         },
         signals: [],
         recommended_action: '继续推进 A/B 意向线索到回访或到访',
@@ -121,6 +128,8 @@ function scorePayload() {
           today_unrecorded_calls: 1,
           avg_recorded_duration_seconds: 0,
           overdue_follow_ups: 0,
+          missing_phone_tasks: 2,
+          a_level_count: 0,
         },
         signals: [
           {
@@ -128,6 +137,24 @@ function scorePayload() {
             severity: 'warning',
             label: '今日通话低于目标 50%',
             count: 1,
+          },
+          {
+            key: 'missing_phone_tasks',
+            severity: 'warning',
+            label: '2 条无电话数据',
+            count: 2,
+          },
+          {
+            key: 'unrecorded_call_duration',
+            severity: 'info',
+            label: '1 通未记录时长',
+            count: 1,
+          },
+          {
+            key: 'low_progress',
+            severity: 'warning',
+            label: '任务推进率偏低',
+            count: 12,
           },
         ],
         recommended_action: '今日通话低于目标 50%',
@@ -170,10 +197,42 @@ describe('AgentScorePreview', () => {
     expect(screen.getByText('今日通话 25 = 实际拨号 / 通话目标，达标封顶')).toBeInTheDocument();
     expect(screen.getByText('回访及时 20 = 未逾期回访占比')).toBeInTheDocument();
     expect(screen.getByText('有效产出 15 = A 级意向 + 报名')).toBeInTheDocument();
-    expect(screen.getByText('资料完整 10 = 活跃任务电话完整度')).toBeInTheDocument();
+    expect(screen.getByText('资料完整 10 = 数据电话质量')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/admin/agent-score-preview', {
       params: { daily_call_target: 30 },
     });
+  });
+
+  it('turns score recommendations into executable links', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin/score-preview']}>
+        <AgentScorePreview />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('王坐席');
+
+    expect(screen.getByRole('link', { name: '看逾期回访' })).toHaveAttribute(
+      'href',
+      '/admin/work-center?queue=follow',
+    );
+    expect(screen.getByRole('link', { name: '看 A 级线索' })).toHaveAttribute(
+      'href',
+      '/admin/leads?intent=A',
+    );
+    expect(screen.getByRole('link', { name: '看无电话数据' })).toHaveAttribute(
+      'href',
+      '/admin/leads?active=1&missing_phone=1',
+    );
+    expect(screen.getByRole('link', { name: '看通话报表' })).toHaveAttribute(
+      'href',
+      '/admin/report-center?tab=call-volume',
+    );
+    expect(screen.getByRole('link', { name: '看低推进任务' })).toHaveAttribute(
+      'href',
+      '/admin/agents',
+    );
+    expect(screen.getAllByRole('link', { name: '看坐席任务' }).length).toBeGreaterThan(0);
   });
 
   it('reloads with adjusted preview parameters', async () => {

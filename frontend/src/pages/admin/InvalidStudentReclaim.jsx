@@ -5,13 +5,19 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
+import {
+  ADMIN_OPERATION_PERMISSIONS,
+  canPerformAdminOperation,
+} from '../../adminPermissions';
 import {
   Loader2,
   Menu,
@@ -22,19 +28,26 @@ import {
   ChevronDown,
   ChevronUp,
   School,
+  Search,
   Trash2,
+  X,
 } from 'lucide-react';
 
 const INVALID_REASON_OPTIONS = ['', '高分段', '无意向', '孩子不想读', '空号', '其他'];
 
 export default function InvalidStudentReclaim() {
   const { dark, toggle } = useTheme();
+  const { user } = useAuth();
   const isMobile = useIsMobile();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQ = searchParams.get('q') || '';
   const confirm = useConfirm();
   const toast = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [invalidReason, setInvalidReason] = useState('');
+  const [q, setQ] = useState(urlQ);
+  const [appliedQ, setAppliedQ] = useState(urlQ);
   const [loading, setLoading] = useState(false);
   const [schoolGroups, setSchoolGroups] = useState([]);
   const [expandedSchool, setExpandedSchool] = useState(null);
@@ -43,11 +56,21 @@ export default function InvalidStudentReclaim() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [reclaimingSchool, setReclaimingSchool] = useState(null);
   const [batchAction, setBatchAction] = useState('');
-
-  const reasonParams = useMemo(
-    () => (invalidReason ? { invalid_reason: invalidReason } : {}),
-    [invalidReason],
+  const canReclaimInvalid = canPerformAdminOperation(
+    user,
+    ADMIN_OPERATION_PERMISSIONS.invalidReclaim,
   );
+  const canDeleteInvalid = canPerformAdminOperation(
+    user,
+    ADMIN_OPERATION_PERMISSIONS.invalidDelete,
+  );
+
+  const reasonParams = useMemo(() => {
+    const params = {};
+    if (invalidReason) params.invalid_reason = invalidReason;
+    if (appliedQ.trim()) params.q = appliedQ.trim();
+    return params;
+  }, [invalidReason, appliedQ]);
 
   const fetchSchoolGroups = useCallback(async () => {
     setLoading(true);
@@ -92,6 +115,11 @@ export default function InvalidStudentReclaim() {
     fetchSchoolGroups();
   }, [fetchSchoolGroups]);
 
+  useEffect(() => {
+    setQ(urlQ);
+    setAppliedQ(urlQ);
+  }, [urlQ]);
+
   const toggleExpand = async (schoolName) => {
     if (expandedSchool === schoolName) {
       setExpandedSchool(null);
@@ -111,7 +139,21 @@ export default function InvalidStudentReclaim() {
     await fetchSchoolGroups();
   };
 
+  const applySearch = (event) => {
+    event?.preventDefault();
+    const nextQ = q.trim();
+    setAppliedQ(nextQ);
+    setSearchParams(nextQ ? { q: nextQ } : {}, { replace: true });
+  };
+
+  const clearSearch = () => {
+    setQ('');
+    setAppliedQ('');
+    setSearchParams({}, { replace: true });
+  };
+
   const handleReclaimSchool = async (schoolName, count) => {
+    if (!canReclaimInvalid) return;
     const reasonText = invalidReason ? `（原因：${invalidReason}）` : '';
     const ok = await confirm({
       title: '分学校回收',
@@ -160,6 +202,7 @@ export default function InvalidStudentReclaim() {
   };
 
   const handleBatchReclaim = async () => {
+    if (!canReclaimInvalid) return;
     const ids = [...selectedIds];
     if (ids.length === 0) return;
     const ok = await confirm({
@@ -187,6 +230,7 @@ export default function InvalidStudentReclaim() {
   };
 
   const handleBatchDelete = async () => {
+    if (!canDeleteInvalid) return;
     const ids = [...selectedIds];
     if (ids.length === 0) return;
     const ok = await confirm({
@@ -271,7 +315,8 @@ export default function InvalidStudentReclaim() {
                 <div>
                   <div className="text-sm font-medium text-gray-800 dark:text-gray-100">
                     共 <span className="font-bold text-blue-600">{totalInvalid}</span> 条
-                    {invalidReason ? `「${invalidReason}」` : ''}无效线索，涉及{' '}
+                    {invalidReason ? `「${invalidReason}」` : ''}无效线索
+                    {appliedQ ? `，匹配「${appliedQ}」` : ''}，涉及{' '}
                     <span className="font-bold">{schoolGroups.length}</span> 所学校
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">
@@ -303,6 +348,34 @@ export default function InvalidStudentReclaim() {
                 </button>
               ))}
             </div>
+
+            <form onSubmit={applySearch} className="flex flex-col md:flex-row gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={q}
+                  onChange={(event) => setQ(event.target.value)}
+                  placeholder="姓名、手机号、学校、家长、操作内容"
+                  className="w-full pl-9 pr-9 py-2 rounded-lg border dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {q && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                    aria-label="清空搜索"
+                  >
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+              >
+                <Search className="w-4 h-4" /> 搜索
+              </button>
+            </form>
           </div>
 
           <div className="space-y-2">
@@ -312,7 +385,7 @@ export default function InvalidStudentReclaim() {
               </div>
             ) : schoolGroups.length === 0 ? (
               <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-12 text-center text-gray-400">
-                暂无无效线索
+                {appliedQ ? `没有匹配「${appliedQ}」的无效线索` : '暂无无效线索'}
               </div>
             ) : (
               schoolGroups.map((g) => (
@@ -338,21 +411,23 @@ export default function InvalidStudentReclaim() {
                         {g.count} 条
                       </span>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReclaimSchool(g.name, g.count);
-                      }}
-                      disabled={reclaimingSchool === g.name}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
-                    >
-                      {reclaimingSchool === g.name ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      )}
-                      一键回收
-                    </button>
+                    {canReclaimInvalid && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReclaimSchool(g.name, g.count);
+                        }}
+                        disabled={reclaimingSchool === g.name}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        {reclaimingSchool === g.name ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        )}
+                        一键回收
+                      </button>
+                    )}
                   </div>
 
                   {expandedSchool === g.name && (
@@ -369,32 +444,36 @@ export default function InvalidStudentReclaim() {
                             <div className="text-sm text-gray-600 dark:text-gray-300 lg:mr-auto">
                               已选 {selectedIds.size} 条
                             </div>
-                            <button
-                              type="button"
-                              onClick={handleBatchReclaim}
-                              disabled={selectedIds.size === 0 || !!batchAction}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              {batchAction === 'reclaim' ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <RotateCcw className="w-3.5 h-3.5" />
-                              )}
-                              回收到未分配池
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleBatchDelete}
-                              disabled={selectedIds.size === 0 || !!batchAction}
-                              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50"
-                            >
-                              {batchAction === 'delete' ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                              删除
-                            </button>
+                            {canReclaimInvalid && (
+                              <button
+                                type="button"
+                                onClick={handleBatchReclaim}
+                                disabled={selectedIds.size === 0 || !!batchAction}
+                                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {batchAction === 'reclaim' ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                )}
+                                回收到未分配池
+                              </button>
+                            )}
+                            {canDeleteInvalid && (
+                              <button
+                                type="button"
+                                onClick={handleBatchDelete}
+                                disabled={selectedIds.size === 0 || !!batchAction}
+                                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50"
+                              >
+                                {batchAction === 'delete' ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                                删除
+                              </button>
+                            )}
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -411,9 +490,10 @@ export default function InvalidStudentReclaim() {
                                   </th>
                                   <th className="px-4 py-2 text-left">姓名</th>
                                   <th className="px-4 py-2 text-left">地区</th>
-                                  <th className="px-4 py-2 text-left">电话尾号</th>
+                                  <th className="px-4 py-2 text-left">联系方式</th>
                                   <th className="px-4 py-2 text-left">原话务员</th>
                                   <th className="px-4 py-2 text-left">无效原因</th>
+                                  <th className="px-4 py-2 text-left">标记无效</th>
                                   <th className="px-4 py-2 text-left">更新时间</th>
                                 </tr>
                               </thead>
@@ -439,7 +519,20 @@ export default function InvalidStudentReclaim() {
                                       {s.region || '-'}
                                     </td>
                                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400 font-mono">
-                                      {s.guardian_phone || '-'}
+                                      <div>
+                                        <span className="font-sans text-gray-500">
+                                          {s.guardian_name || '监护人1'}
+                                        </span>{' '}
+                                        {s.guardian_phone || '-'}
+                                      </div>
+                                      {(s.guardian2_name || s.guardian2_phone) && (
+                                        <div className="mt-1 text-gray-500 dark:text-gray-400">
+                                          <span className="font-sans">
+                                            {s.guardian2_name || '监护人2'}
+                                          </span>{' '}
+                                          {s.guardian2_phone || '-'}
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
                                       {s.agent_name || '-'}
@@ -448,6 +541,14 @@ export default function InvalidStudentReclaim() {
                                       <span className={s.invalid_reason ? '' : 'text-gray-400'}>
                                         {s.invalid_reason || '未填写'}
                                       </span>
+                                    </td>
+                                    <td className="px-4 py-2 text-gray-600 dark:text-gray-400">
+                                      <div>{s.invalid_operator_name || '-'}</div>
+                                      {s.invalid_at && (
+                                        <div className="text-xs text-gray-500">
+                                          {formatDateTime(s.invalid_at)}
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="px-4 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">
                                       {formatDateTime(s.updated_at)}
