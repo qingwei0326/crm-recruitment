@@ -32,7 +32,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test-setup.js',
     pool: 'threads',
-    maxWorkers: 12,
+    maxWorkers: 15,
     reporters: ['dot'],
     silent: true,
   },
