@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
@@ -73,6 +72,12 @@ from app.status_policy import (
     status_detail_value,
     statuses_for_canonical,
 )
+from app.student_import import (
+    MAX_STUDENT_IMPORT_BYTES,
+    build_import_header_map,
+    is_empty_import_row,
+    parse_import_row,
+)
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
 from app.utils import (
     assignment_state_label,
@@ -104,10 +109,6 @@ STAGE_ORDER = [
     "已报名",
 ]
 
-# Excel import: limit memory DoS from huge uploads
-MAX_STUDENT_IMPORT_BYTES = 10 * 1024 * 1024
-
-
 def _require_admin_leads_manage(current_user: User) -> None:
     if is_admin(current_user) and not user_has_page_permission(
         current_user, ADMIN_PAGE_LEADS_MANAGE
@@ -119,58 +120,6 @@ def _require_admin_operation(current_user: User, permission: str) -> None:
     if is_admin(current_user) and not user_has_operation_permission(current_user, permission):
         raise HTTPException(status_code=403, detail="无权执行该操作")
 
-
-IMPORT_COLUMN_ALIASES = {
-    "name": {"name", "student", "student_name", "\u59d3\u540d", "\u5b66\u751f\u59d3\u540d"},
-    "region": {"region", "area", "\u5730\u533a", "\u533a\u57df", "\u5730\u57df"},
-    "score": {"score", "grade", "\u5206\u6570", "\u6210\u7ee9"},
-    "guardian_name": {
-        "guardian_name",
-        "parent_name",
-        "\u5bb6\u957f\u59d3\u540d",
-        "\u76d1\u62a4\u4eba\u59d3\u540d",
-    },
-    "guardian_phone": {
-        "phone",
-        "mobile",
-        "tel",
-        "telephone",
-        "guardian_phone",
-        "parent_phone",
-        "\u7535\u8bdd",
-        "\u624b\u673a\u53f7",
-        "\u8054\u7cfb\u7535\u8bdd",
-        "\u5bb6\u957f\u7535\u8bdd",
-        "\u76d1\u62a4\u4eba\u7535\u8bdd",
-    },
-    "guardian2_name": {
-        "guardian2_name",
-        "parent2_name",
-        "\u7b2c\u4e8c\u76d1\u62a4\u4eba\u59d3\u540d",
-        "\u76d1\u62a4\u4eba2\u59d3\u540d",
-    },
-    "guardian2_phone": {
-        "guardian2_phone",
-        "parent2_phone",
-        "\u7b2c\u4e8c\u76d1\u62a4\u4eba\u7535\u8bdd",
-        "\u76d1\u62a4\u4eba2\u7535\u8bdd",
-    },
-    "school_name": {
-        "school",
-        "school_name",
-        "\u6bd5\u4e1a\u5b66\u6821",
-        "\u5b66\u6821",
-        "\u5b66\u6821\u540d\u79f0",
-    },
-    "school_address": {"school_address", "\u5b66\u6821\u5730\u5740"},
-    "program": {"program", "\u4e13\u4e1a", "\u610f\u5411\u4e13\u4e1a", "\u8bfe\u7a0b"},
-    "join_reasons": {
-        "join_reasons",
-        "reason",
-        "\u62a5\u540d\u539f\u56e0",
-        "\u54a8\u8be2\u539f\u56e0",
-    },
-}
 
 ADMIN_STUDENT_UPDATE_FIELDS = {
     "name",
@@ -322,194 +271,6 @@ def _is_enrolled_student(student: Student) -> bool:
     )
 
 
-def _normalize_import_header(value) -> str:
-    return re.sub(r"[\s_\-]+", "", str(value or "").strip().lower())
-
-
-def _build_import_header_map(header_row) -> dict[str, int]:
-    normalized_aliases = {
-        field: {_normalize_import_header(alias) for alias in aliases}
-        for field, aliases in IMPORT_COLUMN_ALIASES.items()
-    }
-    header_map = {}
-    for idx, value in enumerate(header_row):
-        normalized = _normalize_import_header(value)
-        if not normalized:
-            continue
-        for field, aliases in normalized_aliases.items():
-            if normalized in aliases and field not in header_map:
-                header_map[field] = idx
-                break
-    return header_map
-
-
-def _row_value(row, header_map: dict[str, int], field: str):
-    idx = header_map.get(field)
-    if idx is None or idx >= len(row):
-        return None
-    return row[idx]
-
-
-def _clean_import_text(value) -> str:
-    if value is None:
-        return ""
-    return str(value).strip()
-
-
-def _clean_import_phone(value) -> str:
-    return normalize_phone(value)
-
-
-def _parse_import_float(value, field_label: str) -> float | None:
-    text = _clean_import_text(value)
-    if text == "":
-        return None
-    try:
-        return float(text)
-    except (TypeError, ValueError):
-        raise ValueError(f"{field_label}格式无效: {value}")
-
-
-def _is_empty_import_row(row) -> bool:
-    return all(_clean_import_text(value) == "" for value in row)
-
-
-def _looks_like_phone(value: str) -> bool:
-    digits = re.sub(r"\D+", "", value)
-    return len(digits) >= 7 and len(digits) <= 20
-
-
-def _looks_like_score(value: str) -> bool:
-    try:
-        score = float(value)
-    except ValueError:
-        return False
-    return 0 <= score <= 1000 and not _looks_like_phone(value)
-
-
-def _looks_like_school(value: str) -> bool:
-    return any(
-        marker in value
-        for marker in (
-            "学校",
-            "中学",
-            "学院",
-            "小学",
-            "职校",
-            "技校",
-            "高中",
-            "初中",
-            "职专",
-            "一中",
-            "二中",
-            "三中",
-            "四中",
-            "五中",
-            "六中",
-            "七中",
-            "八中",
-            "九中",
-            "十中",
-        )
-    )
-
-
-def _looks_like_region(value: str) -> bool:
-    return any(marker in value for marker in ("区", "县", "市", "镇", "乡"))
-
-
-def _looks_like_person_name(value: str) -> bool:
-    return len(value) <= 16 and not _looks_like_school(value) and not _looks_like_region(value)
-
-
-def _infer_import_row(row) -> dict:
-    values = [_clean_import_text(value) for value in row]
-    non_empty = [value for value in values if value]
-    if not non_empty:
-        return {}
-
-    inferred = {
-        "name": "",
-        "region": "",
-        "score": None,
-        "guardian_name": "",
-        "guardian_phone": "",
-        "guardian2_name": "",
-        "guardian2_phone": "",
-        "school_name": "",
-        "school_address": "",
-        "program": "",
-        "join_reasons": "",
-    }
-
-    text_values = []
-    for value in non_empty:
-        if not inferred["guardian_phone"] and _looks_like_phone(value):
-            inferred["guardian_phone"] = _clean_import_phone(value)
-        elif inferred["score"] is None and _looks_like_score(value):
-            inferred["score"] = float(value)
-        else:
-            text_values.append(value)
-
-    if text_values:
-        inferred["name"] = text_values[0]
-    for value in text_values[1:]:
-        if not inferred["school_name"] and _looks_like_school(value):
-            inferred["school_name"] = value
-        elif not inferred["region"] and _looks_like_region(value):
-            inferred["region"] = value
-        elif not inferred["guardian_name"] and _looks_like_person_name(value):
-            inferred["guardian_name"] = value
-        elif not inferred["guardian2_name"] and _looks_like_person_name(value):
-            inferred["guardian2_name"] = value
-        elif not inferred["school_name"]:
-            inferred["school_name"] = value
-        elif not inferred["school_address"]:
-            inferred["school_address"] = value
-        else:
-            inferred["join_reasons"] = (
-                f"{inferred['join_reasons']} {value}".strip() if inferred["join_reasons"] else value
-            )
-
-    return inferred
-
-
-def _parse_import_row(row, header_map: dict[str, int]) -> tuple[dict | None, str | None]:
-    if header_map:
-        name = _clean_import_text(_row_value(row, header_map, "name"))
-        if not name:
-            return None, "缺少姓名"
-        try:
-            score = _parse_import_float(_row_value(row, header_map, "score"), "score")
-        except ValueError as exc:
-            return None, str(exc)
-        parsed = {
-            "name": name,
-            "region": _clean_import_text(_row_value(row, header_map, "region")),
-            "score": score,
-            "guardian_name": _clean_import_text(_row_value(row, header_map, "guardian_name")),
-            "guardian_phone": _clean_import_phone(_row_value(row, header_map, "guardian_phone")),
-            "guardian2_name": _clean_import_text(_row_value(row, header_map, "guardian2_name")),
-            "guardian2_phone": _clean_import_phone(_row_value(row, header_map, "guardian2_phone")),
-            "school_name": _clean_import_text(_row_value(row, header_map, "school_name")),
-            "school_address": _clean_import_text(_row_value(row, header_map, "school_address")),
-            "program": _clean_import_text(_row_value(row, header_map, "program")),
-            "join_reasons": _clean_import_text(_row_value(row, header_map, "join_reasons")),
-        }
-    else:
-        parsed = _infer_import_row(row)
-        if not parsed.get("name"):
-            return None, "无法识别姓名"
-
-    if not parsed.get("region") and parsed.get("school_name"):
-        parsed["region"] = extract_region(parsed["school_name"])
-    parsed["guardian_phone"], parsed["guardian2_phone"] = _dedupe_contact_phones(
-        parsed.get("guardian_phone"),
-        parsed.get("guardian2_phone"),
-    )
-    return parsed, None
-
-
 @router.post("/import")
 async def import_students_excel(
     file: UploadFile = File(...),
@@ -545,7 +306,7 @@ async def import_students_excel(
         if not header_row:
             return Response.error(code=1, msg="Excel 文件没有表头")
 
-        header_map = _build_import_header_map(header_row)
+        header_map = build_import_header_map(header_row)
         data_start_row = 2
         if "name" not in header_map:
             rows = chain([header_row], rows)
@@ -557,10 +318,10 @@ async def import_students_excel(
         assigned_at = utcnow() if default_agent_id is not None else None
 
         for row_idx, row in enumerate(rows, start=data_start_row):
-            if _is_empty_import_row(row):
+            if is_empty_import_row(row):
                 continue
 
-            parsed, error = _parse_import_row(row, header_map)
+            parsed, error = parse_import_row(row, header_map)
             if error:
                 skipped_rows.append({"row": row_idx, "reason": error})
                 continue
