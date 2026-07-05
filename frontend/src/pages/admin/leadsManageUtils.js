@@ -12,7 +12,7 @@ export const STATUS_DETAIL_OPTS = [
   '其他',
 ];
 export const INTENT_OPTS = ['', '无', 'A', 'B', 'C'];
-export const STAGE_STAT_KEYS = ['未分配', ...STAGES];
+export const STAGE_STAT_KEYS = STAGES;
 export const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 export const INLINE_CAMPUS_STAGE_LABELS = {
   待到校参观: '待到校',

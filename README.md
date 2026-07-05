@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.6.1-blue)
+![Version](https://img.shields.io/badge/version-1.6.2-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -343,6 +343,11 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.6.2（2026-07-05）
+
+- **学生管理统计优化**: 将“未分配线索”从“跟进阶段分布”中拆出为独立统计卡片，避免把归属状态和跟进阶段混在同一张图里。
+- **阶段分布更清晰**: “跟进阶段分布”只展示新线索、意向跟进、已送资料、家访、到校和已报名等真实跟进阶段，图表比例不再被未分配大数压扁。
 
 ### v1.6.1（2026-07-05）
 

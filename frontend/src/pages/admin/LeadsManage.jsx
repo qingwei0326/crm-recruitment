@@ -377,6 +377,11 @@ export default function LeadsManage() {
   ].filter(Boolean);
   const showGlobalStageStats =
     activeFilterChips.length === 0 && Object.keys(stageStats).length > 0;
+  const unassignedLeadCount = stageStats['未分配'] || 0;
+  const assignedNewLeadCount = stageStats['初次联系'] || 0;
+  const inProgressLeadCount = STAGE_STAT_KEYS.filter((s) => !['初次联系', '已报名'].includes(s))
+    .reduce((sum, s) => sum + (stageStats[s] || 0), 0);
+  const enrolledLeadCount = stageStats['已报名'] || 0;
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -1682,51 +1687,97 @@ export default function LeadsManage() {
             </form>
           </div>
 
-          {/* Stage stats bar */}
+          {/* Lead and stage stats */}
           {showGlobalStageStats && (
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 font-medium">跟进阶段分布</div>
-              <div className="flex gap-1.5 h-16 items-end">
-                {STAGE_STAT_KEYS.map((s) => {
-                  const cnt = stageStats[s] || 0;
-                  const maxVal = Math.max(...Object.values(stageStats), 1);
-                  const pct = cnt > 0 ? Math.max(8, Math.round((cnt / maxVal) * 100)) : 0;
-                  return (
-                    <div
-                      key={s}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`${s === '未分配' ? s : stageLabel(s)} ${cnt}人`}
-                      className="flex-1 text-center flex flex-col items-center justify-end h-full cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => {
-                        if (s === '未分配') {
-                          navigate('/admin/leads?assignment=unassigned');
-                          return;
-                        }
-                        if (stage === s) {
-                          setStage('');
-                          navigate('/admin/leads');
-                        } else {
-                          setStage(s);
-                          navigate(`/admin/leads?stage=${encodeURIComponent(s)}`);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          e.currentTarget.click();
-                        }
-                      }}
-                    >
-                      <div className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">{cnt}</div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  {
+                    key: 'unassigned',
+                    label: '未分配线索',
+                    value: unassignedLeadCount,
+                    hint: '还在公共池，等待分配',
+                    className: 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800',
+                    onClick: () => navigate('/admin/leads?assignment=unassigned'),
+                  },
+                  {
+                    key: 'new',
+                    label: '已分配新线索',
+                    value: assignedNewLeadCount,
+                    hint: '已进入坐席名下，尚处新线索阶段',
+                    className: 'border-blue-200 bg-blue-50 dark:border-blue-900/60 dark:bg-blue-950/30',
+                    onClick: () => navigate('/admin/leads?stage=初次联系'),
+                  },
+                  {
+                    key: 'progress',
+                    label: '跟进中',
+                    value: inProgressLeadCount,
+                    hint: '已推进到意向、家访或到校流程',
+                    className: 'border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30',
+                  },
+                  {
+                    key: 'enrolled',
+                    label: '已报名',
+                    value: enrolledLeadCount,
+                    hint: '已完成报名状态的线索',
+                    className: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30',
+                    onClick: () => navigate('/admin/leads?stage=已报名'),
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={item.onClick}
+                    disabled={!item.onClick}
+                    className={`rounded-xl border p-3 text-left transition ${item.className} ${item.onClick ? 'hover:-translate-y-0.5 hover:shadow-sm' : 'cursor-default'}`}
+                  >
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.label}</div>
+                    <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{item.value}</div>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{item.hint}</div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+                <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 font-medium">跟进阶段分布</div>
+                <div className="flex gap-1.5 h-16 items-end">
+                  {STAGE_STAT_KEYS.map((s) => {
+                    const cnt = stageStats[s] || 0;
+                    const maxVal = Math.max(...STAGE_STAT_KEYS.map((key) => stageStats[key] || 0), 1);
+                    const pct = cnt > 0 ? Math.max(8, Math.round((cnt / maxVal) * 100)) : 0;
+                    return (
                       <div
-                        className={`w-full rounded-t transition-all ${stage === s ? 'bg-orange-500' : 'bg-blue-600'}`}
-                        style={{ height: `${pct}%` }}
-                      />
-                      <div className={`text-xs mt-1 truncate ${stage === s ? 'text-orange-600 font-bold dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}>{s === '未分配' ? s : stageLabel(s)}</div>
-                    </div>
-                  );
-                })}
+                        key={s}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${stageLabel(s)} ${cnt}人`}
+                        className="flex-1 text-center flex flex-col items-center justify-end h-full cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => {
+                          if (stage === s) {
+                            setStage('');
+                            navigate('/admin/leads');
+                          } else {
+                            setStage(s);
+                            navigate(`/admin/leads?stage=${encodeURIComponent(s)}`);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.currentTarget.click();
+                          }
+                        }}
+                      >
+                        <div className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">{cnt}</div>
+                        <div
+                          className={`w-full rounded-t transition-all ${stage === s ? 'bg-orange-500' : 'bg-blue-600'}`}
+                          style={{ height: `${pct}%` }}
+                        />
+                        <div className={`text-xs mt-1 truncate ${stage === s ? 'text-orange-600 font-bold dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}>{stageLabel(s)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
