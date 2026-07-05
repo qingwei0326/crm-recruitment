@@ -4,7 +4,7 @@
 
 ### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
 
-![Version](https://img.shields.io/badge/version-1.6.0-blue)
+![Version](https://img.shields.io/badge/version-1.6.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
@@ -250,16 +250,19 @@ D:\招生系统\
 │   ├── auth.py                 # 登录认证
 │   ├── permissions.py          # 权限控制
 │   ├── routers/                # 路由模块
-│   │   ├── admin.py             # 管理员接口
+│   │   ├── admin.py             # 管理员核心/兼容接口
+│   │   ├── admin_*.py           # 管理端配置、治理、每日运营、回收、分配、用户等子路由
 │   │   ├── auth.py              # 认证接口
 │   │   ├── calls.py             # 通话记录接口
 │   │   ├── follow_ups.py        # 回访跟进接口
-│   │   ├── students.py          # 学生线索接口
+│   │   ├── students.py          # 学生线索核心接口
+│   │   ├── students_*.py        # 学生导入、查询、电话、分配、报名等子路由
+│   │   ├── admissions*.py       # 家访、到校、报名和工作项流程接口
+│   │   ├── stats*.py            # 仪表盘、话务员、报名等统计接口
 │   │   ├── tasks.py             # 任务接口
 │   │   ├── visits.py            # 到访记录接口
 │   │   ├── notes.py             # 备注接口
-│   │   ├── operation_logs.py    # 操作日志
-│   │   └── stats.py             # 统计数据
+│   │   └── operation_logs.py    # 操作日志
 │   ├── ai_analyzer.py          # DeepSeek AI 意向分析
 │   ├── status_policy.py        # 学生状态归一策略
 │   ├── task_stats.py           # 任务统计统一口径
@@ -335,6 +338,14 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 ---
 
 ## 📜 更新日志
+
+### v1.6.1（2026-07-05）
+
+- **路由模块化重构**: 将管理员、学生、统计和招生活动等大路由继续拆分为多个同前缀子路由，保持原 API 路径不变，降低单文件维护成本。
+- **后台管理拆分**: 新增 `admin_config`、`admin_governance`、`admin_daily`、`admin_assignment`、`admin_invalid`、`admin_misc`、`admin_stale` 和 `admin_users` 等模块，`admin.py` 从数千行压缩为核心兼容入口。
+- **学生与招生流程拆分**: 新增学生导入、查询、电话、分配、报名子模块，以及家访、到校、报名、工作项等招生流程子模块。
+- **统计接口拆分**: 将仪表盘、话务员统计、报名统计拆到独立模块，便于后续单独优化和测试。
+- **测试与部署提速**: 前端 Vitest worker 调整后全量测试约 100 秒级；保留安全 Ubuntu 部署脚本，部署时继续排除 `crm.db` 和 `.env`。
 
 ### v1.6.0（2026-06-30）
 
