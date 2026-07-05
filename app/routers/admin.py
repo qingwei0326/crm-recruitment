@@ -11,6 +11,23 @@ from pydantic import BaseModel
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin_config import (
+    ALLOWED_CONFIG_KEYS,
+    SCORE_DAILY_CALL_TARGET_MAX,
+    mask_config_value,
+    validate_config_value,
+)
+from app.admin_lead_utils import (
+    _admin_student_search_payload,
+    _build_duplicate_phone_cleanup_plan,
+    _duplicate_phone_cleanup_summary,
+    _latest_log_payload,
+    _operation_log_search_predicate,
+    _student_governance_payload,
+    _student_phone_values,
+    _student_search_predicate,
+    invalid_reason_predicate,
+)
 from app.agent_score import score_agent_work
 from app.auth import (
     ADMIN_OP_ASSIGNMENT_ROLLBACK,
@@ -85,14 +102,12 @@ from app.utils import (
     make_batch_id,
     make_operation_log,
     mask_phone,
-    normalize_phone,
     parse_assignment_rollback_note,
     today_cst_as_utc,
     utcnow,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
-SCORE_DAILY_CALL_TARGET_MAX = 1000
 GOVERNANCE_REVIEW_PREFIX = "governance-review:"
 GOVERNANCE_REVIEW_TTL_DAYS = 7
 DAILY_OPS_REVIEW_PREFIX = "daily-ops:"
@@ -174,265 +189,6 @@ def _validate_user_display_name(value: str) -> str | None:
     if name in RESERVED_USER_DISPLAY_NAMES:
         return "姓名不能填写离职、禁用等状态词；请填写真实姓名"
     return None
-
-
-INVALID_REASON_LABELS = {
-    "高分段",
-    "无意向",
-    "孩子不想读",
-    "空号",
-    "其他",
-}
-
-
-ALLOWED_CONFIG_KEYS = {
-    "pushplus_token",
-    "stale_days",
-    "dial_window_start",
-    "dial_window_end",
-    "dial_max_per_24h",
-    "deepseek_api_key",
-    "ai_provider",
-    "mimo_api_key",
-    "mimo_base",
-    "mimo_model",
-    "ai_custom_api_key",
-    "ai_custom_base",
-    "ai_custom_model",
-    "follow_up_window_minutes",
-    "score_daily_call_target",
-}
-
-
-def invalid_reason_predicate(reason: str):
-    reason = (reason or "").strip()
-    if not reason:
-        return None
-    if reason not in INVALID_REASON_LABELS:
-        return None
-    stored_statuses = [
-        status
-        for status in statuses_for_canonical(StudentStatus.invalid)
-        if status_detail_value(status, "") == reason
-    ]
-    clauses = [Student.status_detail == reason]
-    if stored_statuses:
-        clauses.append(Student.status.in_(stored_statuses))
-    return clauses[0] if len(clauses) == 1 else clauses[0] | clauses[1]
-
-
-def _student_search_predicate(q: str):
-    keyword = (q or "").strip()
-    if not keyword:
-        return None
-    like_q = f"%{keyword}%"
-    clauses = [
-        Student.name.contains(keyword),
-        Student.region.contains(keyword),
-        Student.school_name.contains(keyword),
-        Student.guardian_name.contains(keyword),
-        Student.guardian2_name.contains(keyword),
-        Student.status_detail.contains(keyword),
-        Student.case_no.contains(keyword),
-    ]
-    phone_q = normalize_phone(keyword)
-    if len(phone_q) >= 4:
-        clauses.extend(
-            [
-                Student.guardian_phone.contains(phone_q),
-                Student.guardian2_phone.contains(phone_q),
-            ]
-        )
-    log_student_ids = (
-        select(OperationLog.target_student_id)
-        .where(
-            OperationLog.target_student_id.is_not(None),
-            or_(
-                OperationLog.operator_name.like(like_q),
-                OperationLog.action.like(like_q),
-                OperationLog.content.like(like_q),
-                OperationLog.note_content.like(like_q),
-                OperationLog.old_status.like(like_q),
-                OperationLog.new_status.like(like_q),
-                OperationLog.case_no.like(like_q),
-                OperationLog.batch_id.like(like_q),
-            ),
-        )
-        .distinct()
-    )
-    clauses.append(Student.id.in_(log_student_ids))
-    return or_(*clauses)
-
-
-def _operation_log_search_predicate(q: str):
-    keyword = (q or "").strip()
-    if not keyword:
-        return None
-    like_q = f"%{keyword}%"
-    clauses = [
-        OperationLog.operator_name.like(like_q),
-        OperationLog.action.like(like_q),
-        OperationLog.content.like(like_q),
-        OperationLog.note_content.like(like_q),
-        OperationLog.old_status.like(like_q),
-        OperationLog.new_status.like(like_q),
-        OperationLog.case_no.like(like_q),
-        OperationLog.batch_id.like(like_q),
-        Student.name.contains(keyword),
-        Student.region.contains(keyword),
-        Student.school_name.contains(keyword),
-        Student.guardian_name.contains(keyword),
-        Student.guardian2_name.contains(keyword),
-        Student.status_detail.contains(keyword),
-    ]
-    phone_q = normalize_phone(keyword)
-    if len(phone_q) >= 4:
-        clauses.extend(
-            [
-                Student.guardian_phone.contains(phone_q),
-                Student.guardian2_phone.contains(phone_q),
-            ]
-        )
-    return or_(*clauses)
-
-
-def _latest_log_payload(log: OperationLog | None) -> dict | None:
-    if log is None:
-        return None
-    return {
-        "id": log.id,
-        "operator_name": log.operator_name,
-        "action": log.action,
-        "content": log.content or "",
-        "note_content": log.note_content or "",
-        "old_status": log.old_status or "",
-        "new_status": log.new_status or "",
-        "created_at": str(log.created_at),
-    }
-
-
-def _admin_student_search_payload(
-    student: Student, agent_name: str | None, latest_log: OperationLog | None
-) -> dict:
-    status = canonical_status_value(student.status)
-    return {
-        "id": student.id,
-        "name": student.name,
-        "region": student.region or "",
-        "school_name": student.school_name or "",
-        "guardian_name": student.guardian_name or "",
-        "guardian_phone": mask_phone(student.guardian_phone or ""),
-        "guardian2_name": student.guardian2_name or "",
-        "guardian2_phone": mask_phone(student.guardian2_phone or ""),
-        "assigned_to": student.assigned_to,
-        "agent_name": agent_name or "未分配",
-        "status": status,
-        "status_detail": status_detail_value(student.status, student.status_detail),
-        "stage": student.stage,
-        "intent_level": student.intent_level,
-        "is_invalid": status == StudentStatus.invalid.value,
-        "updated_at": str(student.updated_at),
-        "created_at": str(student.created_at),
-        "latest_log": _latest_log_payload(latest_log),
-    }
-
-
-def _student_governance_payload(student: Student) -> dict:
-    return {
-        "id": student.id,
-        "name": student.name,
-        "school_name": student.school_name or "",
-        "region": student.region or "",
-        "status": canonical_status_value(student.status),
-        "stage": student.stage,
-        "intent_level": student.intent_level,
-        "assigned_to": student.assigned_to,
-        "guardian_phone": mask_phone(student.guardian_phone or ""),
-        "guardian2_phone": mask_phone(student.guardian2_phone or ""),
-        "created_at": str(student.created_at),
-    }
-
-
-def _student_phone_values(student: Student) -> set[str]:
-    return {
-        phone.strip()
-        for phone in (student.guardian_phone or "", student.guardian2_phone or "")
-        if phone.strip()
-    }
-
-
-def _duplicate_phone_cleanup_row(student: Student, duplicate_phones: set[str]) -> dict:
-    old_phone_1 = (student.guardian_phone or "").strip()
-    old_phone_2 = (student.guardian2_phone or "").strip()
-    new_phone_1 = "" if old_phone_1 in duplicate_phones else old_phone_1
-    new_phone_2 = "" if old_phone_2 in duplicate_phones else old_phone_2
-    removed_phones = []
-    for phone in (old_phone_1, old_phone_2):
-        if phone in duplicate_phones and phone not in removed_phones:
-            removed_phones.append(phone)
-    return {
-        "student_id": student.id,
-        "name": student.name,
-        "school_name": student.school_name or "",
-        "status": canonical_status_value(student.status),
-        "assigned_to": student.assigned_to,
-        "case_no": student.case_no or "",
-        "old_guardian_phone": old_phone_1,
-        "old_guardian2_phone": old_phone_2,
-        "new_guardian_phone": new_phone_1,
-        "new_guardian2_phone": new_phone_2,
-        "removed_phones": removed_phones,
-        "will_delete": not (new_phone_1 or new_phone_2),
-    }
-
-
-def _duplicate_phone_cleanup_summary(rows: list[dict], duplicate_phones: set[str]) -> dict:
-    will_delete = [row for row in rows if row["will_delete"]]
-    will_clear = [row for row in rows if not row["will_delete"]]
-    return {
-        "duplicate_phone_count": len(duplicate_phones),
-        "affected_student_count": len(rows),
-        "will_clear_count": len(will_clear),
-        "will_delete_count": len(will_delete),
-        "duplicate_phones": sorted(duplicate_phones),
-        "preview_delete_students": will_delete[:20],
-        "preview_clear_students": will_clear[:20],
-    }
-
-
-async def _build_duplicate_phone_cleanup_plan(db: AsyncSession) -> tuple[set[str], list[dict]]:
-    result = await db.execute(select(Student).order_by(Student.created_at.desc()).limit(5000))
-    latest_students = result.scalars().all()
-    phone_groups: dict[str, list[Student]] = {}
-    for student in latest_students:
-        for phone in _student_phone_values(student):
-            phone_groups.setdefault(phone, []).append(student)
-    duplicate_phones = {
-        phone
-        for phone, students in phone_groups.items()
-        if len({student.id for student in students}) >= 2
-    }
-    if not duplicate_phones:
-        return set(), []
-
-    duplicate_phone_list = sorted(duplicate_phones)
-    affected_result = await db.execute(
-        select(Student)
-        .where(
-            or_(
-                Student.guardian_phone.in_(duplicate_phone_list),
-                Student.guardian2_phone.in_(duplicate_phone_list),
-            )
-        )
-        .order_by(Student.id.asc())
-    )
-    affected_students = affected_result.scalars().all()
-    rows = [
-        _duplicate_phone_cleanup_row(student, duplicate_phones)
-        for student in affected_students
-        if _student_phone_values(student) & duplicate_phones
-    ]
-    return duplicate_phones, rows
 
 
 def _risk_alert(
@@ -1222,103 +978,11 @@ async def reclaim_invalid_students_to_pool(
     return reclaimed_count
 
 
-_AI_PROVIDERS = {"deepseek", "mimo", "custom"}
-_AI_BASE_KEYS = {"mimo_base", "ai_custom_base"}
-_AI_MODEL_KEYS = {"mimo_model", "ai_custom_model"}
-_AI_GENERIC_KEY_KEYS = {"mimo_api_key", "ai_custom_api_key"}
-
-_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-
-
-def _validate_config_value(key: str, value: str) -> tuple[str | None, str | None]:
-    """Returns (normalized_value, error_msg). 任一字段在前端都能改，必须独立校验。"""
-    if key == "stale_days":
-        try:
-            n = int(value)
-        except ValueError:
-            return None, "stale_days must be an integer between 1 and 30"
-        if not 1 <= n <= 30:
-            return None, "stale_days must be an integer between 1 and 30"
-        return str(n), None
-    if key == "follow_up_window_minutes":
-        try:
-            n = int(value)
-        except ValueError:
-            return None, "follow_up_window_minutes must be an integer between 1 and 60"
-        if not 1 <= n <= 60:
-            return None, "follow_up_window_minutes must be an integer between 1 and 60"
-        return str(n), None
-    if key == "dial_max_per_24h":
-        try:
-            n = int(value)
-        except ValueError:
-            return None, "dial_max_per_24h must be an integer between 1 and 20"
-        if not 1 <= n <= 20:
-            return None, "dial_max_per_24h must be an integer between 1 and 20"
-        return str(n), None
-    if key == "score_daily_call_target":
-        score_target_msg = (
-            "score_daily_call_target must be an integer between 1 and "
-            f"{SCORE_DAILY_CALL_TARGET_MAX}"
-        )
-        try:
-            n = int(value)
-        except ValueError:
-            return None, score_target_msg
-        if not 1 <= n <= SCORE_DAILY_CALL_TARGET_MAX:
-            return None, score_target_msg
-        return str(n), None
-    if key in ("dial_window_start", "dial_window_end"):
-        if not _HHMM_RE.match(value):
-            return None, f"{key} must be HH:MM (24h)"
-        return value, None
-    if key == "pushplus_token":
-        if len(value) > 64:
-            return None, "pushplus_token too long"
-        return value, None
-    if key == "deepseek_api_key":
-        if value and len(value) > 128:
-            return None, "deepseek_api_key too long"
-        # 接受空串（用于清除）；非空必须形如 sk-xxx 避免误填
-        if value and not value.startswith("sk-"):
-            return None, "deepseek_api_key 必须以 sk- 开头"
-        return value, None
-    if key == "ai_provider":
-        if value and value not in _AI_PROVIDERS:
-            return None, "ai_provider 必须是 deepseek / mimo / custom 之一"
-        return (value or "deepseek"), None
-    if key in _AI_BASE_KEYS:
-        if value and not (value.startswith("http://") or value.startswith("https://")):
-            return None, f"{key} 必须是 http(s):// 开头的接口地址"
-        if len(value) > 256:
-            return None, f"{key} too long"
-        return value, None
-    if key in _AI_MODEL_KEYS:
-        if len(value) > 64:
-            return None, f"{key} too long"
-        return value, None
-    if key in _AI_GENERIC_KEY_KEYS:
-        # MiMo / 自定义 的 key 不强制 sk- 前缀，只做长度上限
-        if len(value) > 256:
-            return None, f"{key} too long"
-        return value, None
-    return value, None
-
-
 def to_datetime(value):
     if value is None or isinstance(value, datetime):
         return value
     if isinstance(value, str):
         return datetime.fromisoformat(value)
-    return value
-
-
-def mask_config_value(key: str, value: str) -> str:
-    if (
-        key in ("pushplus_token", "deepseek_api_key", "mimo_api_key", "ai_custom_api_key")
-        and len(value) > 4
-    ):
-        return "****" + value[-4:]
     return value
 
 
@@ -1417,7 +1081,7 @@ async def update_system_config(
     if key not in ALLOWED_CONFIG_KEYS:
         return Response.error(code=1, msg="Unsupported config key")
 
-    normalized, err = _validate_config_value(key, value)
+    normalized, err = validate_config_value(key, value)
     if err:
         return Response.error(code=1, msg=err)
     value = normalized
