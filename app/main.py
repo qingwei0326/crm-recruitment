@@ -17,15 +17,34 @@ from app.database import async_session, init_db
 from app.limiter import limiter
 from app.routers import (
     admin,
+    admin_assignment,
+    admin_config,
+    admin_daily,
+    admin_governance,
+    admin_invalid,
+    admin_misc,
+    admin_stale,
     admin_users,
     admissions,
+    admissions_campus_visits,
+    admissions_enrollments,
+    admissions_home_visits,
+    admissions_work_items,
     auth,
     calls,
     follow_ups,
     notes,
     operation_logs,
     stats,
+    stats_agents,
+    stats_dashboard,
+    stats_enrollment,
     students,
+    students_assignment,
+    students_enrollment,
+    students_import,
+    students_phone,
+    students_query,
     tasks,
     visits,
 )
@@ -80,15 +99,36 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(auth.api_router)
+# Student subrouters with static/specific paths must be registered before
+# generic /{student_id} routes to avoid path shadowing.
+app.include_router(students_assignment.router)
+app.include_router(students_enrollment.router)
+app.include_router(students_import.router)
+app.include_router(students_phone.router)
+app.include_router(students_query.router)
 app.include_router(students.router)
 app.include_router(calls.router)
 app.include_router(notes.router)
 app.include_router(follow_ups.router)
 app.include_router(stats.router)
+app.include_router(stats_agents.router)
+app.include_router(stats_enrollment.router)
+app.include_router(stats_dashboard.router)
 app.include_router(tasks.router)
 app.include_router(admin.router)
+app.include_router(admin_config.router)
+app.include_router(admin_governance.router)
+app.include_router(admin_daily.router)
+app.include_router(admin_assignment.router)
+app.include_router(admin_invalid.router)
+app.include_router(admin_misc.router)
+app.include_router(admin_stale.router)
 app.include_router(admin_users.router)
 app.include_router(admissions.router)
+app.include_router(admissions_work_items.router)
+app.include_router(admissions_home_visits.router)
+app.include_router(admissions_campus_visits.router)
+app.include_router(admissions_enrollments.router)
 app.include_router(visits.router)
 app.include_router(operation_logs.router)
 
