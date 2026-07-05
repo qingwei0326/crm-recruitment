@@ -17,6 +17,7 @@ from app.database import async_session, init_db
 from app.limiter import limiter
 from app.routers import (
     admin,
+    admin_users,
     admissions,
     auth,
     calls,
@@ -86,6 +87,7 @@ app.include_router(follow_ups.router)
 app.include_router(stats.router)
 app.include_router(tasks.router)
 app.include_router(admin.router)
+app.include_router(admin_users.router)
 app.include_router(admissions.router)
 app.include_router(visits.router)
 app.include_router(operation_logs.router)
