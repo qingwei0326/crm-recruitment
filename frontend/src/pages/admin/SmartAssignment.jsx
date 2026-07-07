@@ -5,6 +5,7 @@ import {
   Loader2,
   Moon,
   RefreshCcw,
+  Send,
   Sun,
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
@@ -14,6 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import { getApiErrorMessage } from '../../utils';
+import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { ADMIN_OPERATION_PERMISSIONS, canPerformAdminOperation } from '../../adminPermissions';
 
@@ -38,6 +40,7 @@ function Metric({ label, value, hint }) {
 export default function SmartAssignment() {
   const { dark, toggle } = useTheme();
   const { user } = useAuth();
+  const confirm = useConfirm();
   const toast = useToast();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -62,9 +65,9 @@ export default function SmartAssignment() {
     per_agent_limit: Number(perAgentLimit || 100),
   }), [schoolName, region, limit, perAgentLimit]);
 
-  const loadPreview = async () => {
+  const loadPreview = async ({ clearExecuteResult = true } = {}) => {
     setLoading(true);
-    setExecuteResult(null);
+    if (clearExecuteResult) setExecuteResult(null);
     try {
       const res = await api.get('/admin/smart-assign/preview', { params: previewParams });
       if (res.data.code === 0) {
@@ -76,6 +79,35 @@ export default function SmartAssignment() {
       toast?.error(getApiErrorMessage(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExecute = async () => {
+    if (!canExecute || !preview?.plan?.planned) return;
+    const ok = await confirm({
+      title: '确认执行智能分配',
+      message: `将按当前预览分配 ${preview.plan.planned} 条线索。执行时服务端会重新计算，实际数量可能变化。`,
+      confirmText: '确认分配',
+    });
+    if (!ok) return;
+    setExecuting(true);
+    try {
+      const res = await api.post('/admin/smart-assign/execute', {
+        ...previewParams,
+        confirm: true,
+      });
+      if (res.data.code === 0) {
+        const data = res.data.data || {};
+        toast?.success(`智能分配已执行：${data.assigned_count || 0} 条`);
+        await loadPreview({ clearExecuteResult: false });
+        setExecuteResult(data);
+      } else {
+        toast?.error(res.data.msg || '智能分配执行失败');
+      }
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
+    } finally {
+      setExecuting(false);
     }
   };
 
@@ -258,6 +290,21 @@ export default function SmartAssignment() {
                 批次 {executeResult.batch_id}，实际分配 {fmt(executeResult.assigned_count)} 条，跳过{' '}
                 {fmt(executeResult.skipped_count)} 条
               </div>
+            )}
+            {canExecute && plan.planned > 0 && (
+              <button
+                type="button"
+                onClick={handleExecute}
+                disabled={executing}
+                className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {executing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                确认执行智能分配
+              </button>
             )}
             {!canExecute && (
               <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">

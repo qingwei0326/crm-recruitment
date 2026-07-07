@@ -34,6 +34,8 @@ const actionTone = {
   批量分配: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200',
   多学校分发: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200',
   多学校分发汇总: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200',
+  智能分配: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200',
+  智能分配汇总: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200',
   分配回滚: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200',
   分配回滚汇总: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200',
   删除线索: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200',
