@@ -65,6 +65,10 @@ vi.mock('../pages/admin/SmartAssignment', () => ({
   default: () => <div>smart assignment page</div>,
 }));
 
+vi.mock('../pages/admin/AssignmentBatchReview', () => ({
+  default: () => <div>assignment batch review page</div>,
+}));
+
 vi.mock('../pages/admin/AgentScorePreview', () => ({
   default: () => <div>agent score preview page</div>,
 }));
@@ -179,6 +183,16 @@ describe('admin compatibility routes', () => {
     expect(await screen.findByText('audit logs page')).toBeInTheDocument();
   });
 
+  it('routes assignment batch review to the review page', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/assignment-batches/batch-1/review']}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('assignment batch review page')).toBeInTheDocument();
+  });
+
   it.each([
     ['/admin/home-visits', 'home visit manage page'],
     ['/admin/campus-visits', 'campus visit manage page'],
@@ -236,6 +250,7 @@ describe('admin compatibility routes', () => {
     ['/admin/leads', 'leads manage page'],
     ['/admin/governance', 'lead governance page'],
     ['/admin/smart-assign', 'smart assignment page'],
+    ['/admin/assignment-batches/batch-1/review', 'assignment batch review page'],
     ['/admin/invalid-reclaim', 'invalid reclaim page'],
     ['/admin/distribute', 'distribute schools page'],
     ['/admin/home-visits', 'home visit manage page'],
@@ -270,6 +285,7 @@ describe('admin compatibility routes', () => {
     ['/admin/leads', ['leads_manage'], 'leads manage page'],
     ['/admin/governance', ['lead_governance'], 'lead governance page'],
     ['/admin/smart-assign', ['lead_governance'], 'smart assignment page'],
+    ['/admin/assignment-batches/batch-1/review', ['audit_logs'], 'assignment batch review page'],
     ['/admin/invalid-reclaim', ['invalid_reclaim'], 'invalid reclaim page'],
     ['/admin/distribute', ['school_distribution'], 'distribute schools page'],
     ['/admin/home-visits', ['home_visits'], 'home visit manage page'],
