@@ -18,6 +18,7 @@ from app.limiter import limiter
 from app.routers import (
     admin,
     admin_assignment,
+    admin_assignment_review,
     admin_config,
     admin_daily,
     admin_governance,
@@ -121,6 +122,7 @@ app.include_router(admin_config.router)
 app.include_router(admin_governance.router)
 app.include_router(admin_daily.router)
 app.include_router(admin_assignment.router)
+app.include_router(admin_assignment_review.router)
 app.include_router(admin_smart_assignment.router)
 app.include_router(admin_invalid.router)
 app.include_router(admin_misc.router)

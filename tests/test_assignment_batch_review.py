@@ -225,3 +225,65 @@ async def test_build_assignment_batch_review_respects_window_days(
 async def test_build_assignment_batch_review_returns_none_for_missing_batch(db):
     review = await build_assignment_batch_review(db, "missing-batch", window_days=7)
     assert review is None
+
+
+@pytest.mark.asyncio
+async def test_assignment_batch_review_endpoint_requires_audit_logs_permission(
+    client, normal_admin_headers
+):
+    resp = await client.get(
+        "/api/admin/assignment-batches/smart-assign-review-test/review",
+        headers=normal_admin_headers,
+    )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assignment_batch_review_endpoint_allows_audit_logs_permission(
+    client, db, normal_admin_user, normal_admin_headers, admin_user, agent_user
+):
+    normal_admin_user.page_permissions = "audit_logs"
+    batch_id, _assigned_at, _second_agent = await _seed_review_batch(
+        db, admin_user, agent_user
+    )
+
+    resp = await client.get(
+        f"/api/admin/assignment-batches/{batch_id}/review",
+        params={"window_days": 7},
+        headers=normal_admin_headers,
+    )
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 0
+    assert body["data"]["batch"]["batch_id"] == batch_id
+    assert body["data"]["funnel"]["assigned"] == 4
+
+
+@pytest.mark.asyncio
+async def test_assignment_batch_review_endpoint_rejects_invalid_window(
+    client, admin_headers
+):
+    resp = await client.get(
+        "/api/admin/assignment-batches/smart-assign-review-test/review",
+        params={"window_days": 2},
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_assignment_batch_review_endpoint_returns_clear_missing_batch(
+    client, admin_headers
+):
+    resp = await client.get(
+        "/api/admin/assignment-batches/missing-batch/review",
+        headers=admin_headers,
+    )
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 1
+    assert body["msg"] == "未找到该分配批次"
