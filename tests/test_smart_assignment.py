@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import select
 
 from app.models import DialLog, FollowUp, OperationLog, Student, StudentStatus, User
 from app.smart_assignment import SmartAssignParams, build_smart_assignment_plan
@@ -192,3 +193,130 @@ async def test_smart_assign_load_score_uses_calls_recent_handling_and_overdue_fo
     assert row["handled_7d"] == 1
     assert row["overdue_follow_ups"] == 1
     assert row["load_score"] == 3.5
+
+
+@pytest.mark.asyncio
+async def test_smart_assign_preview_requires_lead_governance_page_permission(
+    client,
+    normal_admin_headers,
+):
+    resp = await client.get("/api/admin/smart-assign/preview", headers=normal_admin_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_smart_assign_preview_allows_lead_governance_page_permission(
+    client,
+    db,
+    normal_admin_user,
+    normal_admin_headers,
+    agent_user,
+):
+    normal_admin_user.page_permissions = "lead_governance"
+    db.add(_student("候选", guardian_phone="13900000001"))
+    await db.commit()
+
+    resp = await client.get("/api/admin/smart-assign/preview", headers=normal_admin_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 0
+    assert body["data"]["pool"]["eligible_total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_smart_assign_execute_requires_student_assign_permission(
+    client,
+    db,
+    normal_admin_user,
+    normal_admin_headers,
+    agent_user,
+):
+    normal_admin_user.page_permissions = "lead_governance"
+    db.add(_student("候选", guardian_phone="13900000001"))
+    await db.commit()
+
+    resp = await client.post(
+        "/api/admin/smart-assign/execute",
+        headers=normal_admin_headers,
+        json={"limit": 1, "per_agent_limit": 1, "confirm": True},
+    )
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_smart_assign_execute_requires_confirm(client, admin_headers):
+    resp = await client.post(
+        "/api/admin/smart-assign/execute",
+        headers=admin_headers,
+        json={"limit": 1, "per_agent_limit": 1, "confirm": False},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["code"] == 1
+    assert resp.json()["msg"] == "请确认后再执行智能分配"
+
+
+@pytest.mark.asyncio
+async def test_smart_assign_execute_recalculates_and_writes_rollbackable_logs(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+):
+    second_agent = _agent("second_agent", "第二坐席")
+    db.add(second_agent)
+    await db.flush()
+    db.add_all(
+        [
+            _student("候选1", guardian_phone="13900000001"),
+            _student("候选2", guardian_phone="13900000002"),
+            _student("重复1", guardian_phone="13999990000"),
+            _student("重复2", guardian_phone="13999990000"),
+        ]
+    )
+    await db.commit()
+
+    resp = await client.post(
+        "/api/admin/smart-assign/execute",
+        headers=admin_headers,
+        json={"limit": 3, "per_agent_limit": 2, "confirm": True},
+    )
+    body = resp.json()
+
+    assert body["code"] == 0
+    assert body["data"]["assigned_count"] == 2
+    assert body["data"]["skipped_count"] == 0
+    assert body["data"]["batch_id"].startswith("smart-assign-")
+
+    assigned = (
+        (
+            await db.execute(
+                select(Student).where(Student.name.in_(["候选1", "候选2"])).order_by(Student.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert all(student.assigned_to is not None for student in assigned)
+    logs = (
+        (
+            await db.execute(
+                select(OperationLog)
+                .where(OperationLog.batch_id == body["data"]["batch_id"])
+                .order_by(OperationLog.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [log.action for log in logs].count("智能分配") == 2
+    assert logs[-1].action == "智能分配汇总"
+
+    rollback_resp = await client.get(
+        f"/api/admin/assignment-rollbacks/{body['data']['batch_id']}",
+        headers=admin_headers,
+    )
+    rollback_body = rollback_resp.json()
+    assert rollback_body["code"] == 0
+    assert rollback_body["data"]["rollbackable_count"] == 2

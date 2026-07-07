@@ -102,6 +102,7 @@ BATCH_DISTRIBUTION_SUMMARY_ACTIONS = {
     "区域分配汇总",
     "学校分配汇总",
     "多学校分发汇总",
+    "智能分配汇总",
 }
 
 WORK_HOUR_WINDOWS = (

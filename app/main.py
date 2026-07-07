@@ -23,6 +23,7 @@ from app.routers import (
     admin_governance,
     admin_invalid,
     admin_misc,
+    admin_smart_assignment,
     admin_stale,
     admin_users,
     admissions,
@@ -120,6 +121,7 @@ app.include_router(admin_config.router)
 app.include_router(admin_governance.router)
 app.include_router(admin_daily.router)
 app.include_router(admin_assignment.router)
+app.include_router(admin_smart_assignment.router)
 app.include_router(admin_invalid.router)
 app.include_router(admin_misc.router)
 app.include_router(admin_stale.router)
