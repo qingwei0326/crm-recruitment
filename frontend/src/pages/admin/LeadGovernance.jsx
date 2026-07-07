@@ -40,6 +40,15 @@ const workflows = [
   },
   {
     step: '2',
+    title: '智能分配',
+    description: '按未分配池和坐席负载生成公平分配建议，管理员确认后批量执行。',
+    outcome: '适合每天批量补齐坐席任务量，并保留批次回滚。',
+    to: '/admin/smart-assign',
+    icon: RefreshCcw,
+    tone: 'amber',
+  },
+  {
+    step: '3',
     title: '无效线索回收',
     description: '按学校汇总无效线索，批量回收后重新进入未分配池。',
     outcome: '适合先按原因/学校预览，再回收到未分配池或删除。',
@@ -48,7 +57,7 @@ const workflows = [
     tone: 'red',
   },
   {
-    step: '3',
+    step: '4',
     title: '多学校分发',
     description: '按学校批量选择未分配学员，自动均摊或指定分发给话务员。',
     outcome: '适合处理成批学校线索，减少逐条分配。',
