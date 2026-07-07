@@ -61,6 +61,10 @@ vi.mock('../pages/admin/LeadGovernance', () => ({
   default: () => <div>lead governance page</div>,
 }));
 
+vi.mock('../pages/admin/SmartAssignment', () => ({
+  default: () => <div>smart assignment page</div>,
+}));
+
 vi.mock('../pages/admin/AgentScorePreview', () => ({
   default: () => <div>agent score preview page</div>,
 }));
@@ -231,6 +235,7 @@ describe('admin compatibility routes', () => {
     ['/admin/search', 'global search page'],
     ['/admin/leads', 'leads manage page'],
     ['/admin/governance', 'lead governance page'],
+    ['/admin/smart-assign', 'smart assignment page'],
     ['/admin/invalid-reclaim', 'invalid reclaim page'],
     ['/admin/distribute', 'distribute schools page'],
     ['/admin/home-visits', 'home visit manage page'],
@@ -264,6 +269,7 @@ describe('admin compatibility routes', () => {
     ['/admin/search', ['leads_manage'], 'global search page'],
     ['/admin/leads', ['leads_manage'], 'leads manage page'],
     ['/admin/governance', ['lead_governance'], 'lead governance page'],
+    ['/admin/smart-assign', ['lead_governance'], 'smart assignment page'],
     ['/admin/invalid-reclaim', ['invalid_reclaim'], 'invalid reclaim page'],
     ['/admin/distribute', ['school_distribution'], 'distribute schools page'],
     ['/admin/home-visits', ['home_visits'], 'home visit manage page'],

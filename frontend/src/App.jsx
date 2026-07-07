@@ -19,6 +19,7 @@ const LeadsManage = lazy(() => import('./pages/admin/LeadsManage'));
 const GlobalSearch = lazy(() => import('./pages/admin/GlobalSearch'));
 const StudentDetail = lazy(() => import('./pages/admin/StudentDetail'));
 const LeadGovernance = lazy(() => import('./pages/admin/LeadGovernance'));
+const SmartAssignment = lazy(() => import('./pages/admin/SmartAssignment'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
@@ -175,6 +176,14 @@ export default function App() {
           element={
             <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
               <RouteError><LeadGovernance /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/smart-assign"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
+              <RouteError><SmartAssignment /></RouteError>
             </Protected>
           }
         />
