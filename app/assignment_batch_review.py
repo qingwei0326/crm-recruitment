@@ -271,7 +271,10 @@ async def build_assignment_batch_review(
                 "type": "undialed_rate",
                 "severity": "high",
                 "title": "未拨打比例偏高",
-                "detail": f"窗口内 {funnel['undialed']} 条线索仍未拨打，未拨打率 {undialed_rate}%。",
+                "detail": (
+                    f"窗口内 {funnel['undialed']} 条线索仍未拨打，"
+                    f"未拨打率 {undialed_rate}%。"
+                ),
             }
         )
     if assigned_count >= 10 and funnel["effective_handle_rate"] < 50:
