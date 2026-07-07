@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -285,10 +286,20 @@ export default function SmartAssignment() {
               </div>
             )}
             {executeResult && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-200">
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-200">
                 <CheckCircle2 className="h-4 w-4" />
-                批次 {executeResult.batch_id}，实际分配 {fmt(executeResult.assigned_count)} 条，跳过{' '}
-                {fmt(executeResult.skipped_count)} 条
+                <span>
+                  批次 {executeResult.batch_id}，实际分配 {fmt(executeResult.assigned_count)} 条，跳过{' '}
+                  {fmt(executeResult.skipped_count)} 条
+                </span>
+                {executeResult.batch_id && (
+                  <Link
+                    to={`/admin/assignment-batches/${encodeURIComponent(executeResult.batch_id)}/review`}
+                    className="rounded-full bg-white px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-100 dark:bg-green-950/40 dark:text-green-200"
+                  >
+                    查看复盘
+                  </Link>
+                )}
               </div>
             )}
             {canExecute && plan.planned > 0 && (

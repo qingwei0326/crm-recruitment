@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -43,6 +43,22 @@ const actionTone = {
   线索回收: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
   Excel导入: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200',
 };
+
+const assignmentSummaryActions = new Set([
+  '批量分配',
+  '自动分配汇总',
+  '区域分配汇总',
+  '学校分配汇总',
+  '多学校分发汇总',
+  '智能分配汇总',
+]);
+
+function canReviewAssignmentBatch(log) {
+  return Boolean(
+    log?.batch_id
+      && (log.can_rollback_assignment || assignmentSummaryActions.has(log.action)),
+  );
+}
 
 function csvEscape(value) {
   const text = String(value ?? '');
@@ -435,6 +451,14 @@ export default function AuditLogs() {
                                 <RotateCcw className="h-3 w-3" />
                                 回滚预览
                               </button>
+                            )}
+                            {canReviewAssignmentBatch(log) && (
+                              <Link
+                                to={`/admin/assignment-batches/${encodeURIComponent(log.batch_id)}/review`}
+                                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-200"
+                              >
+                                复盘
+                              </Link>
                             )}
                           </div>
                         </td>

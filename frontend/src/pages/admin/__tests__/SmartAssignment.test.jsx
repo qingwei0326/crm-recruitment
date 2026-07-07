@@ -222,6 +222,11 @@ describe('SmartAssignment', () => {
       expect(mockToastSuccess).toHaveBeenCalledWith('智能分配已执行：500 条');
     });
     expect(screen.getByText(/smart-assign-20260707150000-abcd1234/)).toBeInTheDocument();
+    const reviewLink = screen.getByRole('link', { name: '查看复盘' });
+    expect(reviewLink).toHaveAttribute(
+      'href',
+      '/admin/assignment-batches/smart-assign-20260707150000-abcd1234/review',
+    );
   });
 
   it('hides execute action when admin lacks student assignment permission', async () => {
