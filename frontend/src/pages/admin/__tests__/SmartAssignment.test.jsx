@@ -4,6 +4,10 @@ import { MemoryRouter } from 'react-router-dom';
 import SmartAssignment from '../SmartAssignment';
 import api from '../../../api';
 
+const mockConfirm = vi.hoisted(() => vi.fn());
+const mockToastSuccess = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
+
 vi.mock('../../../api', () => ({
   default: {
     get: vi.fn(),
@@ -32,13 +36,13 @@ vi.mock('../../../hooks/useIsMobile', () => ({
 }));
 
 vi.mock('../../../components/ConfirmDialog', () => ({
-  useConfirm: () => vi.fn().mockResolvedValue(true),
+  useConfirm: () => mockConfirm,
 }));
 
 vi.mock('../../../components/Toast', () => ({
   useToast: () => ({
-    success: vi.fn(),
-    error: vi.fn(),
+    success: mockToastSuccess,
+    error: mockToastError,
     warning: vi.fn(),
   }),
 }));
@@ -106,6 +110,7 @@ describe('SmartAssignment', () => {
       is_super_admin: false,
       operation_permissions: ['student_assign'],
     };
+    mockConfirm.mockResolvedValue(true);
     api.get.mockResolvedValue({ data: { code: 0, data: previewPayload() } });
   });
 
@@ -177,5 +182,64 @@ describe('SmartAssignment', () => {
     expect(await screen.findByText('没有启用话务员')).toBeInTheDocument();
     expect(screen.getByText('当前筛选范围无可分配线索')).toBeInTheDocument();
     expect(screen.getByText('暂无可执行分配建议')).toBeInTheDocument();
+  });
+
+  it('confirms and executes the current preview parameters', async () => {
+    mockConfirm.mockResolvedValue(true);
+    api.post.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          batch_id: 'smart-assign-20260707150000-abcd1234',
+          assigned_count: 500,
+          skipped_count: 0,
+          per_agent: [],
+        },
+      },
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <SmartAssignment />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('计划分配 500 条')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '确认执行智能分配' }));
+
+    await waitFor(() => {
+      expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
+        title: '确认执行智能分配',
+        confirmText: '确认分配',
+      }));
+      expect(api.post).toHaveBeenCalledWith('/admin/smart-assign/execute', {
+        school_name: '',
+        region: '',
+        limit: 500,
+        per_agent_limit: 100,
+        confirm: true,
+      });
+      expect(mockToastSuccess).toHaveBeenCalledWith('智能分配已执行：500 条');
+    });
+    expect(screen.getByText(/smart-assign-20260707150000-abcd1234/)).toBeInTheDocument();
+  });
+
+  it('hides execute action when admin lacks student assignment permission', async () => {
+    mockUser = {
+      id: 2,
+      role: 'admin',
+      name: '只读管理员',
+      is_super_admin: false,
+      operation_permissions: [],
+    };
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <SmartAssignment />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('当前账号仅可查看预览；执行智能分配需要“分配/改派学生”权限。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认执行智能分配' })).not.toBeInTheDocument();
   });
 });
