@@ -34,6 +34,7 @@ ASSIGNMENT_ROLLBACK_ACTIONS = {
     "区域分配",
     "学校分配",
     "多学校分发",
+    "智能分配",
 }
 
 
