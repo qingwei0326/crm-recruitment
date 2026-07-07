@@ -187,6 +187,11 @@ describe('AuditLogs', () => {
     expect(screen.getByText('共 4 条')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '分配 2' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /回滚预览/ })).toHaveLength(1);
+    const reviewLink = screen.getByRole('link', { name: '复盘' });
+    expect(reviewLink).toHaveAttribute(
+      'href',
+      '/admin/assignment-batches/school-assign-test/review',
+    );
   });
 
   it('sends filters to the operation log API', async () => {
