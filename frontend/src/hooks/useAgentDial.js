@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import api from '../api';
+import { readPendingDial, savePendingDial } from '../dialSession';
 import { getApiErrorMessage } from '../utils';
 import logger from '../utils/logger';
 import { resolveOperatorResult } from '../operatorResultPolicy';
@@ -78,9 +79,18 @@ export default function useAgentDial({
       }
 
       let phone = '';
+      let dialLogId = null;
+      const existingDial = readPendingDial();
+      const reusableDialLogId = Number(existingDial?.studentId) === Number(id)
+        ? existingDial?.dialLogId
+        : null;
       try {
-        const r = await api.get(`/students/phone/${id}`);
+        const url = `/students/phone/${id}`;
+        const r = reusableDialLogId
+          ? await api.get(url, { params: { dial_log_id: reusableDialLogId } })
+          : await api.get(url);
         if (r.data.code === 0) {
+          dialLogId = r.data.data.dial_log_id ?? null;
           phone = contactKey === 'guardian2'
             ? r.data.data.guardian2_phone || ''
             : r.data.data.guardian_phone || '';
@@ -100,11 +110,14 @@ export default function useAgentDial({
       }
 
       const dialStudent = students.find((s) => s.id === id);
-      sessionStorage.setItem('pendingDial', JSON.stringify({
+      savePendingDial({
         studentId: id,
         studentName: dialStudent?.name || '未知',
-        dialStartedAt: Date.now(),
-      }));
+        dialLogId,
+        dialStartedAt: reusableDialLogId && reusableDialLogId === dialLogId
+          ? existingDial.dialStartedAt
+          : Date.now(),
+      });
       window.location.href = `tel:${phone}`;
       actions.setLockedStudent(id);
       refreshDialCheck(id);
@@ -250,21 +263,9 @@ export default function useAgentDial({
   // 检查待处理的拨号
   const tryLoadPendingDial = useCallback(() => {
     if (state.dial.modal) return;
-    let raw;
-    try {
-      raw = sessionStorage.getItem('pendingDial');
-    } catch {
-      return;
-    }
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw);
-      sessionStorage.removeItem('pendingDial');
-      if (data?.studentId) {
-        actions.setDialModal(data);
-      }
-    } catch {
-      sessionStorage.removeItem('pendingDial');
+    const data = readPendingDial();
+    if (data?.studentId) {
+      actions.setDialModal(data);
     }
   }, [actions, state.dial.modal]);
 

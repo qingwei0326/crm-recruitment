@@ -54,7 +54,12 @@ describe('useAgentDial', () => {
 
     sessionStorage.setItem(
       'pendingDial',
-      JSON.stringify({ studentId: 42, studentName: '张三', dialStartedAt: Date.now() - 30000 }),
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 30000,
+      }),
     );
 
     act(() => {
@@ -67,7 +72,9 @@ describe('useAgentDial', () => {
         expect.objectContaining({ studentId: 42, studentName: '张三' }),
       );
     });
-    expect(sessionStorage.getItem('pendingDial')).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
+      expect.objectContaining({ studentId: 42, dialLogId: 9001 }),
+    );
   });
 
   it('records duration when closing a pending dial modal', () => {
@@ -118,7 +125,9 @@ describe('useAgentDial', () => {
     const second = result.current.handleDial('guardian', 42);
 
     await act(async () => {
-      resolvePhone({ data: { code: 0, data: { guardian_phone: '13800138000' } } });
+      resolvePhone({
+        data: { code: 0, data: { guardian_phone: '13800138000', dial_log_id: 9001 } },
+      });
       await Promise.all([first, second]);
     });
 

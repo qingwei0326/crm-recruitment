@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import api from '../api';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
+import { readPendingDial, savePendingDial } from '../dialSession';
 
 /**
  * 封装拨号流程：
@@ -51,9 +52,18 @@ export default function useDialFlow() {
 
       // 2) 拿明文电话
       let phone = '';
+      let dialLogId = null;
+      const existingDial = readPendingDial();
+      const reusableDialLogId = Number(existingDial?.studentId) === Number(studentId)
+        ? existingDial?.dialLogId
+        : null;
       try {
-        const r = await api.get(`/students/phone/${studentId}`);
+        const url = `/students/phone/${studentId}`;
+        const r = reusableDialLogId
+          ? await api.get(url, { params: { dial_log_id: reusableDialLogId } })
+          : await api.get(url);
         if (r.data.code === 0) {
+          dialLogId = r.data.data.dial_log_id ?? null;
           phone =
             contactKey === 'guardian2'
               ? r.data.data.guardian2_phone || ''
@@ -74,14 +84,14 @@ export default function useDialFlow() {
       }
 
       // 3) 跳起拨号。先存拨号上下文：打完电话返回 App 时弹“选择处理结果”更新联系状况
-      try {
-        sessionStorage.setItem(
-          'pendingDial',
-          JSON.stringify({ studentId, studentName, dialStartedAt: Date.now() }),
-        );
-      } catch {
-        // sessionStorage 不可用时不应阻塞拨号
-      }
+      savePendingDial({
+        studentId,
+        studentName,
+        dialLogId,
+        dialStartedAt: reusableDialLogId && reusableDialLogId === dialLogId
+          ? existingDial.dialStartedAt
+          : Date.now(),
+      });
       window.location.href = `tel:${phone}`;
       onSuccess && onSuccess(phone);
       // 4) 拨号窗口已记 DialLog；刷新检查（异步，不阻塞）
