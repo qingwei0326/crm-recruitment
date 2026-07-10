@@ -3,7 +3,7 @@
 import json
 import re
 import secrets
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 from app.models import OperationLog
 
@@ -16,11 +16,20 @@ def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def today_cst_date() -> date:
+    """Return today's calendar date in CST (UTC+8)."""
+    return datetime.now(_CST).date()
+
+
+def cst_date_start_as_utc(day: date) -> datetime:
+    """Return a CST calendar day's midnight as a naive UTC datetime."""
+    midnight_cst = datetime(day.year, day.month, day.day, tzinfo=_CST)
+    return midnight_cst.astimezone(UTC).replace(tzinfo=None)
+
+
 def today_cst_as_utc() -> datetime:
     """Return today's midnight in CST (UTC+8) as naive UTC datetime for DB range queries."""
-    now_cst = datetime.now(_CST)
-    midnight_cst = now_cst.replace(hour=0, minute=0, second=0, microsecond=0)
-    return midnight_cst.astimezone(UTC).replace(tzinfo=None)
+    return cst_date_start_as_utc(today_cst_date())
 
 
 def make_batch_id(prefix: str) -> str:
