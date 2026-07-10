@@ -18,6 +18,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.dial_recording import DIAL_RECORDING_PENDING
 
 
 class UserRole(enum.StrEnum):
@@ -518,3 +519,10 @@ class DialLog(Base):
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     dialed_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     duration_seconds = Column(Integer, default=0)
+    recording_state = Column(
+        String(24),
+        nullable=False,
+        default=DIAL_RECORDING_PENDING,
+        server_default=DIAL_RECORDING_PENDING,
+        index=True,
+    )

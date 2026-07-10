@@ -5,6 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import DATABASE_URL, DATABASE_URL_SYNC, DB_ENGINE
+from app.dial_recording import (
+    DIAL_RECORDING_COMPLETED,
+    DIAL_RECORDING_LEGACY_MISSING,
+)
 
 _sqlite_args = {"timeout": 15} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_async_engine(DATABASE_URL, echo=False, connect_args=_sqlite_args)
@@ -55,6 +59,7 @@ async def init_db():
         await conn.run_sync(_migrate_user_operation_permissions)
         await conn.run_sync(_migrate_operation_log_nullable)
         await conn.run_sync(_migrate_operation_log_batch_id)
+        await conn.run_sync(_migrate_dial_recording_state)
         await conn.run_sync(_migrate_student_status_detail)
         await conn.run_sync(_migrate_legacy_student_status_values)
         await conn.run_sync(_migrate_legacy_student_stage_values)
@@ -78,6 +83,47 @@ def _migrate_user_token_version(sync_connection):
             sync_connection.execute(
                 text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1")
             )
+
+
+def _migrate_dial_recording_state(sync_connection):
+    inspector = inspect(sync_connection)
+    if "dial_logs" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("dial_logs")}
+    if "recording_state" not in columns:
+        if DB_ENGINE == "postgresql":
+            sync_connection.execute(
+                text(
+                    "ALTER TABLE dial_logs ADD COLUMN IF NOT EXISTS recording_state "
+                    "VARCHAR(24) NOT NULL DEFAULT 'pending'"
+                )
+            )
+        else:
+            sync_connection.execute(
+                text(
+                    "ALTER TABLE dial_logs ADD COLUMN recording_state "
+                    "VARCHAR(24) NOT NULL DEFAULT 'pending'"
+                )
+            )
+        sync_connection.execute(
+            text(
+                "UPDATE dial_logs SET recording_state = CASE "
+                "WHEN COALESCE(duration_seconds, 0) > 0 THEN :completed "
+                "ELSE :legacy_missing END"
+            ),
+            {
+                "completed": DIAL_RECORDING_COMPLETED,
+                "legacy_missing": DIAL_RECORDING_LEGACY_MISSING,
+            },
+        )
+
+    sync_connection.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_dial_logs_recording_state "
+            "ON dial_logs(recording_state)"
+        )
+    )
 
 
 def _migrate_user_device_tracking(sync_connection):
