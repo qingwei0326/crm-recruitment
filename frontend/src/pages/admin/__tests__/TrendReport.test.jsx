@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import TrendReport from '../TrendReport';
 import api from '../../../api';
+
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
 
 vi.mock('../../../api', () => ({
   default: {
@@ -16,7 +18,12 @@ vi.mock('../../../components/AdminLayout', () => ({
 
 vi.mock('../../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 1, role: 'admin', name: '管理员' },
+    user: {
+      id: 1,
+      role: 'admin',
+      name: '管理员',
+      operation_permissions: ['report_export'],
+    },
     logout: vi.fn(),
   }),
 }));
@@ -33,9 +40,7 @@ vi.mock('../../../hooks/useIsMobile', () => ({
 }));
 
 vi.mock('../../../components/Toast', () => ({
-  useToast: () => ({
-    error: vi.fn(),
-  }),
+  useToast: () => ({ error: toastError }),
 }));
 
 vi.mock('recharts', () => ({
@@ -53,22 +58,39 @@ vi.mock('recharts', () => ({
   Legend: () => null,
 }));
 
-function renderTrendReport(daily) {
-  api.get.mockResolvedValue({
-    data: {
-      data: {
-        start: '2026-06-01',
-        end: '2026-06-30',
-        daily,
-      },
+const idPayload = {
+  start: '2026-07-01',
+  end: '2026-07-10',
+  agents: [
+    { id: 14, name: '邹欣辰', is_active: true },
+    { id: 15, name: '离职无数据', is_active: false },
+  ],
+  daily: [
+    {
+      date: '2026-07-10',
+      calls: 3,
+      enrolled: 0,
+      prev_calls: 2,
+      agent_calls_by_id: { 14: 3, 15: 0 },
+      agent_calls: { 邹欣辰: 3, 离职无数据: 0 },
     },
-  });
+  ],
+};
 
+function renderComponent() {
   render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/trend']}>
+    <MemoryRouter
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      initialEntries={['/admin/trend']}
+    >
       <TrendReport />
     </MemoryRouter>,
   );
+}
+
+function renderTrendReport(payload) {
+  api.get.mockResolvedValue({ data: { data: payload } });
+  renderComponent();
 }
 
 function chartLineNames() {
@@ -80,21 +102,31 @@ describe('TrendReport', () => {
     vi.clearAllMocks();
   });
 
-  it('renders only non-zero trend and agent series', async () => {
-    renderTrendReport([
-      {
-        date: '2026-06-25',
-        calls: 0,
-        enrolled: 0,
-        agent_calls: { 叶: 0, 陈: 0, 苏丹丹: 0, 蒲安琪: 0 },
-      },
-      {
-        date: '2026-06-26',
-        calls: 8,
-        enrolled: 0,
-        agent_calls: { 叶: 0, 陈: 3, 苏丹丹: 0, 蒲安琪: 5 },
-      },
-    ]);
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('renders only non-zero trend and legacy agent series', async () => {
+    renderTrendReport({
+      start: '2026-06-01',
+      end: '2026-06-30',
+      daily: [
+        {
+          date: '2026-06-25',
+          calls: 0,
+          enrolled: 0,
+          agent_calls: { 叶: 0, 陈: 0, 苏丹丹: 0, 蒲安琪: 0 },
+        },
+        {
+          date: '2026-06-26',
+          calls: 8,
+          enrolled: 0,
+          agent_calls: { 叶: 0, 陈: 3, 苏丹丹: 0, 蒲安琪: 5 },
+        },
+      ],
+    });
 
     expect(await screen.findByText('每日趋势')).toBeInTheDocument();
     expect(screen.getByText('各话务员每日呼出量对比')).toBeInTheDocument();
@@ -104,21 +136,25 @@ describe('TrendReport', () => {
     expect(screen.queryByText('苏丹丹')).not.toBeInTheDocument();
   });
 
-  it('renders every non-zero agent when more agents exist than the color palette', async () => {
+  it('renders every non-zero legacy agent when more agents exist than the color palette', async () => {
     const activeNames = Array.from({ length: 11 }, (_, index) => `话务员${index + 1}`);
     const agentCalls = Object.fromEntries([
       ...activeNames.map((name, index) => [name, index + 1]),
       ['离职无数据', 0],
     ]);
 
-    renderTrendReport([
-      {
-        date: '2026-07-10',
-        calls: 66,
-        enrolled: 0,
-        agent_calls: agentCalls,
-      },
-    ]);
+    renderTrendReport({
+      start: '2026-07-10',
+      end: '2026-07-10',
+      daily: [
+        {
+          date: '2026-07-10',
+          calls: 66,
+          enrolled: 0,
+          agent_calls: agentCalls,
+        },
+      ],
+    });
 
     expect(await screen.findByText('各话务员每日呼出量对比')).toBeInTheDocument();
 
@@ -134,14 +170,18 @@ describe('TrendReport', () => {
   });
 
   it('hides the agent comparison chart when every agent is zero', async () => {
-    renderTrendReport([
-      {
-        date: '2026-06-25',
-        calls: 4,
-        enrolled: 0,
-        agent_calls: { 叶: 0, 陈: 0 },
-      },
-    ]);
+    renderTrendReport({
+      start: '2026-06-25',
+      end: '2026-06-25',
+      daily: [
+        {
+          date: '2026-06-25',
+          calls: 4,
+          enrolled: 0,
+          agent_calls: { 叶: 0, 陈: 0 },
+        },
+      ],
+    });
 
     expect(await screen.findByText('每日趋势')).toBeInTheDocument();
 
@@ -149,5 +189,146 @@ describe('TrendReport', () => {
     expect(chartLineNames()).toEqual(['呼出量']);
     expect(screen.queryByText('叶')).not.toBeInTheDocument();
     expect(screen.queryByText('陈')).not.toBeInTheDocument();
+  });
+
+  it('uses ID series and lets the legend hide and restore a curve', async () => {
+    renderTrendReport(idPayload);
+    expect(await screen.findByText('各话务员每日呼出量对比')).toBeInTheDocument();
+
+    const agentLine = () =>
+      screen
+        .queryAllByTestId('chart-line')
+        .find((line) => line.dataset.name === '邹欣辰');
+    expect(chartLineNames()).toEqual(['呼出量', '上周同期', '邹欣辰']);
+    expect(agentLine()?.dataset.key).toBe('agent_14');
+    expect(screen.queryByText('离职无数据')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '邹欣辰' }));
+    expect(agentLine()).toBeUndefined();
+    expect(screen.getByRole('columnheader', { name: '邹欣辰' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '全部显示' }));
+    expect(agentLine()).toBeDefined();
+  });
+
+  it('keeps legacy agent colors stable when an earlier curve is hidden', async () => {
+    renderTrendReport({
+      start: '2026-07-10',
+      end: '2026-07-10',
+      daily: [
+        {
+          date: '2026-07-10',
+          calls: 3,
+          enrolled: 0,
+          agent_calls: { 甲: 1, 乙: 2 },
+        },
+      ],
+    });
+    await screen.findByText('各话务员每日呼出量对比');
+
+    const agentLine = (name) =>
+      screen
+        .queryAllByTestId('chart-line')
+        .find((line) => line.dataset.name === name);
+    const secondAgentColor = agentLine('乙').dataset.stroke;
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '甲' }));
+
+    expect(agentLine('乙').dataset.stroke).toBe(secondAgentColor);
+  });
+
+  it('requests natural CST week and month ranges', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-05T16:30:00Z'));
+    renderTrendReport(idPayload);
+    await screen.findByText('每日趋势');
+
+    fireEvent.click(screen.getByRole('button', { name: '本周' }));
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/stats/trend', {
+        params: { start_date: '2026-07-06', end_date: '2026-07-06' },
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '本月' }));
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/stats/trend', {
+        params: { start_date: '2026-07-01', end_date: '2026-07-06' },
+      });
+    });
+  });
+
+  it('blocks a reversed custom range before requesting', async () => {
+    renderTrendReport(idPayload);
+    await screen.findByText('每日趋势');
+
+    fireEvent.change(screen.getByLabelText('开始日期'), {
+      target: { value: '2026-07-11' },
+    });
+    fireEvent.change(screen.getByLabelText('结束日期'), {
+      target: { value: '2026-07-10' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(toastError).toHaveBeenCalledWith('开始日期不能晚于结束日期');
+  });
+
+  it('blocks a custom range longer than 366 days before requesting', async () => {
+    renderTrendReport(idPayload);
+    await screen.findByText('每日趋势');
+
+    fireEvent.change(screen.getByLabelText('开始日期'), {
+      target: { value: '2025-07-09' },
+    });
+    fireEvent.change(screen.getByLabelText('结束日期'), {
+      target: { value: '2026-07-10' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(toastError).toHaveBeenCalledWith('查询范围最多 366 天');
+  });
+
+  it('shows the backend range detail when loading fails', async () => {
+    api.get.mockRejectedValueOnce({
+      response: { data: { detail: '查询范围最多 366 天' } },
+    });
+    renderComponent();
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith('查询范围最多 366 天');
+    });
+  });
+
+  it('keeps hidden-agent data in the table and CSV export', async () => {
+    renderTrendReport(idPayload);
+    await screen.findByText('各话务员每日呼出量对比');
+    fireEvent.click(screen.getByRole('checkbox', { name: '邹欣辰' }));
+
+    expect(screen.getByRole('columnheader', { name: '邹欣辰' })).toBeInTheDocument();
+    const dataRow = screen.getByRole('row', { name: '2026-07-10 3 0 3' });
+    expect(within(dataRow).getAllByRole('cell')[3]).toHaveTextContent('3');
+
+    const BlobMock = vi.fn(function Blob(parts, options) {
+      this.parts = parts;
+      this.options = options;
+    });
+    const createObjectURL = vi.fn(() => 'blob:trend-report');
+    const revokeObjectURL = vi.fn();
+    const clickSpy = vi
+      .spyOn(window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    vi.stubGlobal('Blob', BlobMock);
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+
+    fireEvent.click(screen.getByRole('button', { name: '导出' }));
+
+    const csv = BlobMock.mock.calls[0][0].join('');
+    expect(csv).toContain('日期,呼出量,报名数,邹欣辰');
+    expect(csv).toContain('2026-07-10,3,0,3');
+    expect(createObjectURL).toHaveBeenCalledWith(BlobMock.mock.instances[0]);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:trend-report');
+    expect(clickSpy.mock.instances[0].download).toBe('趋势报表_2026-07-10.csv');
   });
 });
