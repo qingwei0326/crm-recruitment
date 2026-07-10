@@ -200,6 +200,7 @@ class Student(Base):
         default=StudentStatus.not_contacted,
     )
     status_detail = Column(String(64), default="", nullable=False)
+    outcome_reason_code = Column(String(64), nullable=True)
     intent_level = Column(SAEnum(IntentLevel), nullable=False, default=IntentLevel.none)
     stage = Column(SAEnum(StudentStage), nullable=False, default=StudentStage.initial_contact)
     join_reasons = Column(Text, default="")
@@ -526,3 +527,6 @@ class DialLog(Base):
         server_default=DIAL_RECORDING_PENDING,
         index=True,
     )
+
+
+from app import domain_models as domain_models  # noqa: E402,F401

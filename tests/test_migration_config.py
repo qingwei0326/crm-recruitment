@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.migration_config import resolve_sync_migration_url
+from app.migration_config import include_schema_object, resolve_sync_migration_url
 
 
 def test_resolve_sync_migration_url_uses_absolute_sqlite_path(tmp_path):
@@ -27,3 +27,12 @@ def test_resolve_sync_migration_url_keeps_percent_characters_literal():
 
     assert Path(url.removeprefix("sqlite:///")).is_absolute()
     assert "百分比.db" in url
+
+
+def test_alembic_excludes_only_reflected_unmapped_frozen_legacy_tables():
+    for table_name in {"agents", "follow_up_assignments", "tasks", "today_tasks"}:
+        assert include_schema_object(None, table_name, "table", True, None) is False
+
+    assert include_schema_object(None, "students", "table", True, None) is True
+    assert include_schema_object(None, "agents", "table", False, None) is True
+    assert include_schema_object(None, "id", "column", True, None) is True
