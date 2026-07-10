@@ -77,20 +77,20 @@ const idPayload = {
   ],
 };
 
-function renderComponent() {
+function renderComponent(props = {}) {
   render(
     <MemoryRouter
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       initialEntries={['/admin/trend']}
     >
-      <TrendReport />
+      <TrendReport {...props} />
     </MemoryRouter>,
   );
 }
 
-function renderTrendReport(payload) {
+function renderTrendReport(payload, props = {}) {
   api.get.mockResolvedValue({ data: { data: payload } });
-  renderComponent();
+  renderComponent(props);
 }
 
 function chartLineNames() {
@@ -330,5 +330,11 @@ describe('TrendReport', () => {
     expect(createObjectURL).toHaveBeenCalledWith(BlobMock.mock.instances[0]);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:trend-report');
     expect(clickSpy.mock.instances[0].download).toBe('趋势报表_2026-07-10.csv');
+  });
+
+  it('shows the export action in the embedded report center view', async () => {
+    renderTrendReport(idPayload, { embedded: true });
+
+    expect(await screen.findByRole('button', { name: '导出' })).toBeEnabled();
   });
 });
