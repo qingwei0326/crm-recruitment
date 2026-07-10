@@ -165,6 +165,18 @@ export default function TrendReport({ embedded = false }) {
 
   const content = (
         <div className={`${embedded ? '' : 'p-4 lg:p-6'} max-w-6xl mx-auto space-y-6`}>
+          {embedded && canExportReport && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={!normalizedTrend.daily.length}
+                className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" /> 导出
+              </button>
+            </div>
+          )}
           {/* Controls */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 flex flex-wrap gap-3 items-center">
             <button
