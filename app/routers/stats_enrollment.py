@@ -1,10 +1,11 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, func, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import Date, case, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ADMIN_PAGE_REPORT_CENTER, require_admin, require_page_permission
+from app.config import DB_ENGINE
 from app.database import get_db
 from app.models import (
     AttributionMethod,
@@ -28,9 +29,28 @@ from app.models import (
 from app.routers.stats import _enum_value, _percent, _region_label
 from app.schemas import Response
 from app.status_policy import statuses_for_canonical
-from app.utils import utcnow
+from app.utils import cst_date_start_as_utc, today_cst_date, utcnow
 
 router = APIRouter(prefix="/api/stats", tags=["统计"])
+TREND_MAX_DAYS = 366
+
+
+def _dial_log_cst_date_expression(engine_name: str = DB_ENGINE):
+    if engine_name == "postgresql":
+        return cast(DialLog.dialed_at + text("INTERVAL '8 hours'"), Date)
+    return func.date(DialLog.dialed_at, "+8 hours")
+
+
+def _resolve_trend_range(
+    start_date: date | None, end_date: date | None
+) -> tuple[date, date]:
+    end = end_date or today_cst_date()
+    start = start_date or end.replace(day=1)
+    if start > end:
+        raise HTTPException(status_code=422, detail="开始日期不能晚于结束日期")
+    if (end - start).days + 1 > TREND_MAX_DAYS:
+        raise HTTPException(status_code=422, detail="查询范围最多 366 天")
+    return start, end
 
 
 @router.get("/enrollment-conversion")
@@ -90,47 +110,52 @@ async def enrollment_conversion(
 
 @router.get("/trend")
 async def trend_data(
-    start_date: str = Query(None),
-    end_date: str = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_page_permission(ADMIN_PAGE_REPORT_CENTER)),
 ):
-    end = date.today()
-    if end_date:
-        end = date.fromisoformat(end_date)
-    start = end - timedelta(days=30)
-    if start_date:
-        start = date.fromisoformat(start_date)
+    start, end = _resolve_trend_range(start_date, end_date)
 
-    # Build day list
     days = []
     curr = start
     while curr <= end:
         days.append(curr)
         curr += timedelta(days=1)
 
-    first_day = datetime(days[0].year, days[0].month, days[0].day)
-    last_day_end = datetime(days[-1].year, days[-1].month, days[-1].day) + timedelta(days=1)
-
-    # Batch: all calls in date range grouped by date+agent
-    calls_by_date_agent = {}
-    agents_r = await db.execute(select(User.id, User.name).where(User.role == UserRole.agent))
-    agent_rows = agents_r.all()
-    agent_name_of = dict(agent_rows)
-
-    calls_raw = await db.execute(
-        select(
-            func.date(DialLog.dialed_at),
-            DialLog.agent_id,
-            func.count(DialLog.id),
-        )
-        .where(DialLog.dialed_at >= first_day, DialLog.dialed_at < last_day_end)
-        .group_by(func.date(DialLog.dialed_at), DialLog.agent_id)
+    agent_result = await db.execute(
+        select(User.id, User.name, User.is_active)
+        .where(User.role == UserRole.agent)
+        .order_by(User.id)
     )
-    for day_str, agent_id, cnt in calls_raw.all():
-        calls_by_date_agent.setdefault(day_str, {})[agent_name_of.get(agent_id, "")] = int(cnt)
+    agents = [
+        {"id": agent_id, "name": name, "is_active": bool(is_active)}
+        for agent_id, name, is_active in agent_result.all()
+    ]
+    agent_ids = [agent["id"] for agent in agents]
 
-    # Batch: daily enrolled count
+    day_expression = _dial_log_cst_date_expression()
+    comparison_start = start - timedelta(days=7)
+    first_day = cst_date_start_as_utc(comparison_start)
+    last_day_end = cst_date_start_as_utc(end + timedelta(days=1))
+    calls_by_date_agent: dict[str, dict[int, int]] = {}
+    if agent_ids:
+        calls_raw = await db.execute(
+            select(
+                day_expression.label("day"),
+                DialLog.agent_id,
+                func.count(DialLog.id),
+            )
+            .where(
+                DialLog.agent_id.in_(agent_ids),
+                DialLog.dialed_at >= first_day,
+                DialLog.dialed_at < last_day_end,
+            )
+            .group_by(day_expression, DialLog.agent_id)
+        )
+        for day_value, agent_id, count in calls_raw.all():
+            calls_by_date_agent.setdefault(str(day_value), {})[agent_id] = int(count or 0)
+
     enrolled_by_date = {}
     enrolled_raw = await db.execute(
         select(
@@ -147,34 +172,29 @@ async def trend_data(
     for enrolled_date, cnt in enrolled_raw.all():
         enrolled_by_date[str(enrolled_date)] = int(cnt)
 
-    # Batch: daily total calls
-    calls_total_by_date = {}
-    calls_raw_total = await db.execute(
-        select(
-            func.date(DialLog.dialed_at),
-            func.count(DialLog.id),
-        )
-        .where(DialLog.dialed_at >= first_day, DialLog.dialed_at < last_day_end)
-        .group_by(func.date(DialLog.dialed_at))
-    )
-    for day_str, cnt in calls_raw_total.all():
-        calls_total_by_date[day_str] = int(cnt)
-
     daily = []
     for d in days:
         day_str = str(d)
         day_agents = calls_by_date_agent.get(day_str, {})
-        agent_calls = {name: day_agents.get(name, 0) for name in agent_name_of.values()}
+        by_id = {str(agent["id"]): day_agents.get(agent["id"], 0) for agent in agents}
+        by_name: dict[str, int] = {}
+        for agent in agents:
+            by_name[agent["name"]] = by_name.get(agent["name"], 0) + by_id[str(agent["id"])]
+        previous_agents = calls_by_date_agent.get(str(d - timedelta(days=7)), {})
         daily.append(
             {
                 "date": day_str,
-                "calls": calls_total_by_date.get(day_str, 0),
+                "calls": sum(by_id.values()),
                 "enrolled": enrolled_by_date.get(day_str, 0),
-                "agent_calls": agent_calls,
+                "prev_calls": sum(previous_agents.values()),
+                "agent_calls_by_id": by_id,
+                "agent_calls": by_name,
             }
         )
 
-    return Response.ok({"daily": daily, "start": str(start), "end": str(end)})
+    return Response.ok(
+        {"agents": agents, "daily": daily, "start": str(start), "end": str(end)}
+    )
 
 
 @router.get("/enrollment-substage-distribution")

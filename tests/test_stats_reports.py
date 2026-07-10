@@ -1,6 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 from app.models import (
     AttributionMethod,
@@ -18,6 +20,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.routers import stats_enrollment
 from app.utils import today_cst_as_utc
 
 
@@ -44,6 +47,137 @@ async def test_report_stats_allow_report_page_permission(
     assert trend_resp.json()["code"] == 0
     assert admissions_resp.status_code == 200
     assert admissions_resp.json()["code"] == 0
+
+
+@pytest.mark.asyncio
+async def test_trend_uses_agent_ids_and_cst_days(
+    client, admin_headers, db, admin_user, agent_user
+):
+    inactive_agent = User(
+        username="trend-inactive-data",
+        hashed_password="x",
+        role=UserRole.agent,
+        name=agent_user.name,
+        is_active=False,
+    )
+    inactive_empty = User(
+        username="trend-inactive-empty",
+        hashed_password="x",
+        role=UserRole.agent,
+        name="离职无数据",
+        is_active=False,
+    )
+    db.add_all([inactive_agent, inactive_empty])
+    await db.flush()
+
+    students = [Student(name="趋势测试" + str(index)) for index in range(5)]
+    db.add_all(students)
+    await db.flush()
+    db.add_all(
+        [
+            DialLog(
+                student_id=students[0].id,
+                agent_id=agent_user.id,
+                dialed_at=datetime(2026, 7, 9, 15, 59),
+            ),
+            DialLog(
+                student_id=students[1].id,
+                agent_id=agent_user.id,
+                dialed_at=datetime(2026, 7, 9, 16, 0),
+            ),
+            DialLog(
+                student_id=students[2].id,
+                agent_id=inactive_agent.id,
+                dialed_at=datetime(2026, 7, 9, 16, 30),
+            ),
+            DialLog(
+                student_id=students[3].id,
+                agent_id=agent_user.id,
+                dialed_at=datetime(2026, 7, 2, 16, 0),
+            ),
+            DialLog(
+                student_id=students[4].id,
+                agent_id=admin_user.id,
+                dialed_at=datetime(2026, 7, 9, 17, 0),
+            ),
+        ]
+    )
+    await db.commit()
+
+    response = await client.get(
+        "/api/stats/trend",
+        params={"start_date": "2026-07-10", "end_date": "2026-07-10"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert [agent["id"] for agent in data["agents"]] == sorted(
+        agent["id"] for agent in data["agents"]
+    )
+    assert any(
+        agent["id"] == inactive_agent.id and not agent["is_active"]
+        for agent in data["agents"]
+    )
+    assert any(agent["id"] == inactive_empty.id for agent in data["agents"])
+    row = data["daily"][0]
+    assert row["calls"] == 2
+    assert row["prev_calls"] == 1
+    assert row["agent_calls_by_id"][str(agent_user.id)] == 1
+    assert row["agent_calls_by_id"][str(inactive_agent.id)] == 1
+    assert row["agent_calls_by_id"][str(inactive_empty.id)] == 0
+    assert row["agent_calls"][agent_user.name] == 2
+    assert sum(row["agent_calls_by_id"].values()) == row["calls"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        (
+            {"start_date": "2026-07-11", "end_date": "2026-07-10"},
+            "开始日期不能晚于结束日期",
+        ),
+        (
+            {"start_date": "2025-07-09", "end_date": "2026-07-10"},
+            "查询范围最多 366 天",
+        ),
+    ],
+)
+async def test_trend_rejects_invalid_ranges(client, admin_headers, params, message):
+    response = await client.get("/api/stats/trend", params=params, headers=admin_headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == message
+
+
+@pytest.mark.asyncio
+async def test_trend_rejects_invalid_date_format(client, admin_headers):
+    response = await client.get(
+        "/api/stats/trend",
+        params={"start_date": "not-a-date"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_trend_defaults_to_current_cst_month(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(stats_enrollment, "today_cst_date", lambda: date(2026, 7, 10))
+
+    response = await client.get("/api/stats/trend", headers=admin_headers)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["start"] == "2026-07-01"
+    assert response.json()["data"]["end"] == "2026-07-10"
+
+
+def test_trend_postgresql_date_expression_uses_cst_offset():
+    expression = stats_enrollment._dial_log_cst_date_expression("postgresql")
+    sql = str(select(expression).compile(dialect=postgresql.dialect()))
+
+    assert "INTERVAL '8 hours'" in sql
 
 
 @pytest.mark.asyncio
