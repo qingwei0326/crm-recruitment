@@ -4,7 +4,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.orm import Session
+
+from app.domain_models import AgentEmployment, LeadOutcomeReason, StudentAssignment
+from app.migration_data.domain_backfill_20260711 import audit_domain_core
+from app.models import Student, StudentStatus, User, UserRole
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_TABLES = {
@@ -196,10 +201,6 @@ def test_empty_database_upgrades_to_domain_schema_without_dropping_legacy(tmp_pa
     finally:
         engine.dispose()
 
-    check = run_alembic(db_path, "check")
-    assert check.returncode == 0, check.stdout + check.stderr
-
-
 def test_domain_schema_downgrade_removes_only_domain_delta(tmp_path):
     db_path = tmp_path / "domain-downgrade.db"
     upgraded = run_alembic(db_path, "upgrade", "20260711_02")
@@ -216,5 +217,85 @@ def test_domain_schema_downgrade_removes_only_domain_delta(tmp_path):
         assert DOMAIN_TABLES.isdisjoint(tables)
         student_columns = {column["name"] for column in inspector.get_columns("students")}
         assert "outcome_reason_code" not in student_columns
+    finally:
+        engine.dispose()
+
+
+def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
+    db_path = tmp_path / "domain-backfill.db"
+    schema_result = run_alembic(db_path, "upgrade", "20260711_02")
+    assert schema_result.returncode == 0, schema_result.stderr
+
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    with Session(engine) as session:
+        user = User(
+            username="migration_agent",
+            hashed_password="test",
+            role=UserRole.agent,
+            name="迁移员工",
+            is_active=True,
+        )
+        session.add(user)
+        session.flush()
+        student = Student(
+            name="迁移学生",
+            region="测试区",
+            assigned_to=user.id,
+            status=StudentStatus.invalid,
+            status_detail="报好了",
+        )
+        session.add(student)
+        session.commit()
+        user_id = user.id
+        student_id = student.id
+
+    migrated = run_alembic(db_path, "upgrade", "20260711_03")
+
+    assert migrated.returncode == 0, migrated.stderr
+    with Session(engine) as session:
+        student = session.get(Student, student_id)
+        assert student.status == StudentStatus.invalid
+        assert student.status_detail == "报好了"
+        assert student.assigned_to == user_id
+        assert student.outcome_reason_code == "enrolled_elsewhere"
+        assert session.get(AgentEmployment, user_id) is not None
+        assignment = session.scalars(
+            select(StudentAssignment).where(
+                StudentAssignment.student_id == student_id,
+                StudentAssignment.ended_at.is_(None),
+            )
+        ).one()
+        assert assignment.agent_id == user_id
+        reason = session.get(LeadOutcomeReason, "enrolled_elsewhere")
+        assert reason.reclaimable is False
+        assert audit_domain_core(session)["ok"] is True
+        revision = session.execute(
+            text("select version_num from alembic_version")
+        ).scalar_one()
+        assert revision == "20260711_03"
+    check = run_alembic(db_path, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
+    engine.dispose()
+
+
+def test_domain_backfill_downgrade_clears_only_new_domain_data(tmp_path):
+    db_path = tmp_path / "backfill-downgrade.db"
+    upgraded = run_alembic(db_path, "upgrade", "20260711_03")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    downgraded = run_alembic(db_path, "downgrade", "20260711_02")
+
+    assert downgraded.returncode == 0, downgraded.stderr
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    try:
+        inspector = inspect(engine)
+        assert DOMAIN_TABLES <= set(inspector.get_table_names())
+        with Session(engine) as session:
+            assert session.scalar(select(func.count(AgentEmployment.user_id))) == 0
+            assert session.scalar(select(func.count(LeadOutcomeReason.code))) == 0
+            revision = session.execute(
+                text("select version_num from alembic_version")
+            ).scalar_one()
+            assert revision == "20260711_02"
     finally:
         engine.dispose()

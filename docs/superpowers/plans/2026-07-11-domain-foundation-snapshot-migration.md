@@ -34,7 +34,7 @@
 - Create `app/domain_models.py`: new domain enums and ORM tables.
 - Modify `app/models.py`: add the outcome-reason projection and register domain metadata.
 - Create `alembic/versions/20260711_02_domain_core_schema.py`: generated domain schema revision.
-- Create `alembic/data/domain_backfill_20260711.py`: immutable idempotent backfill and audit functions.
+- Create `app/migration_data/domain_backfill_20260711.py`: immutable idempotent backfill and audit functions.
 - Create `alembic/versions/20260711_03_backfill_domain_core.py`: invoke the frozen data migration.
 - Create `scripts/audit_domain_backfill.py`: JSON audit command.
 - Create `scripts/migrate_snapshot_clone.py`: copy, migrate, verify, and report a snapshot clone.
@@ -729,8 +729,8 @@ git commit -m "db: add ownership and work item schema"
 ### Task 5: Idempotent Domain Backfill and Audit
 
 **Files:**
-- Create: `alembic/data/__init__.py`
-- Create: `alembic/data/domain_backfill_20260711.py`
+- Create: `app/migration_data/__init__.py`
+- Create: `app/migration_data/domain_backfill_20260711.py`
 - Create: `alembic/versions/20260711_03_backfill_domain_core.py`
 - Create: `scripts/audit_domain_backfill.py`
 - Create: `tests/test_domain_backfill.py`
@@ -770,7 +770,7 @@ Also assert `报好了` maps to `enrolled_elsewhere`, blank invalid reasons map 
 .venv-win\Scripts\python.exe -m pytest tests/test_domain_backfill.py -q
 ```
 
-Expected: import failure for `alembic.data.domain_backfill_20260711`.
+Expected: import failure for `app.migration_data.domain_backfill_20260711`.
 
 - [ ] **Step 3: Implement the frozen backfill module**
 
@@ -845,7 +845,7 @@ Expected: both runs pass; the second run proves tests do not depend on residue.
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add alembic/data alembic/versions/20260711_03_backfill_domain_core.py scripts/audit_domain_backfill.py tests/test_domain_backfill.py tests/test_alembic_migrations.py
+git add app/migration_data alembic/versions/20260711_03_backfill_domain_core.py scripts/audit_domain_backfill.py tests/test_domain_backfill.py tests/test_alembic_migrations.py
 git commit -m "db: backfill domain ownership state"
 ```
 
