@@ -41,7 +41,18 @@ const MAIN_SERIES = [
   },
 ];
 
-const AGENT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const AGENT_COLORS = [
+  '#3b82f6',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+  '#f97316',
+  '#6366f1',
+];
 
 function hasPositiveValue(rows, getValue) {
   return rows.some((row) => Number(getValue(row) || 0) > 0);
@@ -135,7 +146,7 @@ export default function TrendReport({ embedded = false }) {
     [chartData],
   );
   const visibleAgentNames = useMemo(
-    () => getActiveAgentNames(trendData?.daily || []).slice(0, 5),
+    () => getActiveAgentNames(trendData?.daily || []),
     [trendData],
   );
 
@@ -252,7 +263,7 @@ export default function TrendReport({ embedded = false }) {
                           key={name}
                           type="monotone"
                           dataKey={`agent_calls.${name}`}
-                          stroke={AGENT_COLORS[i]}
+                          stroke={AGENT_COLORS[i % AGENT_COLORS.length]}
                           name={name}
                           strokeWidth={2}
                           dot={{ r: 1 }}

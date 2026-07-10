@@ -41,8 +41,8 @@ vi.mock('../../../components/Toast', () => ({
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }) => <div data-testid="responsive-chart">{children}</div>,
   LineChart: ({ children }) => <div data-testid="line-chart">{children}</div>,
-  Line: ({ name, dataKey }) => (
-    <div data-testid="chart-line" data-name={name} data-key={dataKey}>
+  Line: ({ name, dataKey, stroke }) => (
+    <div data-testid="chart-line" data-name={name} data-key={dataKey} data-stroke={stroke}>
       {name}
     </div>
   ),
@@ -102,6 +102,35 @@ describe('TrendReport', () => {
     expect(chartLineNames()).toEqual(['呼出量', '陈', '蒲安琪']);
     expect(screen.queryByText('叶')).not.toBeInTheDocument();
     expect(screen.queryByText('苏丹丹')).not.toBeInTheDocument();
+  });
+
+  it('renders every non-zero agent when more agents exist than the color palette', async () => {
+    const activeNames = Array.from({ length: 11 }, (_, index) => `话务员${index + 1}`);
+    const agentCalls = Object.fromEntries([
+      ...activeNames.map((name, index) => [name, index + 1]),
+      ['离职无数据', 0],
+    ]);
+
+    renderTrendReport([
+      {
+        date: '2026-07-10',
+        calls: 66,
+        enrolled: 0,
+        agent_calls: agentCalls,
+      },
+    ]);
+
+    expect(await screen.findByText('各话务员每日呼出量对比')).toBeInTheDocument();
+
+    const agentLines = screen
+      .getAllByTestId('chart-line')
+      .filter((line) => activeNames.includes(line.dataset.name));
+    expect(agentLines.map((line) => line.dataset.name)).toEqual(activeNames);
+    expect(agentLines.every((line) => Boolean(line.dataset.stroke))).toBe(true);
+    activeNames.forEach((name) => {
+      expect(screen.getByRole('columnheader', { name })).toBeInTheDocument();
+    });
+    expect(screen.queryByText('离职无数据')).not.toBeInTheDocument();
   });
 
   it('hides the agent comparison chart when every agent is zero', async () => {
