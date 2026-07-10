@@ -59,6 +59,35 @@ const scoringRules = [
   '资料完整 10 = 数据电话质量',
 ];
 
+function recordingCounts(metrics = {}) {
+  const compatibilityUnrecorded = Number(metrics.today_unrecorded_calls || 0);
+  return {
+    completed: Number(metrics.today_recorded_calls || 0),
+    pending: Number(
+      metrics.today_pending_dial_sessions == null
+        ? compatibilityUnrecorded
+        : metrics.today_pending_dial_sessions,
+    ),
+    legacy: Number(metrics.today_legacy_missing_duration || 0),
+  };
+}
+
+function formatFlowDuration(seconds) {
+  return Number(seconds || 0) > 0 ? formatDuration(seconds) : '-';
+}
+
+function RecordingMetrics({ metrics }) {
+  const recording = recordingCounts(metrics);
+  return (
+    <>
+      <span>已完成 {recording.completed}</span>
+      <span>待完成 {recording.pending}</span>
+      <span>历史未回填 {recording.legacy}</span>
+      <span>流程均耗 {formatFlowDuration(metrics?.avg_recorded_duration_seconds)}</span>
+    </>
+  );
+}
+
 const recommendationLinkClass = {
   amber:
     'border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20',
@@ -290,12 +319,16 @@ export default function AgentScorePreview() {
       attention: items.filter((item) => ['risk', 'watch'].includes(item.level)).length,
       overdue: items.reduce((sum, item) => sum + Number(item.metrics?.overdue_follow_ups || 0), 0),
       calls: items.reduce((sum, item) => sum + Number(item.metrics?.today_calls || 0), 0),
-      recordedCalls: items.reduce(
-        (sum, item) => sum + Number(item.metrics?.today_recorded_calls || 0),
+      completedCalls: items.reduce(
+        (sum, item) => sum + recordingCounts(item.metrics).completed,
         0,
       ),
-      unrecordedCalls: items.reduce(
-        (sum, item) => sum + Number(item.metrics?.today_unrecorded_calls || 0),
+      pendingCalls: items.reduce(
+        (sum, item) => sum + recordingCounts(item.metrics).pending,
+        0,
+      ),
+      legacyMissing: items.reduce(
+        (sum, item) => sum + recordingCounts(item.metrics).legacy,
         0,
       ),
     };
@@ -357,13 +390,14 @@ export default function AgentScorePreview() {
         </PageHeader>
 
         <div className="w-full p-4 lg:p-6 space-y-4">
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
             <StatCell icon={Activity} label="话务员" value={summary.total} />
             <StatCell icon={AlertTriangle} label="需关注" value={summary.attention} />
             <StatCell icon={Clock3} label="逾期回访" value={summary.overdue} />
             <StatCell icon={Phone} label="今日呼出" value={summary.calls} />
-            <StatCell icon={CheckCircle2} label="有效记录" value={summary.recordedCalls} />
-            <StatCell icon={Clock3} label="未记录" value={summary.unrecordedCalls} />
+            <StatCell icon={CheckCircle2} label="已完成" value={summary.completedCalls} />
+            <StatCell icon={Clock3} label="待完成" value={summary.pendingCalls} />
+            <StatCell icon={Clock3} label="历史未回填" value={summary.legacyMissing} />
           </div>
 
           <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
@@ -501,9 +535,7 @@ export default function AgentScorePreview() {
                             <span>活跃 {item.metrics.active_tasks}</span>
                             <span>推进 {item.metrics.progress_pct}%</span>
                             <span>拨号 {item.metrics.today_calls}</span>
-                            <span>有效 {item.metrics.today_recorded_calls ?? 0}</span>
-                            <span>未记录 {item.metrics.today_unrecorded_calls ?? 0}</span>
-                            <span>均长 {formatDuration(item.metrics.avg_recorded_duration_seconds)}</span>
+                            <RecordingMetrics metrics={item.metrics} />
                             <span>回访 {item.metrics.open_follow_ups}</span>
                             <span>A 意向 {item.metrics.a_level_count}</span>
                             <span>报名 {item.metrics.enrolled_count}</span>

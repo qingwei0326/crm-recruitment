@@ -44,6 +44,32 @@ function n(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function recordingCounts(metrics = {}) {
+  const compatibilityUnrecorded = n(metrics.unrecorded_calls);
+  return {
+    completed: n(metrics.completed_dial_sessions ?? metrics.recorded_calls),
+    pending: n(
+      metrics.pending_dial_sessions == null
+        ? compatibilityUnrecorded
+        : metrics.pending_dial_sessions,
+    ),
+    legacy: n(metrics.legacy_missing_duration),
+  };
+}
+
+function todayRecordingCounts(metrics = {}) {
+  const compatibilityUnrecorded = n(metrics.today_unrecorded_calls);
+  return {
+    completed: n(metrics.today_recorded_calls),
+    pending: n(
+      metrics.today_pending_dial_sessions == null
+        ? compatibilityUnrecorded
+        : metrics.today_pending_dial_sessions,
+    ),
+    legacy: n(metrics.today_legacy_missing_duration),
+  };
+}
+
 function MetricCard({ icon: Icon, label, value, detail, tone = 'gray', to }) {
   const body = (
     <div className={`min-h-[112px] rounded-xl border p-3 ${metricTone[tone] || metricTone.gray}`}>
@@ -77,6 +103,7 @@ function QuickAction({ icon: Icon, title, detail, tone = 'gray', to }) {
 
 function AgentRow({ item }) {
   const metrics = item.metrics || {};
+  const recording = todayRecordingCounts(metrics);
   const needsAttention = ['risk', 'watch'].includes(item.level);
   return (
     <Link
@@ -100,7 +127,7 @@ function AgentRow({ item }) {
             </span>
           </div>
           <div className="mt-1 break-words text-xs leading-4 text-gray-500 dark:text-gray-400">
-            拨号 {n(metrics.today_calls)} · 有效 {n(metrics.today_recorded_calls)} · 未记录 {n(metrics.today_unrecorded_calls)}
+            拨号 {n(metrics.today_calls)} · 已完成 {recording.completed} · 待完成 {recording.pending} · 历史未回填 {recording.legacy}
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -108,7 +135,9 @@ function AgentRow({ item }) {
             {Number(item.score || 0).toFixed(1)}
           </div>
           <div className="text-[11px] text-gray-500 dark:text-gray-400">
-            均长 {formatDuration(metrics.avg_recorded_duration_seconds)}
+            流程均耗 {Number(metrics.avg_recorded_duration_seconds || 0) > 0
+              ? formatDuration(metrics.avg_recorded_duration_seconds)
+              : '-'}
           </div>
         </div>
       </div>
@@ -193,9 +222,8 @@ export default function AdminMobileDash() {
   const business = opsHealth?.business || {};
   const canViewSystemSettings = Boolean(user?.is_super_admin);
   const totalCalls = n(summary?.today_calls ?? today.total_calls);
-  const recordedCalls = n(today.recorded_calls);
-  const unrecordedCalls = n(today.unrecorded_calls);
-  const unrecordedRatio = n(month.unrecorded_ratio);
+  const todayRecording = recordingCounts(today);
+  const monthRecording = recordingCounts(month);
   const todayA = n(summary?.today_a);
   const availableUnassigned = n(summary?.available_unassigned ?? students.unassigned_active);
   const hasCritical =
@@ -262,8 +290,8 @@ export default function AdminMobileDash() {
               icon={Phone}
               label="今日呼出"
               value={loading ? '-' : totalCalls}
-              detail={`有效 ${recordedCalls} · 未记录 ${unrecordedCalls}`}
-              tone={unrecordedCalls > 0 ? 'amber' : 'blue'}
+              detail={`已完成 ${todayRecording.completed} · 待完成 ${todayRecording.pending}`}
+              tone={todayRecording.pending > 0 ? 'amber' : 'blue'}
               to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
             />
             <MetricCard
@@ -321,9 +349,16 @@ export default function AdminMobileDash() {
               />
               <QuickAction
                 icon={Clock3}
-                title="未记录通话"
-                detail={`今日 ${unrecordedCalls} 通，本月占比 ${unrecordedRatio}%`}
-                tone={unrecordedCalls > 0 ? 'amber' : 'green'}
+                title="待完成拨号"
+                detail={`今日 ${todayRecording.pending} 通 · 本月 ${monthRecording.pending} 通`}
+                tone={todayRecording.pending > 0 ? 'amber' : 'green'}
+                to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
+              />
+              <QuickAction
+                icon={Clock3}
+                title="历史未回填"
+                detail={`今日 ${todayRecording.legacy} 通 · 本月 ${monthRecording.legacy} 通`}
+                tone="gray"
                 to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
               />
               <QuickAction
