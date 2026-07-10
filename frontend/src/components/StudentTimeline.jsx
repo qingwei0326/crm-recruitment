@@ -16,9 +16,12 @@ function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '');
 }
 
-function callDuration(call) {
-  const seconds = firstValue(call.duration_seconds, call.duration);
-  return ` · ${formatDuration(seconds)}`;
+function callRecordingSummary(call) {
+  const seconds = Number(firstValue(call.duration_seconds, call.duration) || 0);
+  const state = call.recording_state || (seconds > 0 ? 'completed' : 'pending');
+  if (state === 'pending') return '待完成';
+  if (state === 'legacy_missing') return '历史未回填';
+  return seconds > 0 ? `已完成 · ${formatDuration(seconds)}` : '已完成';
 }
 
 export function buildStudentTimeline({
@@ -113,7 +116,7 @@ function renderItem(item) {
         type="通话"
         icon={Phone}
         color="blue"
-        title={`通话${callDuration(d)}`}
+        title={`通话 · ${callRecordingSummary(d)}`}
         content={firstValue(d.ai_summary, d.content, d.notes, d.ai_reasons)}
         agentName={d.agent_name}
         timestamp={firstValue(d.created_at, d.call_time)}

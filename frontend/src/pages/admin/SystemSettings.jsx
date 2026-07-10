@@ -77,6 +77,19 @@ function OpsMetric({ label, value, tone = 'default', to }) {
   );
 }
 
+function recordingCounts(metrics = {}) {
+  const compatibilityUnrecorded = Number(metrics.unrecorded_calls || 0);
+  return {
+    completed: Number(metrics.completed_dial_sessions ?? metrics.recorded_calls ?? 0),
+    pending: Number(
+      metrics.pending_dial_sessions == null
+        ? compatibilityUnrecorded
+        : metrics.pending_dial_sessions,
+    ),
+    legacy: Number(metrics.legacy_missing_duration ?? 0),
+  };
+}
+
 export default function SystemSettings() {
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
@@ -303,6 +316,12 @@ export default function SystemSettings() {
     }
   };
 
+  const todayRecording = recordingCounts(dataQuality?.calls?.today);
+  const monthRecording = recordingCounts(dataQuality?.calls?.month);
+  const monthAverageDuration = Number(
+    dataQuality?.calls?.month?.avg_recorded_duration_seconds || 0,
+  );
+
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="flex-1 min-w-0">
@@ -413,26 +432,38 @@ export default function SystemSettings() {
               <RowMessage state={qualityMessage} />
               {dataQuality ? (
                 <div className="space-y-5">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                     <OpsMetric
-                      label="今日未记录"
-                      value={dataQuality.calls?.today?.unrecorded_calls ?? 0}
-                      tone={dataQuality.calls?.today?.unrecorded_calls > 0 ? 'warning' : 'default'}
+                      label="今日待完成"
+                      value={todayRecording.pending}
+                      tone={todayRecording.pending > 0 ? 'warning' : 'default'}
                       to="/admin/report-center?tab=call-volume"
                     />
                     <OpsMetric
-                      label="本月未记录"
-                      value={dataQuality.calls?.month?.unrecorded_calls ?? 0}
-                      tone={dataQuality.calls?.month?.unrecorded_calls > 0 ? 'warning' : 'default'}
+                      label="今日历史未回填"
+                      value={todayRecording.legacy}
                       to="/admin/report-center?tab=call-volume"
                     />
                     <OpsMetric
-                      label="未记录占比"
-                      value={`${dataQuality.calls?.month?.unrecorded_ratio ?? 0}%`}
-                      tone={dataQuality.calls?.month?.unrecorded_ratio > 0 ? 'warning' : 'default'}
+                      label="本月已完成"
+                      value={monthRecording.completed}
                       to="/admin/report-center?tab=call-volume"
                     />
-                    <OpsMetric label="平均有效时长" value={formatDuration(dataQuality.calls?.month?.avg_recorded_duration_seconds)} />
+                    <OpsMetric
+                      label="本月待完成"
+                      value={monthRecording.pending}
+                      tone={monthRecording.pending > 0 ? 'warning' : 'default'}
+                      to="/admin/report-center?tab=call-volume"
+                    />
+                    <OpsMetric
+                      label="本月历史未回填"
+                      value={monthRecording.legacy}
+                      to="/admin/report-center?tab=call-volume"
+                    />
+                    <OpsMetric
+                      label="平均流程耗时"
+                      value={monthAverageDuration > 0 ? formatDuration(monthAverageDuration) : '-'}
+                    />
                     <OpsMetric
                       label="无电话数据"
                       value={dataQuality.students?.missing_phone_tasks ?? 0}
@@ -455,23 +486,30 @@ export default function SystemSettings() {
 
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="rounded-lg border dark:border-gray-700 p-3">
-                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">未记录时长排行</div>
+                      <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">待完成拨号排行</div>
                       {dataQuality.calls?.agents?.length ? (
                         <div className="space-y-2">
-                          {dataQuality.calls.agents.slice(0, 5).map((agent) => (
-                            <div key={agent.agent_id} className="flex items-center justify-between gap-3 text-sm">
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{agent.agent_name}</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">
-                                  总拨号 {agent.total_calls} · 有效 {agent.recorded_calls} · 均长 {formatDuration(agent.avg_recorded_duration_seconds)}
+                          {dataQuality.calls.agents.slice(0, 5).map((agent) => {
+                            const recording = recordingCounts(agent);
+                            const pendingRatio = Number(agent.total_calls || 0) > 0
+                              ? Math.round((recording.pending / Number(agent.total_calls)) * 1000) / 10
+                              : 0;
+                            const averageDuration = Number(agent.avg_recorded_duration_seconds || 0);
+                            return (
+                              <div key={agent.agent_id} className="flex items-center justify-between gap-3 text-sm">
+                                <div className="min-w-0">
+                                  <div className="font-medium text-gray-800 dark:text-gray-100 truncate">{agent.agent_name}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    总拨号 {agent.total_calls} · 已完成 {recording.completed} · 历史未回填 {recording.legacy} · 流程均耗 {averageDuration > 0 ? formatDuration(averageDuration) : '-'}
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="font-semibold text-amber-700 dark:text-amber-300">{recording.pending}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">{pendingRatio}%</div>
                                 </div>
                               </div>
-                              <div className="text-right shrink-0">
-                                <div className="font-semibold text-amber-700 dark:text-amber-300">{agent.unrecorded_calls}</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">{agent.unrecorded_ratio}%</div>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="text-sm text-gray-400">暂无本月拨号记录</div>

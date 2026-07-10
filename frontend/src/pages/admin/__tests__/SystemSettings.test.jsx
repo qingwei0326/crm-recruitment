@@ -61,12 +61,22 @@ const qualityPayload = {
   status: 'warning',
   generated_at: '2026-06-27T16:30:00',
   calls: {
-    today: { total_calls: 3, recorded_calls: 2, unrecorded_calls: 1 },
+    today: {
+      total_calls: 4,
+      recorded_calls: 2,
+      unrecorded_calls: 2,
+      completed_dial_sessions: 2,
+      pending_dial_sessions: 1,
+      legacy_missing_duration: 1,
+    },
     month: {
       total_calls: 10,
       recorded_calls: 7,
       unrecorded_calls: 3,
       unrecorded_ratio: 30,
+      completed_dial_sessions: 7,
+      pending_dial_sessions: 1,
+      legacy_missing_duration: 2,
       avg_recorded_duration_seconds: 75,
     },
     agents: [
@@ -77,6 +87,9 @@ const qualityPayload = {
         recorded_calls: 7,
         unrecorded_calls: 3,
         unrecorded_ratio: 30,
+        completed_dial_sessions: 7,
+        pending_dial_sessions: 1,
+        legacy_missing_duration: 2,
         avg_recorded_duration_seconds: 75,
       },
     ],
@@ -129,8 +142,16 @@ describe('SystemSettings ops health', () => {
     expect(screen.getByLabelText('默认通话目标')).toHaveValue(35);
     expect(api.get).toHaveBeenCalledWith('/admin/data-quality');
     expect(screen.getByText('数据质量')).toBeInTheDocument();
-    expect(screen.getByText('本月未记录')).toBeInTheDocument();
-    expect(screen.getByText('平均有效时长')).toBeInTheDocument();
+    expect(screen.getByText('今日待完成')).toBeInTheDocument();
+    expect(screen.getByText('今日历史未回填')).toBeInTheDocument();
+    expect(screen.getByText('本月待完成')).toBeInTheDocument();
+    expect(screen.getByText('本月历史未回填')).toBeInTheDocument();
+    expect(screen.getByText('本月已完成')).toBeInTheDocument();
+    expect(screen.getByText('平均流程耗时')).toBeInTheDocument();
+    expect(screen.getByText('待完成拨号排行')).toBeInTheDocument();
+    expect(screen.getByText('总拨号 10 · 已完成 7 · 历史未回填 2 · 流程均耗 1分15秒')).toBeInTheDocument();
+    expect(screen.getByText('今日待完成').nextElementSibling).toHaveClass('text-amber-700');
+    expect(screen.getByText('今日历史未回填').nextElementSibling).not.toHaveClass('text-amber-700');
     expect(screen.getByText('1分15秒')).toBeInTheDocument();
     expect(screen.getByText('蒲安琪')).toBeInTheDocument();
     expect(screen.getByText('空号')).toBeInTheDocument();
@@ -146,7 +167,7 @@ describe('SystemSettings ops health', () => {
       'href',
       '/admin/work-center?queue=follow',
     );
-    expect(screen.getByRole('link', { name: /今日未记录/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /今日待完成/ })).toHaveAttribute(
       'href',
       '/admin/report-center?tab=call-volume',
     );

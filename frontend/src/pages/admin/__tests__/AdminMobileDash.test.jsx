@@ -62,8 +62,20 @@ const summaryPayload = {
 const qualityPayload = {
   status: 'warning',
   calls: {
-    today: { total_calls: 12, recorded_calls: 9, unrecorded_calls: 3 },
-    month: { unrecorded_ratio: 25, avg_recorded_duration_seconds: 80 },
+    today: {
+      total_calls: 12,
+      recorded_calls: 9,
+      unrecorded_calls: 3,
+      completed_dial_sessions: 9,
+      pending_dial_sessions: 1,
+      legacy_missing_duration: 2,
+    },
+    month: {
+      pending_dial_sessions: 2,
+      legacy_missing_duration: 3,
+      unrecorded_ratio: 25,
+      avg_recorded_duration_seconds: 80,
+    },
   },
   students: {
     missing_phone_tasks: 2,
@@ -95,6 +107,8 @@ const scorePayload = {
         today_calls: 4,
         today_recorded_calls: 2,
         today_unrecorded_calls: 2,
+        today_pending_dial_sessions: 1,
+        today_legacy_missing_duration: 1,
         avg_recorded_duration_seconds: 75,
       },
       recommended_action: '先补齐通话记录并处理待回访',
@@ -152,7 +166,7 @@ describe('AdminMobileDash', () => {
     expect(await screen.findByText('移动管理')).toBeInTheDocument();
     expect(screen.getByText('今日有事项需要处理')).toBeInTheDocument();
     expect(screen.getByText('今日呼出')).toBeInTheDocument();
-    expect(screen.getByText('有效 9 · 未记录 3')).toBeInTheDocument();
+    expect(screen.getByText('已完成 9 · 待完成 1')).toBeInTheDocument();
     expect(screen.getByText('今日新增 A')).toBeInTheDocument();
     expect(screen.getByText('今日评级进入 A')).toBeInTheDocument();
     expect(screen.getByText('可分配有效线索')).toBeInTheDocument();
@@ -162,8 +176,11 @@ describe('AdminMobileDash', () => {
     expect(screen.getByText('逾期 1 条 · 未完成 6 条')).toBeInTheDocument();
     expect(screen.getByText('无电话数据')).toBeInTheDocument();
     expect(screen.getByText('2 条线索没有可拨电话')).toBeInTheDocument();
-    expect(screen.getByText('未记录通话')).toBeInTheDocument();
-    expect(screen.getByText('今日 3 通，本月占比 25%')).toBeInTheDocument();
+    expect(screen.getByText('待完成拨号')).toBeInTheDocument();
+    expect(screen.getByText('今日 1 通 · 本月 2 通')).toBeInTheDocument();
+    expect(screen.getByText('历史未回填')).toBeInTheDocument();
+    expect(screen.getByText('今日 2 通 · 本月 3 通')).toBeInTheDocument();
+    expect(screen.getByText('拨号 4 · 已完成 2 · 待完成 1 · 历史未回填 1')).toBeInTheDocument();
     expect(screen.getByText('蒲安琪')).toBeInTheDocument();
     expect(screen.getByText('先补齐通话记录并处理待回访')).toBeInTheDocument();
     expect(screen.getByText('A 级线索')).toBeInTheDocument();

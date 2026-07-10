@@ -25,15 +25,50 @@ describe('buildStudentTimeline', () => {
     ]);
   });
 
-  it('labels zero-second call duration as unrecorded', () => {
+  it('renders completed, pending, and legacy call recording states explicitly', () => {
     render(
       <StudentTimeline
-        calls={[{ id: 1, created_at: '2026-06-12T08:00:00', duration_seconds: 0 }]}
+        calls={[
+          {
+            id: 1,
+            created_at: '2026-06-12T08:00:00',
+            duration_seconds: 73,
+            recording_state: 'completed',
+          },
+          {
+            id: 2,
+            created_at: '2026-06-12T07:00:00',
+            duration_seconds: 0,
+            recording_state: 'pending',
+          },
+          {
+            id: 3,
+            created_at: '2026-06-12T06:00:00',
+            duration_seconds: 0,
+            recording_state: 'legacy_missing',
+          },
+        ]}
       />,
     );
 
-    expect(screen.getByText('通话 · 未记录')).toBeInTheDocument();
+    expect(screen.getByText('通话 · 已完成 · 1分13秒')).toBeInTheDocument();
+    expect(screen.getByText('通话 · 待完成')).toBeInTheDocument();
+    expect(screen.getByText('通话 · 历史未回填')).toBeInTheDocument();
     expect(screen.queryByText(/0秒/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to duration for legacy API payloads without recording state', () => {
+    render(
+      <StudentTimeline
+        calls={[
+          { id: 1, created_at: '2026-06-12T08:00:00', duration_seconds: 10 },
+          { id: 2, created_at: '2026-06-12T07:00:00', duration_seconds: 0 },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('通话 · 已完成 · 10秒')).toBeInTheDocument();
+    expect(screen.getByText('通话 · 待完成')).toBeInTheDocument();
   });
 
   it('renders admissions workflow events', () => {

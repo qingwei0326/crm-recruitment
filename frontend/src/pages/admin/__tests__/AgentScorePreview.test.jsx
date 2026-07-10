@@ -67,6 +67,8 @@ function makeItem(overrides = {}) {
       today_calls: 6,
       today_recorded_calls: 4,
       today_unrecorded_calls: 2,
+      today_pending_dial_sessions: 1,
+      today_legacy_missing_duration: 1,
       avg_recorded_duration_seconds: 60,
       open_follow_ups: 3,
       overdue_follow_ups: 2,
@@ -110,6 +112,8 @@ function scorePayload() {
           today_calls: 18,
           today_recorded_calls: 18,
           today_unrecorded_calls: 0,
+          today_pending_dial_sessions: 0,
+          today_legacy_missing_duration: 0,
           avg_recorded_duration_seconds: 90,
           overdue_follow_ups: 0,
           a_level_count: 0,
@@ -126,6 +130,8 @@ function scorePayload() {
           today_calls: 1,
           today_recorded_calls: 0,
           today_unrecorded_calls: 1,
+          today_pending_dial_sessions: 1,
+          today_legacy_missing_duration: 0,
           avg_recorded_duration_seconds: 0,
           overdue_follow_ups: 0,
           missing_phone_tasks: 2,
@@ -147,7 +153,7 @@ function scorePayload() {
           {
             key: 'unrecorded_call_duration',
             severity: 'info',
-            label: '1 通未记录时长',
+            label: '1 通待完成记录',
             count: 1,
           },
           {
@@ -180,12 +186,14 @@ describe('AgentScorePreview', () => {
     expect(screen.getByText('风险')).toBeInTheDocument();
     expect(screen.getByText('2 条逾期回访')).toBeInTheDocument();
     expect(screen.getByText('先处理逾期回访，防止高意向线索流失')).toBeInTheDocument();
-    expect(screen.getByText('有效记录')).toBeInTheDocument();
-    expect(screen.getAllByText('未记录')[0]).toBeInTheDocument();
+    expect(screen.getByText('已完成')).toBeInTheDocument();
+    expect(screen.getByText('待完成')).toBeInTheDocument();
+    expect(screen.getByText('历史未回填')).toBeInTheDocument();
     expect(screen.getByText('拨号 6')).toBeInTheDocument();
-    expect(screen.getByText('有效 4')).toBeInTheDocument();
-    expect(screen.getByText('未记录 2')).toBeInTheDocument();
-    expect(screen.getByText('均长 1分')).toBeInTheDocument();
+    expect(screen.getByText('已完成 4')).toBeInTheDocument();
+    expect(screen.getAllByText('待完成 1').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('历史未回填 1')).toBeInTheDocument();
+    expect(screen.getByText('流程均耗 1分')).toBeInTheDocument();
     expect(screen.getAllByText('推进率 33.3%，待联系 8/12').length).toBeGreaterThan(0);
     expect(screen.queryByText('推进覆盖 6.7/20')).not.toBeInTheDocument();
     expect(screen.queryByText('待联系清理 3.3/10')).not.toBeInTheDocument();

@@ -27,6 +27,19 @@ const emptySummary = {
   avg_recorded_duration_seconds: 0,
 };
 
+function recordingLabel(log) {
+  if (log.recording_state === 'pending') return '待完成';
+  if (log.recording_state === 'legacy_missing') return '历史未回填';
+  if (log.recording_state === 'completed') return '已完成';
+  return Number(log.duration_seconds || 0) > 0 ? '已完成' : '待完成';
+}
+
+function flowDuration(log) {
+  return recordingLabel(log) === '已完成' && Number(log.duration_seconds || 0) > 0
+    ? formatDuration(log.duration_seconds)
+    : '-';
+}
+
 export default function CallVolumeQuery({ embedded = false }) {
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -128,14 +141,15 @@ export default function CallVolumeQuery({ embedded = false }) {
       toast?.error('导出失败');
       return;
     }
-    const rows = [['序号', '话务员', '学生', '学生ID', '通话时长', '拨号时间']];
+    const rows = [['序号', '话务员', '学生', '学生ID', '记录状态', '拨号流程耗时', '拨号时间']];
     allLogs.forEach((l) =>
       rows.push([
         l.seq,
         l.agent_name || l.operator_name,
         l.student_name,
         l.student_id,
-        formatDuration(l.duration_seconds),
+        recordingLabel(l),
+        flowDuration(l),
         formatDateTime(l.dialed_at || l.created_at, true),
       ]),
     );
@@ -150,13 +164,21 @@ export default function CallVolumeQuery({ embedded = false }) {
   };
 
   const closeSidebar = () => setSidebarOpen(false);
+  const compatibilityUnrecorded = Number(summary.unrecorded_calls || 0);
+  const completedSessions = Number(summary.completed_dial_sessions ?? summary.recorded_calls ?? 0);
+  const pendingSessions = Number(
+    summary.pending_dial_sessions == null ? compatibilityUnrecorded : summary.pending_dial_sessions,
+  );
+  const legacyMissing = Number(summary.legacy_missing_duration ?? 0);
+  const averageDuration = Number(summary.avg_recorded_duration_seconds || 0);
   const summaryItems = [
     { label: '总拨号', value: summary.total_calls || 0 },
-    { label: '有效记录', value: summary.recorded_calls || 0 },
-    { label: '未记录', value: summary.unrecorded_calls || 0 },
+    { label: '已完成', value: completedSessions },
+    { label: '待完成', value: pendingSessions },
+    { label: '历史未回填', value: legacyMissing },
     {
-      label: '平均有效时长',
-      value: formatDuration(summary.avg_recorded_duration_seconds),
+      label: '平均流程耗时',
+      value: averageDuration > 0 ? formatDuration(averageDuration) : '-',
     },
   ];
 
@@ -222,7 +244,7 @@ export default function CallVolumeQuery({ embedded = false }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {summaryItems.map((item) => (
               <div
                 key={item.label}
@@ -238,27 +260,28 @@ export default function CallVolumeQuery({ embedded = false }) {
 
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-left text-gray-600 dark:text-gray-400">
                     <th className="px-3 py-3 w-12">序号</th>
                     <th className="px-3 py-3">话务员</th>
                     <th className="px-3 py-3">学生</th>
                     <th className="px-3 py-3">学生ID</th>
-                    <th className="px-3 py-3">通话时长</th>
+                    <th className="px-3 py-3">记录状态</th>
+                    <th className="px-3 py-3">拨号流程耗时</th>
                     <th className="px-3 py-3">拨号时间</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y dark:divide-gray-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12">
+                      <td colSpan={7} className="text-center py-12">
                         <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                       </td>
                     </tr>
                   ) : logs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-12 text-gray-400">
+                      <td colSpan={7} className="text-center py-12 text-gray-400">
                         暂无数据
                       </td>
                     </tr>
@@ -269,7 +292,8 @@ export default function CallVolumeQuery({ embedded = false }) {
                         <td className="px-3 py-2 font-medium">{l.agent_name || l.operator_name}</td>
                         <td className="px-3 py-2">{l.student_name || '-'}</td>
                         <td className="px-3 py-2 font-mono text-xs">{l.student_id || '-'}</td>
-                        <td className="px-3 py-2 text-xs">{formatDuration(l.duration_seconds)}</td>
+                        <td className="px-3 py-2 text-xs">{recordingLabel(l)}</td>
+                        <td className="px-3 py-2 text-xs">{flowDuration(l)}</td>
                         <td className="px-3 py-2 text-xs text-gray-500">
                           {formatDateTime(l.dialed_at || l.created_at, true)}
                         </td>
