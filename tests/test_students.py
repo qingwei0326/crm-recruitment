@@ -1,5 +1,6 @@
 """Tests for student CRUD, stage management, assignment, and import."""
 
+from datetime import timedelta
 from io import BytesIO
 
 import pytest
@@ -801,12 +802,18 @@ class TestUpdateStudent:
         await db.refresh(student)
 
         first = await client.get(f"/api/students/phone/{student.id}", headers=agent_headers)
-        second = await client.get(f"/api/students/phone/{student.id}", headers=agent_headers)
+        second = await client.get(
+            f"/api/students/phone/{student.id}",
+            params={"dial_log_id": first.json()["data"]["dial_log_id"]},
+            headers=agent_headers,
+        )
 
         assert first.status_code == 200
         assert second.status_code == 200
         assert first.json()["code"] == 0
         assert second.json()["code"] == 0
+        assert isinstance(first.json()["data"]["dial_log_id"], int)
+        assert second.json()["data"]["dial_log_id"] == first.json()["data"]["dial_log_id"]
         rows = (
             (
                 await db.execute(
@@ -820,6 +827,89 @@ class TestUpdateStudent:
             .all()
         )
         assert len(rows) == 1
+        assert rows[0].recording_state == "pending"
+
+    async def test_get_phone_reuses_recent_pending_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Student, StudentStatus, SystemConfig
+        from app.utils import utcnow
+
+        student = Student(
+            name="待完成重复拨号学生",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138001",
+        )
+        db.add(student)
+        db.add(SystemConfig(key="dial_window_start", value="00:00"))
+        db.add(SystemConfig(key="dial_window_end", value="23:59"))
+        await db.flush()
+        pending = DialLog(
+            student_id=student.id,
+            agent_id=agent_user.id,
+            dialed_at=utcnow() - timedelta(seconds=90),
+            recording_state="pending",
+        )
+        db.add(pending)
+        await db.commit()
+        await db.refresh(pending)
+
+        response = await client.get(f"/api/students/phone/{student.id}", headers=agent_headers)
+
+        assert response.status_code == 200
+        assert response.json()["data"]["dial_log_id"] == pending.id
+        rows = (
+            (
+                await db.execute(
+                    select(DialLog).where(
+                        DialLog.student_id == student.id,
+                        DialLog.agent_id == agent_user.id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+
+    async def test_get_phone_does_not_reuse_completed_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Student, StudentStatus, SystemConfig
+        from app.utils import utcnow
+
+        student = Student(
+            name="已完成再次拨号学生",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138002",
+        )
+        db.add(student)
+        db.add(SystemConfig(key="dial_window_start", value="00:00"))
+        db.add(SystemConfig(key="dial_window_end", value="23:59"))
+        await db.flush()
+        completed = DialLog(
+            student_id=student.id,
+            agent_id=agent_user.id,
+            dialed_at=utcnow() - timedelta(seconds=90),
+            duration_seconds=30,
+            recording_state="completed",
+        )
+        db.add(completed)
+        await db.commit()
+        await db.refresh(completed)
+
+        rejected = await client.get(
+            f"/api/students/phone/{student.id}",
+            params={"dial_log_id": completed.id},
+            headers=agent_headers,
+        )
+        response = await client.get(f"/api/students/phone/{student.id}", headers=agent_headers)
+
+        assert rejected.status_code == 400
+        assert response.status_code == 200
+        assert response.json()["data"]["dial_log_id"] != completed.id
 
     async def test_manual_intent_writes_operation_log(
         self, client, admin_headers, sample_student, db
