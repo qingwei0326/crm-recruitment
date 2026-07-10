@@ -11,6 +11,13 @@ import {
   canPerformAdminOperation,
 } from '../../adminPermissions';
 import {
+  buildTrendCsv,
+  getActiveTrendAgents,
+  getCstCalendarRange,
+  normalizeTrendData,
+  validateTrendRange,
+} from './trendReportUtils';
+import {
   Sun,
   Moon,
   Download,
@@ -58,16 +65,6 @@ function hasPositiveValue(rows, getValue) {
   return rows.some((row) => Number(getValue(row) || 0) > 0);
 }
 
-function getActiveAgentNames(rows) {
-  const totals = new Map();
-  rows.forEach((row) => {
-    Object.entries(row.agent_calls || {}).forEach(([name, value]) => {
-      totals.set(name, (totals.get(name) || 0) + Number(value || 0));
-    });
-  });
-  return [...totals.entries()].filter(([, total]) => total > 0).map(([name]) => name);
-}
-
 export default function TrendReport({ embedded = false }) {
   const { dark, toggle } = useTheme();
   const { user } = useAuth();
@@ -79,6 +76,7 @@ export default function TrendReport({ embedded = false }) {
   const [range, setRange] = useState('month'); // week | month | custom
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [hiddenAgentKeys, setHiddenAgentKeys] = useState([]);
   const canExportReport = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.reportExport);
 
   const fetchTrend = (params = {}) => {
@@ -87,8 +85,15 @@ export default function TrendReport({ embedded = false }) {
       .get('/stats/trend', { params })
       .then((res) => {
         setTrendData(res.data.data);
+        setHiddenAgentKeys([]);
       })
-      .catch(() => { toast?.error('数据加载失败'); })
+      .catch((error) => {
+        const message =
+          error?.response?.data?.detail ||
+          error?.response?.data?.msg ||
+          '数据加载失败';
+        toast?.error(message);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -98,57 +103,63 @@ export default function TrendReport({ embedded = false }) {
 
   const handleRangeChange = (r) => {
     setRange(r);
-    if (r === 'week') {
-      const end = new Date().toISOString().split('T')[0];
-      const start = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-      fetchTrend({ start_date: start, end_date: end });
-    } else if (r === 'month') {
-      fetchTrend();
+    if (r === 'week' || r === 'month') {
+      fetchTrend(getCstCalendarRange(r));
     }
   };
 
   const handleCustom = () => {
-    if (startDate && endDate) fetchTrend({ start_date: startDate, end_date: endDate });
+    const message = validateTrendRange(startDate, endDate);
+    if (message) {
+      toast?.error(message);
+      return;
+    }
+    setRange('custom');
+    fetchTrend({ start_date: startDate, end_date: endDate });
   };
 
-  const exportExcel = () => {
-    if (!canExportReport) return;
-    if (!trendData?.daily) return;
-    const rows = [['日期', '呼出量', '报名数']];
-    trendData.daily.forEach((d) => rows.push([d.date, d.calls, d.enrolled]));
-    const csv = rows.map((r) => r.join(',')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `趋势报表_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // 周同比：把 7 天前的呼出量偏移到对应日期上
-  const chartData = useMemo(() => {
-    if (!trendData?.daily) return [];
-    const dateMap = {};
-    trendData.daily.forEach(d => { dateMap[d.date] = d; });
-    return trendData.daily.map(d => {
-      const prev = new Date(d.date);
-      prev.setDate(prev.getDate() - 7);
-      const prevKey = prev.toISOString().split('T')[0];
-      return {
-        ...d,
-        prev_calls: dateMap[prevKey]?.calls ?? null,
-      };
-    });
-  }, [trendData]);
+  const normalizedTrend = useMemo(
+    () => normalizeTrendData(trendData || {}),
+    [trendData],
+  );
+  const visibleAgents = useMemo(
+    () => getActiveTrendAgents(normalizedTrend.daily, normalizedTrend.agents),
+    [normalizedTrend],
+  );
+  const chartData = normalizedTrend.daily;
   const visibleMainSeries = useMemo(
     () => MAIN_SERIES.filter((series) => hasPositiveValue(chartData, (row) => row[series.key])),
     [chartData],
   );
-  const visibleAgentNames = useMemo(
-    () => getActiveAgentNames(trendData?.daily || []),
-    [trendData],
-  );
+
+  const agentColor = (agent, index) => {
+    const numericId = Number(agent.id);
+    const hasNumericId = agent.id !== null && agent.id !== '' && Number.isFinite(numericId);
+    const colorIndex = hasNumericId
+      ? Math.abs(numericId) % AGENT_COLORS.length
+      : index % AGENT_COLORS.length;
+    return AGENT_COLORS[colorIndex];
+  };
+
+  const toggleAgent = (key) => {
+    setHiddenAgentKeys((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
+  };
+
+  const exportCsv = () => {
+    if (!canExportReport || !normalizedTrend.daily.length) return;
+    const csv = buildTrendCsv(normalizedTrend.daily, visibleAgents);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `趋势报表_${normalizedTrend.end || getCstCalendarRange('month').end_date}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -170,6 +181,7 @@ export default function TrendReport({ embedded = false }) {
             </button>
             <input
               type="date"
+              aria-label="开始日期"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
@@ -177,6 +189,7 @@ export default function TrendReport({ embedded = false }) {
             <span className="text-gray-500">至</span>
             <input
               type="date"
+              aria-label="结束日期"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               className="px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
@@ -236,13 +249,13 @@ export default function TrendReport({ embedded = false }) {
               )}
 
               {/* Agent comparison chart */}
-              {visibleAgentNames.length > 0 && (
+              {visibleAgents.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4">
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">
                     各话务员每日呼出量对比
                   </h3>
                   <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
-                    <LineChart data={trendData.daily}>
+                    <LineChart data={normalizedTrend.daily}>
                       <CartesianGrid strokeDasharray="3 3" stroke={dark ? '#374151' : '#e5e7eb'} />
                       <XAxis
                         dataKey="date"
@@ -257,20 +270,58 @@ export default function TrendReport({ embedded = false }) {
                           borderRadius: '8px',
                         }}
                       />
-                      <Legend />
-                      {visibleAgentNames.map((name, i) => (
-                        <Line
-                          key={name}
-                          type="monotone"
-                          dataKey={`agent_calls.${name}`}
-                          stroke={AGENT_COLORS[i % AGENT_COLORS.length]}
-                          name={name}
-                          strokeWidth={2}
-                          dot={{ r: 1 }}
-                        />
-                      ))}
+                      {visibleAgents
+                        .filter((agent) => !hiddenAgentKeys.includes(agent.key))
+                        .map((agent) => (
+                          <Line
+                            key={agent.key}
+                            type="monotone"
+                            dataKey={agent.seriesKey}
+                            stroke={agentColor(agent, visibleAgents.indexOf(agent))}
+                            name={agent.name}
+                            strokeWidth={2}
+                            dot={{ r: 1 }}
+                          />
+                        ))}
                     </LineChart>
                   </ResponsiveContainer>
+                  <div
+                    aria-label="话务员曲线"
+                    className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"
+                  >
+                    {visibleAgents.map((agent, index) => {
+                      const checked = !hiddenAgentKeys.includes(agent.key);
+                      return (
+                        <label
+                          key={agent.key}
+                          className="flex cursor-pointer items-center gap-1.5 text-xs"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAgent(agent.key)}
+                            className="sr-only"
+                          />
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: agentColor(agent, index) }}
+                          />
+                          <span className={checked ? '' : 'text-gray-400 line-through'}>
+                            {agent.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {hiddenAgentKeys.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setHiddenAgentKeys([])}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        全部显示
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -286,15 +337,15 @@ export default function TrendReport({ embedded = false }) {
                         <th className="px-4 py-2 font-medium">日期</th>
                         <th className="px-4 py-2 font-medium text-center">呼出量</th>
                         <th className="px-4 py-2 font-medium text-center">报名数</th>
-                        {visibleAgentNames.map((n) => (
-                          <th key={n} className="px-3 py-2 font-medium text-center text-xs">
-                            {n}
+                        {visibleAgents.map((agent) => (
+                          <th key={agent.key} className="px-3 py-2 font-medium text-center text-xs">
+                            {agent.name}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-gray-700">
-                      {trendData.daily.map((d) => (
+                      {normalizedTrend.daily.map((d) => (
                         <tr key={d.date} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                           <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{d.date}</td>
                           <td className="px-4 py-2 text-center font-medium text-blue-600">
@@ -303,9 +354,9 @@ export default function TrendReport({ embedded = false }) {
                           <td className="px-4 py-2 text-center font-medium text-green-600">
                             {d.enrolled}
                           </td>
-                          {visibleAgentNames.map((n) => (
-                            <td key={n} className="px-3 py-2 text-center text-gray-500">
-                              {d.agent_calls?.[n] || 0}
+                          {visibleAgents.map((agent) => (
+                            <td key={agent.key} className="px-3 py-2 text-center text-gray-500">
+                              {d[agent.seriesKey] || 0}
                             </td>
                           ))}
                         </tr>
@@ -330,8 +381,8 @@ export default function TrendReport({ embedded = false }) {
           {canExportReport && (
             <button
               type="button"
-              onClick={exportExcel}
-              disabled={!trendData}
+              onClick={exportCsv}
+              disabled={!normalizedTrend.daily.length}
               className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
             >
               <Download className="w-4 h-4" /> 导出
