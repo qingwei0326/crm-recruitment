@@ -66,6 +66,7 @@ function todayPayload(list) {
 test.describe('mobile dial result flow', () => {
   test('fixed invalid reason saves and mobile task list refreshes to next student', async ({ page }) => {
     const updateRequests = [];
+    let durationRequestUrl = '';
     let refreshedAfterInvalid = false;
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -76,6 +77,7 @@ test.describe('mobile dial result flow', () => {
         JSON.stringify({
           studentId: 2001,
           studentName: '移动空号学生',
+          dialLogId: 9001,
           dialStartedAt: Date.now() - 25_000,
         }),
       );
@@ -98,6 +100,7 @@ test.describe('mobile dial result flow', () => {
       });
     });
     await page.route('**/api/students/dial-duration**', async (route) => {
+      durationRequestUrl = route.request().url();
       await route.fulfill({ json: { code: 0, data: {} } });
     });
     await page.route('**/api/students/2001', async (route) => {
@@ -131,5 +134,73 @@ test.describe('mobile dial result flow', () => {
     await expect(page.getByText('移动下一条学生')).toBeVisible();
     await expect(page.getByText('通话已完成，请选择处理结果')).not.toBeVisible();
     expect(updateRequests).toEqual([{ status: '无效', invalid_reason: '空号' }]);
+    expect(new URL(durationRequestUrl).searchParams.get('dial_log_id')).toBe('9001');
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('pendingDial'))).toBeNull();
+  });
+
+  test('direct detail status update completes the exact pending dial session', async ({ page }) => {
+    let durationRequestUrl = '';
+    const updateRequests = [];
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(({ user }) => {
+      localStorage.setItem('crm_user', JSON.stringify(user));
+    }, { user: agentUser });
+
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({ json: { code: 0, data: agentUser } });
+    });
+    await page.route('**/api/students/2001/detail', async (route) => {
+      await route.fulfill({
+        json: {
+          code: 0,
+          data: {
+            student: firstStudent,
+            calls: [],
+            notes: [],
+            follow_ups: [],
+            visits: [],
+            intent_timeline: [],
+          },
+        },
+      });
+    });
+    await page.route('**/api/students/dial-duration**', async (route) => {
+      durationRequestUrl = route.request().url();
+      await route.fulfill({ json: { code: 0, data: {} } });
+    });
+    await page.route('**/api/students/2001', async (route) => {
+      if (route.request().method() === 'PUT') {
+        updateRequests.push(route.request().postDataJSON());
+        await route.fulfill({
+          json: {
+            code: 0,
+            data: { ...firstStudent, status: '无效', invalid_reason: '空号' },
+          },
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto('/mobile/student/2001');
+    await expect(page.getByText('完整时间线')).toBeVisible();
+    await page.evaluate(() => {
+      sessionStorage.setItem('pendingDial', JSON.stringify({
+        studentId: 2001,
+        studentName: '移动空号学生',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 20_000,
+      }));
+    });
+
+    await page.getByRole('group', { name: '处理结果' })
+      .getByRole('button', { name: '空号', exact: true })
+      .click();
+
+    await expect.poll(() => durationRequestUrl).not.toBe('');
+    expect(updateRequests).toEqual([{ status: '无效', invalid_reason: '空号' }]);
+    expect(new URL(durationRequestUrl).searchParams.get('dial_log_id')).toBe('9001');
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('pendingDial'))).toBeNull();
   });
 });

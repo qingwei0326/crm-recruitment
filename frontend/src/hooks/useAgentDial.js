@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import api from '../api';
-import { readPendingDial, savePendingDial } from '../dialSession';
+import { completePendingDial, readPendingDial, savePendingDial } from '../dialSession';
 import { getApiErrorMessage } from '../utils';
 import logger from '../utils/logger';
 import { resolveOperatorResult } from '../operatorResultPolicy';
@@ -22,20 +22,36 @@ export default function useAgentDial({
 }) {
   // 用 ref 缓存 lastFetchedId 防止重复请求
   const lastFetchedIdRef = useRef(null);
-  const recordedDialRef = useRef(null);
+  const dialCompletionRef = useRef(null);
   const dialingRef = useRef(new Set());
 
-  const recordDialDurationOnce = useCallback((modal) => {
-    if (!modal?.studentId || !modal?.dialStartedAt) return;
-    const duration = Math.round((Date.now() - modal.dialStartedAt) / 1000);
-    if (duration <= 0) return;
-    const key = `${modal.studentId}:${modal.dialStartedAt}`;
-    if (recordedDialRef.current === key) return;
-    recordedDialRef.current = key;
-    api.put('/students/dial-duration', null, {
-      params: { student_id: modal.studentId, duration_seconds: duration },
-    }).catch((e) => logger.error('记录通话时长失败:', e));
+  const completeDialOnce = useCallback((modal) => {
+    if (!modal?.studentId) return Promise.resolve({ completed: false, reason: 'no_modal' });
+    const key = `${modal.studentId}:${modal.dialLogId ?? ''}:${modal.dialStartedAt ?? ''}`;
+    if (dialCompletionRef.current?.key === key) {
+      return dialCompletionRef.current.promise;
+    }
+
+    const promise = completePendingDial(modal.studentId, modal).catch((e) => {
+      if (dialCompletionRef.current?.promise === promise) {
+        dialCompletionRef.current = null;
+      }
+      throw e;
+    });
+    dialCompletionRef.current = { key, promise };
+    return promise;
   }, []);
+
+  const completeDialOrNotify = useCallback(async (modal, message) => {
+    try {
+      await completeDialOnce(modal);
+      return true;
+    } catch (e) {
+      logger.error('记录通话时长失败:', e);
+      toast?.error(message);
+      return false;
+    }
+  }, [completeDialOnce, toast]);
 
   // 加载拨号检查
   const refreshDialCheck = useCallback(async (id) => {
@@ -208,14 +224,15 @@ export default function useAgentDial({
     if (needsIntentStep) {
       actions.setDialModal({ ...modal, status, showIntent: true });
     } else {
-      recordDialDurationOnce(modal);
+      const completed = await completeDialOrNotify(modal, '状态已保存，通话记录待同步，请重试');
+      if (!completed) return;
       actions.setDialModal(null);
       actions.setLockedStudent(null);
       if (status === '无效' && invalidReason && fixedInvalid) {
         actions.removeStudentFromQueue?.(modal.studentId);
       }
     }
-  }, [state.dial.modal, actions, toast, prompt, confirm, recordDialDurationOnce]);
+  }, [state.dial.modal, actions, toast, prompt, confirm, completeDialOrNotify]);
 
   // 处理拨号结果弹窗 - 意向选择
   const handleDialModalIntent = useCallback(async (level) => {
@@ -228,10 +245,11 @@ export default function useAgentDial({
       actions.setDialModal({ ...modal, showIntent: false, showFollowUp: true });
       return;
     }
-    recordDialDurationOnce(modal);
+    const completed = await completeDialOrNotify(modal, '状态已保存，通话记录待同步，请重试');
+    if (!completed) return;
     actions.setDialModal(null);
     actions.setLockedStudent(null);
-  }, [state.dial.modal, actions, updateIntentById, recordDialDurationOnce]);
+  }, [state.dial.modal, actions, updateIntentById, completeDialOrNotify]);
 
   // 处理拨号结果弹窗 - 回访设置
   const handleDialModalFollowUp = useCallback(async (date) => {
@@ -249,16 +267,21 @@ export default function useAgentDial({
         toast?.error(getApiErrorMessage(e));
       }
     }
-    recordDialDurationOnce(modal);
+    const completed = await completeDialOrNotify(modal, '状态已保存，通话记录待同步，请重试');
+    if (!completed) return;
     actions.setDialModal(null);
     actions.setLockedStudent(null);
-  }, [state.dial.modal, actions, toast, recordDialDurationOnce]);
+  }, [state.dial.modal, actions, toast, completeDialOrNotify]);
 
-  const handleDialModalClose = useCallback(() => {
+  const handleDialModalClose = useCallback(async () => {
     const modal = state.dial.modal;
-    recordDialDurationOnce(modal);
+    if (modal) {
+      const completed = await completeDialOrNotify(modal, '通话记录同步失败，请重试');
+      if (!completed) return;
+    }
     actions.setDialModal(null);
-  }, [state.dial.modal, actions, recordDialDurationOnce]);
+    actions.setLockedStudent(null);
+  }, [state.dial.modal, actions, completeDialOrNotify]);
 
   // 检查待处理的拨号
   const tryLoadPendingDial = useCallback(() => {

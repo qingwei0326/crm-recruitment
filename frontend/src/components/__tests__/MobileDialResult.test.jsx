@@ -62,6 +62,7 @@ describe('recordCallResult', () => {
       JSON.stringify({
         studentId: 42,
         studentName: '张三',
+        dialLogId: 9001,
         dialStartedAt: Date.now() - 60000,
       }),
     );
@@ -79,7 +80,11 @@ describe('recordCallResult', () => {
     const durationCalls = api.put.mock.calls.filter(([url]) => url === '/students/dial-duration');
     expect(durationCalls).toHaveLength(1);
     expect(durationCalls[0][2]).toEqual({
-      params: { student_id: 42, duration_seconds: expect.any(Number) },
+      params: {
+        student_id: 42,
+        dial_log_id: 9001,
+        duration_seconds: expect.any(Number),
+      },
     });
   });
 
@@ -89,6 +94,7 @@ describe('recordCallResult', () => {
       JSON.stringify({
         studentId: 42,
         studentName: '张三',
+        dialLogId: 9001,
         dialStartedAt: Date.now() - 60000,
       }),
     );
@@ -116,6 +122,7 @@ describe('recordCallResult', () => {
       JSON.stringify({
         studentId: 42,
         studentName: '张三',
+        dialLogId: 9001,
         dialStartedAt: Date.now() - 60000,
       }),
     );
@@ -145,6 +152,7 @@ describe('recordCallResult', () => {
       JSON.stringify({
         studentId: 42,
         studentName: '张三',
+        dialLogId: 9001,
         dialStartedAt: Date.now() - 60000,
       }),
     );
@@ -156,5 +164,55 @@ describe('recordCallResult', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('处理结果保存失败，请重试');
     expect(screen.getByText('张三')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '空号' })).not.toBeDisabled();
+  });
+
+  it('completes the dial session when the result sheet is closed', async () => {
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 30000,
+      }),
+    );
+
+    render(<MobileDialResult onUpdated={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '不记录，关闭' }));
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/dial-duration', null, {
+        params: {
+          student_id: 42,
+          dial_log_id: 9001,
+          duration_seconds: expect.any(Number),
+        },
+      });
+    });
+    expect(sessionStorage.getItem('pendingDial')).toBeNull();
+  });
+
+  it('retains the dial session when completion fails after status save', async () => {
+    api.put.mockImplementation((url) => {
+      if (url === '/students/dial-duration') return Promise.reject(new Error('network'));
+      return Promise.resolve({ data: { code: 0, data: {} } });
+    });
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 30000,
+      }),
+    );
+
+    render(<MobileDialResult onUpdated={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '空号' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('状态已保存，通话记录待同步');
+    expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
+      expect.objectContaining({ dialLogId: 9001 }),
+    );
   });
 });

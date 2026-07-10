@@ -48,6 +48,7 @@ const students = [
 test.describe('operator invalid result flow', () => {
   test('fixed invalid reason saves without remark prompt and moves to next valid student', async ({ page }) => {
     const updateRequests = [];
+    let durationRequestUrl = '';
 
     await page.addInitScript(({ user }) => {
       localStorage.setItem('crm_user', JSON.stringify(user));
@@ -56,6 +57,7 @@ test.describe('operator invalid result flow', () => {
         JSON.stringify({
           studentId: 1001,
           studentName: 'E2E空号学生',
+          dialLogId: 9001,
           dialStartedAt: Date.now() - 30_000,
         }),
       );
@@ -91,6 +93,7 @@ test.describe('operator invalid result flow', () => {
       });
     });
     await page.route('**/api/students/dial-duration**', async (route) => {
+      durationRequestUrl = route.request().url();
       await route.fulfill({ json: { code: 0, data: {} } });
     });
     await page.route('**/api/students/1001', async (route) => {
@@ -124,5 +127,7 @@ test.describe('operator invalid result flow', () => {
     await expect(page.getByText('E2E下一条学生')).toBeVisible();
     await expect(page.getByText('1 / 1')).toBeVisible();
     expect(updateRequests).toEqual([{ status: '无效', invalid_reason: '空号' }]);
+    expect(new URL(durationRequestUrl).searchParams.get('dial_log_id')).toBe('9001');
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('pendingDial'))).toBeNull();
   });
 });

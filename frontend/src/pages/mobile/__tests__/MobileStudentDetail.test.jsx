@@ -91,6 +91,7 @@ function renderPage() {
 describe('MobileStudentDetail follow-up workflow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     mockDetailLoads();
     api.put.mockResolvedValue({ data: { code: 0, data: {} } });
@@ -99,6 +100,12 @@ describe('MobileStudentDetail follow-up workflow', () => {
   });
 
   it('lets agents update status, stage, and intent directly from the mobile detail page', async () => {
+    sessionStorage.setItem('pendingDial', JSON.stringify({
+      studentId: 42,
+      studentName: '张三',
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 20_000,
+    }));
     renderPage();
 
     await screen.findByText('完整时间线');
@@ -106,6 +113,15 @@ describe('MobileStudentDetail follow-up workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: '非常有意向' }));
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42', { status: '非常有意向' });
+    });
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/dial-duration', null, {
+        params: {
+          student_id: 42,
+          dial_log_id: 9001,
+          duration_seconds: expect.any(Number),
+        },
+      });
     });
 
     fireEvent.click(screen.getByRole('button', { name: '意向跟进' }));
@@ -152,6 +168,28 @@ describe('MobileStudentDetail follow-up workflow', () => {
         invalid_reason: '空号',
       });
     });
+  });
+
+  it('keeps the pending session when direct status save succeeds but duration sync fails', async () => {
+    sessionStorage.setItem('pendingDial', JSON.stringify({
+      studentId: 42,
+      studentName: '张三',
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 20_000,
+    }));
+    api.put.mockImplementation((url) => {
+      if (url === '/students/dial-duration') return Promise.reject(new Error('network failed'));
+      return Promise.resolve({ data: { code: 0, data: {} } });
+    });
+    renderPage();
+
+    await screen.findByText('完整时间线');
+    fireEvent.click(screen.getByRole('button', { name: '空号' }));
+
+    expect(await screen.findByText('状态已保存，通话记录待同步')).toBeInTheDocument();
+    expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
+      expect.objectContaining({ dialLogId: 9001 }),
+    );
   });
 
   it('lets agents complete and reschedule follow-ups from the timeline', async () => {

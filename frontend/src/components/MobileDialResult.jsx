@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PhoneCall, X, Loader2, CalendarClock, MessageSquare } from 'lucide-react';
 import api from '../api';
+import { completePendingDial, readPendingDial } from '../dialSession';
 import logger from '../utils/logger';
 import { useConfirm } from './ConfirmDialog';
 import { isFixedInvalidReason, payloadForOperatorResult } from '../operatorResultPolicy';
@@ -22,26 +23,6 @@ import {
  * @param {Object} props
  * @param {function} props.onUpdated - 落库成功后回调 (studentId, status) => void
  */
-
-/**
- * 记录通话时长和备注（拨号后静默同步）
- * @param {number} studentId - 学生ID
- * @param {number} dialStartedAt - 拨号开始时间戳
- * @param {string} noteText - 备注内容
- */
-function recordCallResult(studentId, dialStartedAt, noteText) {
-  const duration = dialStartedAt ? Math.round((Date.now() - dialStartedAt) / 1000) : 0;
-  if (duration > 0) {
-    api.put('/students/dial-duration', null, {
-      params: { student_id: studentId, duration_seconds: duration },
-    })
-      .catch((e) => logger.error('记录通话时长失败:', e));
-  }
-  if (noteText?.trim()) {
-    api.post('/notes', { student_id: studentId, content: noteText.trim() })
-      .catch((e) => logger.error('记录备注失败:', e));
-  }
-}
 
 // 默认回访时间：明天上午 9 点，<input type="datetime-local"> 格式
 function defaultFollowUp() {
@@ -88,36 +69,26 @@ export default function MobileDialResult({ onUpdated }) {
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [noteText, setNoteText] = useState('');
-  const callRecordedRef = useRef(false);
+  const callRecordPromiseRef = useRef(null);
+  const noteRecordedRef = useRef(false);
   const submittingRef = useRef(false);
 
   const tryLoadPending = useCallback(() => {
     // 正在处理一通的结果时，别被新的 visibilitychange 覆盖
     if (pending) return;
-    let raw;
-    try {
-      raw = sessionStorage.getItem('pendingDial');
-    } catch {
-      return;
-    }
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw);
-      sessionStorage.removeItem('pendingDial');
-      if (data && data.studentId) {
-        setShowIntent(false);
-        setFlowStatus(null);
-        setShowFollowUp(false);
-        setFollowUpDate(defaultFollowUp());
-        setSubmitting(false);
-        setErrorText('');
-        setNoteText('');
-        submittingRef.current = false;
-        callRecordedRef.current = false;
-        setPending(data);
-      }
-    } catch {
-      sessionStorage.removeItem('pendingDial');
+    const data = readPendingDial();
+    if (data?.studentId) {
+      setShowIntent(false);
+      setFlowStatus(null);
+      setShowFollowUp(false);
+      setFollowUpDate(defaultFollowUp());
+      setSubmitting(false);
+      setErrorText('');
+      setNoteText('');
+      submittingRef.current = false;
+      callRecordPromiseRef.current = null;
+      noteRecordedRef.current = false;
+      setPending(data);
     }
   }, [pending]);
 
@@ -140,8 +111,7 @@ export default function MobileDialResult({ onUpdated }) {
 
   if (!pending) return null;
 
-  const close = ({ force = false } = {}) => {
-    if (submittingRef.current && !force) return;
+  const close = () => {
     submittingRef.current = false;
     setPending(null);
     setShowIntent(false);
@@ -167,10 +137,42 @@ export default function MobileDialResult({ onUpdated }) {
     setSubmitting(false);
   };
 
+  const recordNoteOnce = () => {
+    const content = noteText.trim();
+    if (!content || noteRecordedRef.current) return;
+    noteRecordedRef.current = true;
+    api.post('/notes', { student_id: pending.studentId, content })
+      .catch((e) => logger.error('记录备注失败:', e));
+  };
+
   const recordCallOnce = () => {
-    if (callRecordedRef.current) return;
-    callRecordedRef.current = true;
-    recordCallResult(pending.studentId, pending.dialStartedAt, noteText);
+    recordNoteOnce();
+    if (!callRecordPromiseRef.current) {
+      callRecordPromiseRef.current = completePendingDial(pending.studentId, pending)
+        .catch((e) => {
+          callRecordPromiseRef.current = null;
+          throw e;
+        });
+    }
+    return callRecordPromiseRef.current;
+  };
+
+  const finishDial = async ({ businessSaved = false } = {}) => {
+    try {
+      await recordCallOnce();
+      close();
+      return true;
+    } catch (e) {
+      logger.error('记录通话时长失败:', e);
+      setErrorText(businessSaved ? '状态已保存，通话记录待同步' : '通话记录同步失败，请重试');
+      endSubmit();
+      return false;
+    }
+  };
+
+  const handleClose = async () => {
+    if (!beginSubmit()) return;
+    await finishDial();
   };
 
   const pickStatus = async (btn) => {
@@ -204,8 +206,7 @@ export default function MobileDialResult({ onUpdated }) {
         return; // Don't close yet, show intent step
       }
 
-      recordCallOnce();
-      close({ force: true });
+      await finishDial({ businessSaved: true });
     } catch (e) {
       logger.error('状态同步失败:', e);
       setErrorText('处理结果保存失败，请重试');
@@ -224,8 +225,7 @@ export default function MobileDialResult({ onUpdated }) {
         setShowFollowUp(true);
         endSubmit();
       } else {
-        recordCallOnce();
-        close({ force: true });
+        await finishDial({ businessSaved: true });
       }
     } catch (e) {
       logger.error('意向等级同步失败:', e);
@@ -237,18 +237,16 @@ export default function MobileDialResult({ onUpdated }) {
   const saveFollowUp = async () => {
     if (!beginSubmit()) return;
     if (!followUpDate) {
-      recordCallOnce();
-      close({ force: true });
+      await finishDial({ businessSaved: true });
       return;
     }
-    recordCallOnce();
     try {
       await api.post('/follow-ups', {
         student_id: pending.studentId,
         follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
       });
       onUpdated && onUpdated(pending.studentId, null);
-      close({ force: true });
+      await finishDial({ businessSaved: true });
     } catch (e) {
       logger.error('回访记录同步失败:', e);
       setErrorText('回访提醒保存失败，请重试');
@@ -257,7 +255,7 @@ export default function MobileDialResult({ onUpdated }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={close}>
+    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={handleClose}>
       <div
         className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4"
         onClick={(e) => e.stopPropagation()}
@@ -277,7 +275,7 @@ export default function MobileDialResult({ onUpdated }) {
               </div>
             </div>
           </div>
-          <button onClick={close} className="text-gray-400 p-1 -mr-1" aria-label="不记录，关闭">
+          <button onClick={handleClose} className="text-gray-400 p-1 -mr-1" aria-label="不记录，关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -329,9 +327,9 @@ export default function MobileDialResult({ onUpdated }) {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  recordCallOnce();
-                  close();
+                onClick={async () => {
+                  if (!beginSubmit()) return;
+                  await finishDial({ businessSaved: true });
                 }}
                 disabled={submitting}
                 className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
@@ -398,9 +396,9 @@ export default function MobileDialResult({ onUpdated }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    recordCallOnce();
-                    close();
+                  onClick={async () => {
+                    if (!beginSubmit()) return;
+                    await finishDial({ businessSaved: true });
                   }}
                   disabled={submitting}
                   className="mt-2.5 w-full text-xs text-gray-400 py-1.5 disabled:opacity-60"
