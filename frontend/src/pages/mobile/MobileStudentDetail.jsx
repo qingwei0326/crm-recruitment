@@ -11,6 +11,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import api from '../../api';
+import { completePendingDial } from '../../dialSession';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
@@ -289,18 +290,21 @@ export default function MobileStudentDetail() {
   };
 
   const runWorkflowUpdate = async (request, successMessage, onSuccess) => {
-    if (workflowSaving) return;
+    if (workflowSaving) return false;
     setWorkflowSaving(true);
     try {
       const r = await request();
       if (r.data.code === 0) {
         onSuccess?.(r.data.data);
         showToast(successMessage);
+        return true;
       } else {
         showToast(r.data.msg || '更新失败');
+        return false;
       }
     } catch (e) {
       showToast(getApiErrorMessage(e));
+      return false;
     } finally {
       setWorkflowSaving(false);
     }
@@ -367,7 +371,7 @@ export default function MobileStudentDetail() {
       });
       if (!ok) return;
     }
-    runWorkflowUpdate(
+    const saved = await runWorkflowUpdate(
       () => api.put(`/students/${student.id}`, payloadForOperatorResult(status)),
       '联系状态已更新',
       (updated) => {
@@ -380,6 +384,12 @@ export default function MobileStudentDetail() {
         });
       },
     );
+    if (!saved) return;
+    try {
+      await completePendingDial(student.id);
+    } catch {
+      showToast('状态已保存，通话记录待同步');
+    }
   };
 
   const handleUpdateStudentStage = (stage) => {
