@@ -125,7 +125,7 @@ describe('useDialFlow', () => {
         })
         // phone fetch
         .mockResolvedValueOnce({
-          data: { code: 0, data: { guardian_phone: '13800138000' } },
+          data: { code: 0, data: { guardian_phone: '13800138000', dial_log_id: 9001 } },
         });
 
       const { result } = renderHook(() => useDialFlow());
@@ -148,7 +148,31 @@ describe('useDialFlow', () => {
       expect(pendingDial).toEqual({
         studentId: 10,
         studentName: 'Alice',
+        dialLogId: 9001,
         dialStartedAt: expect.any(Number),
+      });
+    });
+
+    it('reuses a stored dial log id for the same student', async () => {
+      sessionStorage.setItem('pendingDial', JSON.stringify({
+        studentId: 10,
+        studentName: 'Alice',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 10_000,
+      }));
+      api.get
+        .mockResolvedValueOnce({ data: { code: 0, data: { count: 1 } } })
+        .mockResolvedValueOnce({
+          data: { code: 0, data: { guardian_phone: '13800138000', dial_log_id: 9001 } },
+        });
+
+      const { result } = renderHook(() => useDialFlow());
+      await act(async () => {
+        await result.current.dial(10, { studentName: 'Alice' });
+      });
+
+      expect(api.get).toHaveBeenCalledWith('/students/phone/10', {
+        params: { dial_log_id: 9001 },
       });
     });
 
