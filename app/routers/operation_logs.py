@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -13,6 +13,11 @@ from app.auth import (
     user_has_operation_permission,
 )
 from app.database import get_db
+from app.dial_recording import (
+    DIAL_RECORDING_COMPLETED,
+    DIAL_RECORDING_LEGACY_MISSING,
+    DIAL_RECORDING_PENDING,
+)
 from app.models import DialLog, OperationLog, Student, User
 from app.permissions import get_accessible_student
 from app.schemas import Response
@@ -298,11 +303,25 @@ async def call_volume_query(
     summary_query = (
         select(
             func.count(DialLog.id).label("total_calls"),
-            func.count(DialLog.id).filter(DialLog.duration_seconds > 0).label("recorded_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_COMPLETED)
+            .label("recorded_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_PENDING)
+            .label("pending_dial_sessions"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING)
+            .label("legacy_missing_duration"),
             func.coalesce(
                 func.sum(
                     case(
-                        (DialLog.duration_seconds > 0, DialLog.duration_seconds),
+                        (
+                            and_(
+                                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
+                                DialLog.duration_seconds > 0,
+                            ),
+                            DialLog.duration_seconds,
+                        ),
                         else_=0,
                     )
                 ),
@@ -322,6 +341,8 @@ async def call_volume_query(
     summary_row = (await db.execute(summary_query)).one()
     total_calls = int(summary_row.total_calls or 0)
     recorded_calls = int(summary_row.recorded_calls or 0)
+    pending_dial_sessions = int(summary_row.pending_dial_sessions or 0)
+    legacy_missing_duration = int(summary_row.legacy_missing_duration or 0)
     total_recorded_duration = int(summary_row.total_recorded_duration_seconds or 0)
     avg_recorded_duration = (
         round(total_recorded_duration / recorded_calls, 1) if recorded_calls else 0
@@ -347,6 +368,7 @@ async def call_volume_query(
                 "student_id": dial.student_id,
                 "student_name": student_name,
                 "duration_seconds": dial.duration_seconds,
+                "recording_state": dial.recording_state,
                 "dialed_at": str(dial.dialed_at),
                 "created_at": str(dial.dialed_at),
             }
@@ -360,7 +382,10 @@ async def call_volume_query(
             "summary": {
                 "total_calls": total_calls,
                 "recorded_calls": recorded_calls,
-                "unrecorded_calls": total_calls - recorded_calls,
+                "unrecorded_calls": pending_dial_sessions + legacy_missing_duration,
+                "completed_dial_sessions": recorded_calls,
+                "pending_dial_sessions": pending_dial_sessions,
+                "legacy_missing_duration": legacy_missing_duration,
                 "total_recorded_duration_seconds": total_recorded_duration,
                 "avg_recorded_duration_seconds": avg_recorded_duration,
             },

@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_config import SCORE_DAILY_CALL_TARGET_MAX
@@ -32,6 +32,11 @@ from app.auth import (
     user_has_operation_permission,
 )
 from app.database import get_db
+from app.dial_recording import (
+    DIAL_RECORDING_COMPLETED,
+    DIAL_RECORDING_LEGACY_MISSING,
+    DIAL_RECORDING_PENDING,
+)
 from app.models import (
     DialLog,
     FollowUp,
@@ -323,13 +328,26 @@ async def agent_score_preview(
             DialLog.agent_id,
             func.count(DialLog.id).label("today_calls"),
             func.count(DialLog.id)
-            .filter(DialLog.duration_seconds > 0)
+            .filter(DialLog.recording_state == DIAL_RECORDING_COMPLETED)
             .label("today_recorded_calls"),
             func.count(DialLog.id)
-            .filter(or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None)))
+            .filter(
+                DialLog.recording_state.in_(
+                    [DIAL_RECORDING_PENDING, DIAL_RECORDING_LEGACY_MISSING]
+                )
+            )
             .label("today_unrecorded_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_PENDING)
+            .label("today_pending_dial_sessions"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING)
+            .label("today_legacy_missing_duration"),
             func.avg(DialLog.duration_seconds)
-            .filter(DialLog.duration_seconds > 0)
+            .filter(
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
+                DialLog.duration_seconds > 0,
+            )
             .label("avg_recorded_duration_seconds"),
         )
         .where(
@@ -344,6 +362,8 @@ async def agent_score_preview(
             "today_calls": int(row.today_calls or 0),
             "today_recorded_calls": int(row.today_recorded_calls or 0),
             "today_unrecorded_calls": int(row.today_unrecorded_calls or 0),
+            "today_pending_dial_sessions": int(row.today_pending_dial_sessions or 0),
+            "today_legacy_missing_duration": int(row.today_legacy_missing_duration or 0),
             "avg_recorded_duration_seconds": round(row.avg_recorded_duration_seconds or 0, 1),
         }
         for row in today_calls_r.all()
@@ -405,6 +425,8 @@ async def agent_score_preview(
                 "today_calls": 0,
                 "today_recorded_calls": 0,
                 "today_unrecorded_calls": 0,
+                "today_pending_dial_sessions": 0,
+                "today_legacy_missing_duration": 0,
                 "avg_recorded_duration_seconds": 0,
             },
         )
@@ -418,6 +440,10 @@ async def agent_score_preview(
             "today_calls": call_metrics["today_calls"],
             "today_recorded_calls": call_metrics["today_recorded_calls"],
             "today_unrecorded_calls": call_metrics["today_unrecorded_calls"],
+            "today_pending_dial_sessions": call_metrics["today_pending_dial_sessions"],
+            "today_legacy_missing_duration": call_metrics[
+                "today_legacy_missing_duration"
+            ],
             "avg_recorded_duration_seconds": call_metrics["avg_recorded_duration_seconds"],
             "open_follow_ups": int(fm.get("open_follow_ups", 0)),
             "overdue_follow_ups": int(fm.get("overdue_follow_ups", 0)),
@@ -1003,4 +1029,3 @@ async def reset_user_password(
     return Response.ok(
         {"new_password": new_password, "msg": f"用户 {user.name} 密码已重置为 {new_password}"}
     )
-
