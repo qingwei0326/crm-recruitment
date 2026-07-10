@@ -27,6 +27,16 @@ LEGACY_TABLES = {
     "users",
     "visits",
 }
+DOMAIN_TABLES = {
+    "agent_employment",
+    "agent_employment_events",
+    "student_assignments",
+    "work_items",
+    "handover_batches",
+    "handover_items",
+    "handover_transfers",
+    "lead_outcome_reasons",
+}
 
 
 def run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -167,3 +177,44 @@ def test_prepare_baseline_never_overwrites_an_unknown_revision(tmp_path):
             connection.execute("select version_num from alembic_version").fetchone()[0]
             == "unexpected_revision"
         )
+
+
+def test_empty_database_upgrades_to_domain_schema_without_dropping_legacy(tmp_path):
+    db_path = tmp_path / "domain.db"
+
+    result = run_alembic(db_path, "upgrade", "20260711_02")
+
+    assert result.returncode == 0, result.stderr
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert LEGACY_TABLES <= tables
+        assert DOMAIN_TABLES <= tables
+        student_columns = {column["name"]: column for column in inspector.get_columns("students")}
+        assert student_columns["outcome_reason_code"]["nullable"] is True
+    finally:
+        engine.dispose()
+
+    check = run_alembic(db_path, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
+
+
+def test_domain_schema_downgrade_removes_only_domain_delta(tmp_path):
+    db_path = tmp_path / "domain-downgrade.db"
+    upgraded = run_alembic(db_path, "upgrade", "20260711_02")
+    assert upgraded.returncode == 0, upgraded.stderr
+
+    downgraded = run_alembic(db_path, "downgrade", "20260711_01")
+
+    assert downgraded.returncode == 0, downgraded.stderr
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        assert LEGACY_TABLES <= tables
+        assert DOMAIN_TABLES.isdisjoint(tables)
+        student_columns = {column["name"] for column in inspector.get_columns("students")}
+        assert "outcome_reason_code" not in student_columns
+    finally:
+        engine.dispose()

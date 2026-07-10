@@ -10,7 +10,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app import models as _models  # noqa: E402,F401
 from app.database import Base  # noqa: E402
-from app.migration_config import resolve_sync_migration_url  # noqa: E402
+from app.migration_config import (  # noqa: E402
+    include_schema_object,
+    resolve_sync_migration_url,
+)
 
 config = context.config
 if config.config_file_name is not None:
@@ -32,6 +35,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_schema_object,
         render_as_batch=migration_url.startswith("sqlite:"),
     )
 
@@ -51,6 +55,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_schema_object,
             render_as_batch=migration_url.startswith("sqlite:"),
         )
 

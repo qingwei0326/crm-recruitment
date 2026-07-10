@@ -1,5 +1,24 @@
 from pathlib import Path
 
+FROZEN_LEGACY_TABLES = frozenset(
+    {"agents", "follow_up_assignments", "tasks", "today_tasks"}
+)
+
+
+def include_schema_object(
+    _object: object,
+    name: str | None,
+    object_type: str,
+    reflected: bool,
+    compare_to: object,
+) -> bool:
+    return not (
+        object_type == "table"
+        and reflected
+        and compare_to is None
+        and name in FROZEN_LEGACY_TABLES
+    )
+
 
 def resolve_sync_migration_url(
     database_url: str = "",
