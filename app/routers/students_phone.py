@@ -12,6 +12,7 @@ from app.auth import (
     user_has_operation_permission,
 )
 from app.database import get_db
+from app.dial_recording import DIAL_RECORDING_COMPLETED, DIAL_RECORDING_PENDING
 from app.models import DialLog, SystemConfig, User
 from app.permissions import get_accessible_student, get_student_or_404, is_admin
 from app.schemas import Response
@@ -26,7 +27,7 @@ def _require_admin_operation(current_user: User, permission: str) -> None:
 
 
 _CST = timezone(timedelta(hours=8))
-DIAL_LOG_DEDUP_SECONDS = 3
+DIAL_PENDING_REUSE_SECONDS = 2 * 60
 
 
 async def _get_system_config(db: AsyncSession, key: str, default: str = "") -> str:
@@ -59,6 +60,7 @@ def _is_within_dial_window(current_minutes: int, window_start: str, window_end: 
 @router.get("/phone/{student_id}")
 async def get_student_phone(
     student_id: int,
+    dial_log_id: int | None = Query(None, ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -82,24 +84,40 @@ async def get_student_phone(
             detail=f"当前为禁拨时段（拨号窗口 {window_start}-{window_end}）",
         )
 
-    # 2. 短时间重复点击同一个拨号按钮时复用本次取号，不重复写 DialLog。
-    duplicate_since = utcnow() - timedelta(seconds=DIAL_LOG_DEDUP_SECONDS)
-    duplicate_r = await db.execute(
-        select(DialLog)
-        .where(
-            DialLog.student_id == student.id,
-            DialLog.agent_id == current_user.id,
-            DialLog.dialed_at >= duplicate_since,
+    # 2. 新客户端传回精确会话 ID；旧客户端在两分钟内复用 pending 会话。
+    if dial_log_id is not None:
+        reusable_r = await db.execute(
+            select(DialLog).where(
+                DialLog.id == dial_log_id,
+                DialLog.student_id == student.id,
+                DialLog.agent_id == current_user.id,
+                DialLog.recording_state == DIAL_RECORDING_PENDING,
+            )
         )
-        .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
-        .limit(1)
-    )
-    recent_duplicate = duplicate_r.scalar_one_or_none()
-    if recent_duplicate is not None:
+        reusable = reusable_r.scalar_one_or_none()
+        if reusable is None:
+            raise HTTPException(status_code=400, detail="拨号会话无效或已完成")
+    else:
+        reuse_since = utcnow() - timedelta(seconds=DIAL_PENDING_REUSE_SECONDS)
+        reusable_r = await db.execute(
+            select(DialLog)
+            .where(
+                DialLog.student_id == student.id,
+                DialLog.agent_id == current_user.id,
+                DialLog.recording_state == DIAL_RECORDING_PENDING,
+                DialLog.dialed_at >= reuse_since,
+            )
+            .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
+            .limit(1)
+        )
+        reusable = reusable_r.scalar_one_or_none()
+
+    if reusable is not None:
         return Response.ok(
             {
                 "guardian_phone": student.guardian_phone,
                 "guardian2_phone": student.guardian2_phone,
+                "dial_log_id": reusable.id,
             }
         )
 
@@ -119,7 +137,12 @@ async def get_student_phone(
         )
 
     # 4. 通过校验，写 DialLog 并记录操作日志
-    db.add(DialLog(student_id=student.id, agent_id=current_user.id))
+    dial_log = DialLog(
+        student_id=student.id,
+        agent_id=current_user.id,
+        recording_state=DIAL_RECORDING_PENDING,
+    )
+    db.add(dial_log)
     db.add(
         make_operation_log(
             current_user,
@@ -129,11 +152,14 @@ async def get_student_phone(
             content="查看明文电话号码",
         )
     )
+    await db.flush()
+    dial_log_id = dial_log.id
     await db.commit()
     return Response.ok(
         {
             "guardian_phone": student.guardian_phone,
             "guardian2_phone": student.guardian2_phone,
+            "dial_log_id": dial_log_id,
         }
     )
 
@@ -142,28 +168,39 @@ async def get_student_phone(
 async def update_dial_duration(
     student_id: int = Query(...),
     duration_seconds: int = Query(..., ge=0, le=24 * 60 * 60),
+    dial_log_id: int | None = Query(None, ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     await get_accessible_student(db, student_id, current_user)
 
-    result = await db.execute(
-        select(DialLog)
-        .where(DialLog.student_id == student_id, DialLog.agent_id == current_user.id)
-        .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
-        .limit(1)
-    )
+    if dial_log_id is not None:
+        query = select(DialLog).where(
+            DialLog.id == dial_log_id,
+            DialLog.student_id == student_id,
+            DialLog.agent_id == current_user.id,
+        )
+    else:
+        query = (
+            select(DialLog)
+            .where(DialLog.student_id == student_id, DialLog.agent_id == current_user.id)
+            .order_by(DialLog.dialed_at.desc(), DialLog.id.desc())
+            .limit(1)
+        )
+    result = await db.execute(query)
     dial_log = result.scalar_one_or_none()
     if dial_log is None:
         return Response.error(code=1, msg="未找到本次拨号记录")
 
     dial_log.duration_seconds = duration_seconds
+    dial_log.recording_state = DIAL_RECORDING_COMPLETED
     await db.commit()
     return Response.ok(
         {
             "id": dial_log.id,
             "student_id": dial_log.student_id,
             "duration_seconds": dial_log.duration_seconds,
+            "recording_state": dial_log.recording_state,
         }
     )
 

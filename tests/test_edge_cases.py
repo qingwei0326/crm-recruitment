@@ -259,6 +259,76 @@ class TestCallEndpoints:
         await db.refresh(latest)
         assert older.duration_seconds == 5
         assert latest.duration_seconds == 73
+        assert latest.recording_state == "completed"
+
+    async def test_update_dial_duration_updates_explicit_dial_log_id(
+        self, client, db, admin_headers, admin_user, sample_student
+    ):
+        older = DialLog(
+            student_id=sample_student.id,
+            agent_id=admin_user.id,
+            dialed_at=utcnow() - timedelta(minutes=5),
+            duration_seconds=0,
+            recording_state="pending",
+        )
+        latest = DialLog(
+            student_id=sample_student.id,
+            agent_id=admin_user.id,
+            dialed_at=utcnow() - timedelta(minutes=1),
+            duration_seconds=0,
+            recording_state="pending",
+        )
+        db.add_all([older, latest])
+        await db.commit()
+        await db.refresh(older)
+        await db.refresh(latest)
+
+        resp = await client.put(
+            "/api/students/dial-duration",
+            params={
+                "student_id": sample_student.id,
+                "dial_log_id": older.id,
+                "duration_seconds": 73,
+            },
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 0
+        assert resp.json()["data"]["id"] == older.id
+        await db.refresh(older)
+        await db.refresh(latest)
+        assert older.duration_seconds == 73
+        assert older.recording_state == "completed"
+        assert latest.duration_seconds == 0
+        assert latest.recording_state == "pending"
+
+    async def test_update_dial_duration_invalid_explicit_id_does_not_fall_back(
+        self, client, db, admin_headers, admin_user, sample_student
+    ):
+        latest = DialLog(
+            student_id=sample_student.id,
+            agent_id=admin_user.id,
+            duration_seconds=0,
+            recording_state="pending",
+        )
+        db.add(latest)
+        await db.commit()
+        await db.refresh(latest)
+
+        resp = await client.put(
+            "/api/students/dial-duration",
+            params={
+                "student_id": sample_student.id,
+                "dial_log_id": latest.id + 9999,
+                "duration_seconds": 30,
+            },
+            headers=admin_headers,
+        )
+
+        assert resp.json()["code"] == 1
+        await db.refresh(latest)
+        assert latest.duration_seconds == 0
+        assert latest.recording_state == "pending"
 
     async def test_update_dial_duration_without_dial_log_returns_error(
         self, client, admin_headers, sample_student
