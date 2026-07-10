@@ -1,11 +1,16 @@
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ADMIN_PAGE_REPORT_CENTER, get_current_user, require_page_permission
 from app.database import get_db
+from app.dial_recording import (
+    DIAL_RECORDING_COMPLETED,
+    DIAL_RECORDING_LEGACY_MISSING,
+    DIAL_RECORDING_PENDING,
+)
 from app.models import (
     DialLog,
     IntentLevel,
@@ -59,25 +64,54 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
             .filter(
                 DialLog.dialed_at >= today,
                 DialLog.dialed_at < tomorrow,
-                DialLog.duration_seconds > 0,
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
             )
             .label("today_recorded_calls"),
             func.count(DialLog.id)
             .filter(
                 DialLog.dialed_at >= today,
                 DialLog.dialed_at < tomorrow,
-                or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None)),
+                DialLog.recording_state.in_(
+                    [DIAL_RECORDING_PENDING, DIAL_RECORDING_LEGACY_MISSING]
+                ),
             )
             .label("today_unrecorded_calls"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                DialLog.recording_state == DIAL_RECORDING_PENDING,
+            )
+            .label("today_pending_dial_sessions"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING,
+            )
+            .label("today_legacy_missing_duration"),
             func.count(DialLog.id).label("month_calls"),
             func.count(DialLog.id)
-            .filter(DialLog.duration_seconds > 0)
+            .filter(DialLog.recording_state == DIAL_RECORDING_COMPLETED)
             .label("month_recorded_calls"),
             func.count(DialLog.id)
-            .filter(or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None)))
+            .filter(
+                DialLog.recording_state.in_(
+                    [DIAL_RECORDING_PENDING, DIAL_RECORDING_LEGACY_MISSING]
+                )
+            )
             .label("month_unrecorded_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_PENDING)
+            .label("month_pending_dial_sessions"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING)
+            .label("month_legacy_missing_duration"),
             func.avg(DialLog.duration_seconds)
-            .filter(DialLog.duration_seconds > 0)
+            .filter(
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
+                DialLog.duration_seconds > 0,
+            )
             .label("avg_duration"),
         ).where(
             DialLog.agent_id == agent_id,
@@ -88,9 +122,13 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
     today_calls = int(dial_row.today_calls or 0)
     today_recorded_calls = int(dial_row.today_recorded_calls or 0)
     today_unrecorded_calls = int(dial_row.today_unrecorded_calls or 0)
+    today_pending_dial_sessions = int(dial_row.today_pending_dial_sessions or 0)
+    today_legacy_missing_duration = int(dial_row.today_legacy_missing_duration or 0)
     month_calls = int(dial_row.month_calls or 0)
     month_recorded_calls = int(dial_row.month_recorded_calls or 0)
     month_unrecorded_calls = int(dial_row.month_unrecorded_calls or 0)
+    month_pending_dial_sessions = int(dial_row.month_pending_dial_sessions or 0)
+    month_legacy_missing_duration = int(dial_row.month_legacy_missing_duration or 0)
     avg_duration = round(dial_row.avg_duration or 0, 1)
 
     # 合并意向统计：total_contacted + all_a 一次查询
@@ -135,9 +173,13 @@ async def _get_agent_stats(agent_id: int, db: AsyncSession):
             "today_calls": today_calls,
             "today_recorded_calls": today_recorded_calls,
             "today_unrecorded_calls": today_unrecorded_calls,
+            "today_pending_dial_sessions": today_pending_dial_sessions,
+            "today_legacy_missing_duration": today_legacy_missing_duration,
             "month_calls": month_calls,
             "month_recorded_calls": month_recorded_calls,
             "month_unrecorded_calls": month_unrecorded_calls,
+            "month_pending_dial_sessions": month_pending_dial_sessions,
+            "month_legacy_missing_duration": month_legacy_missing_duration,
             "recorded_calls": month_recorded_calls,
             "unrecorded_calls": month_unrecorded_calls,
             "today_a_count": today_a,

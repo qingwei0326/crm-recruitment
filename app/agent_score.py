@@ -165,7 +165,7 @@ def _build_signals(
     overdue_follow_ups = _as_int(metrics.get("overdue_follow_ups"))
     missing_phone_tasks = _as_int(metrics.get("missing_phone_tasks"))
     today_calls = _as_int(metrics.get("today_calls"))
-    today_unrecorded_calls = _as_int(metrics.get("today_unrecorded_calls"))
+    today_pending_dial_sessions = _as_int(metrics.get("today_pending_dial_sessions"))
     progress_pct = _as_float(metrics.get("progress_pct"))
     contacted_count = _as_int(metrics.get("contacted_count"))
     a_level_count = _as_int(metrics.get("a_level_count"))
@@ -206,14 +206,14 @@ def _build_signals(
                 "count": today_calls,
             }
         )
-    if today_unrecorded_calls > 0:
-        unrecorded_ratio = today_unrecorded_calls / today_calls if today_calls else 1
+    if today_pending_dial_sessions > 0:
+        unrecorded_ratio = today_pending_dial_sessions / today_calls if today_calls else 1
         signals.append(
             {
                 "key": "unrecorded_call_duration",
                 "severity": "warning" if today_calls >= 5 and unrecorded_ratio >= 0.5 else "info",
-                "label": f"{today_unrecorded_calls} 通未记录时长",
-                "count": today_unrecorded_calls,
+                "label": f"{today_pending_dial_sessions} 通待完成记录",
+                "count": today_pending_dial_sessions,
             }
         )
     if active_tasks >= 10 and progress_pct < 40:

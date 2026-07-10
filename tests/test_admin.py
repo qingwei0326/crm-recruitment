@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import select
 
+from app.agent_score import _build_signals
 from app.models import (
     CampusVisitStatus,
     CampusVisitTask,
@@ -224,18 +225,21 @@ class TestAgentScorePreview:
                     agent_id=agent_user.id,
                     dialed_at=today + timedelta(hours=1),
                     duration_seconds=0,
+                    recording_state="pending",
                 ),
                 DialLog(
                     student_id=students[1].id,
                     agent_id=agent_user.id,
                     dialed_at=today + timedelta(hours=2),
                     duration_seconds=30,
+                    recording_state="completed",
                 ),
                 DialLog(
                     student_id=students[2].id,
                     agent_id=agent_user.id,
                     dialed_at=today + timedelta(hours=3),
                     duration_seconds=90,
+                    recording_state="completed",
                 ),
                 FollowUp(
                     student_id=students[2].id,
@@ -271,6 +275,8 @@ class TestAgentScorePreview:
         assert item["metrics"]["today_calls"] == 3
         assert item["metrics"]["today_recorded_calls"] == 2
         assert item["metrics"]["today_unrecorded_calls"] == 1
+        assert item["metrics"]["today_pending_dial_sessions"] == 1
+        assert item["metrics"]["today_legacy_missing_duration"] == 0
         assert item["metrics"]["avg_recorded_duration_seconds"] == 60
         assert item["metrics"]["open_follow_ups"] == 1
         assert item["metrics"]["overdue_follow_ups"] == 1
@@ -1094,12 +1100,21 @@ class TestAdminDataQuality:
                     agent_id=agent_user.id,
                     dialed_at=today + timedelta(hours=1),
                     duration_seconds=0,
+                    recording_state="legacy_missing",
                 ),
                 DialLog(
                     student_id=invalid_student.id,
                     agent_id=agent_user.id,
                     dialed_at=today + timedelta(hours=2),
                     duration_seconds=80,
+                    recording_state="completed",
+                ),
+                DialLog(
+                    student_id=missing_phone.id,
+                    agent_id=agent_user.id,
+                    dialed_at=today + timedelta(hours=3),
+                    duration_seconds=0,
+                    recording_state="pending",
                 ),
                 FollowUp(
                     student_id=missing_phone.id,
@@ -1118,12 +1133,17 @@ class TestAdminDataQuality:
         assert body["code"] == 0
         data = body["data"]
         assert data["status"] == "warning"
-        assert data["calls"]["today"]["total_calls"] == 2
+        assert data["calls"]["today"]["total_calls"] == 3
         assert data["calls"]["today"]["recorded_calls"] == 1
-        assert data["calls"]["today"]["unrecorded_calls"] == 1
-        assert data["calls"]["month"]["unrecorded_ratio"] == 50
+        assert data["calls"]["today"]["unrecorded_calls"] == 2
+        assert data["calls"]["today"]["completed_dial_sessions"] == 1
+        assert data["calls"]["today"]["pending_dial_sessions"] == 1
+        assert data["calls"]["today"]["legacy_missing_duration"] == 1
+        assert data["calls"]["month"]["unrecorded_ratio"] == 66.7
         assert data["calls"]["agents"][0]["agent_name"] == agent_user.name
-        assert data["calls"]["agents"][0]["unrecorded_calls"] == 1
+        assert data["calls"]["agents"][0]["unrecorded_calls"] == 2
+        assert data["calls"]["agents"][0]["pending_dial_sessions"] == 1
+        assert data["calls"]["agents"][0]["legacy_missing_duration"] == 1
         assert data["students"]["missing_phone_tasks"] >= 1
         assert data["students"]["unassigned_active"] >= 1
         assert {"reason": "空号", "count": 1} in data["students"]["invalid_reasons"]
@@ -1132,6 +1152,50 @@ class TestAdminDataQuality:
     async def test_data_quality_requires_admin(self, client, agent_headers):
         resp = await client.get("/api/admin/data-quality", headers=agent_headers)
         assert resp.status_code == 403
+
+    async def test_data_quality_uses_cst_month_start(
+        self, client, admin_headers, db, admin_user, sample_student, monkeypatch
+    ):
+        from app.routers import admin_governance
+
+        monkeypatch.setattr(
+            admin_governance,
+            "today_cst_as_utc",
+            lambda: datetime(2026, 7, 9, 16, 0, 0),
+        )
+        monkeypatch.setattr(
+            admin_governance,
+            "month_start_cst_as_utc",
+            lambda: datetime(2026, 6, 30, 16, 0, 0),
+            raising=False,
+        )
+        db.add(
+            DialLog(
+                student_id=sample_student.id,
+                agent_id=admin_user.id,
+                dialed_at=datetime(2026, 6, 30, 16, 30, 0),
+                duration_seconds=0,
+                recording_state="legacy_missing",
+            )
+        )
+        await db.commit()
+
+        response = await client.get("/api/admin/data-quality", headers=admin_headers)
+
+        assert response.json()["data"]["calls"]["month"]["total_calls"] == 1
+
+
+def test_agent_score_signals_ignore_legacy_missing_duration():
+    signals = _build_signals(
+        {
+            "today_calls": 5,
+            "today_unrecorded_calls": 5,
+            "today_pending_dial_sessions": 0,
+        },
+        daily_call_target=5,
+    )
+
+    assert "unrecorded_call_duration" not in {signal["key"] for signal in signals}
 
 
 @pytest.mark.asyncio

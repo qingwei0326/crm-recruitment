@@ -18,7 +18,14 @@ async def test_call_volume_counts_dial_logs_not_operation_logs(
     )
     db.add(student)
     await db.flush()
-    db.add(DialLog(student_id=student.id, agent_id=agent_user.id, dialed_at=dialed_at))
+    db.add(
+        DialLog(
+            student_id=student.id,
+            agent_id=agent_user.id,
+            dialed_at=dialed_at,
+            recording_state="pending",
+        )
+    )
     for i in range(3):
         db.add(
             OperationLog(
@@ -53,11 +60,15 @@ async def test_call_volume_counts_dial_logs_not_operation_logs(
     assert row["student_name"] == "通电量学生"
     assert row["student_id"] == student.id
     assert row["duration_seconds"] == 0
+    assert row["recording_state"] == "pending"
     assert row["dialed_at"].startswith("2026-06-26 18:00:00")
     assert body["data"]["summary"] == {
         "total_calls": 1,
         "recorded_calls": 0,
         "unrecorded_calls": 1,
+        "completed_dial_sessions": 0,
+        "pending_dial_sessions": 1,
+        "legacy_missing_duration": 0,
         "total_recorded_duration_seconds": 0,
         "avg_recorded_duration_seconds": 0,
     }
@@ -82,18 +93,21 @@ async def test_call_volume_summary_counts_only_positive_duration_as_recorded(
                 agent_id=agent_user.id,
                 dialed_at=datetime(2026, 6, 27, 1, 0, 0),
                 duration_seconds=0,
+                recording_state="legacy_missing",
             ),
             DialLog(
                 student_id=student.id,
                 agent_id=agent_user.id,
                 dialed_at=datetime(2026, 6, 27, 1, 5, 0),
                 duration_seconds=30,
+                recording_state="completed",
             ),
             DialLog(
                 student_id=student.id,
                 agent_id=agent_user.id,
                 dialed_at=datetime(2026, 6, 27, 1, 10, 0),
                 duration_seconds=90,
+                recording_state="completed",
             ),
         ]
     )
@@ -117,6 +131,9 @@ async def test_call_volume_summary_counts_only_positive_duration_as_recorded(
         "total_calls": 3,
         "recorded_calls": 2,
         "unrecorded_calls": 1,
+        "completed_dial_sessions": 2,
+        "pending_dial_sessions": 0,
+        "legacy_missing_duration": 1,
         "total_recorded_duration_seconds": 120,
         "avg_recorded_duration_seconds": 60,
     }
@@ -522,9 +539,24 @@ async def test_agent_stats_average_duration_ignores_unrecorded_zero_durations(
     await db.flush()
     db.add_all(
         [
-            DialLog(student_id=student.id, agent_id=agent_user.id, duration_seconds=0),
-            DialLog(student_id=student.id, agent_id=agent_user.id, duration_seconds=30),
-            DialLog(student_id=student.id, agent_id=agent_user.id, duration_seconds=90),
+            DialLog(
+                student_id=student.id,
+                agent_id=agent_user.id,
+                duration_seconds=0,
+                recording_state="legacy_missing",
+            ),
+            DialLog(
+                student_id=student.id,
+                agent_id=agent_user.id,
+                duration_seconds=30,
+                recording_state="completed",
+            ),
+            DialLog(
+                student_id=student.id,
+                agent_id=agent_user.id,
+                duration_seconds=90,
+                recording_state="completed",
+            ),
         ]
     )
     await db.commit()
@@ -537,6 +569,8 @@ async def test_agent_stats_average_duration_ignores_unrecorded_zero_durations(
     assert body["data"]["month_calls"] == 3
     assert body["data"]["month_recorded_calls"] == 2
     assert body["data"]["month_unrecorded_calls"] == 1
+    assert body["data"]["month_pending_dial_sessions"] == 0
+    assert body["data"]["month_legacy_missing_duration"] == 1
     assert body["data"]["recorded_calls"] == 2
     assert body["data"]["unrecorded_calls"] == 1
     assert body["data"]["avg_duration_seconds"] == 60

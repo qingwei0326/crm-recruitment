@@ -22,6 +22,11 @@ from app.auth import (
     require_page_permission,
 )
 from app.database import get_db
+from app.dial_recording import (
+    DIAL_RECORDING_COMPLETED,
+    DIAL_RECORDING_LEGACY_MISSING,
+    DIAL_RECORDING_PENDING,
+)
 from app.expiry import build_last_activity_subquery
 from app.models import (
     Call,
@@ -45,7 +50,7 @@ from app.models import (
 from app.schemas import Response
 from app.status_policy import canonical_status_value, status_detail_value, statuses_for_canonical
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
-from app.utils import make_operation_log, today_cst_as_utc, utcnow
+from app.utils import make_operation_log, month_start_cst_as_utc, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -210,10 +215,12 @@ async def data_quality(
     now = utcnow()
     today = today_cst_as_utc()
     tomorrow = today + timedelta(days=1)
-    month_start = today.replace(day=1)
+    month_start = month_start_cst_as_utc()
 
     def unrecorded_clause():
-        return or_(DialLog.duration_seconds <= 0, DialLog.duration_seconds.is_(None))
+        return DialLog.recording_state.in_(
+            [DIAL_RECORDING_PENDING, DIAL_RECORDING_LEGACY_MISSING]
+        )
 
     call_summary_r = await db.execute(
         select(
@@ -224,9 +231,23 @@ async def data_quality(
             .filter(
                 DialLog.dialed_at >= today,
                 DialLog.dialed_at < tomorrow,
-                DialLog.duration_seconds > 0,
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
             )
             .label("today_recorded"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                DialLog.recording_state == DIAL_RECORDING_PENDING,
+            )
+            .label("today_pending"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= today,
+                DialLog.dialed_at < tomorrow,
+                DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING,
+            )
+            .label("today_legacy_missing"),
             func.count(DialLog.id)
             .filter(
                 DialLog.dialed_at >= today,
@@ -236,13 +257,32 @@ async def data_quality(
             .label("today_unrecorded"),
             func.count(DialLog.id).filter(DialLog.dialed_at >= month_start).label("month_total"),
             func.count(DialLog.id)
-            .filter(DialLog.dialed_at >= month_start, DialLog.duration_seconds > 0)
+            .filter(
+                DialLog.dialed_at >= month_start,
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
+            )
             .label("month_recorded"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= month_start,
+                DialLog.recording_state == DIAL_RECORDING_PENDING,
+            )
+            .label("month_pending"),
+            func.count(DialLog.id)
+            .filter(
+                DialLog.dialed_at >= month_start,
+                DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING,
+            )
+            .label("month_legacy_missing"),
             func.count(DialLog.id)
             .filter(DialLog.dialed_at >= month_start, unrecorded_clause())
             .label("month_unrecorded"),
             func.avg(DialLog.duration_seconds)
-            .filter(DialLog.dialed_at >= month_start, DialLog.duration_seconds > 0)
+            .filter(
+                DialLog.dialed_at >= month_start,
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
+                DialLog.duration_seconds > 0,
+            )
             .label("month_avg_recorded"),
         )
     )
@@ -253,10 +293,21 @@ async def data_quality(
             DialLog.agent_id,
             User.name.label("agent_name"),
             func.count(DialLog.id).label("total_calls"),
-            func.count(DialLog.id).filter(DialLog.duration_seconds > 0).label("recorded_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_COMPLETED)
+            .label("recorded_calls"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_PENDING)
+            .label("pending_dial_sessions"),
+            func.count(DialLog.id)
+            .filter(DialLog.recording_state == DIAL_RECORDING_LEGACY_MISSING)
+            .label("legacy_missing_duration"),
             func.count(DialLog.id).filter(unrecorded_clause()).label("unrecorded_calls"),
             func.avg(DialLog.duration_seconds)
-            .filter(DialLog.duration_seconds > 0)
+            .filter(
+                DialLog.recording_state == DIAL_RECORDING_COMPLETED,
+                DialLog.duration_seconds > 0,
+            )
             .label("avg_recorded_duration_seconds"),
         )
         .join(User, User.id == DialLog.agent_id)
@@ -274,13 +325,22 @@ async def data_quality(
                 "total_calls": total_calls,
                 "recorded_calls": int(row.recorded_calls or 0),
                 "unrecorded_calls": unrecorded_calls,
+                "completed_dial_sessions": int(row.recorded_calls or 0),
+                "pending_dial_sessions": int(row.pending_dial_sessions or 0),
+                "legacy_missing_duration": int(row.legacy_missing_duration or 0),
                 "unrecorded_ratio": round(unrecorded_calls / total_calls * 100, 1)
                 if total_calls
                 else 0,
                 "avg_recorded_duration_seconds": round(row.avg_recorded_duration_seconds or 0, 1),
             }
         )
-    agent_rows.sort(key=lambda item: (-item["unrecorded_calls"], item["agent_name"]))
+    agent_rows.sort(
+        key=lambda item: (
+            -item["pending_dial_sessions"],
+            -item["legacy_missing_duration"],
+            item["agent_name"],
+        )
+    )
 
     student_quality_r = await db.execute(
         select(
@@ -331,10 +391,11 @@ async def data_quality(
 
     month_total = int(call_summary.month_total or 0)
     month_unrecorded = int(call_summary.month_unrecorded or 0)
+    month_pending = int(call_summary.month_pending or 0)
     status = (
         "warning"
         if (
-            month_unrecorded > 0
+            month_pending > 0
             or int(getattr(student_quality, "missing_phone_tasks") or 0) > 0
             or int(getattr(follow_up_quality, "overdue_follow_ups") or 0) > 0
         )
@@ -350,11 +411,21 @@ async def data_quality(
                     "total_calls": int(call_summary.today_total or 0),
                     "recorded_calls": int(call_summary.today_recorded or 0),
                     "unrecorded_calls": int(call_summary.today_unrecorded or 0),
+                    "completed_dial_sessions": int(call_summary.today_recorded or 0),
+                    "pending_dial_sessions": int(call_summary.today_pending or 0),
+                    "legacy_missing_duration": int(
+                        call_summary.today_legacy_missing or 0
+                    ),
                 },
                 "month": {
                     "total_calls": month_total,
                     "recorded_calls": int(call_summary.month_recorded or 0),
                     "unrecorded_calls": month_unrecorded,
+                    "completed_dial_sessions": int(call_summary.month_recorded or 0),
+                    "pending_dial_sessions": month_pending,
+                    "legacy_missing_duration": int(
+                        call_summary.month_legacy_missing or 0
+                    ),
                     "unrecorded_ratio": round(month_unrecorded / month_total * 100, 1)
                     if month_total
                     else 0,
