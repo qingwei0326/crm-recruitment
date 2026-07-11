@@ -7,7 +7,7 @@ const preview = {
   openWorkItemCount: 5,
   overdueCount: 2,
   highIntentCount: 1,
-  byKind: { scheduled_follow_up: 2, home_visit: 1 },
+  byKind: { lead_contact: 2, scheduled_follow_up: 2, home_visit: 1 },
   students: [{ studentId: 1, name: '测试学生甲' }],
 };
 
@@ -29,7 +29,9 @@ describe('TransferPreviewDialog', () => {
     expect(screen.getByText('开放工作项').parentElement).toHaveTextContent('5');
     expect(screen.getByText('逾期').parentElement).toHaveTextContent('2');
     expect(screen.getByText('A 级意向').parentElement).toHaveTextContent('1');
+    expect(screen.getByText('学生跟进 2')).toBeInTheDocument();
     expect(screen.getByText('预约回访 2')).toBeInTheDocument();
+    expect(screen.queryByText('lead_contact')).not.toBeInTheDocument();
   });
 
   it('blocks confirmation without an active target or while submitting', () => {

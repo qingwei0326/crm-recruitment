@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowRightLeft, X } from 'lucide-react';
 
 const kindLabels = {
+  lead_contact: '学生跟进',
   student_follow_up: '学生跟进',
   scheduled_follow_up: '预约回访',
   home_visit: '家访任务',

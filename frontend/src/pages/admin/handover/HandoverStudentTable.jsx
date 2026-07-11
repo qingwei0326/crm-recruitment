@@ -2,6 +2,7 @@ import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { intentBadgeClass, stageLabel, statusBadgeClass, statusLabel } from '../../../labels';
 
 const kindLabels = {
+  lead_contact: '跟进',
   student_follow_up: '跟进',
   scheduled_follow_up: '回访',
   home_visit: '家访',

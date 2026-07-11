@@ -196,6 +196,27 @@ describe('HandoverCenter', () => {
     });
   });
 
+  it('shows the domain lead-contact kind as a user-facing label', () => {
+    mocks.useDetail.mockReturnValue({
+      data: {
+        ...detail,
+        filterOptions: { ...detail.filterOptions, kinds: ['lead_contact'] },
+        items: [
+          { ...detail.items[0], workItemKinds: ['lead_contact'] },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: mocks.detailRefetch,
+    });
+
+    renderPage();
+
+    expect(screen.getByRole('option', { name: '学生跟进' })).toBeInTheDocument();
+    expect(screen.getByText('跟进')).toBeInTheDocument();
+    expect(screen.queryByText('lead_contact')).not.toBeInTheDocument();
+  });
+
   it('previews selected students and executes with the preview version', async () => {
     renderPage();
     await openSelectedPreview();
