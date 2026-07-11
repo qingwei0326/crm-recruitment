@@ -80,6 +80,12 @@ export const ADMIN_NAV_ITEMS = [
     permission: ADMIN_PAGE_PERMISSIONS.accountManage,
   },
   {
+    to: '/admin/handovers',
+    label: '离职交接',
+    icon: ArrowRightLeft,
+    permission: ADMIN_PAGE_PERMISSIONS.accountManage,
+  },
+  {
     to: '/admin/report-center',
     label: '报表中心',
     icon: BarChart3,

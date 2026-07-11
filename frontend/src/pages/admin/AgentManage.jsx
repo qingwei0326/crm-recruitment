@@ -438,7 +438,7 @@ export default function AgentManage() {
       if (selectedAgent?.id === agent.id) setSelectedAgent(null);
       navigate(`/admin/handovers?batch=${d.id}`);
     } catch (err) {
-      if (err.response || err.message !== 'Network Error') {
+      if (err.response) {
         startHandoverRequestRef.current.delete(agent.id);
       }
       toast?.error(getApiErrorMessage(err));

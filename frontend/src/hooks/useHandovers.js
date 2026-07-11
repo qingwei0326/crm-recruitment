@@ -43,6 +43,27 @@ export function useHandoverDetail(batchId, filters = {}, options = {}) {
   });
 }
 
+export function useActiveHandoverAgents(options = {}) {
+  return useQuery({
+    queryKey: ['handover-agents'],
+    queryFn: async () => {
+      const response = await api.get('/admin/agents');
+      const values = responseData(response);
+      return (Array.isArray(values) ? values : [])
+        .filter((agent) => (
+          agent?.employment_status
+            ? agent.employment_status === 'active'
+            : Boolean(agent?.is_active)
+        ))
+        .map((agent) => ({
+          id: Number(agent.id) || 0,
+          name: typeof agent.name === 'string' ? agent.name : '',
+        }));
+    },
+    ...options,
+  });
+}
+
 export function usePreviewHandoverTransfer(options = {}) {
   return useMutation({
     mutationFn: async ({ batchId, mode, studentIds = [] }) => {

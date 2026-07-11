@@ -23,6 +23,7 @@ const SmartAssignment = lazy(() => import('./pages/admin/SmartAssignment'));
 const AssignmentBatchReview = lazy(() => import('./pages/admin/AssignmentBatchReview'));
 const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
+const HandoverCenter = lazy(() => import('./pages/admin/HandoverCenter'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
 const ReportCenter = lazy(() => import('./pages/admin/ReportCenter'));
@@ -217,6 +218,14 @@ export default function App() {
           element={
             <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.accountManage}>
               <RouteError><AgentManage /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/handovers"
+          element={
+            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.accountManage}>
+              <RouteError><HandoverCenter /></RouteError>
             </Protected>
           }
         />
