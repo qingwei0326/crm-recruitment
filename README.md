@@ -138,6 +138,29 @@ npm run dev   # 默认 http://localhost:3000，已在 vite.config.js 中代理 /
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 | 可选（不设置则仅用关键词分析） |
 | `SECRET_KEY` | JWT/Cookie 签名密钥 | 必填，开发可放入 `.env` 或 `.secret_key` |
 
+### 本地生产快照迁移验收
+
+服务器数据库只能通过 SQLite 在线备份 API 生成快照，再下载到
+`backups/server-audit/crm_server_audit_<时间>.db`。下载后的快照视为只读证据，禁止覆盖、
+启动应用或直接运行迁移；所有验证都在新的时间戳工作副本上执行：
+
+```powershell
+$source = Get-ChildItem .\backups\server-audit\crm_server_audit_*.db -File |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+$destination = ".\backups\server-audit\working\crm_domain_{0}.db" -f (
+    Get-Date -Format 'yyyyMMdd_HHmmss'
+)
+.venv-win\Scripts\python.exe scripts\migrate_snapshot_clone.py `
+    --source $source.FullName `
+    --destination $destination
+```
+
+命令会复制、预检、升级到 `20260711_03`，再校验源文件 SHA-256、旧表行数、
+`quick_check`、外键和领域一致性。需要让开发服务读取该副本时，先运行 `stop.ps1`，
+为根目录 `crm.db` 创建时间戳备份并核对哈希，再设置
+`$env:DATABASE_PATH=(Resolve-Path $destination).Path`；不得把工作副本写回服务器。
+
 ### 部署
 
 ```powershell
