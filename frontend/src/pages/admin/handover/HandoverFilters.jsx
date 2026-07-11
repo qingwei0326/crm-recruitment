@@ -4,6 +4,7 @@ const fieldClass =
   'min-h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100';
 
 const kindLabels = {
+  lead_contact: '学生跟进',
   student_follow_up: '学生跟进',
   scheduled_follow_up: '预约回访',
   home_visit: '家访',
