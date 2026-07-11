@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-
 REOPEN_ACTIONS = ("线索回收", "回收无效线索", "分配", "多学校分发")
 
 STATUS_LOG_TO_STORED_STATUS = {
