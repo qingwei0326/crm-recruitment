@@ -3,9 +3,9 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -14,6 +14,7 @@ from sqlalchemy import text
 from app.backup import backup_scheduler, do_backup_async
 from app.config import CORS_ORIGINS
 from app.database import async_session, init_db
+from app.domain_errors import DomainError
 from app.limiter import limiter
 from app.routers import (
     admin,
@@ -87,6 +88,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="招生话务CRM系统", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def _domain_error_handler(_request: Request, exc: DomainError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"code": exc.code, "data": None, "msg": exc.message},
+    )
+
+
+app.add_exception_handler(DomainError, _domain_error_handler)
 
 app.add_middleware(
     CORSMiddleware,
