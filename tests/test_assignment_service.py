@@ -3,12 +3,19 @@ from datetime import datetime
 import pytest
 from sqlalchemy import select, text
 
-from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
+from app.domain_models import (
+    AgentEmployment,
+    EmploymentStatus,
+    StudentAssignment,
+    WorkItem,
+    WorkItemKind,
+)
 from app.models import OperationLog, Student, User, UserRole
 from app.services.assignment_service import (
     AssignmentTarget,
     apply_assignment_changes,
 )
+from app.services.work_item_service import sync_student_work_items
 from app.utils import parse_assignment_rollback_note
 
 INITIAL_AT = datetime(2026, 7, 10, 1, 0, 0)
@@ -67,6 +74,12 @@ async def _seed_assignment(db, *, target_status=EmploymentStatus.active):
 @pytest.mark.asyncio
 async def test_reassignment_updates_history_projection_and_audit(db):
     operator, source, target, student = await _seed_assignment(db)
+    (lead_item,) = await sync_student_work_items(
+        db,
+        student,
+        operator,
+        at=INITIAL_AT,
+    )
 
     result = await apply_assignment_changes(
         db,
@@ -82,6 +95,19 @@ async def test_reassignment_updates_history_projection_and_audit(db):
     await db.refresh(student)
     assert student.assigned_to == target.id
     assert student.assigned_at == CHANGED_AT
+    await db.refresh(lead_item)
+    assert lead_item.owner_agent_id == target.id
+    assert lead_item.creator_user_id == source.id
+    assert lead_item.kind == WorkItemKind.lead_contact
+    assert (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.lead_contact,
+                WorkItem.source_type == "student",
+                WorkItem.source_id == student.id,
+            )
+        )
+    ).scalar_one().id == lead_item.id
 
     assignments = (
         (

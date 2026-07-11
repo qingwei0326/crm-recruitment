@@ -9,6 +9,7 @@ from app.auth import (
     user_has_operation_permission,
     user_has_page_permission,
 )
+from app.domain_models import WorkItemKind
 from app.models import (
     AttributionMethod,
     CampusVisitResult,
@@ -32,6 +33,11 @@ from app.pushplus import (
 )
 from app.schemas import (
     EnrollmentCreate,
+)
+from app.services.work_item_service import (
+    enrollment_settlement_is_open,
+    sync_source_work_item,
+    sync_student_work_items,
 )
 from app.utils import make_operation_log
 
@@ -548,6 +554,27 @@ async def _resolve_enrollment_attribution(
     raise HTTPException(status_code=400, detail="当前学生没有负责话务员，请手动选择报名归属")
 
 
+async def _sync_enrollment_work_item(
+    db: AsyncSession,
+    record: EnrollmentRecord,
+    student: Student,
+    current_user: User,
+) -> None:
+    await db.flush()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.enrollment_settlement,
+        "enrollment",
+        record.id,
+        student,
+        record.attributed_agent_id,
+        record.enrolled_at,
+        not enrollment_settlement_is_open(record),
+        current_user,
+    )
+    await sync_student_work_items(db, student, current_user)
+
+
 async def _create_enrollment_record(
     db: AsyncSession,
     body: EnrollmentCreate,
@@ -565,6 +592,12 @@ async def _create_enrollment_record(
     if existing is not None:
         if allow_existing:
             _mark_student_enrolled(student, body.enrolled_at)
+            await _sync_enrollment_work_item(
+                db,
+                existing,
+                student,
+                current_user,
+            )
             return existing
         raise HTTPException(status_code=400, detail="该学生已有报名记录，不能重复登记")
 
@@ -614,4 +647,5 @@ async def _create_enrollment_record(
             ),
         )
     )
+    await _sync_enrollment_work_item(db, record, student, current_user)
     return record

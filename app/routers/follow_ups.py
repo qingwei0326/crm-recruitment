@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.domain_models import WorkItemKind
 from app.follow_up_service import (
     sync_student_status_after_follow_up_change,
     sync_student_status_for_open_follow_up,
@@ -14,6 +15,11 @@ from app.follow_up_service import (
 from app.models import FollowUp, Student, User, UserRole
 from app.permissions import get_accessible_student
 from app.schemas import FollowUpCreate, FollowUpUpdate, Response
+from app.services.work_item_service import (
+    cancel_source_work_item,
+    sync_source_work_item,
+    sync_student_work_items,
+)
 from app.status_policy import canonical_status_value, status_detail_value
 from app.utils import utcnow
 
@@ -36,6 +42,21 @@ async def create_follow_up(
     )
     db.add(fu)
     await sync_student_status_for_open_follow_up(db, student)
+    await db.flush()
+    now = utcnow()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.scheduled_follow_up,
+        "follow_up",
+        fu.id,
+        student,
+        fu.agent_id,
+        fu.follow_up_date,
+        fu.is_completed,
+        current_user,
+        at=now,
+    )
+    await sync_student_work_items(db, student, current_user, at=now)
     await db.commit()
     await db.refresh(fu)
     return Response.ok(_fu_payload(fu))
@@ -192,6 +213,21 @@ async def update_follow_up(
         follow_up.notes = body.notes
 
     await sync_student_status_after_follow_up_change(db, follow_up.student_id)
+    student = await db.get(Student, follow_up.student_id)
+    now = utcnow()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.scheduled_follow_up,
+        "follow_up",
+        follow_up.id,
+        student,
+        follow_up.agent_id,
+        follow_up.follow_up_date,
+        follow_up.is_completed,
+        current_user,
+        at=now,
+    )
+    await sync_student_work_items(db, student, current_user, at=now)
     await db.commit()
     await db.refresh(follow_up)
     return Response.ok(
@@ -216,8 +252,19 @@ async def delete_follow_up(
         return Response.error(code=1, msg="无权操作此回访")
 
     student_id = follow_up.student_id
+    now = utcnow()
+    await cancel_source_work_item(
+        db,
+        WorkItemKind.scheduled_follow_up,
+        "follow_up",
+        follow_up.id,
+        at=now,
+    )
     await db.delete(follow_up)
     await db.flush()
     await sync_student_status_after_follow_up_change(db, student_id)
+    student = await db.get(Student, student_id)
+    if student is not None:
+        await sync_student_work_items(db, student, current_user, at=now)
     await db.commit()
     return Response.ok({"deleted": fu_id})

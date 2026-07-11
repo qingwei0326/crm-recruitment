@@ -45,6 +45,7 @@ from app.routers.students_phone import (
 )
 from app.schemas import Response, StudentCreate, StudentUpdate
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
+from app.services.work_item_service import sync_student_work_items
 from app.status_policy import (
     canonical_status_value,
     canonical_student_status,
@@ -57,6 +58,7 @@ from app.utils import (
     make_operation_log,
     mask_phone,
     normalize_phone,
+    utcnow,
 )
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
@@ -335,6 +337,7 @@ async def create_student(
 
     db.add(student)
     await db.flush()
+    sync_at = utcnow()
     if assigned_to is not None:
         await apply_assignment_changes(
             db,
@@ -342,7 +345,9 @@ async def create_student(
             operator=current_user,
             reason="student_create",
             batch_id=make_batch_id("student-create-assignment"),
+            at=sync_at,
         )
+    await sync_student_work_items(db, student, current_user, at=sync_at)
     await db.commit()
     await db.refresh(student)
     if student.intent_level == IntentLevel.A:
@@ -495,6 +500,7 @@ async def update_student(
             )
         )
 
+    sync_at = utcnow()
     if assignment_requested:
         await apply_assignment_changes(
             db,
@@ -502,7 +508,9 @@ async def update_student(
             operator=current_user,
             reason="student_edit",
             batch_id=make_batch_id("student-edit-assignment"),
+            at=sync_at,
         )
+    await sync_student_work_items(db, student, current_user, at=sync_at)
 
     await db.commit()
     await db.refresh(student)
@@ -530,6 +538,7 @@ async def toggle_need_help(
             content="需要协助" if student.need_help else "取消协助标记",
         )
     )
+    await sync_student_work_items(db, student, current_user)
     await db.commit()
     return Response.ok({"need_help": student.need_help})
 
