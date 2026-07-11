@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.schemas import Response
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
+from app.services.lead_outcome_service import require_reclaimable_reasons
 from app.status_policy import (
     canonical_status_value,
     canonical_student_status,
@@ -69,6 +70,7 @@ async def reclaim_invalid_students_to_pool(
     current_user: User,
     action: str = "回收无效线索",
 ) -> int:
+    await require_reclaimable_reasons(db, students)
     reclaimed_count = 0
     now = utcnow()
     batch_id = make_batch_id("invalid-reclaim")
@@ -76,6 +78,7 @@ async def reclaim_invalid_students_to_pool(
         old_agent_id = student.assigned_to
         student.status = StudentStatus.not_contacted
         student.status_detail = ""
+        student.outcome_reason_code = None
         student.intent_level = IntentLevel.none
         student.stage = StudentStage.initial_contact
         student.need_help = False
@@ -183,6 +186,7 @@ async def list_invalid_students(
             "agent_name": agent_name or "未分配",
             "status": canonical_status_value(s.status),
             "status_detail": status_detail_value(s.status, s.status_detail),
+            "outcome_reason_code": s.outcome_reason_code,
             "invalid_reason": status_detail_value(s.status, s.status_detail)
             or invalid_reasons.get(s.id, {}).get("reason", ""),
             "invalid_operator_name": invalid_reasons.get(s.id, {}).get("operator_name", ""),
@@ -244,6 +248,8 @@ async def reclaim_invalid_students(
         names = ", ".join([s.name for s in non_invalid[:3]])
         return Response.error(code=1, msg=f"部分学生不是无效状态，无法回收: {names}")
 
+    await require_reclaimable_reasons(db, students)
+
     # 回收：重置状态为未联系，重新分配
     now = utcnow()
     batch_id = make_batch_id("invalid-reclaim")
@@ -252,6 +258,7 @@ async def reclaim_invalid_students(
         old_agent_id = student.assigned_to
         student.status = StudentStatus.not_contacted
         student.status_detail = ""
+        student.outcome_reason_code = None
         # 与 delete_user/offboard 的回收契约保持一致：重置意向/阶段/求助，
         # 否则新话务员会看到旧的意向 A、阶段「已来访」，误以为是自己跟出来的，
         # 同时污染漏斗/转化统计。

@@ -157,6 +157,8 @@ def _require_admin_operation(current_user: User, permission: str) -> None:
 
 def _mark_student_enrolled(student: Student, enrolled_at=None) -> None:
     student.status = StudentStatus.enrolled
+    student.status_detail = ""
+    student.outcome_reason_code = None
     student.stage = StudentStage.enrolled
     if enrolled_at is not None:
         student.enrolled_at = enrolled_at.date()

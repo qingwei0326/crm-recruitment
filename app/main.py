@@ -36,6 +36,7 @@ from app.routers import (
     auth,
     calls,
     follow_ups,
+    lead_outcomes,
     notes,
     operation_logs,
     stats,
@@ -123,6 +124,7 @@ app.include_router(students.router)
 app.include_router(calls.router)
 app.include_router(notes.router)
 app.include_router(follow_ups.router)
+app.include_router(lead_outcomes.router)
 app.include_router(stats.router)
 app.include_router(stats_agents.router)
 app.include_router(stats_enrollment.router)

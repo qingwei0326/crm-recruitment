@@ -137,6 +137,7 @@ async def update_stage(
     if new_stage == StudentStage.enrolled:
         student.status = StudentStatus.enrolled
         student.status_detail = ""
+        student.outcome_reason_code = None
         if not student.enrolled_at:
             student.enrolled_at = date.today()
 
@@ -195,6 +196,7 @@ async def set_enroll_info(
     student.deposit = body.deposit
     student.status = StudentStatus.enrolled
     student.status_detail = ""
+    student.outcome_reason_code = None
     student.stage = StudentStage.enrolled
     if student.enrollment_substage is None:
         student.enrollment_substage = EnrollmentSubStage.deposit_pending
