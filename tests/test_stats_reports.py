@@ -314,6 +314,9 @@ async def test_admissions_report_summarizes_workflow(
         [
             DialLog(student_id=enrolled_student.id, agent_id=agent_user.id),
             DialLog(student_id=enrolled_student.id, agent_id=agent_user.id),
+            DialLog(student_id=visiting_student.id, agent_id=other_agent.id),
+            DialLog(student_id=visiting_student.id, agent_id=other_agent.id),
+            DialLog(student_id=visiting_student.id, agent_id=other_agent.id),
             HomeVisitTask(
                 student_id=enrolled_student.id,
                 creator_agent_id=agent_user.id,
@@ -386,8 +389,13 @@ async def test_admissions_report_summarizes_workflow(
     assert regions["龙海"]["enrollments"] == 1
     assert regions["未知"]["total_leads"] == 1
 
-    agents = {item["agent_name"]: item for item in body["data"]["agents"]}
+    agent_rows = body["data"]["agents"]
+    assert [item["calls"] for item in agent_rows] == sorted(
+        (item["calls"] for item in agent_rows), reverse=True
+    )
+    agents = {item["agent_name"]: item for item in agent_rows}
     assert agents[agent_user.name]["calls"] == 2
+    assert agents["后续坐席"]["calls"] == 3
     assert agents[agent_user.name]["home_visit_reports"] == 1
     assert agents[agent_user.name]["enrollments"] == 1
     assert agents[agent_user.name]["settlement_pending"] == 1

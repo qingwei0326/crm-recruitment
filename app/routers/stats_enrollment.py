@@ -571,12 +571,12 @@ async def admissions_report(
             agent_rows.append(item)
     agent_rows.sort(
         key=lambda row: (
+            row["calls"],
             row["enrollments"],
             row["settlement_pending"],
             row["campus_visit_appointments"],
             row["home_visit_reports"],
             row["a_count"],
-            row["calls"],
         ),
         reverse=True,
     )
