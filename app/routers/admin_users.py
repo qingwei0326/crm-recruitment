@@ -37,7 +37,13 @@ from app.dial_recording import (
     DIAL_RECORDING_LEGACY_MISSING,
     DIAL_RECORDING_PENDING,
 )
-from app.domain_models import AgentEmployment, EmploymentStatus
+from app.domain_models import (
+    AgentEmployment,
+    EmploymentStatus,
+    HandoverBatch,
+    HandoverBatchStatus,
+    StudentAssignment,
+)
 from app.models import (
     DialLog,
     FollowUp,
@@ -54,6 +60,7 @@ from app.routers.admin import get_config_value
 from app.schemas import Response
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.services.employment_service import set_employment_status
+from app.services.handover_service import handover_transaction_lock, start_handover
 from app.status_policy import canonical_status_value, status_detail_value
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES, build_task_stats
 from app.utils import make_batch_id, make_operation_log, today_cst_as_utc, utcnow
@@ -948,15 +955,11 @@ async def offboard_user(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_operation_permission(ADMIN_OP_USER_OFFBOARD)),
 ):
-    """软离职：禁用账号 + 撤销 token + 回收线索 + 留存历史。
-
-    相比 delete_user 的优势：
-      1) 保留 Call/Note/FollowUp 等历史归属，报表口径不丢
-      2) 绕开 FK 约束（hard delete 在话务员有工作记录时会报错）
-      3) 一个原子操作完成所有离职动作，避免 admin 分多步做漏环节
-    """
+    """兼容旧客户端的安全离职入口，不再回收或重置非终态学生。"""
     if user_id == current_user.id:
         return Response.error(code=1, msg="不能离职自己")
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="需要超级管理员权限")
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -977,93 +980,55 @@ async def offboard_user(
         if user.is_super_admin and await count_active_super_admins(db) <= 1:
             return Response.error(code=1, msg="不能离职最后一个超级管理员")
 
-    assigned_students = (
-        (
-            await db.execute(
-                select(Student).where(Student.assigned_to == user_id)
+    was_already_disabled = not user.is_active
+    async with handover_transaction_lock(user.id):
+        active_batch = (
+            (
+                await db.execute(
+                    select(HandoverBatch)
+                    .where(
+                        HandoverBatch.source_agent_id == user.id,
+                        HandoverBatch.status.in_(
+                            {
+                                HandoverBatchStatus.pending,
+                                HandoverBatchStatus.in_progress,
+                            }
+                        ),
+                    )
+                    .order_by(HandoverBatch.id.desc())
+                )
             )
+            .scalars()
+            .first()
         )
-        .scalars()
-        .all()
-    )
-    terminal_students = [
-        student
-        for student in assigned_students
-        if student.status in TERMINAL_STUDENT_STATUSES
-    ]
-    non_terminal_students = [
-        student
-        for student in assigned_students
-        if student.status not in TERMINAL_STUDENT_STATUSES
-    ]
-    preserved_count = len(terminal_students)
-    recycled_count = len(non_terminal_students)
-    for student in non_terminal_students:
-        student.status = StudentStatus.not_contacted
-        student.status_detail = ""
-        student.intent_level = IntentLevel.none
-        student.stage = StudentStage.initial_contact
-        student.need_help = False
-
-    batch_id = make_batch_id("legacy-offboard")
-    await apply_assignment_changes(
-        db,
-        [
-            AssignmentTarget(student_id=student.id, agent_id=None)
-            for student in assigned_students
-        ],
-        operator=current_user,
-        reason="terminal_unassign",
-        batch_id=batch_id,
-    )
-
-    # 3) 禁用账号 + 撤销现有 token
-    was_active = user.is_active
-    employment = await db.get(AgentEmployment, user.id)
-    if employment is not None and employment.status in {
-        EmploymentStatus.active,
-        EmploymentStatus.suspended,
-    }:
-        employment = await set_employment_status(
+        batch = active_batch or await start_handover(
             db,
             user,
-            EmploymentStatus.handover_pending,
-            operator=current_user,
-            reason="legacy_offboard_start",
-        )
-    if employment is not None and employment.status == EmploymentStatus.handover_pending:
-        await set_employment_status(
-            db,
-            user,
-            EmploymentStatus.offboarded,
-            operator=current_user,
-            reason="legacy_offboard_complete",
-        )
-    user.failed_login_attempts = 0
-    user.locked_until = None
-
-    db.add(
-        make_operation_log(
             current_user,
-            target_student_id=None,
-            case_no="",
-            action="离职用户",
-            content=(
-                f"离职 {user.role} {user.username}({user.name})："
-                f"回收非终态 {recycled_count} 条、保留终态 {preserved_count} 条"
-                + ("" if was_active else "（账号原本已禁用）")
-            ),
-            batch_id=batch_id,
+            f"legacy-offboard:user:{user.id}",
         )
-    )
-    await db.commit()
+        terminal_history_count = int(
+            (
+                await db.execute(
+                    select(func.count(StudentAssignment.id)).where(
+                        StudentAssignment.handover_batch_id == batch.id,
+                        StudentAssignment.end_reason == "terminal_unassign",
+                        StudentAssignment.ended_at.is_not(None),
+                    )
+                )
+            ).scalar_one()
+        )
+        await db.commit()
     return Response.ok(
         {
             "user_id": user.id,
             "username": user.username,
-            "recycled_count": recycled_count,
-            "preserved_count": preserved_count,
-            "was_already_disabled": not was_active,
+            "handover_batch_id": batch.id,
+            "pending_handover_count": batch.remaining_items,
+            "terminal_history_count": terminal_history_count,
+            "recycled_count": 0,
+            "preserved_count": batch.remaining_items + terminal_history_count,
+            "was_already_disabled": was_already_disabled,
         }
     )
 

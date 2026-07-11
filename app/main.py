@@ -23,6 +23,7 @@ from app.routers import (
     admin_config,
     admin_daily,
     admin_governance,
+    admin_handover,
     admin_invalid,
     admin_misc,
     admin_smart_assignment,
@@ -133,6 +134,7 @@ app.include_router(tasks.router)
 app.include_router(admin.router)
 app.include_router(admin_config.router)
 app.include_router(admin_governance.router)
+app.include_router(admin_handover.router)
 app.include_router(admin_daily.router)
 app.include_router(admin_assignment.router)
 app.include_router(admin_assignment_review.router)

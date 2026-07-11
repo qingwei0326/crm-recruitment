@@ -98,6 +98,36 @@ async def apply_assignment_changes(
         assignment.student_id: assignment for assignment in active_assignments
     }
 
+    if handover_batch_id is None:
+        current_agent_ids = sorted(
+            {
+                assignment.agent_id
+                for student_id, assignment in active_by_student.items()
+                if requested[student_id] != assignment.agent_id
+            }
+        )
+        pending_agent_ids: set[int] = set()
+        if current_agent_ids:
+            employment_rows = await db.execute(
+                select(AgentEmployment).where(
+                    AgentEmployment.user_id.in_(current_agent_ids),
+                    AgentEmployment.status == EmploymentStatus.handover_pending,
+                )
+            )
+            pending_agent_ids = {
+                employment.user_id for employment in employment_rows.scalars().all()
+            }
+        blocked_student_ids = sorted(
+            student_id
+            for student_id, assignment in active_by_student.items()
+            if requested[student_id] != assignment.agent_id
+            and assignment.agent_id in pending_agent_ids
+        )
+        if blocked_student_ids:
+            raise DomainConflict(
+                f"待交接学生请通过交接流程转移: {blocked_student_ids[:3]}"
+            )
+
     changed: list[int] = []
     unchanged: list[int] = []
     for student_id in sorted(requested):
@@ -116,6 +146,7 @@ async def apply_assignment_changes(
             current.ended_at = now
             current.end_reason = reason
             current.ended_by = operator.id
+            current.handover_batch_id = handover_batch_id
         if target_agent_id is not None:
             db.add(
                 StudentAssignment(
