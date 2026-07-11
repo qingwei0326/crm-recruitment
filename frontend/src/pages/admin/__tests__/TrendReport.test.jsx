@@ -4,7 +4,10 @@ import { MemoryRouter } from 'react-router-dom';
 import TrendReport from '../TrendReport';
 import api from '../../../api';
 
-const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+const { toastError, tooltipProps } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  tooltipProps: [],
+}));
 
 vi.mock('../../../api', () => ({
   default: {
@@ -54,7 +57,10 @@ vi.mock('recharts', () => ({
   XAxis: () => null,
   YAxis: () => null,
   CartesianGrid: () => null,
-  Tooltip: () => null,
+  Tooltip: (props) => {
+    tooltipProps.push(props);
+    return null;
+  },
   Legend: () => null,
 }));
 
@@ -100,6 +106,7 @@ function chartLineNames() {
 describe('TrendReport', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    tooltipProps.length = 0;
   });
 
   afterEach(() => {
@@ -235,6 +242,50 @@ describe('TrendReport', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '甲' }));
 
     expect(agentLine('乙').dataset.stroke).toBe(secondAgentColor);
+  });
+
+  it('sorts the agent tooltip by the hovered date value descending', async () => {
+    renderTrendReport({
+      start: '2026-07-10',
+      end: '2026-07-10',
+      daily: [
+        {
+          date: '2026-07-10',
+          calls: 13,
+          enrolled: 0,
+          agent_calls: { 零值: 0, 较低: 2, 最高: 9, 同值: 2 },
+        },
+      ],
+    });
+    await screen.findByText('各话务员每日呼出量对比');
+
+    expect(tooltipProps).toHaveLength(2);
+    expect(tooltipProps[0].itemSorter).toBeUndefined();
+    const agentTooltip = tooltipProps[1];
+    expect(agentTooltip.itemSorter).toEqual(expect.any(Function));
+
+    const entries = [
+      { name: '零值', value: 0 },
+      { name: '较低', value: 2 },
+      { name: '最高', value: 9 },
+      { name: '同值', value: 2 },
+      { name: '无效', value: 'not-a-number' },
+    ];
+    const { DefaultTooltipContent } = await vi.importActual('recharts');
+    const { container } = render(
+      <DefaultTooltipContent
+        label="2026-07-10"
+        payload={entries}
+        itemSorter={agentTooltip.itemSorter}
+      />,
+    );
+    const orderedNames = [
+      ...container.querySelectorAll('.recharts-tooltip-item-name'),
+    ].map((element) => element.textContent);
+
+    expect(orderedNames).toEqual(['最高', '较低', '同值', '零值', '无效']);
+    expect(agentTooltip.itemSorter({})).toBe(0);
+    expect(agentTooltip.itemSorter({ value: null })).toBe(0);
   });
 
   it('requests natural CST week and month ranges', async () => {

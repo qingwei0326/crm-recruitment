@@ -65,6 +65,12 @@ function hasPositiveValue(rows, getValue) {
   return rows.some((row) => Number(getValue(row) || 0) > 0);
 }
 
+function getAgentTooltipSortKey(item) {
+  const value = Number(item?.value);
+  if (!Number.isFinite(value) || value === 0) return 0;
+  return -value;
+}
+
 export default function TrendReport({ embedded = false }) {
   const { dark, toggle } = useTheme();
   const { user } = useAuth();
@@ -276,6 +282,7 @@ export default function TrendReport({ embedded = false }) {
                       />
                       <YAxis tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }} />
                       <Tooltip
+                        itemSorter={getAgentTooltipSortKey}
                         contentStyle={{
                           backgroundColor: dark ? '#1f2937' : '#fff',
                           border: 'none',
