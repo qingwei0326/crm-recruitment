@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -8,6 +9,7 @@ import PageHeader from '../../components/PageHeader';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
+import { createIdempotencyKey } from '../../domain/handover';
 import { adminRecycleStatusBadgeClass, statusLabel } from '../../labels';
 import {
   ADMIN_OPERATION_PERMISSION_OPTIONS,
@@ -18,6 +20,8 @@ import {
   normalizeAdminPagePermissions,
 } from '../../adminPermissions';
 import {
+  employmentLabel,
+  employmentStatus,
   getAgentListGroup,
   inputCls,
   isAdminAccount,
@@ -27,12 +31,13 @@ import {
   roleLabel,
   validateDisplayName,
 } from './agentManageUtils';
+import EmploymentActions from './agents/EmploymentActions';
+import EmploymentStatusBadge from './agents/EmploymentStatusBadge';
 import {
   ArrowLeft,
   Users,
   UserPlus,
   Eye,
-  UserX,
   Edit3,
   Phone,
   Target,
@@ -55,6 +60,7 @@ export default function AgentManage() {
   const isMobile = useIsMobile();
   const confirm = useConfirm();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [agents, setAgents] = useState([]);
   const [agentStatusFilter, setAgentStatusFilter] = useState('active');
@@ -72,6 +78,8 @@ export default function AgentManage() {
   const [recycleActionLoading, setRecycleActionLoading] = useState(false);
   const [recycleAgentId, setRecycleAgentId] = useState('');
   const recycleAllCheckboxRef = useRef(null);
+  const startHandoverRequestRef = useRef(new Map());
+  const [lifecycleActionId, setLifecycleActionId] = useState(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -95,30 +103,48 @@ export default function AgentManage() {
     ADMIN_OPERATION_PERMISSIONS.userResetPassword,
   );
   const canAssignStudents = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentAssign);
+  const canStartHandover = canOffboardUsers && Boolean(user?.is_super_admin);
   const canEditAccount = (account) =>
     canEditUsers && (!isAdminAccount(account) || canGrantAdminPermissions);
   const canOperateAdminAccount = (account) => !isAdminAccount(account) || canGrantAdminPermissions;
   const activeAgents = useMemo(
-    () => agents.filter((agent) => isAgentAccount(agent) && agent.is_active),
+    () => agents.filter(
+      (agent) => isAgentAccount(agent) && employmentStatus(agent) === 'active',
+    ),
     [agents],
   );
   const agentFilterOptions = useMemo(
     () => [
-      { key: 'active', label: '在职', count: agents.filter((agent) => agent.is_active).length },
-      { key: 'inactive', label: '离职', count: agents.filter((agent) => !agent.is_active).length },
+      {
+        key: 'active',
+        label: '在职',
+        count: agents.filter((agent) => employmentStatus(agent) === 'active').length,
+      },
+      {
+        key: 'suspended',
+        label: '暂停',
+        count: agents.filter((agent) => employmentStatus(agent) === 'suspended').length,
+      },
+      {
+        key: 'handover_pending',
+        label: '待交接',
+        count: agents.filter((agent) => employmentStatus(agent) === 'handover_pending').length,
+      },
+      {
+        key: 'offboarded',
+        label: '已离职',
+        count: agents.filter((agent) => employmentStatus(agent) === 'offboarded').length,
+      },
       { key: 'all', label: '全部', count: agents.length },
     ],
     [agents],
   );
 
   const visibleAgents = useMemo(() => {
-    if (agentStatusFilter === 'inactive') {
-      return agents.filter((agent) => !agent.is_active);
-    }
     if (agentStatusFilter === 'all') {
       return agents;
     }
-    return agents.filter((agent) => agent.is_active);
+    return agents.filter((agent) => employmentStatus(agent) === agentStatusFilter);
   }, [agents, agentStatusFilter]);
 
   const sortedAgents = useMemo(
@@ -349,46 +375,94 @@ export default function AgentManage() {
   };
 
   const handleToggleActive = async (agent) => {
-    if (agent.is_active) {
+    const currentStatus = employmentStatus(agent);
+    if (!['active', 'suspended'].includes(currentStatus)) return;
+    const suspending = currentStatus === 'active';
+    if (suspending) {
       const ok = await confirm({
-        title: `禁用「${agent.name}」`,
+        title: `暂停「${agent.name}」`,
         message:
-          '禁用后该话务员将无法登录系统，旧登录会立即失效。\n' +
+          '暂停后该话务员将无法登录系统，旧登录会立即失效。\n' +
           '不会回收线索，已分配学生仍保留在该账号名下。',
-        confirmText: '禁用',
+        confirmText: '暂停',
         tone: 'danger',
       });
       if (!ok) return;
     }
-    await api.put(`/admin/users/${agent.id}`, { is_active: !agent.is_active });
-    fetchAgents();
+    setLifecycleActionId(agent.id);
+    try {
+      const body = { is_active: !suspending };
+      if (Number.isInteger(Number(agent.employment_version))) {
+        body.expected_version = Number(agent.employment_version);
+      }
+      await api.put(`/admin/users/${agent.id}`, body);
+      toast?.success(suspending ? '账号已暂停' : '账号已恢复');
+      fetchAgents();
+    } catch (error) {
+      toast?.error(getApiErrorMessage(error));
+      if (error.response?.status === 409) fetchAgents();
+    } finally {
+      setLifecycleActionId(null);
+    }
   };
-  const handleOffboard = async (agent) => {
+
+  const handleStartHandover = async (agent) => {
     const ok = await confirm({
       title: `为「${agent.name}」办理离职`,
       message:
-        `· 回收非终态线索，状态/意向/阶段会重置\n` +
-        `· 保留已报名/无效历史记录，只解绑归属\n` +
-        `· 账号会被禁用、已登录的会话立即失效\n\n` +
-        `账号会保留以便保留历史，如需彻底删除请联系开发者。`,
-      confirmText: '办理离职',
+        `· 学生状态、意向、阶段、跟进记录和来源进度全部原样保留\n` +
+        `· 非终态学生进入待交接，可分批转给新员工或一次接手\n` +
+        `· 已报名和无效记录保留历史归因，不会重新回收\n` +
+        `· 账号会立即停用，旧登录会话同步失效`,
+      confirmText: '开始交接',
       tone: 'danger',
     });
-    if (!ok) {
-      return;
+    if (!ok) return;
+
+    let request = startHandoverRequestRef.current.get(agent.id);
+    if (!request) {
+      request = {
+        expected_version: Number(agent.employment_version || 0),
+        idempotency_key: createIdempotencyKey(agent.id),
+      };
+      startHandoverRequestRef.current.set(agent.id, request);
     }
+    setLifecycleActionId(agent.id);
     try {
-      const res = await api.post(`/admin/users/${agent.id}/offboard`);
+      const res = await api.post(`/admin/users/${agent.id}/offboarding/start`, request);
       const d = res.data?.data;
-      if (d) {
-        toast?.success(
-          `${agent.name} 已办理离职：回收线索 ${d.recycled_count} 条，保留历史 ${d.preserved_count} 条`,
-        );
-      }
+      if (!d?.id) throw new Error(res.data?.msg || '开始交接失败');
+      startHandoverRequestRef.current.delete(agent.id);
+      toast?.success(`${agent.name} 已进入交接，待处理 ${d.remaining_items || 0} 条`);
       fetchAgents();
       if (selectedAgent?.id === agent.id) setSelectedAgent(null);
+      navigate(`/admin/handovers?batch=${d.id}`);
     } catch (err) {
+      if (err.response || err.message !== 'Network Error') {
+        startHandoverRequestRef.current.delete(agent.id);
+      }
       toast?.error(getApiErrorMessage(err));
+      if (err.response?.status === 409) fetchAgents();
+    } finally {
+      setLifecycleActionId(null);
+    }
+  };
+
+  const handleOpenBatch = async (agent) => {
+    setLifecycleActionId(agent.id);
+    try {
+      const res = await api.get('/admin/handovers', {
+        params: { q: agent.username, page: 1, page_size: 200 },
+      });
+      const batch = (res.data?.data?.list || []).find(
+        (item) => item.source_agent?.id === agent.id && item.status !== 'completed',
+      );
+      if (!batch) throw new Error('未找到该员工的待交接批次');
+      navigate(`/admin/handovers?batch=${batch.id}`);
+    } catch (error) {
+      toast?.error(getApiErrorMessage(error));
+    } finally {
+      setLifecycleActionId(null);
     }
   };
   const handleResetPassword = async (agent) => {
@@ -542,7 +616,7 @@ export default function AgentManage() {
                     <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
                       <Users className="w-4 h-4" /> 账号列表 ({visibleAgents.length})
                     </h3>
-                    <div className="inline-flex rounded-lg border dark:border-gray-700 overflow-hidden text-xs">
+                    <div className="inline-flex max-w-full overflow-x-auto rounded-lg border text-xs dark:border-gray-700">
                       {agentFilterOptions.map((option) => (
                         <button
                           key={option.key}
@@ -551,7 +625,7 @@ export default function AgentManage() {
                             setAgentStatusFilter(option.key);
                             setSelectedAgent(null);
                           }}
-                          className={`px-2.5 py-1 transition-colors ${
+                          className={`shrink-0 px-2.5 py-1 transition-colors ${
                             agentStatusFilter === option.key
                               ? 'bg-blue-600 text-white'
                               : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
@@ -570,7 +644,9 @@ export default function AgentManage() {
                     </div>
                   ) : sortedAgents.length === 0 ? (
                     <div className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
-                      {agentStatusFilter === 'inactive' ? '暂无离职账号' : '暂无账号'}
+                      {agentStatusFilter === 'all'
+                        ? '暂无账号'
+                        : `暂无${employmentLabel(agentStatusFilter)}账号`}
                     </div>
                   ) : (
                     sortedAgents.map((a) => (
@@ -588,11 +664,7 @@ export default function AgentManage() {
                               <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300">
                                 {roleLabel(a)}
                               </span>
-                              {!a.is_active && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 whitespace-nowrap">
-                                  已离职
-                                </span>
-                              )}
+                              <EmploymentStatusBadge account={a} />
                               {isLocked(a) && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 inline-flex items-center gap-0.5">
                                   <Lock className="w-3 h-3" />
@@ -634,7 +706,9 @@ export default function AgentManage() {
                                 <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                               </button>
                             )}
-                            {canAssignStudents && a.is_active && isAgentAccount(a) && (
+                            {canAssignStudents
+                              && employmentStatus(a) === 'active'
+                              && isAgentAccount(a) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -646,18 +720,43 @@ export default function AgentManage() {
                                 回收
                               </button>
                             )}
-                            {canOffboardUsers && a.is_active && isAgentAccount(a) && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOffboard(a);
-                                }}
-                                title="办理离职：回收线索、禁用账号、保留历史"
-                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs whitespace-nowrap"
-                              >
-                                <UserX className="w-3.5 h-3.5" />
-                                离职
-                              </button>
+                            {isAgentAccount(a) && (
+                              <EmploymentActions
+                                account={a}
+                                disabled={lifecycleActionId === a.id}
+                                onSuspend={
+                                  canEditAccount(a)
+                                    ? (event) => {
+                                        event.stopPropagation();
+                                        handleToggleActive(a);
+                                      }
+                                    : undefined
+                                }
+                                onResume={
+                                  canEditAccount(a)
+                                    ? (event) => {
+                                        event.stopPropagation();
+                                        handleToggleActive(a);
+                                      }
+                                    : undefined
+                                }
+                                onStartHandover={
+                                  canStartHandover
+                                    ? (event) => {
+                                        event.stopPropagation();
+                                        handleStartHandover(a);
+                                      }
+                                    : undefined
+                                }
+                                onOpenBatch={
+                                  canOffboardUsers
+                                    ? (event) => {
+                                        event.stopPropagation();
+                                        handleOpenBatch(a);
+                                      }
+                                    : undefined
+                                }
+                              />
                             )}
                           </div>
                         </div>
@@ -740,12 +839,13 @@ export default function AgentManage() {
                             重置密码
                           </button>
                         )}
-                        {canEditAccount(selectedAgent) && (
+                        {canEditAccount(selectedAgent)
+                          && ['active', 'suspended'].includes(employmentStatus(selectedAgent)) && (
                           <button
                             onClick={() => handleToggleActive(selectedAgent)}
-                            className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
+                            className={`text-xs px-3 py-1.5 rounded-lg ${employmentStatus(selectedAgent) === 'active' ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
                           >
-                            {selectedAgent.is_active ? '禁用' : '启用'}
+                            {employmentStatus(selectedAgent) === 'active' ? '暂停' : '恢复'}
                           </button>
                         )}
                       </div>
@@ -755,7 +855,7 @@ export default function AgentManage() {
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
                       <div className="text-xs text-gray-500 dark:text-gray-400">状态</div>
                       <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
-                        {selectedAgent.is_active ? '启用' : '禁用'}
+                        {employmentLabel(selectedAgent)}
                       </div>
                     </div>
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
@@ -783,11 +883,13 @@ export default function AgentManage() {
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           @{agentTasks.agent.username}
                         </p>
+                        <EmploymentStatusBadge account={selectedAgent} className="mt-1" />
                       </div>
                       {(canEditAccount(selectedAgent)
                         || (canResetPasswords && canOperateAdminAccount(selectedAgent))
                         || (canUnlockUsers && canOperateAdminAccount(selectedAgent))
-                        || canAssignStudents) && (
+                        || canAssignStudents
+                        || canOffboardUsers) && (
                         <div className="flex flex-wrap justify-end gap-2">
                           {canEditAccount(selectedAgent) && (
                             <button
@@ -814,7 +916,7 @@ export default function AgentManage() {
                               解锁
                             </button>
                           )}
-                          {canAssignStudents && (
+                          {canAssignStudents && employmentStatus(selectedAgent) === 'active' && (
                             <button
                               onClick={() => openRecycleModal(selectedAgent)}
                               className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 inline-flex items-center gap-1"
@@ -823,14 +925,30 @@ export default function AgentManage() {
                               回收
                             </button>
                           )}
-                          {canEditAccount(selectedAgent) && (
-                            <button
-                              onClick={() => handleToggleActive(selectedAgent)}
-                              className={`text-xs px-3 py-1.5 rounded-lg ${selectedAgent.is_active ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
-                            >
-                              {selectedAgent.is_active ? '禁用' : '启用'}
-                            </button>
-                          )}
+                          <EmploymentActions
+                            account={selectedAgent}
+                            disabled={lifecycleActionId === selectedAgent.id}
+                            onSuspend={
+                              canEditAccount(selectedAgent)
+                                ? () => handleToggleActive(selectedAgent)
+                                : undefined
+                            }
+                            onResume={
+                              canEditAccount(selectedAgent)
+                                ? () => handleToggleActive(selectedAgent)
+                                : undefined
+                            }
+                            onStartHandover={
+                              canStartHandover
+                                ? () => handleStartHandover(selectedAgent)
+                                : undefined
+                            }
+                            onOpenBatch={
+                              canOffboardUsers
+                                ? () => handleOpenBatch(selectedAgent)
+                                : undefined
+                            }
+                          />
                         </div>
                       )}
                     </div>
