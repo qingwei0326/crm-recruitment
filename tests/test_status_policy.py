@@ -2,6 +2,7 @@ import pytest
 
 from app.models import StudentStatus
 from app.status_policy import (
+    STATUS_DETAIL_VALUES,
     canonical_status_value,
     normalize_status_for_write,
     statuses_for_canonical,
@@ -66,3 +67,7 @@ def test_statuses_for_canonical_includes_legacy_database_names():
     assert StudentStatus.not_interested in statuses
     assert "no_intent" in statuses
     assert "child_not_interested" in statuses
+
+
+def test_enrolled_elsewhere_is_a_supported_invalid_reason_detail():
+    assert "已报名其他学校" in STATUS_DETAIL_VALUES

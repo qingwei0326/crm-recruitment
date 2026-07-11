@@ -20,7 +20,9 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.database import Base, async_session, engine
+from app.domain_models import LeadOutcomeReason
 from app.main import app
+from app.migration_data.domain_backfill_20260711 import OUTCOME_ROWS
 
 
 def pytest_ignore_collect(collection_path, config):
@@ -47,6 +49,20 @@ async def setup_db():
     """Create all tables before each test, drop after."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            LeadOutcomeReason.__table__.insert(),
+            [
+                {
+                    "code": code,
+                    "label": label,
+                    "terminal": terminal,
+                    "reclaimable": reclaimable,
+                    "active": True,
+                    "sort_order": sort_order,
+                }
+                for code, label, terminal, reclaimable, sort_order in OUTCOME_ROWS
+            ],
+        )
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

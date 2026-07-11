@@ -10,6 +10,7 @@ INVALID_REASON_LABELS = {
     "无意向",
     "孩子不想读",
     "空号",
+    "已报名其他学校",
     "其他",
 }
 
@@ -262,5 +263,4 @@ async def _build_duplicate_phone_cleanup_plan(db: AsyncSession) -> tuple[set[str
         if _student_phone_values(student) & duplicate_phones
     ]
     return duplicate_phones, rows
-
 

@@ -45,6 +45,7 @@ from app.routers.students_phone import (
 )
 from app.schemas import Response, StudentCreate, StudentUpdate
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
+from app.services.lead_outcome_service import apply_outcome_reason
 from app.services.work_item_service import sync_student_work_items
 from app.status_policy import (
     canonical_status_value,
@@ -275,7 +276,11 @@ async def create_student(
         if body.status:
             try:
                 status, implicit_detail = normalize_status_for_write(body.status)
-                status_detail = status_detail_for_write(status, implicit_detail)
+                status_detail = status_detail_for_write(
+                    status,
+                    implicit_detail,
+                    body.status_detail,
+                )
             except ValueError as e:
                 return Response.error(code=1, msg=str(e))
         if body.intent_level:
@@ -334,6 +339,11 @@ async def create_student(
         student.status_detail = ""
         if not student.enrolled_at:
             student.enrolled_at = date.today()
+
+    if canonical_student_status(student.status) == StudentStatus.invalid:
+        await apply_outcome_reason(db, student, student.status_detail)
+    else:
+        student.outcome_reason_code = None
 
     db.add(student)
     await db.flush()
@@ -446,6 +456,17 @@ async def update_student(
         student.status_detail = ""
         if not student.enrolled_at:
             student.enrolled_at = date.today()
+
+    if canonical_student_status(student.status) == StudentStatus.invalid:
+        reason_was_written = "status" in raw or bool(invalid_reason)
+        outcome_value = (
+            invalid_reason or student.status_detail
+            if reason_was_written or not student.outcome_reason_code
+            else student.outcome_reason_code
+        )
+        await apply_outcome_reason(db, student, outcome_value)
+    else:
+        student.outcome_reason_code = None
 
     intent_changed = "intent_level" in raw and old_intent != student.intent_level
     status_changed = old_status != student.status
