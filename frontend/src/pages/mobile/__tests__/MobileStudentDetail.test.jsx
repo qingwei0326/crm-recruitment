@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import MobileStudentDetail from '../MobileStudentDetail';
 import api from '../../../api';
@@ -69,22 +70,39 @@ const detailPayload = {
   ],
 };
 
+const serverReasons = [
+  { code: 'phone_invalid', label: '空号', terminal: true, reclaimable: true },
+  { code: 'high_score', label: '高分段', terminal: true, reclaimable: true },
+  { code: 'no_intent', label: '无意向', terminal: true, reclaimable: true },
+  { code: 'child_declined', label: '孩子不想读', terminal: true, reclaimable: true },
+  { code: 'enrolled_elsewhere', label: '已报名其他学校', terminal: true, reclaimable: false },
+  { code: 'other', label: '其他', terminal: true, reclaimable: true },
+];
+
 function mockDetailLoads() {
   api.get.mockImplementation((url) => {
     if (url === '/students/42/detail') {
       return Promise.resolve({ data: { code: 0, data: detailPayload } });
+    }
+    if (url === '/lead-outcome-reasons') {
+      return Promise.resolve({ data: { code: 0, data: serverReasons } });
     }
     return Promise.resolve({ data: { code: 0, data: {} } });
   });
 }
 
 function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/mobile/student/42']}>
-      <Routes>
-        <Route path="/mobile/student/:id" element={<MobileStudentDetail />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/mobile/student/42']}>
+        <Routes>
+          <Route path="/mobile/student/:id" element={<MobileStudentDetail />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -150,6 +168,7 @@ describe('MobileStudentDetail follow-up workflow', () => {
       '高分段',
       '无意向',
       '孩子不想读',
+      '已报名其他学校',
       '已报名',
     ].forEach((label) => {
       expect(within(resultButtons).getByRole('button', { name: label })).toBeInTheDocument();
@@ -166,6 +185,20 @@ describe('MobileStudentDetail follow-up workflow', () => {
       expect(api.put).toHaveBeenCalledWith('/students/42', {
         status: '无效',
         invalid_reason: '空号',
+      });
+    });
+  });
+
+  it('saves enrolled elsewhere as a non-reclaimable invalid result', async () => {
+    renderPage();
+
+    await screen.findByText('完整时间线');
+    fireEvent.click(screen.getByRole('button', { name: '已报名其他学校' }));
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/42', {
+        status: '无效',
+        invalid_reason: '已报名其他学校',
       });
     });
   });

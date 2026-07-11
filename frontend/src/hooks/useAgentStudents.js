@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo } from 'react';
 import api from '../api';
 import { getApiErrorMessage } from '../utils';
 import { useConfirm } from '../components/ConfirmDialog';
-import { detailForOperatorResult, displayStatusForOperatorResult } from '../operatorResultPolicy';
+import {
+  detailForOperatorResult,
+  displayStatusForOperatorResult,
+  payloadForOperatorResult,
+} from '../operatorResultPolicy';
 import { STAGES } from '../labels';
 
 /**
@@ -122,10 +126,10 @@ export default function useAgentStudents({ state, actions, toast }) {
 
   // 更新学生状态
   const updateStatus = useCallback(async (id, s) => {
-    const status = typeof s === 'string' ? s : s.status;
-    const fallbackStatus = displayStatusForOperatorResult(status);
-    const fallbackDetail = detailForOperatorResult(status);
-    if (status === '已报名') {
+    const status = typeof s === 'string' ? s : s.label || s.status;
+    const fallbackStatus = displayStatusForOperatorResult(s);
+    const fallbackDetail = detailForOperatorResult(s);
+    if ((typeof s === 'object' && s.code === 'enrolled') || status === '已报名') {
       const ok = await confirm({
         title: '确认报名',
         message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
@@ -133,10 +137,7 @@ export default function useAgentStudents({ state, actions, toast }) {
       });
       if (!ok) return;
     }
-    let payload = { status };
-    if (typeof s === 'object' && s.invalid_reason) {
-      payload.invalid_reason = s.invalid_reason;
-    }
+    const payload = payloadForOperatorResult(s);
     try {
       const res = await api.put(`/students/${id}`, payload);
       const updated = res.data?.data || {};

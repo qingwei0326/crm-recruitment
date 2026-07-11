@@ -6,9 +6,10 @@ import {
   Target, User, History, RefreshCw, CalendarClock, Home, MapPin,
 } from 'lucide-react';
 import api from '../../api';
+import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import { stageLabel, statusLabel, STAGES, INTENT_BADGES } from '../../labels';
 import {
-  STATUS_STYLE, QUICK_STATUSES, inputCls, getContactOptions,
+  STATUS_STYLE, inputCls, getContactOptions, quickStatusForOutcome,
 } from './agentWorkUtils';
 import AssignedDaysBadge from './shared/AssignedDaysBadge';
 import AiPanel from './AiPanel';
@@ -53,6 +54,8 @@ export default function AgentWorkMobile({
   backlogBanner,
 }) {
   const { logout } = useAuth();
+  const { results: outcomeResults } = useLeadOutcomeCatalog();
+  const quickStatuses = outcomeResults.map(quickStatusForOutcome);
   const [admissionForm, setAdmissionForm] = useState(null);
   const [admissionSubmitting, setAdmissionSubmitting] = useState(false);
   const currentContacts = getContactOptions(current);
@@ -195,8 +198,8 @@ export default function AgentWorkMobile({
                       </div>
                     )}
                     <div className="flex gap-2 mb-3">
-                      {QUICK_STATUSES.map((s) => (
-                        <button key={s.status} onClick={() => updateStatus(current.id, s.status)} className={`flex items-center gap-1 px-3 py-2 text-white rounded-lg text-xs font-medium ${s.color}`}>
+                      {quickStatuses.map((s) => (
+                        <button key={s.outcome.code} onClick={() => updateStatus(current.id, s.outcome)} className={`flex min-h-[44px] items-center gap-1 px-3 py-2 text-white rounded-lg text-xs leading-4 whitespace-normal font-medium ${s.color}`}>
                           <s.icon className="w-3.5 h-3.5" />{statusLabel(s.status)}
                         </button>
                       ))}

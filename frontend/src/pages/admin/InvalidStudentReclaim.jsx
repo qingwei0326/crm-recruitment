@@ -14,6 +14,8 @@ import AdminLayout from '../../components/AdminLayout';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
+import { isOutcomeReclaimable } from '../../domain/outcomeCatalog';
+import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import {
   ADMIN_OPERATION_PERMISSIONS,
   canPerformAdminOperation,
@@ -33,8 +35,6 @@ import {
   X,
 } from 'lucide-react';
 
-const INVALID_REASON_OPTIONS = ['', '高分段', '无意向', '孩子不想读', '空号', '其他'];
-
 export default function InvalidStudentReclaim() {
   const { dark, toggle } = useTheme();
   const { user } = useAuth();
@@ -43,6 +43,7 @@ export default function InvalidStudentReclaim() {
   const urlQ = searchParams.get('q') || '';
   const confirm = useConfirm();
   const toast = useToast();
+  const { catalog: outcomeCatalog, byCode: outcomeByCode } = useLeadOutcomeCatalog();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [invalidReason, setInvalidReason] = useState('');
@@ -63,6 +64,23 @@ export default function InvalidStudentReclaim() {
   const canDeleteInvalid = canPerformAdminOperation(
     user,
     ADMIN_OPERATION_PERMISSIONS.invalidDelete,
+  );
+  const invalidReasonOptions = useMemo(
+    () => [
+      '',
+      ...outcomeCatalog
+        .filter((outcome) => outcome.invalidReason && outcome.code !== 'legacy_unspecified')
+        .map((outcome) => outcome.label),
+    ],
+    [outcomeCatalog],
+  );
+  const selectedReasonOutcome = outcomeCatalog.find(
+    (outcome) => outcome.label === invalidReason,
+  );
+  const filteredReasonReclaimable = selectedReasonOutcome?.reclaimable !== false;
+  const studentCanBeReclaimed = useCallback(
+    (student) => isOutcomeReclaimable(student, outcomeByCode),
+    [outcomeByCode],
   );
 
   const reasonParams = useMemo(() => {
@@ -187,6 +205,8 @@ export default function InvalidStudentReclaim() {
   };
 
   const toggleStudentSelection = (studentId) => {
+    const student = expandedStudents.find((item) => item.id === studentId);
+    if (student && !studentCanBeReclaimed(student)) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(studentId)) next.delete(studentId);
@@ -196,7 +216,9 @@ export default function InvalidStudentReclaim() {
   };
 
   const toggleExpandedSelection = () => {
-    const visibleIds = expandedStudents.map((student) => student.id);
+    const visibleIds = expandedStudents
+      .filter(studentCanBeReclaimed)
+      .map((student) => student.id);
     const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
     setSelectedIds(allSelected ? new Set() : new Set(visibleIds));
   };
@@ -258,7 +280,9 @@ export default function InvalidStudentReclaim() {
   };
 
   const totalInvalid = schoolGroups.reduce((sum, g) => sum + g.count, 0);
-  const visibleIds = expandedStudents.map((student) => student.id);
+  const visibleIds = expandedStudents
+    .filter(studentCanBeReclaimed)
+    .map((student) => student.id);
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((studentId) => selectedIds.has(studentId));
 
@@ -333,7 +357,7 @@ export default function InvalidStudentReclaim() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {INVALID_REASON_OPTIONS.map((reason) => (
+              {invalidReasonOptions.map((reason) => (
                 <button
                   key={reason || 'all'}
                   type="button"
@@ -411,7 +435,13 @@ export default function InvalidStudentReclaim() {
                         {g.count} 条
                       </span>
                     </div>
-                    {canReclaimInvalid && (
+                    {canReclaimInvalid
+                      && filteredReasonReclaimable
+                      && !(
+                        expandedSchool === g.name
+                        && expandedStudents.length > 0
+                        && visibleIds.length === 0
+                      ) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -484,6 +514,12 @@ export default function InvalidStudentReclaim() {
                                       type="checkbox"
                                       checked={allVisibleSelected}
                                       onChange={toggleExpandedSelection}
+                                      disabled={visibleIds.length === 0}
+                                      title={
+                                        visibleIds.length === 0
+                                          ? '当前记录均为不可回收的终态结果'
+                                          : undefined
+                                      }
                                       className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                       aria-label="选择当前学校全部无效线索"
                                     />
@@ -504,12 +540,18 @@ export default function InvalidStudentReclaim() {
                                     className="hover:bg-gray-50 dark:hover:bg-gray-900/20"
                                   >
                                     <td className="px-4 py-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedIds.has(s.id)}
-                                        onChange={() => toggleStudentSelection(s.id)}
-                                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        aria-label={`选择${s.name}`}
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedIds.has(s.id)}
+                                      onChange={() => toggleStudentSelection(s.id)}
+                                      disabled={!studentCanBeReclaimed(s)}
+                                      title={
+                                        studentCanBeReclaimed(s)
+                                          ? undefined
+                                          : '已报名其他学校为终态记录，不可回收'
+                                      }
+                                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                      aria-label={`选择${s.name}`}
                                       />
                                     </td>
                                     <td className="px-4 py-2 font-medium text-gray-800 dark:text-gray-100">

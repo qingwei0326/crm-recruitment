@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { PhoneCall, CalendarClock } from 'lucide-react';
-import { DESKTOP_DIAL_STATUS_BUTTONS } from '../../../labels';
+import useLeadOutcomeCatalog from '../../../hooks/useLeadOutcomeCatalog';
 
 // 默认回访时间：明天上午 9 点，格式与 <input type="datetime-local"> 一致
 function defaultFollowUp() {
@@ -19,6 +19,7 @@ export default function DialResultModal({
   onClose,
 }) {
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
+  const { results } = useLeadOutcomeCatalog();
 
   if (!dialModal) return null;
 
@@ -49,13 +50,13 @@ export default function DialResultModal({
 
         {step === 'status' && (
           <div className="grid grid-cols-2 gap-3 mb-3">
-            {DESKTOP_DIAL_STATUS_BUTTONS.map(({ status, className }) => (
+            {results.map((outcome) => (
               <button
-                key={status}
-                onClick={() => onStatusSelect(status)}
-                className={`px-4 py-3 rounded-xl text-sm font-medium text-white ${className}`}
+                key={outcome.code}
+                onClick={() => onStatusSelect(outcome)}
+                className={`min-h-[52px] px-3 py-2 rounded-lg text-sm leading-5 whitespace-normal font-medium text-white ${outcome.className}`}
               >
-                {status}
+                {outcome.label}
               </button>
             ))}
           </div>

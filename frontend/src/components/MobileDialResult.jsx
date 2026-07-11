@@ -5,10 +5,10 @@ import { completePendingDial, readPendingDial } from '../dialSession';
 import logger from '../utils/logger';
 import { useConfirm } from './ConfirmDialog';
 import { isFixedInvalidReason, payloadForOperatorResult } from '../operatorResultPolicy';
+import { FALLBACK_OPERATOR_OUTCOMES } from '../domain/outcomeCatalog';
+import useLeadOutcomeCatalog from '../hooks/useLeadOutcomeCatalog';
 import {
   displayStatusForOperatorResult,
-  OPERATOR_STATUS_BUTTON_LABELS,
-  STATUS_ACTION_BUTTON_CLASSES,
 } from '../labels';
 
 /**
@@ -34,11 +34,15 @@ function defaultFollowUp() {
 }
 
 // 统一后的处理结果。无效原因类按钮直接写入对应原因，避免话务员重复备注。
-export const STATUS_BUTTONS = OPERATOR_STATUS_BUTTON_LABELS.map((label) => ({
-  label,
-  cls: STATUS_ACTION_BUTTON_CLASSES[label],
-  invalidDetail: isFixedInvalidReason(label),
-}));
+function statusButton(outcome) {
+  return {
+    ...outcome,
+    cls: outcome.className,
+    invalidDetail: isFixedInvalidReason(outcome),
+  };
+}
+
+export const STATUS_BUTTONS = FALLBACK_OPERATOR_OUTCOMES.map(statusButton);
 
 const INTENT_BUTTONS = [
   { level: 'A', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
@@ -61,6 +65,8 @@ const INTENT_BUTTONS = [
  */
 export default function MobileDialResult({ onUpdated }) {
   const confirm = useConfirm();
+  const { results } = useLeadOutcomeCatalog();
+  const statusButtons = results.map(statusButton);
   const [pending, setPending] = useState(null); // { studentId, studentName, dialStartedAt }
   const [showIntent, setShowIntent] = useState(false);
   const [flowStatus, setFlowStatus] = useState(null); // 记住本次选的联系状况
@@ -179,7 +185,7 @@ export default function MobileDialResult({ onUpdated }) {
     if (!beginSubmit()) return;
     const status = btn.label;
     try {
-      if (status === '已报名') {
+      if (btn.code === 'enrolled') {
         const ok = await confirm({
           title: '确认报名',
           message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
@@ -191,11 +197,11 @@ export default function MobileDialResult({ onUpdated }) {
         }
       }
 
-      await putField(payloadForOperatorResult(status));
+      await putField(payloadForOperatorResult(btn));
       onUpdated && onUpdated(
         pending.studentId,
-        displayStatusForOperatorResult(status),
-        btn.invalidDetail ? status : '',
+        displayStatusForOperatorResult(btn),
+        btn.invalidReason || '',
       );
 
       // 接通后可补充意向等级；待回访会在意向后继续设置回访时间。
@@ -350,13 +356,13 @@ export default function MobileDialResult({ onUpdated }) {
         ) : (
           <>
             <div className="grid grid-cols-3 gap-2">
-              {STATUS_BUTTONS.map((b) => (
+              {statusButtons.map((b) => (
                 <button
-                  key={b.label}
+                  key={b.code}
                   type="button"
                   onClick={() => pickStatus(b)}
                   disabled={submitting || showIntent}
-                  className={`min-h-[52px] rounded-xl text-sm font-medium text-white ${b.cls} active:scale-95 disabled:opacity-60`}
+                  className={`min-h-[56px] rounded-lg px-1 text-sm font-medium leading-5 whitespace-normal text-white ${b.cls} active:scale-95 disabled:opacity-60`}
                 >
                   {b.label}
                 </button>

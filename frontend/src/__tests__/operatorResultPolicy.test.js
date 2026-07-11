@@ -25,4 +25,12 @@ describe('operatorResultPolicy', () => {
     expect(displayStatusForOperatorResult('意向了解加微')).toBe('待回访');
     expect(payloadForOperatorResult('未接')).toEqual({ status: '未接' });
   });
+
+  it('saves enrolled elsewhere as a terminal invalid reason', () => {
+    expect(isFixedInvalidReason('已报名其他学校')).toBe(true);
+    expect(payloadForOperatorResult('已报名其他学校')).toEqual({
+      status: '无效',
+      invalid_reason: '已报名其他学校',
+    });
+  });
 });
