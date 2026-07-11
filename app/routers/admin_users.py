@@ -3,7 +3,7 @@ from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,6 +53,7 @@ from app.models import (
 from app.routers.admin import get_config_value
 from app.schemas import Response
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
+from app.services.employment_service import set_employment_status
 from app.status_policy import canonical_status_value, status_detail_value
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES, build_task_stats
 from app.utils import make_batch_id, make_operation_log, today_cst_as_utc, utcnow
@@ -80,6 +81,7 @@ class UserUpdateReq(BaseModel):
     service_regions: str | None = None
     page_permissions: list[str] | None = None
     operation_permissions: list[str] | None = None
+    expected_version: int | None = Field(default=None, ge=0)
 
 
 RESERVED_USER_DISPLAY_NAMES = {"离职", "已离职", "禁用", "停用", "启用"}
@@ -114,9 +116,16 @@ async def list_agents(
     current_user: User = Depends(require_admin),
 ):
     result = await db.execute(
-        select(User).where(User.role == UserRole.agent, User.is_active).order_by(User.id)
+        select(User, AgentEmployment)
+        .join(AgentEmployment, AgentEmployment.user_id == User.id)
+        .where(User.role == UserRole.agent, User.is_active)
+        .order_by(User.id)
     )
-    agents = result.scalars().all()
+    agent_rows = result.all()
+    agents = [user for user, _employment in agent_rows]
+    employment_by_user_id = {
+        user.id: employment for user, employment in agent_rows
+    }
     if not agents:
         return Response.ok([])
 
@@ -151,6 +160,7 @@ async def list_agents(
 
     data = []
     for a in agents:
+        employment = employment_by_user_id[a.id]
         task_stats = build_task_stats(status_counts_by_agent.get(a.id, {}))
         data.append(
             {
@@ -158,6 +168,9 @@ async def list_agents(
                 "name": a.name,
                 "username": a.username,
                 "is_active": a.is_active,
+                "employment_status": employment.status.value,
+                "employment_version": employment.version,
+                "employment_status_changed_at": str(employment.status_changed_at),
                 "is_super_admin": a.is_super_admin,
                 "service_regions": a.service_regions,
                 "total_tasks": task_stats["total"],
@@ -183,9 +196,16 @@ async def list_users(
     ),
 ):
     result = await db.execute(
-        select(User).where(User.role.in_([UserRole.admin, UserRole.agent])).order_by(User.id)
+        select(User, AgentEmployment)
+        .join(AgentEmployment, AgentEmployment.user_id == User.id)
+        .where(User.role.in_([UserRole.admin, UserRole.agent]))
+        .order_by(User.id)
     )
-    users = result.scalars().all()
+    user_rows = result.all()
+    users = [user for user, _employment in user_rows]
+    employment_by_user_id = {
+        user.id: employment for user, employment in user_rows
+    }
     if not users:
         return Response.ok([])
 
@@ -219,6 +239,7 @@ async def list_users(
 
     data = []
     for user in users:
+        employment = employment_by_user_id[user.id]
         task_stats = build_task_stats(status_counts_by_agent.get(user.id, {}))
         data.append(
             {
@@ -227,6 +248,9 @@ async def list_users(
                 "username": user.username,
                 "role": user.role,
                 "is_active": user.is_active,
+                "employment_status": employment.status.value,
+                "employment_version": employment.version,
+                "employment_status_changed_at": str(employment.status_changed_at),
                 "is_super_admin": user.is_super_admin,
                 "page_permissions": normalize_page_permissions(user.page_permissions),
                 "operation_permissions": normalize_operation_permissions(
@@ -624,13 +648,12 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
-    db.add(
-        AgentEmployment(
-            user_id=user.id,
-            status=EmploymentStatus.active,
-            updated_by=current_user.id,
-        )
+    employment = AgentEmployment(
+        user_id=user.id,
+        status=EmploymentStatus.active,
+        updated_by=current_user.id,
     )
+    db.add(employment)
     db.add(
         make_operation_log(
             current_user,
@@ -648,6 +671,10 @@ async def create_user(
             "username": user.username,
             "name": user.name,
             "role": user.role,
+            "is_active": user.is_active,
+            "employment_status": employment.status.value,
+            "employment_version": employment.version,
+            "employment_status_changed_at": str(employment.status_changed_at),
             "is_super_admin": user.is_super_admin,
             "page_permissions": normalize_page_permissions(user.page_permissions),
             "operation_permissions": normalize_operation_permissions(user.operation_permissions),
@@ -666,6 +693,9 @@ async def update_user(
     user = result.scalar_one_or_none()
     if not user:
         return Response.error(code=1, msg="用户不存在")
+    employment = await db.get(AgentEmployment, user.id)
+    if employment is None:
+        return Response.error(code=1, msg="员工状态记录不存在")
     if not current_user.is_super_admin and (
         user.role == UserRole.admin
         or body.role == "admin"
@@ -741,9 +771,16 @@ async def update_user(
         if next_permissions != user.operation_permissions:
             user.operation_permissions = next_permissions
             changes.append("修改操作权限")
-    if body.is_active is not None and body.is_active != user.is_active:
+    if body.is_active is not None:
+        target_employment_status = (
+            EmploymentStatus.active if body.is_active else EmploymentStatus.suspended
+        )
         # 防止把唯一一个 admin / super admin 停用
-        if user.role == UserRole.admin and user.is_active and not body.is_active:
+        if (
+            user.role == UserRole.admin
+            and employment.status == EmploymentStatus.active
+            and target_employment_status == EmploymentStatus.suspended
+        ):
             admin_count = (
                 await db.execute(
                     select(func.count(User.id)).where(User.role == UserRole.admin, User.is_active)
@@ -753,11 +790,16 @@ async def update_user(
                 return Response.error(code=1, msg="不能停用最后一个管理员")
             if user.is_super_admin and await count_active_super_admins(db) <= 1:
                 return Response.error(code=1, msg="不能停用最后一个超级管理员")
-        changes.append("启用" if body.is_active else "停用")
-        user.is_active = body.is_active
-        # 禁用时立即撤销现有 token，防止账号被禁用后旧会话仍能访问
-        if not body.is_active:
-            invalidate_user_tokens(user)
+        if target_employment_status != employment.status:
+            changes.append("启用" if body.is_active else "停用")
+        employment = await set_employment_status(
+            db,
+            user,
+            target_employment_status,
+            operator=current_user,
+            reason="admin_resume" if body.is_active else "admin_suspend",
+            expected_version=body.expected_version,
+        )
     if body.service_regions is not None and body.service_regions != user.service_regions:
         changes.append("修改服务区域")
         user.service_regions = body.service_regions
@@ -786,6 +828,9 @@ async def update_user(
             "name": user.name,
             "role": user.role,
             "is_active": user.is_active,
+            "employment_status": employment.status.value,
+            "employment_version": employment.version,
+            "employment_status_changed_at": str(employment.status_changed_at),
             "is_super_admin": user.is_super_admin,
             "page_permissions": normalize_page_permissions(user.page_permissions),
             "operation_permissions": normalize_operation_permissions(user.operation_permissions),
@@ -871,18 +916,26 @@ async def delete_user(
             batch_id=batch_id,
         )
     )
-    now = utcnow()
     employment = await db.get(AgentEmployment, user.id)
-    if employment is not None:
-        employment.status = EmploymentStatus.offboarded
-        employment.version += 1
-        employment.status_changed_at = now
-        employment.offboarding_started_at = employment.offboarding_started_at or now
-        employment.offboarded_at = now
-        employment.updated_by = current_user.id
-    if user.is_active:
-        invalidate_user_tokens(user)
-    user.is_active = False
+    if employment is not None and employment.status in {
+        EmploymentStatus.active,
+        EmploymentStatus.suspended,
+    }:
+        employment = await set_employment_status(
+            db,
+            user,
+            EmploymentStatus.handover_pending,
+            operator=current_user,
+            reason="user_delete_start",
+        )
+    if employment is not None and employment.status == EmploymentStatus.handover_pending:
+        await set_employment_status(
+            db,
+            user,
+            EmploymentStatus.offboarded,
+            operator=current_user,
+            reason="user_delete_complete",
+        )
     user.failed_login_attempts = 0
     user.locked_until = None
     await db.commit()
@@ -966,10 +1019,28 @@ async def offboard_user(
 
     # 3) 禁用账号 + 撤销现有 token
     was_active = user.is_active
-    user.is_active = False
+    employment = await db.get(AgentEmployment, user.id)
+    if employment is not None and employment.status in {
+        EmploymentStatus.active,
+        EmploymentStatus.suspended,
+    }:
+        employment = await set_employment_status(
+            db,
+            user,
+            EmploymentStatus.handover_pending,
+            operator=current_user,
+            reason="legacy_offboard_start",
+        )
+    if employment is not None and employment.status == EmploymentStatus.handover_pending:
+        await set_employment_status(
+            db,
+            user,
+            EmploymentStatus.offboarded,
+            operator=current_user,
+            reason="legacy_offboard_complete",
+        )
     user.failed_login_attempts = 0
     user.locked_until = None
-    invalidate_user_tokens(user)
 
     db.add(
         make_operation_log(

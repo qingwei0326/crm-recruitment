@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app.agent_score import _build_signals
-from app.domain_models import StudentAssignment
+from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
 from app.models import (
     CampusVisitStatus,
     CampusVisitTask,
@@ -37,7 +37,10 @@ class TestAdminAgents:
         resp = await client.get("/api/admin/agents", headers=admin_headers)
         body = resp.json()
         assert body["code"] == 0
-        assert any(a["username"] == "testagent" for a in body["data"])
+        row = next(agent for agent in body["data"] if agent["username"] == "testagent")
+        assert row["employment_status"] == "active"
+        assert row["employment_version"] == 1
+        assert row["employment_status_changed_at"]
 
     async def test_list_agents_only_returns_active_agents(
         self, client, admin_headers, db, agent_user
@@ -116,6 +119,13 @@ class TestAdminAgents:
             is_active=False,
         )
         db.add(inactive_agent)
+        await db.flush()
+        db.add(
+            AgentEmployment(
+                user_id=inactive_agent.id,
+                status=EmploymentStatus.suspended,
+            )
+        )
         await db.commit()
 
         resp = await client.get("/api/admin/users", headers=admin_headers)
@@ -125,6 +135,8 @@ class TestAdminAgents:
         user_rows = {user["username"]: user for user in body["data"]}
         assert agent_user.username in user_rows
         assert user_rows["offboarded_agent"]["is_active"] is False
+        assert user_rows["offboarded_agent"]["employment_status"] == "suspended"
+        assert user_rows["offboarded_agent"]["employment_version"] == 1
 
     async def test_list_agents_counts_today_dial_logs(self, client, admin_headers, db, agent_user):
         student = Student(
@@ -368,6 +380,9 @@ class TestAdminCreateUser:
         body = resp.json()
         assert body["code"] == 0
         assert body["data"]["username"] == "newagent"
+        assert body["data"]["employment_status"] == "active"
+        assert body["data"]["employment_version"] == 1
+        assert body["data"]["employment_status_changed_at"]
 
     async def test_create_admin(self, client, admin_headers):
         resp = await client.post(
@@ -570,15 +585,58 @@ class TestAdminUpdateUser:
         assert body["code"] == 1
         assert "状态词" in body["msg"]
 
-    async def test_disable_user(self, client, admin_headers, agent_user):
+    async def test_disable_user(self, client, db, admin_headers, agent_user):
         resp = await client.put(
             f"/api/admin/users/{agent_user.id}",
             json={
                 "is_active": False,
+                "expected_version": 1,
             },
             headers=admin_headers,
         )
-        assert resp.json()["code"] == 0
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["employment_status"] == "suspended"
+        assert body["data"]["employment_version"] == 2
+        await db.refresh(agent_user)
+        assert agent_user.is_active is False
+
+    async def test_resume_user(self, client, db, admin_headers, agent_user):
+        employment = await db.get(AgentEmployment, agent_user.id)
+        employment.status = EmploymentStatus.suspended
+        employment.version = 2
+        agent_user.is_active = False
+        await db.commit()
+
+        resp = await client.put(
+            f"/api/admin/users/{agent_user.id}",
+            json={"is_active": True, "expected_version": 2},
+            headers=admin_headers,
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["employment_status"] == "active"
+        assert body["data"]["employment_version"] == 3
+        await db.refresh(agent_user)
+        assert agent_user.is_active is True
+
+    async def test_update_user_rejects_stale_employment_version(
+        self,
+        client,
+        admin_headers,
+        agent_user,
+    ):
+        resp = await client.put(
+            f"/api/admin/users/{agent_user.id}",
+            json={"is_active": False, "expected_version": 99},
+            headers=admin_headers,
+        )
+
+        body = resp.json()
+        assert resp.status_code == 409
+        assert body["code"] == "version_conflict"
+        assert "刷新后重试" in body["msg"]
 
     async def test_update_invalid_role_returns_422(self, client, admin_headers, agent_user):
         resp = await client.put(
