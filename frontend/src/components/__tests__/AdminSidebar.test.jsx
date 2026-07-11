@@ -99,6 +99,26 @@ describe('AdminSidebar', () => {
     expect(screen.queryByRole('link', { name: '操作记录' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '系统设置' })).not.toBeInTheDocument();
   });
+  it('places the handover center beside account management with the same permission', () => {
+    mockUser = {
+      id: 4,
+      role: 'admin',
+      name: '账号管理员',
+      is_super_admin: false,
+      page_permissions: ['account_manage'],
+    };
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/handovers']}>
+        <AdminSidebar onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: '账号管理' })).toHaveAttribute('href', '/admin/agents');
+    expect(screen.getByRole('link', { name: '离职交接' })).toHaveAttribute('href', '/admin/handovers');
+    const accountIndex = ADMIN_NAV_ITEMS.findIndex((item) => item.to === '/admin/agents');
+    expect(ADMIN_NAV_ITEMS[accountIndex + 1].to).toBe('/admin/handovers');
+  });
   it('uses one lead governance entry instead of separate reclaim/distribute entries', () => {
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>

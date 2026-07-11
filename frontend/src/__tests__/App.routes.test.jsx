@@ -77,6 +77,10 @@ vi.mock('../pages/admin/AgentManage', () => ({
   default: () => <div>agent manage page</div>,
 }));
 
+vi.mock('../pages/admin/HandoverCenter', () => ({
+  default: () => <div>handover center page</div>,
+}));
+
 vi.mock('../pages/admin/InvalidStudentReclaim', () => ({
   default: () => <div>invalid reclaim page</div>,
 }));
@@ -243,6 +247,7 @@ describe('admin compatibility routes', () => {
   it.each([
     ['/admin/score-preview', 'agent score preview page'],
     ['/admin/agents', 'agent manage page'],
+    ['/admin/handovers', 'handover center page'],
     ['/admin/report-center', 'report center page '],
     ['/admin/audit-logs', 'audit logs page'],
     ['/admin/work-center', 'work center page'],
@@ -293,6 +298,7 @@ describe('admin compatibility routes', () => {
     ['/admin/enrollment-settlement', ['enrollment_settlement'], 'enrollment settlement page'],
     ['/admin/score-preview', ['score_preview'], 'agent score preview page'],
     ['/admin/agents', ['account_manage'], 'agent manage page'],
+    ['/admin/handovers', ['account_manage'], 'handover center page'],
     ['/admin/report-center', ['report_center'], /report center page/],
     ['/admin/audit-logs', ['audit_logs'], 'audit logs page'],
   ])('allows normal admins with page permission to open %s', async (path, permissions, text) => {
