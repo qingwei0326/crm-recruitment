@@ -229,6 +229,20 @@ Invoke-ReleaseStep -Name "P0 retired predictions API" -Command {
     Assert-RetiredPredictionApi
 }
 
+if (-not [string]::IsNullOrWhiteSpace($env:DOMAIN_AUDIT_DATABASE)) {
+    Invoke-ReleaseStep -Name "Domain consistency audit" -Command {
+        $venvPython = Join-Path $Root ".venv-win\Scripts\python.exe"
+        $python = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { "python" }
+        Invoke-CheckedCommand -FilePath $python -Arguments @(
+            "scripts/audit_domain_consistency.py",
+            "--database",
+            $env:DOMAIN_AUDIT_DATABASE,
+            "--expect-revision",
+            "20260711_03"
+        ) -WorkingDirectory $Root
+    }
+}
+
 if (-not $SkipBackendTests) {
     Invoke-ReleaseStep -Name "Backend tests" -Command {
         Invoke-CheckedCommand -FilePath "python" -Arguments @("-m", "pytest", "-q") -WorkingDirectory $Root
