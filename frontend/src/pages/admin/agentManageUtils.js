@@ -19,8 +19,44 @@ export function isAdminAccount(account) {
   return account?.role === 'admin';
 }
 
+const EMPLOYMENT_STATUSES = new Set([
+  'active',
+  'suspended',
+  'handover_pending',
+  'offboarded',
+]);
+
+export function employmentStatus(account) {
+  if (EMPLOYMENT_STATUSES.has(account?.employment_status)) {
+    return account.employment_status;
+  }
+  return account?.is_active ? 'active' : 'suspended';
+}
+
+export function employmentLabel(value) {
+  const status = typeof value === 'string' ? value : employmentStatus(value);
+  return {
+    active: '在职',
+    suspended: '暂停',
+    handover_pending: '待交接',
+    offboarded: '已离职',
+  }[status] || '未知';
+}
+
+export function employmentTone(value) {
+  const status = typeof value === 'string' ? value : employmentStatus(value);
+  return {
+    active: 'green',
+    suspended: 'amber',
+    handover_pending: 'blue',
+    offboarded: 'gray',
+  }[status] || 'gray';
+}
+
 export function getAgentListGroup(agent) {
-  if (!agent?.is_active) return 2;
+  const status = employmentStatus(agent);
+  if (status === 'offboarded') return 3;
+  if (status !== 'active') return 2;
   if (!isAgentAccount(agent)) return 1;
   return Number(agent.total_tasks || 0) > 0 ? 0 : 1;
 }

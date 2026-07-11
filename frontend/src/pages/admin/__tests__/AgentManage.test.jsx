@@ -52,6 +52,8 @@ const agents = [
     name: '叶',
     username: '13459624561',
     is_active: true,
+    employment_status: 'active',
+    employment_version: 1,
     service_regions: '龙海',
     today_calls: 0,
     month_calls: 0,
@@ -62,6 +64,8 @@ const agents = [
     name: '郭',
     username: '15006033773',
     is_active: true,
+    employment_status: 'active',
+    employment_version: 1,
     service_regions: '芗城',
     today_calls: 1,
     month_calls: 10,
@@ -73,6 +77,8 @@ const agents = [
     username: 'normal-admin',
     role: 'admin',
     is_active: true,
+    employment_status: 'active',
+    employment_version: 1,
     is_super_admin: false,
     page_permissions: ['audit_logs'],
     today_calls: 0,
@@ -144,6 +150,8 @@ describe('AgentManage mobile navigation', () => {
         name: '离职有任务',
         username: 'disabled',
         is_active: false,
+        employment_status: 'offboarded',
+        employment_version: 3,
         service_regions: '',
         today_calls: 0,
         total_tasks: 9,
@@ -154,9 +162,35 @@ describe('AgentManage mobile navigation', () => {
         name: '启用无任务',
         username: 'empty',
         is_active: true,
+        employment_status: 'active',
+        employment_version: 1,
         service_regions: '',
         today_calls: 0,
         total_tasks: 0,
+        done_tasks: 0,
+      },
+      {
+        id: 8,
+        name: '暂停留档',
+        username: 'suspended',
+        is_active: false,
+        employment_status: 'suspended',
+        employment_version: 2,
+        service_regions: '',
+        today_calls: 0,
+        total_tasks: 1,
+        done_tasks: 0,
+      },
+      {
+        id: 9,
+        name: '等待交接',
+        username: 'handover-pending',
+        is_active: false,
+        employment_status: 'handover_pending',
+        employment_version: 2,
+        service_regions: '',
+        today_calls: 0,
+        total_tasks: 2,
         done_tasks: 0,
       },
       {
@@ -164,6 +198,8 @@ describe('AgentManage mobile navigation', () => {
         name: '启用有任务甲',
         username: 'busy-a',
         is_active: true,
+        employment_status: 'active',
+        employment_version: 1,
         service_regions: '',
         today_calls: 0,
         total_tasks: 2,
@@ -174,6 +210,8 @@ describe('AgentManage mobile navigation', () => {
         name: '启用有任务乙',
         username: 'busy-b',
         is_active: true,
+        employment_status: 'active',
+        employment_version: 1,
         service_regions: '',
         today_calls: 0,
         total_tasks: 1,
@@ -203,13 +241,19 @@ describe('AgentManage mobile navigation', () => {
 
     expect(renderedNames).toEqual(['启用有任务甲', '启用有任务乙', '启用无任务']);
 
-    fireEvent.click(screen.getByRole('button', { name: '离职 1' }));
+    expect(screen.getByRole('button', { name: '暂停 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '待交接 1' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '待交接 1' }));
+    expect(await screen.findByText('等待交接')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开交接批次' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '已离职 1' }));
 
     expect(await screen.findByText('离职有任务')).toBeInTheDocument();
     expect(screen.queryByText('启用有任务甲')).not.toBeInTheDocument();
     expect(screen.getByText('账号列表 (1)')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '回收' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '禁用' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '暂停' })).not.toBeInTheDocument();
   });
 
   it('hides account management actions for normal admins', async () => {
@@ -223,7 +267,7 @@ describe('AgentManage mobile navigation', () => {
 
     expect(await screen.findByText('叶')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /添加账号/ })).not.toBeInTheDocument();
-    expect(screen.queryByTitle('办理离职：回收线索、禁用账号、保留历史')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('办理离职：保留进度并进入安全交接')).not.toBeInTheDocument();
     expect(screen.queryByTitle('解锁账号（清除登录失败锁定）')).not.toBeInTheDocument();
   });
 
@@ -398,7 +442,7 @@ describe('AgentManage mobile navigation', () => {
     expect(api.post).not.toHaveBeenCalledWith('/admin/users', expect.any(Object));
   });
 
-  it('uses strong confirmations for disable, reset password, and offboard actions', async () => {
+  it('uses safe confirmations for suspend, reset password, and handover actions', async () => {
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
         <AgentManage />
@@ -415,23 +459,31 @@ describe('AgentManage mobile navigation', () => {
       }));
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '禁用' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '暂停' }).at(-1));
 
     await waitFor(() => {
       expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
-        title: '禁用「叶」',
+        title: '暂停「叶」',
         message: expect.stringContaining('不会回收线索'),
       }));
     });
 
     fireEvent.click(screen.getByRole('button', { name: /返回列表/ }));
-    fireEvent.click(screen.getAllByTitle('办理离职：回收线索、禁用账号、保留历史')[0]);
+    fireEvent.click(screen.getAllByTitle('办理离职：保留进度并进入安全交接')[0]);
 
     await waitFor(() => {
       expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
         title: '为「叶」办理离职',
-        message: expect.stringContaining('回收非终态线索'),
+        message: expect.stringContaining('原样保留'),
       }));
     });
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/admin/users/1/offboarding/start',
+      expect.objectContaining({
+        expected_version: 1,
+        idempotency_key: expect.stringMatching(/^handover-1-/),
+      }),
+    );
   });
 });
