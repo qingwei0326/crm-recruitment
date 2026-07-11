@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth import create_access_token, hash_password
+from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
 from app.models import EnrollmentRecord, IntentLevel, Student, StudentStage, StudentStatus, User
 
 
@@ -110,6 +111,18 @@ async def test_agent_can_create_home_visit_for_assigned_student(
     assert body["data"]["status"] == "待确认"
     assert body["data"]["priority"] == "高"
     assert body["data"]["student_name"] == "家访学生"
+    work_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.home_visit,
+                WorkItem.source_type == "home_visit",
+                WorkItem.source_id == body["data"]["id"],
+            )
+        )
+    ).scalar_one()
+    assert work_item.status == WorkItemStatus.open
+    assert work_item.owner_agent_id == agent_user.id
+    assert work_item.creator_user_id == agent_user.id
 
     list_resp = await client.get("/api/admissions/home-visits", headers=agent_headers)
     assert list_resp.json()["data"]["total"] == 1
@@ -273,6 +286,16 @@ async def test_home_visit_completion_updates_student_stage(client, db, admin_hea
     assert resp.status_code == 200
     await db.refresh(student)
     assert student.stage == StudentStage.home_visit_completed
+    work_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.home_visit,
+                WorkItem.source_type == "home_visit",
+                WorkItem.source_id == task_id,
+            )
+        )
+    ).scalar_one()
+    assert work_item.status == WorkItemStatus.completed
 
 
 @pytest.mark.asyncio
@@ -370,6 +393,17 @@ async def test_agent_can_create_campus_visit_for_assigned_student(
     assert body["data"]["status"] == "已预约"
     assert body["data"]["needs_pickup"] is True
     assert body["data"]["visitor_count"] == 3
+    work_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.campus_visit,
+                WorkItem.source_type == "campus_visit",
+                WorkItem.source_id == body["data"]["id"],
+            )
+        )
+    ).scalar_one()
+    assert work_item.status == WorkItemStatus.open
+    assert work_item.creator_user_id == agent_user.id
     await db.refresh(student)
     assert student.stage == StudentStage.campus_visit_scheduled
 
@@ -561,6 +595,17 @@ async def test_enrollment_from_campus_visit_attributes_to_appointment_creator(
     assert body["data"]["attribution_method"] == "自动到校预约人"
     assert body["data"]["settlement_status"] == "未结算"
     assert body["data"]["source"] == "到校参观后"
+    settlement_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.enrollment_settlement,
+                WorkItem.source_type == "enrollment",
+                WorkItem.source_id == body["data"]["id"],
+            )
+        )
+    ).scalar_one()
+    assert settlement_item.status == WorkItemStatus.open
+    assert settlement_item.creator_user_id == agent_user.id
     await db.refresh(student)
     assert student.status == StudentStatus.enrolled
     assert student.stage == StudentStage.enrolled
@@ -731,6 +776,16 @@ async def test_settlement_batch_preview_exports_filtered_unsettled_records(
         json={"settlement_status": "已结算"},
         headers=admin_headers,
     )
+    settled_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.enrollment_settlement,
+                WorkItem.source_type == "enrollment",
+                WorkItem.source_id == settled_id,
+            )
+        )
+    ).scalar_one()
+    assert settled_item.status == WorkItemStatus.completed
 
     resp = await client.get(
         "/api/admissions/enrollments/settlement-batch",

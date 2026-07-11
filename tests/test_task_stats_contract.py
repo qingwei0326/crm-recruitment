@@ -1,7 +1,9 @@
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import select
 
+from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
 from app.models import FollowUp, IntentLevel, Student, StudentStatus
 from app.task_stats import build_task_stats
 from app.utils import utcnow
@@ -482,6 +484,17 @@ class TestFollowUpStatusSync:
         assert resp.json()["code"] == 0
         await db.refresh(student)
         assert student.status == StudentStatus.pending_visit
+        item = (
+            await db.execute(
+                select(WorkItem).where(
+                    WorkItem.kind == WorkItemKind.scheduled_follow_up,
+                    WorkItem.source_type == "follow_up",
+                    WorkItem.source_id == resp.json()["data"]["id"],
+                )
+            )
+        ).scalar_one()
+        assert item.status == WorkItemStatus.open
+        assert item.owner_agent_id == agent_user.id
 
     async def test_complete_last_follow_up_moves_student_back_to_done_task(
         self, client, db, agent_headers, agent_user
@@ -507,3 +520,47 @@ class TestFollowUpStatusSync:
         assert resp.json()["code"] == 0
         await db.refresh(student)
         assert student.status == StudentStatus.contacted
+        item = (
+            await db.execute(
+                select(WorkItem).where(
+                    WorkItem.kind == WorkItemKind.scheduled_follow_up,
+                    WorkItem.source_type == "follow_up",
+                    WorkItem.source_id == follow_up.id,
+                )
+            )
+        ).scalar_one()
+        assert item.status == WorkItemStatus.completed
+
+    async def test_delete_follow_up_cancels_work_item(
+        self, client, db, agent_headers, agent_user
+    ):
+        student = Student(
+            name="删除回访",
+            assigned_to=agent_user.id,
+            status=StudentStatus.contacted,
+        )
+        db.add(student)
+        await db.commit()
+
+        created = await client.post(
+            "/api/follow-ups",
+            json={"student_id": student.id, "follow_up_date": utcnow().isoformat()},
+            headers=agent_headers,
+        )
+        follow_up_id = created.json()["data"]["id"]
+        deleted = await client.delete(
+            f"/api/follow-ups/{follow_up_id}",
+            headers=agent_headers,
+        )
+
+        assert deleted.json()["code"] == 0
+        item = (
+            await db.execute(
+                select(WorkItem).where(
+                    WorkItem.kind == WorkItemKind.scheduled_follow_up,
+                    WorkItem.source_type == "follow_up",
+                    WorkItem.source_id == follow_up_id,
+                )
+            )
+        ).scalar_one()
+        assert item.status == WorkItemStatus.cancelled

@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import ADMIN_PAGE_HOME_VISITS, get_current_user
 from app.database import get_db
+from app.domain_models import WorkItemKind
 from app.models import (
     EnrollmentRecord,
     EnrollmentSource,
@@ -32,9 +33,35 @@ from app.routers.admissions import (
     _require_admin_module,
 )
 from app.schemas import EnrollmentCreate, HomeVisitCreate, HomeVisitUpdate, Response
+from app.services.work_item_service import (
+    home_visit_is_open,
+    sync_source_work_item,
+    sync_student_work_items,
+)
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
+
+
+async def _sync_home_visit_work_item(
+    db: AsyncSession,
+    task: HomeVisitTask,
+    student: Student,
+    current_user: User,
+) -> None:
+    await db.flush()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.home_visit,
+        "home_visit",
+        task.id,
+        student,
+        task.creator_agent_id,
+        task.next_follow_up_at or task.scheduled_at or task.requested_visit_time,
+        not home_visit_is_open(task),
+        current_user,
+    )
+    await sync_student_work_items(db, student, current_user)
 
 
 @router.get("/home-visits")
@@ -122,6 +149,7 @@ async def create_home_visit(
             content=f"家访申请：{student.name}；地址：{body.address or '未填写'}",
         )
     )
+    await _sync_home_visit_work_item(db, task, student, current_user)
     await db.commit()
     await db.refresh(task)
     asyncio.create_task(admissions_core.notify_home_visit_created_background(task.id))
@@ -219,5 +247,6 @@ async def update_home_visit(
             )
         )
 
+    await _sync_home_visit_work_item(db, task, student, current_user)
     await db.commit()
     return Response.ok(await _load_home_visit_payload(db, task.id))

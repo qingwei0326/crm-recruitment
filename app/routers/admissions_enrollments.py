@@ -20,6 +20,7 @@ from app.models import (
     EnrollmentRecord,
     HomeVisitTask,
     SettlementStatus,
+    Student,
     User,
 )
 from app.permissions import get_accessible_student, is_admin
@@ -31,6 +32,7 @@ from app.routers.admissions import (
     _page_payload,
     _require_admin_module,
     _require_admin_operation,
+    _sync_enrollment_work_item,
 )
 from app.schemas import EnrollmentCreate, EnrollmentUpdate, Response
 from app.utils import make_batch_id, make_operation_log
@@ -313,5 +315,7 @@ async def update_enrollment(
             )
         )
 
+    student = await db.get(Student, record.student_id)
+    await _sync_enrollment_work_item(db, record, student, current_user)
     await db.commit()
     return Response.ok(await _load_enrollment_payload(db, record.id))

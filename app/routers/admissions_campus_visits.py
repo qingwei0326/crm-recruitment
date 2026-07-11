@@ -5,6 +5,7 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import ADMIN_PAGE_CAMPUS_VISITS, get_current_user
 from app.database import get_db
+from app.domain_models import WorkItemKind
 from app.models import (
     CampusVisitResult,
     CampusVisitStatus,
@@ -30,9 +31,35 @@ from app.routers.admissions import (
     _require_admin_module,
 )
 from app.schemas import CampusVisitCreate, CampusVisitUpdate, EnrollmentCreate, Response
+from app.services.work_item_service import (
+    campus_visit_is_open,
+    sync_source_work_item,
+    sync_student_work_items,
+)
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
+
+
+async def _sync_campus_visit_work_item(
+    db: AsyncSession,
+    task: CampusVisitTask,
+    student: Student,
+    current_user: User,
+) -> None:
+    await db.flush()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.campus_visit,
+        "campus_visit",
+        task.id,
+        student,
+        task.creator_user_id,
+        task.next_follow_up_at or task.appointment_at,
+        not campus_visit_is_open(task),
+        current_user,
+    )
+    await sync_student_work_items(db, student, current_user)
 
 
 @router.get("/campus-visits")
@@ -144,6 +171,7 @@ async def create_campus_visit(
             content=f"到校参观预约：{student.name}；时间：{body.appointment_at or '待定'}",
         )
     )
+    await _sync_campus_visit_work_item(db, task, student, current_user)
     await db.commit()
     await db.refresh(task)
     return Response.ok(await _load_campus_visit_payload(db, task.id))
@@ -239,5 +267,6 @@ async def update_campus_visit(
             )
         )
 
+    await _sync_campus_visit_work_item(db, task, student, current_user)
     await db.commit()
     return Response.ok(await _load_campus_visit_payload(db, task.id))

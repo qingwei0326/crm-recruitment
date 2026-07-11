@@ -7,7 +7,7 @@ import pytest
 from openpyxl import Workbook
 from sqlalchemy import select
 
-from app.domain_models import StudentAssignment
+from app.domain_models import StudentAssignment, WorkItem, WorkItemKind, WorkItemStatus
 from app.models import OperationLog, Student
 from app.routers.students import _is_within_dial_window
 
@@ -46,6 +46,38 @@ class TestCreateStudent:
             headers=admin_headers,
         )
         assert resp.status_code == 200
+
+    async def test_need_help_dual_writes_stable_work_item(
+        self, client, db, admin_headers, agent_user
+    ):
+        created = await client.post(
+            "/api/students",
+            json={
+                "name": "求助双写学生",
+                "guardian_phone": "13800138099",
+                "assigned_to": agent_user.id,
+            },
+            headers=admin_headers,
+        )
+        student_id = created.json()["data"]["id"]
+
+        toggled = await client.post(
+            f"/api/students/{student_id}/need-help",
+            headers=admin_headers,
+        )
+
+        assert toggled.json()["data"]["need_help"] is True
+        item = (
+            await db.execute(
+                select(WorkItem).where(
+                    WorkItem.kind == WorkItemKind.help_request,
+                    WorkItem.source_type == "help",
+                    WorkItem.source_id == student_id,
+                )
+            )
+        ).scalar_one()
+        assert item.status == WorkItemStatus.open
+        assert item.owner_agent_id == agent_user.id
 
     async def test_create_missing_name(self, client, admin_headers):
         resp = await client.post(

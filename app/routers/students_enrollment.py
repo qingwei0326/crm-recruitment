@@ -17,6 +17,7 @@ from app.database import get_db
 from app.models import EnrollmentSubStage, Student, StudentStage, StudentStatus, User
 from app.permissions import get_accessible_student, get_student_or_404, is_admin
 from app.schemas import EnrollInfo, Response, StageUpdate
+from app.services.work_item_service import sync_student_work_items
 from app.status_policy import canonical_status_value, canonical_student_status
 from app.utils import make_operation_log
 
@@ -100,6 +101,7 @@ async def update_enrollment_substage(
             new_status=new_value,
         )
     )
+    await sync_student_work_items(db, student, current_user)
     await db.commit()
     await db.refresh(student)
     return Response.ok(
@@ -161,6 +163,7 @@ async def update_stage(
             )
         )
 
+    await sync_student_work_items(db, student, current_user)
     await db.commit()
     await db.refresh(student)
     return Response.ok(
@@ -219,6 +222,7 @@ async def set_enroll_info(
         )
     )
 
+    await sync_student_work_items(db, student, current_user)
     await db.commit()
     await db.refresh(student)
     return Response.ok(

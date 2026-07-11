@@ -13,6 +13,7 @@ from app.domain_errors import (
 )
 from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
 from app.models import Student, User, UserRole
+from app.services.work_item_service import sync_students_work_items
 from app.utils import (
     assignment_state_label,
     make_assignment_rollback_note,
@@ -152,5 +153,11 @@ async def apply_assignment_changes(
         )
         changed.append(student_id)
 
+    await sync_students_work_items(
+        db,
+        [students[student_id] for student_id in changed],
+        operator,
+        at=now,
+    )
     await db.flush()
     return AssignmentResult(tuple(changed), tuple(unchanged))
