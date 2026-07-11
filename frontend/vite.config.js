@@ -9,7 +9,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
     },
@@ -32,7 +32,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test-setup.js',
     pool: 'threads',
-    maxWorkers: 18,
+    maxWorkers: 8,
     reporters: ['dot'],
 
   },
