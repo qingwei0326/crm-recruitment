@@ -37,6 +37,29 @@
 - `/api/stats/predictions` 旧预测接口已废弃；发布前确认没有重新暴露该接口或前端调用。
 - 离职/禁用人员不出现在分配类列表，只在账号历史管理场景可见。
 - 超管和普通管理员权限符合预期：普通管理员不能做账号管理、系统设置、破坏性操作。
+- 账号状态使用“在职 / 暂停 / 待交接 / 已离职”四态；办理离职不会重置学生状态、意向、阶段或历史进度。
+- 交接操作必须先预览再执行；部分转派和全部接手都携带批次版本及独立幂等键，版本冲突后必须刷新重审。
+- 交接完成后只改变当前学生归属和开放工作项负责人；跟进、家访、到校记录及工作项创建人保持原始历史归因。
+- 桌面端和移动端结果目录都包含“已报名其他学校”，该终态在无效回收页不可选择或自动回收。
+
+## 离职交接回归
+
+前端完整测试使用固定的 8 个 Vitest worker，发布前连续运行两次，排除偶发超时：
+
+```powershell
+cd frontend
+npm test -- --reporter=dot
+npm test -- --reporter=dot
+cd ..
+```
+
+交接浏览器回归包含 mocked 契约流程和真实 FastAPI 流程：
+
+```powershell
+npx playwright test tests/e2e/handover-center.spec.js tests/e2e/handover-real-workflow.spec.js
+```
+
+真实流程会自动创建临时 SQLite、迁移到 Alembic head、写入仅以 `e2e_` 开头的合成账号，并在结束后删除数据库。严禁把 `crm.db`、`backups/server-audit/` 下的服务器快照或任何含非 `e2e_` 用户的数据库传给 `scripts/seed_handover_e2e.py`；脚本也必须主动拒绝这些路径和数据。
 
 ## 打包
 
