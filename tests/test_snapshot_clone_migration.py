@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import stat
 import subprocess
 import sys
 import uuid
@@ -82,6 +83,26 @@ def test_snapshot_clone_migrates_and_never_changes_source(tmp_path):
         assert destination.is_file()
     finally:
         destination.unlink(missing_ok=True)
+
+
+def test_snapshot_clone_migrates_from_read_only_source(tmp_path):
+    source = tmp_path / "read-only-source.db"
+    create_unstamped_source(source)
+    original_bytes = source.read_bytes()
+    source.chmod(stat.S_IREAD)
+    destination = destination_path("read-only-source")
+    try:
+        result = run_clone(source, destination)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert source.read_bytes() == original_bytes
+        assert destination.is_file()
+        assert os.access(destination, os.W_OK)
+    finally:
+        source.chmod(stat.S_IREAD | stat.S_IWRITE)
+        if destination.exists():
+            destination.chmod(stat.S_IREAD | stat.S_IWRITE)
+            destination.unlink()
 
 
 def test_snapshot_clone_refuses_identical_paths(tmp_path):
