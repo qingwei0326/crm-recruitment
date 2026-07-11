@@ -1,35 +1,37 @@
 // 纯函数和常量 — 从 AgentWork.jsx 提取
-import { CheckCheck, Clock, CheckCircle2, UserX, TrendingUp, MessageCircle, Ban } from 'lucide-react';
+import { CheckCheck, Clock, CheckCircle2, UserX, TrendingUp, MessageCircle, Ban, School } from 'lucide-react';
+import { FALLBACK_OPERATOR_OUTCOMES } from '../../domain/outcomeCatalog';
 import {
   AGENT_STATUS_BADGE_CLASSES,
   INTENT_BADGES as SHARED_INTENT_BADGES,
-  OPERATOR_STATUS_BUTTON_LABELS,
   STAGES as SHARED_STAGES,
-  STATUS_ACTION_BUTTON_CLASSES,
 } from '../../labels';
 
 export const STATUS_STYLE = AGENT_STATUS_BADGE_CLASSES;
 
 const QUICK_STATUS_ICONS = {
-  新线索: Clock,
-  非常有意向: TrendingUp,
-  意向了解加微: MessageCircle,
-  已联系: CheckCheck,
-  未接: Clock,
-  待回访: Clock,
-  空号: Ban,
-  高分段: Ban,
-  无意向: UserX,
-  孩子不想读: UserX,
-  已报名: CheckCircle2,
-  无效: UserX,
+  new_lead: Clock,
+  very_interested: TrendingUp,
+  interested_wechat: MessageCircle,
+  missed_call: Clock,
+  phone_invalid: Ban,
+  high_score: Ban,
+  no_intent: UserX,
+  child_declined: UserX,
+  enrolled_elsewhere: School,
+  enrolled: CheckCircle2,
 };
 
-export const QUICK_STATUSES = OPERATOR_STATUS_BUTTON_LABELS.map((status) => ({
-  status,
-  icon: QUICK_STATUS_ICONS[status],
-  color: STATUS_ACTION_BUTTON_CLASSES[status],
-}));
+export function quickStatusForOutcome(outcome) {
+  return {
+    status: outcome.label,
+    outcome,
+    icon: QUICK_STATUS_ICONS[outcome.code] || CheckCheck,
+    color: outcome.className,
+  };
+}
+
+export const QUICK_STATUSES = FALLBACK_OPERATOR_OUTCOMES.map(quickStatusForOutcome);
 
 export const STAGES = SHARED_STAGES;
 

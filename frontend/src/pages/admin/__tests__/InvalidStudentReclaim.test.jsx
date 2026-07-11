@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import InvalidStudentReclaim from '../InvalidStudentReclaim';
 import api from '../../../api';
@@ -51,14 +52,40 @@ const highScoreStudents = [
     guardian2_phone: '13960043037',
     agent_name: '王坐席',
     invalid_reason: '高分段',
+    outcome_reason_code: 'high_score',
+    invalid_operator_name: '王坐席',
+    invalid_at: '2026-06-26T09:00:00',
+    updated_at: '2026-06-26T10:00:00',
+  },
+  {
+    id: 11,
+    name: '已报他校学生',
+    region: '龙海',
+    guardian_name: '家长丙',
+    guardian_phone: '8002',
+    agent_name: '王坐席',
+    invalid_reason: '已报名其他学校',
+    outcome_reason_code: 'enrolled_elsewhere',
     invalid_operator_name: '王坐席',
     invalid_at: '2026-06-26T09:00:00',
     updated_at: '2026-06-26T10:00:00',
   },
 ];
 
+const serverReasons = [
+  { code: 'phone_invalid', label: '空号', terminal: true, reclaimable: true },
+  { code: 'high_score', label: '高分段', terminal: true, reclaimable: true },
+  { code: 'no_intent', label: '无意向', terminal: true, reclaimable: true },
+  { code: 'child_declined', label: '孩子不想读', terminal: true, reclaimable: true },
+  { code: 'enrolled_elsewhere', label: '已报名其他学校', terminal: true, reclaimable: false },
+  { code: 'other', label: '其他', terminal: true, reclaimable: true },
+];
+
 function mockInvalidApis() {
   api.get.mockImplementation((url, config = {}) => {
+    if (url === '/lead-outcome-reasons') {
+      return Promise.resolve({ data: { code: 0, data: serverReasons } });
+    }
     if (url === '/admin/invalid-school-groups') {
       const reason = config.params?.invalid_reason || '';
       return Promise.resolve({
@@ -91,6 +118,19 @@ function mockInvalidApis() {
   api.post.mockResolvedValue({ data: { code: 0, data: { reclaimed_count: 1, deleted_count: 1 } } });
 }
 
+function renderPage(entry = '/admin/invalid-reclaim') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={[entry]}>
+        <InvalidStudentReclaim />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe('InvalidStudentReclaim', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,11 +138,7 @@ describe('InvalidStudentReclaim', () => {
   });
 
   it('filters invalid leads by reason and batch reclaims selected rows', async () => {
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim']}>
-        <InvalidStudentReclaim />
-      </MemoryRouter>,
-    );
+    renderPage();
 
     expect(await screen.findByText('龙海一中')).toBeInTheDocument();
 
@@ -136,11 +172,7 @@ describe('InvalidStudentReclaim', () => {
   });
 
   it('deletes selected invalid leads after confirmation', async () => {
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim']}>
-        <InvalidStudentReclaim />
-      </MemoryRouter>,
-    );
+    renderPage();
 
     fireEvent.click(await screen.findByText('龙海一中'));
     expect(await screen.findByText('高分段学生')).toBeInTheDocument();
@@ -156,11 +188,7 @@ describe('InvalidStudentReclaim', () => {
   });
 
   it('passes url search query to invalid groups and expanded students', async () => {
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/invalid-reclaim?q=3037']}>
-        <InvalidStudentReclaim />
-      </MemoryRouter>,
-    );
+    renderPage('/admin/invalid-reclaim?q=3037');
 
     await waitFor(() =>
       expect(api.get).toHaveBeenCalledWith('/admin/invalid-school-groups', {
@@ -181,5 +209,27 @@ describe('InvalidStudentReclaim', () => {
       }),
     );
     expect(await screen.findByText(/13960043037/)).toBeInTheDocument();
+  });
+
+  it('prevents enrolled-elsewhere rows and filters from being reclaimed', async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByText('龙海一中'));
+    const enrolledCheckbox = await screen.findByLabelText('选择已报他校学生');
+    expect(enrolledCheckbox).toBeDisabled();
+    expect(enrolledCheckbox).toHaveAttribute('title', '已报名其他学校为终态记录，不可回收');
+
+    fireEvent.click(screen.getByLabelText('选择当前学校全部无效线索'));
+    fireEvent.click(screen.getByRole('button', { name: '回收到未分配池' }));
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/admin/invalid-students/reclaim', {
+        student_ids: [10],
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '已报名其他学校' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '一键回收' })).not.toBeInTheDocument();
+    });
   });
 });

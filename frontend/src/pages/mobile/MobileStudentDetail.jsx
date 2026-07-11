@@ -22,12 +22,11 @@ import useDialFlow from '../../hooks/useDialFlow';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { getApiErrorMessage } from '../../utils';
 import { payloadForOperatorResult } from '../../operatorResultPolicy';
+import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import {
   detailForOperatorResult,
   displayStatusForOperatorResult,
-  OPERATOR_STATUS_BUTTON_LABELS,
   STAGES,
-  STATUS_ACTION_BUTTON_CLASSES,
   stageLabel,
 } from '../../labels';
 const INTENT_LEVELS = ['A', 'B', 'C', '无'];
@@ -211,6 +210,7 @@ export default function MobileStudentDetail() {
   const { dial } = useDialFlow();
   const { user } = useAuth();
   const confirm = useConfirm();
+  const { results: outcomeResults } = useLeadOutcomeCatalog();
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -361,9 +361,10 @@ export default function MobileStudentDetail() {
     }
   };
 
-  const handleUpdateStudentStatus = async (status) => {
+  const handleUpdateStudentStatus = async (outcome) => {
+    const status = outcome.label;
     if (!student) return;
-    if (status === '已报名') {
+    if (outcome.code === 'enrolled') {
       const ok = await confirm({
         title: '确认报名',
         message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
@@ -372,11 +373,11 @@ export default function MobileStudentDetail() {
       if (!ok) return;
     }
     const saved = await runWorkflowUpdate(
-      () => api.put(`/students/${student.id}`, payloadForOperatorResult(status)),
+      () => api.put(`/students/${student.id}`, payloadForOperatorResult(outcome)),
       '联系状态已更新',
       (updated) => {
-        const nextStatus = updated?.status || displayStatusForOperatorResult(status);
-        const nextDetail = updated?.status_detail ?? detailForOperatorResult(status);
+        const nextStatus = updated?.status || displayStatusForOperatorResult(outcome);
+        const nextDetail = updated?.status_detail ?? detailForOperatorResult(outcome);
         patchStudent({
           status: nextStatus,
           status_detail: nextDetail,
@@ -676,18 +677,16 @@ export default function MobileStudentDetail() {
             <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
               处理结果
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="group" aria-label="处理结果">
-              {OPERATOR_STATUS_BUTTON_LABELS.map((status) => (
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2" role="group" aria-label="处理结果">
+              {outcomeResults.map((outcome) => (
                 <button
-                  key={status}
+                  key={outcome.code}
                   type="button"
                   disabled={workflowSaving}
-                  onClick={() => handleUpdateStudentStatus(status)}
-                  className={`min-h-[42px] rounded-lg px-2 text-sm font-medium text-white ${
-                    STATUS_ACTION_BUTTON_CLASSES[status]
-                  } disabled:opacity-60`}
+                  onClick={() => handleUpdateStudentStatus(outcome)}
+                  className={`min-h-[56px] rounded-lg px-1 text-sm font-medium leading-5 whitespace-normal text-white ${outcome.className} disabled:opacity-60`}
                 >
-                  {status}
+                  {outcome.label}
                 </button>
               ))}
             </div>

@@ -1,14 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MobileDialResult from '../MobileDialResult';
 import api from '../../api';
 
 vi.mock('../../api', () => ({
   default: {
+    get: vi.fn(),
     put: vi.fn(),
     post: vi.fn(),
   },
 }));
+
+const serverReasons = [
+  { code: 'phone_invalid', label: '空号', terminal: true, reclaimable: true },
+  { code: 'high_score', label: '高分段', terminal: true, reclaimable: true },
+  { code: 'no_intent', label: '无意向', terminal: true, reclaimable: true },
+  { code: 'child_declined', label: '孩子不想读', terminal: true, reclaimable: true },
+  { code: 'enrolled_elsewhere', label: '已报名其他学校', terminal: true, reclaimable: false },
+  { code: 'other', label: '其他', terminal: true, reclaimable: true },
+];
+
+function renderDialResult(props = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MobileDialResult onUpdated={vi.fn()} {...props} />
+    </QueryClientProvider>,
+  );
+}
 
 vi.mock('../ConfirmDialog', () => ({
   useConfirm: () => vi.fn().mockResolvedValue(true),
@@ -29,6 +51,7 @@ describe('recordCallResult', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    api.get.mockResolvedValue({ data: { code: 0, data: serverReasons } });
     api.put.mockResolvedValue({ data: { code: 0, data: {} } });
     api.post.mockResolvedValue({ data: { code: 0, data: {} } });
   });
@@ -67,7 +90,7 @@ describe('recordCallResult', () => {
       }),
     );
 
-    render(<MobileDialResult onUpdated={vi.fn()} />);
+    renderDialResult();
 
     fireEvent.click(await screen.findByRole('button', { name: '意向了解加微' }));
     fireEvent.click(await screen.findByRole('button', { name: 'A' }));
@@ -99,7 +122,7 @@ describe('recordCallResult', () => {
       }),
     );
 
-    render(<MobileDialResult onUpdated={vi.fn()} />);
+    renderDialResult();
 
     fireEvent.click(await screen.findByRole('button', { name: '空号' }));
 
@@ -107,6 +130,28 @@ describe('recordCallResult', () => {
       expect(api.put).toHaveBeenCalledWith('/students/42', {
         status: '无效',
         invalid_reason: '空号',
+      });
+    });
+  });
+
+  it('saves enrolled elsewhere with the catalog reason payload', async () => {
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 60000,
+      }),
+    );
+
+    renderDialResult();
+    fireEvent.click(await screen.findByRole('button', { name: '已报名其他学校' }));
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/42', {
+        status: '无效',
+        invalid_reason: '已报名其他学校',
       });
     });
   });
@@ -127,7 +172,7 @@ describe('recordCallResult', () => {
       }),
     );
 
-    render(<MobileDialResult onUpdated={vi.fn()} />);
+    renderDialResult();
 
     const button = await screen.findByRole('button', { name: '空号' });
     fireEvent.click(button);
@@ -157,7 +202,7 @@ describe('recordCallResult', () => {
       }),
     );
 
-    render(<MobileDialResult onUpdated={vi.fn()} />);
+    renderDialResult();
 
     fireEvent.click(await screen.findByRole('button', { name: '空号' }));
 
@@ -177,7 +222,7 @@ describe('recordCallResult', () => {
       }),
     );
 
-    render(<MobileDialResult onUpdated={vi.fn()} />);
+    renderDialResult();
     fireEvent.click(await screen.findByRole('button', { name: '不记录，关闭' }));
 
     await waitFor(() => {
@@ -207,7 +252,7 @@ describe('recordCallResult', () => {
       }),
     );
 
-    render(<MobileDialResult onUpdated={vi.fn()} />);
+    renderDialResult();
     fireEvent.click(await screen.findByRole('button', { name: '空号' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('状态已保存，通话记录待同步');

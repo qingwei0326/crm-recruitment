@@ -118,6 +118,7 @@ export const STATUS_ACTION_BUTTON_CLASSES = {
   高分段: 'bg-indigo-600 hover:bg-indigo-700',
   无意向: 'bg-slate-600 hover:bg-slate-700',
   孩子不想读: 'bg-zinc-600 hover:bg-zinc-700',
+  已报名其他学校: 'bg-rose-600 hover:bg-rose-700',
   已报名: 'bg-green-600 hover:bg-green-700',
   无效: 'bg-red-500 hover:bg-red-600',
 };
