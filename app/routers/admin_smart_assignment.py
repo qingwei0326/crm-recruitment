@@ -12,10 +12,9 @@ from app.auth import (
 from app.database import get_db
 from app.models import Student, User
 from app.schemas import Response
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.smart_assignment import SmartAssignParams, build_smart_assignment_plan
 from app.utils import (
-    assignment_state_label,
-    make_assignment_rollback_note,
     make_batch_id,
     make_operation_log,
     utcnow,
@@ -106,6 +105,7 @@ async def smart_assign_execute(
     assigned_count = 0
     skipped_count = 0
     assigned_by_agent: dict[int, int] = {}
+    targets: list[AssignmentTarget] = []
 
     for agent_id, student_ids in plan.assignments_by_agent.items():
         for student_id in student_ids:
@@ -113,30 +113,18 @@ async def smart_assign_execute(
             if student is None or student.assigned_to is not None:
                 skipped_count += 1
                 continue
-            old_assigned_to = student.assigned_to
-            old_assigned_at = student.assigned_at
-            student.assigned_to = agent_id
-            student.assigned_at = now
-            db.add(
-                make_operation_log(
-                    current_user,
-                    student.id,
-                    student.case_no or "",
-                    "智能分配",
-                    content=f"智能分配给话务员 {agent_id}",
-                    old_status=assignment_state_label(old_assigned_to),
-                    new_status=assignment_state_label(agent_id),
-                    note_content=make_assignment_rollback_note(
-                        old_assigned_to=old_assigned_to,
-                        old_assigned_at=old_assigned_at,
-                        new_assigned_to=agent_id,
-                        new_assigned_at=now,
-                    ),
-                    batch_id=batch_id,
-                )
-            )
+            targets.append(AssignmentTarget(student_id=student.id, agent_id=agent_id))
             assigned_count += 1
             assigned_by_agent[agent_id] = assigned_by_agent.get(agent_id, 0) + 1
+
+    await apply_assignment_changes(
+        db,
+        targets,
+        operator=current_user,
+        reason="smart_assignment",
+        batch_id=batch_id,
+        at=now,
+    )
 
     db.add(
         make_operation_log(

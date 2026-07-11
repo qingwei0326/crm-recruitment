@@ -13,7 +13,12 @@ from app.domain_errors import (
 )
 from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
 from app.models import Student, User, UserRole
-from app.utils import assignment_state_label, make_operation_log, utcnow
+from app.utils import (
+    assignment_state_label,
+    make_assignment_rollback_note,
+    make_operation_log,
+    utcnow,
+)
 
 
 @dataclass(frozen=True)
@@ -105,6 +110,7 @@ async def apply_assignment_changes(
         if current_agent_id == target_agent_id:
             unchanged.append(student_id)
             continue
+        current_assigned_at = student.assigned_at
         if current is not None:
             current.ended_at = now
             current.end_reason = reason
@@ -135,6 +141,12 @@ async def apply_assignment_changes(
                 ),
                 old_status=assignment_state_label(current_agent_id),
                 new_status=assignment_state_label(target_agent_id),
+                note_content=make_assignment_rollback_note(
+                    old_assigned_to=current_agent_id,
+                    old_assigned_at=current_assigned_at,
+                    new_assigned_to=target_agent_id,
+                    new_assigned_at=now if target_agent_id is not None else None,
+                ),
                 batch_id=batch_id,
             )
         )

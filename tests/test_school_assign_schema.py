@@ -49,11 +49,11 @@ async def test_school_assign_valid_payload_trims_and_assigns(client, db, admin_h
         await db.execute(
             select(OperationLog).where(
                 OperationLog.target_student_id == student.id,
-                OperationLog.action == "学校分配",
+                OperationLog.action == "修改归属",
             )
         )
     ).scalar_one()
-    assert log.content == f"学校「测试学校」分配给话务员 {agent_user.id}"
+    assert log.content == f"未分配 -> {agent_user.id}"
     assert log.batch_id == body["data"]["batch_id"]
     assert log.old_status == "unassigned"
     assert log.new_status == f"agent:{agent_user.id}"

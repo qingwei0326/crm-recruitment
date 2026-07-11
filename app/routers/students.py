@@ -44,6 +44,7 @@ from app.routers.students_phone import (
     _is_within_dial_window as _is_within_dial_window,  # noqa: F401
 )
 from app.schemas import Response, StudentCreate, StudentUpdate
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.status_policy import (
     canonical_status_value,
     canonical_student_status,
@@ -52,10 +53,10 @@ from app.status_policy import (
     status_detail_value,
 )
 from app.utils import (
+    make_batch_id,
     make_operation_log,
     mask_phone,
     normalize_phone,
-    utcnow,
 )
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
@@ -308,8 +309,6 @@ async def create_student(
     student = Student(
         name=body.name,
         region=region_value,
-        assigned_to=assigned_to,
-        assigned_at=utcnow() if assigned_to else None,
         status=status,
         status_detail=status_detail,
         intent_level=intent_level,
@@ -335,6 +334,15 @@ async def create_student(
             student.enrolled_at = date.today()
 
     db.add(student)
+    await db.flush()
+    if assigned_to is not None:
+        await apply_assignment_changes(
+            db,
+            [AssignmentTarget(student_id=student.id, agent_id=assigned_to)],
+            operator=current_user,
+            reason="student_create",
+            batch_id=make_batch_id("student-create-assignment"),
+        )
     await db.commit()
     await db.refresh(student)
     if student.intent_level == IntentLevel.A:
@@ -372,6 +380,8 @@ async def update_student(
     old_status_detail = student.status_detail or ""
     old_stage = student.stage
     old_assigned = student.assigned_to
+    assignment_requested = "assigned_to" in raw
+    target_assigned_to = raw.pop("assigned_to", old_assigned)
     next_guardian_phone = student.guardian_phone
     next_guardian2_phone = student.guardian2_phone
     was_enrolled = _is_enrolled_student(student)
@@ -436,7 +446,6 @@ async def update_student(
     status_changed = old_status != student.status
     status_detail_changed = old_status_detail != (student.status_detail or "")
     stage_changed = old_stage != student.stage
-    assigned_changed = "assigned_to" in raw and old_assigned != student.assigned_to
 
     if status_changed or status_detail_changed:
         if _is_call_result_write(
@@ -458,7 +467,7 @@ async def update_student(
             )
         )
 
-    if status_changed or status_detail_changed or stage_changed or assigned_changed:
+    if status_changed or status_detail_changed or stage_changed:
         parts = []
         if status_changed:
             parts.append(
@@ -471,8 +480,6 @@ async def update_student(
             parts.append(f"无效原因：{student.status_detail}")
         if stage_changed:
             parts.append(f"阶段 {old_stage} → {student.stage}")
-        if assigned_changed:
-            parts.append(f"分配 {old_assigned} → {student.assigned_to}")
         db.add(
             make_operation_log(
                 current_user,
@@ -486,6 +493,15 @@ async def update_student(
                 if (student.status == StudentStatus.invalid and student.status_detail)
                 else "",
             )
+        )
+
+    if assignment_requested:
+        await apply_assignment_changes(
+            db,
+            [AssignmentTarget(student_id=student.id, agent_id=target_assigned_to)],
+            operator=current_user,
+            reason="student_edit",
+            batch_id=make_batch_id("student-edit-assignment"),
         )
 
     await db.commit()

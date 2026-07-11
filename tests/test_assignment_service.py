@@ -9,6 +9,7 @@ from app.services.assignment_service import (
     AssignmentTarget,
     apply_assignment_changes,
 )
+from app.utils import parse_assignment_rollback_note
 
 INITIAL_AT = datetime(2026, 7, 10, 1, 0, 0)
 CHANGED_AT = datetime(2026, 7, 11, 1, 0, 0)
@@ -112,6 +113,13 @@ async def test_reassignment_updates_history_projection_and_audit(db):
     assert log.batch_id == "assign-test-1"
     assert log.old_status == f"agent:{source.id}"
     assert log.new_status == f"agent:{target.id}"
+    assert parse_assignment_rollback_note(log.note_content) == {
+        "rollback_type": "assignment",
+        "old_assigned_to": source.id,
+        "old_assigned_at": INITIAL_AT.isoformat(),
+        "new_assigned_to": target.id,
+        "new_assigned_at": CHANGED_AT.isoformat(),
+    }
 
 
 @pytest.mark.asyncio

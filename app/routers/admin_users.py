@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_config import SCORE_DAILY_CALL_TARGET_MAX
@@ -37,6 +37,7 @@ from app.dial_recording import (
     DIAL_RECORDING_LEGACY_MISSING,
     DIAL_RECORDING_PENDING,
 )
+from app.domain_models import AgentEmployment, EmploymentStatus
 from app.models import (
     DialLog,
     FollowUp,
@@ -51,9 +52,10 @@ from app.models import (
 )
 from app.routers.admin import get_config_value
 from app.schemas import Response
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.status_policy import canonical_status_value, status_detail_value
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES, build_task_stats
-from app.utils import make_operation_log, today_cst_as_utc, utcnow
+from app.utils import make_batch_id, make_operation_log, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -623,6 +625,13 @@ async def create_user(
     db.add(user)
     await db.flush()
     db.add(
+        AgentEmployment(
+            user_id=user.id,
+            status=EmploymentStatus.active,
+            updated_by=current_user.id,
+        )
+    )
+    db.add(
         make_operation_log(
             current_user,
             target_student_id=None,
@@ -809,45 +818,45 @@ async def delete_user(
             return Response.error(code=1, msg="不能删除最后一个管理员")
         if user.is_super_admin and user.is_active and await count_active_super_admins(db) <= 1:
             return Response.error(code=1, msg="不能删除最后一个超级管理员")
-    terminal_count = (
-        await db.execute(
-            select(func.count(Student.id)).where(
-                Student.assigned_to == user_id,
-                Student.status.in_(TERMINAL_STUDENT_STATUSES),
+    assigned_students = (
+        (
+            await db.execute(
+                select(Student).where(Student.assigned_to == user_id)
             )
         )
-    ).scalar() or 0
-    non_terminal_count = (
-        await db.execute(
-            select(func.count(Student.id)).where(
-                Student.assigned_to == user_id,
-                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-            )
-        )
-    ).scalar() or 0
-
-    # 1) 先处理终态学员：只解绑话务员，保留状态作为历史归档
-    await db.execute(
-        update(Student)
-        .where(
-            Student.assigned_to == user_id,
-            Student.status.in_(TERMINAL_STUDENT_STATUSES),
-        )
-        .values(assigned_to=None, assigned_at=None)
+        .scalars()
+        .all()
     )
+    terminal_students = [
+        student
+        for student in assigned_students
+        if student.status in TERMINAL_STUDENT_STATUSES
+    ]
+    non_terminal_students = [
+        student
+        for student in assigned_students
+        if student.status not in TERMINAL_STUDENT_STATUSES
+    ]
+    terminal_count = len(terminal_students)
+    non_terminal_count = len(non_terminal_students)
+
     # 2) 再回收非终态学员：清除分配、状态、意向、阶段，避免新话务员误以为旧记录是自己跟出来的
-    await db.execute(
-        update(Student)
-        .where(Student.assigned_to == user_id)
-        .values(
-            assigned_to=None,
-            assigned_at=None,
-            status=StudentStatus.not_contacted,
-            status_detail="",
-            intent_level=IntentLevel.none,
-            stage=StudentStage.initial_contact,
-            need_help=False,
-        )
+    for student in non_terminal_students:
+        student.status = StudentStatus.not_contacted
+        student.status_detail = ""
+        student.intent_level = IntentLevel.none
+        student.stage = StudentStage.initial_contact
+        student.need_help = False
+    batch_id = make_batch_id("user-delete")
+    await apply_assignment_changes(
+        db,
+        [
+            AssignmentTarget(student_id=student.id, agent_id=None)
+            for student in assigned_students
+        ],
+        operator=current_user,
+        reason="user_delete",
+        batch_id=batch_id,
     )
     db.add(
         make_operation_log(
@@ -859,11 +868,25 @@ async def delete_user(
                 f"删除{user.role} {user.username}({user.name})："
                 f"回收非终态 {non_terminal_count} 条、保留终态 {terminal_count} 条"
             ),
+            batch_id=batch_id,
         )
     )
-    await db.delete(user)
+    now = utcnow()
+    employment = await db.get(AgentEmployment, user.id)
+    if employment is not None:
+        employment.status = EmploymentStatus.offboarded
+        employment.version += 1
+        employment.status_changed_at = now
+        employment.offboarding_started_at = employment.offboarding_started_at or now
+        employment.offboarded_at = now
+        employment.updated_by = current_user.id
+    if user.is_active:
+        invalidate_user_tokens(user)
+    user.is_active = False
+    user.failed_login_attempts = 0
+    user.locked_until = None
     await db.commit()
-    return Response.ok(msg="已删除，该话务员的学生已回收至池")
+    return Response.ok(msg="账号已停用并保留历史，该话务员的学生已回收至池")
 
 
 @router.post("/users/{user_id}/offboard")
@@ -901,41 +924,44 @@ async def offboard_user(
         if user.is_super_admin and await count_active_super_admins(db) <= 1:
             return Response.error(code=1, msg="不能离职最后一个超级管理员")
 
-    # 1) 终态学员（已报名/无效及旧无效类状态）：只解绑，状态保留作为历史
-    terminal_statuses = TERMINAL_STUDENT_STATUSES
-    preserved_q = await db.execute(
-        select(func.count(Student.id)).where(
-            Student.assigned_to == user_id,
-            Student.status.in_(terminal_statuses),
+    assigned_students = (
+        (
+            await db.execute(
+                select(Student).where(Student.assigned_to == user_id)
+            )
         )
+        .scalars()
+        .all()
     )
-    preserved_count = preserved_q.scalar() or 0
-    await db.execute(
-        update(Student)
-        .where(
-            Student.assigned_to == user_id,
-            Student.status.in_(terminal_statuses),
-        )
-        .values(assigned_to=None, assigned_at=None)
-    )
+    terminal_students = [
+        student
+        for student in assigned_students
+        if student.status in TERMINAL_STUDENT_STATUSES
+    ]
+    non_terminal_students = [
+        student
+        for student in assigned_students
+        if student.status not in TERMINAL_STUDENT_STATUSES
+    ]
+    preserved_count = len(terminal_students)
+    recycled_count = len(non_terminal_students)
+    for student in non_terminal_students:
+        student.status = StudentStatus.not_contacted
+        student.status_detail = ""
+        student.intent_level = IntentLevel.none
+        student.stage = StudentStage.initial_contact
+        student.need_help = False
 
-    # 2) 非终态学员：全部回收到池，清除阶段/意向，避免新话务员误以为是自己跟出来的
-    recycled_q = await db.execute(
-        select(func.count(Student.id)).where(Student.assigned_to == user_id)
-    )
-    recycled_count = recycled_q.scalar() or 0
-    await db.execute(
-        update(Student)
-        .where(Student.assigned_to == user_id)
-        .values(
-            assigned_to=None,
-            assigned_at=None,
-            status=StudentStatus.not_contacted,
-            status_detail="",
-            intent_level=IntentLevel.none,
-            stage=StudentStage.initial_contact,
-            need_help=False,
-        )
+    batch_id = make_batch_id("legacy-offboard")
+    await apply_assignment_changes(
+        db,
+        [
+            AssignmentTarget(student_id=student.id, agent_id=None)
+            for student in assigned_students
+        ],
+        operator=current_user,
+        reason="terminal_unassign",
+        batch_id=batch_id,
     )
 
     # 3) 禁用账号 + 撤销现有 token
@@ -956,6 +982,7 @@ async def offboard_user(
                 f"回收非终态 {recycled_count} 条、保留终态 {preserved_count} 条"
                 + ("" if was_active else "（账号原本已禁用）")
             ),
+            batch_id=batch_id,
         )
     )
     await db.commit()

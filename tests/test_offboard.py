@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 
 from app.auth import create_access_token, hash_password
+from app.domain_models import AgentEmployment, EmploymentStatus
 from app.models import IntentLevel, Student, StudentStage, StudentStatus, User
 
 
@@ -21,6 +22,14 @@ async def departing_agent(db):
         is_active=True,
     )
     db.add(user)
+    await db.flush()
+    db.add(
+        AgentEmployment(
+            user_id=user.id,
+            status=EmploymentStatus.active,
+            updated_by=user.id,
+        )
+    )
     await db.commit()
     await db.refresh(user)
     return user
@@ -44,7 +53,7 @@ async def departing_headers(departing_token):
 
 
 @pytest_asyncio.fixture
-async def students_under_departing(db, departing_agent):
+async def students_under_departing(db, departing_agent, assignment_baseline):
     """构造该话务员名下的混合学生：3 非终态 + 2 终态。"""
     students = [
         # 非终态——离职后应被回收
@@ -87,6 +96,9 @@ async def students_under_departing(db, departing_agent):
     ]
     for s in students:
         db.add(s)
+    await db.flush()
+    for student in students:
+        await assignment_baseline(student, departing_agent)
     await db.commit()
     for s in students:
         await db.refresh(s)

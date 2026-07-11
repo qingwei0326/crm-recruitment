@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import select
 
+from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
 from app.models import DialLog, FollowUp, OperationLog, Student, StudentStatus, User
 from app.smart_assignment import SmartAssignParams, build_smart_assignment_plan
 from app.utils import today_cst_as_utc, utcnow
@@ -267,6 +268,12 @@ async def test_smart_assign_execute_recalculates_and_writes_rollbackable_logs(
     second_agent = _agent("second_agent", "第二坐席")
     db.add(second_agent)
     await db.flush()
+    db.add(
+        AgentEmployment(
+            user_id=second_agent.id,
+            status=EmploymentStatus.active,
+        )
+    )
     db.add_all(
         [
             _student("候选1", guardian_phone="13900000001"),
@@ -310,8 +317,23 @@ async def test_smart_assign_execute_recalculates_and_writes_rollbackable_logs(
         .scalars()
         .all()
     )
-    assert [log.action for log in logs].count("智能分配") == 2
+    assert [log.action for log in logs].count("修改归属") == 2
     assert logs[-1].action == "智能分配汇总"
+    assignments = (
+        (
+            await db.execute(
+                select(StudentAssignment).where(
+                    StudentAssignment.student_id.in_([student.id for student in assigned])
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(assignments) == 2
+    assert {assignment.start_reason for assignment in assignments} == {
+        "smart_assignment"
+    }
 
     rollback_resp = await client.get(
         f"/api/admin/assignment-rollbacks/{body['data']['batch_id']}",

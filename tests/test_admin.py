@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app.agent_score import _build_signals
+from app.domain_models import StudentAssignment
 from app.models import (
     CampusVisitStatus,
     CampusVisitTask,
@@ -679,7 +680,7 @@ class TestAdminDeleteUser:
         assert resp.json()["code"] == 0
 
     async def test_delete_user_writes_impact_counts_to_operation_log(
-        self, client, db, admin_headers, agent_user
+        self, client, db, admin_headers, agent_user, assignment_baseline
     ):
         active_student = Student(
             name="删除用户回收",
@@ -692,11 +693,16 @@ class TestAdminDeleteUser:
             status=StudentStatus.enrolled,
         )
         db.add_all([active_student, enrolled_student])
+        await db.flush()
+        await assignment_baseline(active_student, agent_user)
+        await assignment_baseline(enrolled_student, agent_user)
         await db.commit()
 
         resp = await client.delete(f"/api/admin/users/{agent_user.id}", headers=admin_headers)
 
         assert resp.json()["code"] == 0
+        await db.refresh(agent_user)
+        assert agent_user.is_active is False
         log = (
             await db.execute(
                 select(OperationLog).where(
@@ -914,7 +920,13 @@ class TestAdminResetPassword:
 @pytest.mark.asyncio
 class TestAdminStaleReassignPermissions:
     async def test_stale_reassign_requires_student_assign_operation(
-        self, client, db, normal_admin_user, normal_admin_headers, agent_user
+        self,
+        client,
+        db,
+        normal_admin_user,
+        normal_admin_headers,
+        agent_user,
+        assignment_baseline,
     ):
         student = Student(
             name="残留改派学生",
@@ -923,6 +935,8 @@ class TestAdminStaleReassignPermissions:
         )
         normal_admin_user.page_permissions = "account_manage"
         db.add(student)
+        await db.flush()
+        await assignment_baseline(student, agent_user)
         await db.commit()
         await db.refresh(student)
 
@@ -1930,6 +1944,15 @@ class TestAssignmentRollback:
         await db.refresh(student)
         assert student.assigned_to is None
         assert student.assigned_at is None
+        assignment = (
+            await db.execute(
+                select(StudentAssignment).where(
+                    StudentAssignment.student_id == student.id
+                )
+            )
+        ).scalar_one()
+        assert assignment.ended_at is not None
+        assert assignment.end_reason == "assignment_rollback"
 
         summary = (
             await db.execute(

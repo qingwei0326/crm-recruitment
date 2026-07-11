@@ -27,13 +27,14 @@ from app.models import (
     Visit,
 )
 from app.schemas import Response
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.status_policy import (
     canonical_status_value,
     canonical_student_status,
     status_detail_value,
     statuses_for_canonical,
 )
-from app.utils import make_operation_log, mask_phone, utcnow
+from app.utils import make_batch_id, make_operation_log, mask_phone, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -69,6 +70,8 @@ async def reclaim_invalid_students_to_pool(
     action: str = "回收无效线索",
 ) -> int:
     reclaimed_count = 0
+    now = utcnow()
+    batch_id = make_batch_id("invalid-reclaim")
     for student in students:
         old_agent_id = student.assigned_to
         student.status = StudentStatus.not_contacted
@@ -76,8 +79,6 @@ async def reclaim_invalid_students_to_pool(
         student.intent_level = IntentLevel.none
         student.stage = StudentStage.initial_contact
         student.need_help = False
-        student.assigned_to = None
-        student.assigned_at = None
 
         db.add(
             make_operation_log(
@@ -88,9 +89,18 @@ async def reclaim_invalid_students_to_pool(
                 content=f"从话务员 {old_agent_id or '未分配'} 回收，进入未分配池",
                 old_status="无效",
                 new_status="未联系",
+                batch_id=batch_id,
             )
         )
         reclaimed_count += 1
+    await apply_assignment_changes(
+        db,
+        [AssignmentTarget(student_id=student.id, agent_id=None) for student in students],
+        operator=current_user,
+        reason="invalid_reclaim",
+        batch_id=batch_id,
+        at=now,
+    )
     return reclaimed_count
 
 
@@ -236,6 +246,7 @@ async def reclaim_invalid_students(
 
     # 回收：重置状态为未联系，重新分配
     now = utcnow()
+    batch_id = make_batch_id("invalid-reclaim")
     reclaimed_count = 0
     for student in students:
         old_agent_id = student.assigned_to
@@ -247,8 +258,6 @@ async def reclaim_invalid_students(
         student.intent_level = IntentLevel.none
         student.stage = StudentStage.initial_contact
         student.need_help = False
-        student.assigned_to = body.agent_id
-        student.assigned_at = now
 
         # 记录操作日志
         db.add(
@@ -263,9 +272,22 @@ async def reclaim_invalid_students(
                 ),
                 old_status="无效",
                 new_status="未联系",
+                batch_id=batch_id,
             )
         )
         reclaimed_count += 1
+
+    await apply_assignment_changes(
+        db,
+        [
+            AssignmentTarget(student_id=student.id, agent_id=body.agent_id)
+            for student in students
+        ],
+        operator=current_user,
+        reason="invalid_reclaim",
+        batch_id=batch_id,
+        at=now,
+    )
 
     await db.commit()
 
