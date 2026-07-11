@@ -7,6 +7,7 @@ import pytest
 from openpyxl import Workbook
 from sqlalchemy import select
 
+from app.domain_models import StudentAssignment
 from app.models import OperationLog, Student
 from app.routers.students import _is_within_dial_window
 
@@ -1135,11 +1136,21 @@ class TestAssignStudent:
             await db.execute(
                 select(OperationLog).where(
                     OperationLog.target_student_id == sample_student.id,
-                    OperationLog.action == "手动分配",
+                    OperationLog.action == "修改归属",
                 )
             )
         ).scalar_one()
-        assert log.content == f"分配给话务员 {agent_user.id}"
+        assert log.content == f"未分配 -> {agent_user.id}"
+        assignment = (
+            await db.execute(
+                select(StudentAssignment).where(
+                    StudentAssignment.student_id == sample_student.id,
+                    StudentAssignment.ended_at.is_(None),
+                )
+            )
+        ).scalar_one()
+        assert assignment.agent_id == agent_user.id
+        assert assignment.start_reason == "manual_assignment"
 
     async def test_manual_assign_writes_batch_summary_log(
         self, client, db, admin_headers, agent_user
@@ -1250,6 +1261,21 @@ class TestAssignStudent:
         assert "共 2 名" in summary.content
         assert f"{agent_user.id}:2" in summary.content
         assert "自动学生1、自动学生2" in summary.content
+        assignments = (
+            (
+                await db.execute(
+                    select(StudentAssignment).where(
+                        StudentAssignment.student_id.in_([student.id for student in students])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(assignments) == 2
+        assert {assignment.start_reason for assignment in assignments} == {
+            "auto_assignment"
+        }
 
 
 @pytest.mark.asyncio

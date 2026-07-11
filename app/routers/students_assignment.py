@@ -1,18 +1,15 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ADMIN_OP_STUDENT_ASSIGN, require_operation_permission
 from app.database import get_db
 from app.models import Student, StudentStage, StudentStatus, User, UserRole
 from app.schemas import Response
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.task_stats import TERMINAL_STUDENT_STATUSES
 from app.utils import (
-    assignment_state_label,
-    make_assignment_rollback_note,
     make_batch_id,
     make_operation_log,
     utcnow,
@@ -47,47 +44,6 @@ class SchoolAssignReq(BaseModel):
     @classmethod
     def normalize_regions(cls, value: list[str]) -> list[str]:
         return [region.strip() for region in value if isinstance(region, str) and region.strip()]
-
-
-def _add_assignment_logs(
-    db: AsyncSession,
-    current_user: User,
-    students: list[Student],
-    assigned_by_student_id: dict[int, int],
-    *,
-    action: str,
-    content_prefix: str = "分配给话务员",
-    batch_id: str = "",
-    old_assignment_by_student_id: dict[int, tuple[int | None, datetime | None]] | None = None,
-    assigned_at_by_student_id: dict[int, datetime] | None = None,
-):
-    for student in students:
-        agent_id = assigned_by_student_id.get(student.id)
-        if agent_id is None:
-            continue
-        old_agent_id, old_assigned_at = (old_assignment_by_student_id or {}).get(
-            student.id,
-            (None, None),
-        )
-        new_assigned_at = (assigned_at_by_student_id or {}).get(student.id)
-        db.add(
-            make_operation_log(
-                current_user,
-                student.id,
-                student.case_no or "",
-                action,
-                content=f"{content_prefix} {agent_id}",
-                old_status=assignment_state_label(old_agent_id),
-                new_status=assignment_state_label(agent_id),
-                note_content=make_assignment_rollback_note(
-                    old_assigned_to=old_agent_id,
-                    old_assigned_at=old_assigned_at,
-                    new_assigned_to=agent_id,
-                    new_assigned_at=new_assigned_at,
-                ),
-                batch_id=batch_id,
-            )
-        )
 
 
 def _student_names_preview(students: list[Student], limit: int = 5) -> str:
@@ -141,24 +97,16 @@ async def assign_students(
 
     now = utcnow()
     batch_id = make_batch_id("assign")
-    old_assignment_by_student_id = {
-        student.id: (student.assigned_to, student.assigned_at) for student in students
-    }
-    assigned_at_by_student_id = {student.id: now for student in students}
-    await db.execute(
-        update(Student)
-        .where(Student.id.in_(body.student_ids))
-        .values(assigned_to=body.agent_id, assigned_at=now)
-    )
-    _add_assignment_logs(
+    await apply_assignment_changes(
         db,
-        current_user,
-        students,
-        {student.id: body.agent_id for student in students},
-        action="手动分配",
+        [
+            AssignmentTarget(student_id=student.id, agent_id=body.agent_id)
+            for student in students
+        ],
+        operator=current_user,
+        reason="manual_assignment",
         batch_id=batch_id,
-        old_assignment_by_student_id=old_assignment_by_student_id,
-        assigned_at_by_student_id=assigned_at_by_student_id,
+        at=now,
     )
     _add_batch_summary_log(
         db,
@@ -212,10 +160,6 @@ async def auto_assign(
     distribution = {a.id: 0 for a in agents}
     now = utcnow()
     batch_id = make_batch_id("auto-assign")
-    old_assignment_by_student_id = {
-        student.id: (student.assigned_to, student.assigned_at) for student in unassigned
-    }
-    assigned_at_by_student_id = {student.id: now for student in unassigned}
     by_agent: dict[int, list[int]] = {}
     assigned_by_student_id: dict[int, int] = {}
     for student in unassigned:
@@ -225,22 +169,16 @@ async def auto_assign(
         load[min_agent_id] += 1
         distribution[min_agent_id] += 1
 
-    for agent_id, ids in by_agent.items():
-        if not ids:
-            continue
-        await db.execute(
-            update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
-        )
-
-    _add_assignment_logs(
+    await apply_assignment_changes(
         db,
-        current_user,
-        unassigned,
-        assigned_by_student_id,
-        action="自动分配",
+        [
+            AssignmentTarget(student_id=student.id, agent_id=assigned_by_student_id[student.id])
+            for student in unassigned
+        ],
+        operator=current_user,
+        reason="auto_assignment",
         batch_id=batch_id,
-        old_assignment_by_student_id=old_assignment_by_student_id,
-        assigned_at_by_student_id=assigned_at_by_student_id,
+        at=now,
     )
     distribution_text = ", ".join(
         f"{a.id}:{distribution.get(a.id, 0)}" for a in agents if distribution.get(a.id, 0) > 0
@@ -313,10 +251,6 @@ async def region_assign(
     distribution = {a.name: {"matched": 0, "fallback": 0} for a in agents}
     now = utcnow()
     batch_id = make_batch_id("region-assign")
-    old_assignment_by_student_id = {
-        student.id: (student.assigned_to, student.assigned_at) for student in unassigned
-    }
-    assigned_at_by_student_id = {student.id: now for student in unassigned}
     total_assigned = 0
     by_agent: dict[int, list[int]] = {}
     assigned_by_student_id: dict[int, int] = {}
@@ -339,22 +273,16 @@ async def region_assign(
         load[agent_id] += 1
         total_assigned += 1
 
-    for agent_id, ids in by_agent.items():
-        if not ids:
-            continue
-        await db.execute(
-            update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
-        )
-
-    _add_assignment_logs(
+    await apply_assignment_changes(
         db,
-        current_user,
-        unassigned,
-        assigned_by_student_id,
-        action="区域分配",
+        [
+            AssignmentTarget(student_id=student.id, agent_id=assigned_by_student_id[student.id])
+            for student in unassigned
+        ],
+        operator=current_user,
+        reason="region_assignment",
         batch_id=batch_id,
-        old_assignment_by_student_id=old_assignment_by_student_id,
-        assigned_at_by_student_id=assigned_at_by_student_id,
+        at=now,
     )
     _add_batch_summary_log(
         db,
@@ -415,10 +343,6 @@ async def school_assign(
 
     now = utcnow()
     batch_id = make_batch_id("school-assign")
-    old_assignment_by_student_id = {
-        student.id: (student.assigned_to, student.assigned_at) for student in students
-    }
-    assigned_at_by_student_id = {student.id: now for student in students}
     by_agent: dict[int, list[int]] = {}
     agent_id_list = [a.id for a in agents]
     counts = {a_id: 0 for a_id in agent_id_list}
@@ -429,21 +353,21 @@ async def school_assign(
         by_agent.setdefault(min_agent_id, []).append(student.id)
         counts[min_agent_id] += 1
 
-    for agent_id, ids in by_agent.items():
-        await db.execute(
-            update(Student).where(Student.id.in_(ids)).values(assigned_to=agent_id, assigned_at=now)
-        )
-
-    _add_assignment_logs(
+    assigned_by_student_id = {
+        student_id: agent_id
+        for agent_id, ids in by_agent.items()
+        for student_id in ids
+    }
+    await apply_assignment_changes(
         db,
-        current_user,
-        students,
-        {student_id: agent_id for agent_id, ids in by_agent.items() for student_id in ids},
-        action="学校分配",
-        content_prefix=f"学校「{school}」分配给话务员",
+        [
+            AssignmentTarget(student_id=student.id, agent_id=assigned_by_student_id[student.id])
+            for student in students
+        ],
+        operator=current_user,
+        reason="school_assignment",
         batch_id=batch_id,
-        old_assignment_by_student_id=old_assignment_by_student_id,
-        assigned_at_by_student_id=assigned_at_by_student_id,
+        at=now,
     )
     _add_batch_summary_log(
         db,

@@ -417,7 +417,7 @@ async def test_students_filters_match_actionable_dashboard_metrics(
 
 @pytest.mark.asyncio
 async def test_reclaim_invalid_students(
-    client: AsyncClient, db, admin_user, agent_user, admin_headers
+    client: AsyncClient, db, agent_user, admin_headers, assignment_baseline
 ):
     """测试回收无效线索"""
     # 创建无效线索
@@ -428,6 +428,8 @@ async def test_reclaim_invalid_students(
         guardian_phone="13800138003",
     )
     db.add(student)
+    await db.flush()
+    await assignment_baseline(student, agent_user)
     await db.commit()
     await db.refresh(student)
 
@@ -436,7 +438,7 @@ async def test_reclaim_invalid_students(
         "/api/admin/reclaim-students",
         json={
             "student_ids": [student.id],
-            "agent_id": admin_user.id,
+            "agent_id": agent_user.id,
         },
         headers=admin_headers,
     )
@@ -448,12 +450,12 @@ async def test_reclaim_invalid_students(
     # 验证状态已重置
     await db.refresh(student)
     assert student.status == StudentStatus.not_contacted
-    assert student.assigned_to == admin_user.id
+    assert student.assigned_to == agent_user.id
 
 
 @pytest.mark.asyncio
 async def test_reclaim_invalid_students_to_unassigned_pool(
-    client: AsyncClient, db, agent_user, admin_headers
+    client: AsyncClient, db, agent_user, admin_headers, assignment_baseline
 ):
     """选中的无效线索可以回收到未分配池。"""
     student = Student(
@@ -465,6 +467,8 @@ async def test_reclaim_invalid_students_to_unassigned_pool(
         intent_level=IntentLevel.A,
     )
     db.add(student)
+    await db.flush()
+    await assignment_baseline(student, agent_user)
     await db.commit()
     await db.refresh(student)
 

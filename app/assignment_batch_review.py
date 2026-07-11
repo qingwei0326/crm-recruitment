@@ -13,6 +13,7 @@ from app.utils import parse_assignment_rollback_note
 REVIEW_WINDOW_DAYS = (1, 3, 7, 14)
 
 ASSIGNMENT_DETAIL_ACTIONS = {
+    "修改归属",
     "手动分配",
     "自动分配",
     "区域分配",

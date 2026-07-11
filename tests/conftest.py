@@ -71,7 +71,24 @@ async def client():
 # Auth fixtures
 # ---------------------------------------------------------------------------
 from app.auth import create_access_token, hash_password
+from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
 from app.models import IntentLevel, Student, StudentStage, StudentStatus, User
+from app.utils import utcnow
+
+
+async def _commit_user_with_employment(db, user):
+    db.add(user)
+    await db.flush()
+    db.add(
+        AgentEmployment(
+            user_id=user.id,
+            status=EmploymentStatus.active,
+            updated_by=user.id,
+        )
+    )
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 @pytest_asyncio.fixture
@@ -84,10 +101,7 @@ async def admin_user(db):
         is_active=True,
         is_super_admin=True,
     )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
+    return await _commit_user_with_employment(db, user)
 
 
 @pytest_asyncio.fixture
@@ -100,10 +114,7 @@ async def normal_admin_user(db):
         is_active=True,
         is_super_admin=False,
     )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
+    return await _commit_user_with_employment(db, user)
 
 
 @pytest_asyncio.fixture
@@ -115,10 +126,30 @@ async def agent_user(db):
         name="测试坐席",
         is_active=True,
     )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
+    return await _commit_user_with_employment(db, user)
+
+
+@pytest_asyncio.fixture
+async def assignment_baseline(db):
+    async def establish(student: Student, agent: User, *, started_at=None):
+        if student not in db:
+            db.add(student)
+        await db.flush()
+        assigned_at = started_at or student.assigned_at or utcnow()
+        student.assigned_to = agent.id
+        student.assigned_at = assigned_at
+        assignment = StudentAssignment(
+            student_id=student.id,
+            agent_id=agent.id,
+            started_at=assigned_at,
+            start_reason="test_seed",
+            started_by=agent.id,
+        )
+        db.add(assignment)
+        await db.flush()
+        return assignment
+
+    return establish
 
 
 @pytest_asyncio.fixture

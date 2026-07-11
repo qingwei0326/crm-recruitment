@@ -15,11 +15,12 @@ from app.auth import (
 )
 from app.database import get_db
 from app.expiry import build_last_activity_subquery
-from app.models import IntentLevel, OperationLog, Student, User, UserRole
+from app.models import IntentLevel, Student, User, UserRole
 from app.schemas import Response, StaleReassignReq
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.status_policy import canonical_status_value, status_detail_value
 from app.task_stats import TERMINAL_STUDENT_STATUSES
-from app.utils import utcnow
+from app.utils import make_batch_id, make_operation_log, utcnow
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -199,26 +200,30 @@ async def stale_reclaim_by_group(
     if not students:
         return Response.error(code=1, msg="没有可回收的超时学员")
 
-    reclaimed_count = 0
-    for s in students:
-        old_agent_id = s.assigned_to
-        s.assigned_to = None
-        s.assigned_at = None
-        db.add(
-            OperationLog(
-                operator_id=current_user.id,
-                operator_name=current_user.name,
-                target_student_id=s.id,
-                case_no=s.case_no or "",
-                action="线索回收",
-                content=(
-                    f"按{('学校' if body.group_by == 'school_name' else '区域')}"
-                    f"回收「{body.group_name}」，从话务员 "
-                    f"{old_agent_id or '未分配'} 回收至未分配池"
-                ),
-            )
+    now = utcnow()
+    batch_id = make_batch_id("stale-recycle")
+    await apply_assignment_changes(
+        db,
+        [AssignmentTarget(student_id=student.id, agent_id=None) for student in students],
+        operator=current_user,
+        reason="stale_recycle",
+        batch_id=batch_id,
+        at=now,
+    )
+    reclaimed_count = len(students)
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="超时线索回收汇总",
+            content=(
+                f"按{('学校' if body.group_by == 'school_name' else '区域')}"
+                f"回收「{body.group_name}」共 {reclaimed_count} 人至未分配池"
+            ),
+            batch_id=batch_id,
         )
-        reclaimed_count += 1
+    )
 
     await db.commit()
     return Response.ok({"reclaimed_count": reclaimed_count, "group_name": body.group_name})
@@ -242,12 +247,13 @@ async def stale_reassign(
         return Response.error(code=1, msg="没有可回收的线索")
 
     now = utcnow()
+    batch_id = make_batch_id("stale-reassign")
     distribution: dict[str, int] = {}
+    target_by_student_id: dict[int, int | None] = {}
 
     if body.mode == "recycle":
         for student in students:
-            student.assigned_to = None
-            student.assigned_at = None
+            target_by_student_id[student.id] = None
         distribution["总名单"] = len(students)
     elif body.mode == "manual":
         if body.agent_id is None:
@@ -263,8 +269,7 @@ async def stale_reassign(
         if not agent:
             return Response.error(code=1, msg="话务员不存在或已禁用")
         for student in students:
-            student.assigned_to = agent.id
-            student.assigned_at = now
+            target_by_student_id[student.id] = agent.id
             distribution[agent.name] = distribution.get(agent.name, 0) + 1
     else:
         agent_result = await db.execute(
@@ -292,23 +297,35 @@ async def stale_reassign(
         for student in sorted(students, key=lambda item: item.id):
             agent_id = min(load, key=load.get)
             agent = agent_map[agent_id]
-            student.assigned_to = agent_id
-            student.assigned_at = now
+            target_by_student_id[student.id] = agent_id
             load[agent_id] += 1
             distribution[agent.name] += 1
 
     log_content = "回收到总名单" if body.mode == "recycle" else "超时未跟进，重新分配"
-    for student in students:
-        db.add(
-            OperationLog(
-                operator_id=current_user.id,
-                operator_name=current_user.name,
-                target_student_id=student.id,
-                case_no=student.case_no or "",
-                action="线索回收",
-                content=log_content,
+    await apply_assignment_changes(
+        db,
+        [
+            AssignmentTarget(
+                student_id=student.id,
+                agent_id=target_by_student_id[student.id],
             )
+            for student in students
+        ],
+        operator=current_user,
+        reason="stale_recycle" if body.mode == "recycle" else "stale_reassign",
+        batch_id=batch_id,
+        at=now,
+    )
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="超时线索处理汇总",
+            content=f"{log_content}，共 {len(students)} 人",
+            batch_id=batch_id,
         )
+    )
 
     await db.commit()
     return Response.ok({"reassigned_count": len(students), "distribution": distribution})

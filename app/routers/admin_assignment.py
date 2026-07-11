@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -16,10 +15,9 @@ from app.auth import (
 from app.database import get_db
 from app.models import OperationLog, Student, User, UserRole
 from app.schemas import Response
+from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.task_stats import TERMINAL_STUDENT_STATUSES
 from app.utils import (
-    assignment_state_label,
-    make_assignment_rollback_note,
     make_batch_id,
     make_operation_log,
     parse_assignment_rollback_note,
@@ -29,6 +27,7 @@ from app.utils import (
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
 ASSIGNMENT_ROLLBACK_ACTIONS = {
+    "修改归属",
     "手动分配",
     "自动分配",
     "区域分配",
@@ -46,15 +45,6 @@ class DistributeBySchoolsReq(BaseModel):
     school_names: list[str]
     mode: Literal["auto", "manual"] = "auto"
     agent_id: int | None = None
-
-
-def _parse_assignment_dt(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 async def _build_assignment_rollback_plan(db: AsyncSession, batch_id: str) -> dict:
@@ -162,9 +152,6 @@ async def distribute_by_schools(
 
     now = utcnow()
     batch_id = make_batch_id("school-distribute")
-    old_assignment_by_student_id = {
-        student.id: (student.assigned_to, student.assigned_at) for student in students
-    }
     distribution: dict[str, int] = {}
     assigned_by_student_id: dict[int, int] = {}
 
@@ -180,8 +167,6 @@ async def distribute_by_schools(
         if not agent:
             return Response.error(code=1, msg="话务员不存在或已禁用")
         for s in students:
-            s.assigned_to = agent.id
-            s.assigned_at = now
             assigned_by_student_id[s.id] = agent.id
         distribution[agent.name] = len(students)
     else:
@@ -208,36 +193,24 @@ async def distribute_by_schools(
 
         for s in sorted(students, key=lambda item: item.id):
             agent_id = min(load, key=load.get)
-            s.assigned_to = agent_id
-            s.assigned_at = now
             assigned_by_student_id[s.id] = agent_id
             load[agent_id] += 1
             distribution[agent_map[agent_id].name] += 1
 
-    for s in students:
-        old_agent_id, old_assigned_at = old_assignment_by_student_id.get(
-            s.id,
-            (None, None),
-        )
-        new_agent_id = assigned_by_student_id.get(s.id)
-        db.add(
-            make_operation_log(
-                current_user,
-                s.id,
-                s.case_no or "",
-                action="多学校分发",
-                content=f"从学校「{s.school_name}」分发给话务员",
-                old_status=assignment_state_label(old_agent_id),
-                new_status=assignment_state_label(new_agent_id),
-                note_content=make_assignment_rollback_note(
-                    old_assigned_to=old_agent_id,
-                    old_assigned_at=old_assigned_at,
-                    new_assigned_to=new_agent_id,
-                    new_assigned_at=now,
-                ),
-                batch_id=batch_id,
+    await apply_assignment_changes(
+        db,
+        [
+            AssignmentTarget(
+                student_id=student.id,
+                agent_id=assigned_by_student_id[student.id],
             )
-        )
+            for student in students
+        ],
+        operator=current_user,
+        reason="school_assignment",
+        batch_id=batch_id,
+        at=now,
+    )
     db.add(
         make_operation_log(
             current_user,
@@ -304,8 +277,8 @@ async def rollback_assignment_batch(
     students_r = await db.execute(select(Student).where(Student.id.in_(student_ids)))
     students_by_id = {student.id: student for student in students_r.scalars().all()}
 
-    rolled_back = 0
     skipped = 0
+    targets: list[AssignmentTarget] = []
     for log in logs:
         payload = parse_assignment_rollback_note(log.note_content or "")
         student = students_by_id.get(log.target_student_id)
@@ -317,28 +290,24 @@ async def rollback_assignment_batch(
             skipped += 1
             continue
 
-        old_assigned_to = payload.get("old_assigned_to")
-        old_assigned_at = _parse_assignment_dt(payload.get("old_assigned_at"))
-        current_assigned_to = student.assigned_to
-        student.assigned_to = old_assigned_to
-        student.assigned_at = old_assigned_at
-        db.add(
-            make_operation_log(
-                current_user,
-                student.id,
-                student.case_no or "",
-                action="分配回滚",
-                content=(
-                    f"回滚批次 {batch_id}："
-                    f"{assignment_state_label(current_assigned_to)} → "
-                    f"{assignment_state_label(old_assigned_to)}"
-                ),
-                old_status=assignment_state_label(current_assigned_to),
-                new_status=assignment_state_label(old_assigned_to),
-                batch_id=batch_id,
+        targets.append(
+            AssignmentTarget(
+                student_id=student.id,
+                agent_id=payload.get("old_assigned_to"),
             )
         )
-        rolled_back += 1
+
+    rolled_back = 0
+    if targets:
+        result = await apply_assignment_changes(
+            db,
+            targets,
+            operator=current_user,
+            reason="assignment_rollback",
+            batch_id=f"rollback:{batch_id}",
+        )
+        rolled_back = len(result.changed_ids)
+        skipped += len(result.unchanged_ids)
 
     db.add(
         make_operation_log(
