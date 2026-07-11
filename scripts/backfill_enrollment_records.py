@@ -73,7 +73,9 @@ def _require_schema(conn: sqlite3.Connection) -> None:
         "created_at",
         "updated_at",
     }
-    missing_columns = sorted(required_enrollment_columns - _table_columns(conn, "enrollment_records"))
+    missing_columns = sorted(
+        required_enrollment_columns - _table_columns(conn, "enrollment_records")
+    )
     if missing_columns:
         raise RuntimeError(f"Missing enrollment_records columns: {', '.join(missing_columns)}")
 
@@ -322,7 +324,10 @@ def insert_candidate(
             admin["name"] or "系统管理员",
             int(student["id"]),
             student["case_no"] or "",
-            f"报名记录 #{record_id}；归属用户 #{candidate.attributed_agent_id}；状态 {candidate.settlement_status}",
+            (
+                f"报名记录 #{record_id}；归属用户 #{candidate.attributed_agent_id}；"
+                f"状态 {candidate.settlement_status}"
+            ),
             candidate.attribution_reason,
             now,
         ),

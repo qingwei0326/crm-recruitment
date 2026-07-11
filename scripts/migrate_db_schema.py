@@ -18,7 +18,9 @@ if not os.getenv("SECRET_KEY"):
     os.environ["SECRET_KEY"] = "temp_key_for_migration"
 
 from sqlalchemy import create_engine, text
+
 from app.config import DATABASE_URL_SYNC
+
 
 def migrate():
     engine = create_engine(DATABASE_URL_SYNC)
@@ -98,12 +100,18 @@ def migrate():
                 conn.execute(text("ALTER TABLE operation_logs_new RENAME TO operation_logs"))
 
                 # 重建索引
-                conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS ix_operation_logs_created_at ON operation_logs(created_at)"
-                ))
-                conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS ix_operation_logs_target_student_id ON operation_logs(target_student_id)"
-                ))
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_operation_logs_created_at "
+                        "ON operation_logs(created_at)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_operation_logs_target_student_id "
+                        "ON operation_logs(target_student_id)"
+                    )
+                )
 
                 print("  ✓ operator_id 已改为 nullable")
             else:
