@@ -4,9 +4,11 @@ import json
 import os
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,10 @@ def _sha256(path: Path) -> str:
 
 def _read_only_connection(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+
+
+def _make_writable(path: Path) -> None:
+    path.chmod(path.stat().st_mode | stat.S_IWUSR)
 
 
 def _database_state(path: Path) -> dict[str, Any]:
@@ -149,6 +155,7 @@ def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
         os.close(descriptor)
         created_destination = True
         shutil.copy2(source, destination)
+        _make_writable(destination)
 
         baseline_result = _run_command(
             [
@@ -245,7 +252,9 @@ def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
             and destination.is_relative_to(PROJECT_ROOT)
             and destination.is_file()
         ):
-            destination.unlink()
+            with suppress(OSError):
+                _make_writable(destination)
+                destination.unlink()
         raise
 
 
