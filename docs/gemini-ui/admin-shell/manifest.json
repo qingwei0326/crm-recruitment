@@ -1,0 +1,14 @@
+{
+  "name": "admin-shell-v1",
+  "output": "artifacts/gemini-ui/frontend-admin-shell-gemini-v1.zip",
+  "entries": [
+    { "source": "docs/gemini-ui/admin-shell/00-task-contract.md", "name": "00-task-contract.md" },
+    { "source": "docs/gemini-ui/admin-shell/01-shared-visual-spec.md", "name": "01-shared-visual-spec.md" },
+    { "source": "artifacts/gemini-ui/admin-shell/02-current-admin-shell.png", "name": "02-current-admin-shell.png" },
+    { "source": "frontend/src/components/AdminLayout.jsx", "name": "03-AdminLayout.jsx" },
+    { "source": "frontend/src/components/AdminSidebar.jsx", "name": "04-AdminSidebar.jsx" },
+    { "source": "frontend/src/components/PageHeader.jsx", "name": "05-PageHeader.jsx" },
+    { "source": "frontend/src/index.css", "name": "06-index.css" },
+    { "source": "docs/gemini-ui/admin-shell/read-only-contract.md", "name": "07-read-only-contract.md" }
+  ]
+}
