@@ -741,6 +741,34 @@ class TestUpdateStudent:
         assert body["data"]["status"] == "无效"
         assert body["data"]["status_detail"] == "无意向"
 
+    async def test_agent_can_save_waiting_volunteer_after_recent_dial_log(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Student, StudentStatus
+
+        student = Student(
+            name="拨号后等待志愿",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138008",
+        )
+        db.add(student)
+        await db.flush()
+        db.add(DialLog(student_id=student.id, agent_id=agent_user.id))
+        await db.commit()
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "等待志愿"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == 0
+        assert body["data"]["status"] == "待回访"
+        assert body["data"]["status_detail"] == "等待志愿"
+
     async def test_agent_cannot_write_call_result_after_stale_dial_log(
         self, client, db, agent_user, agent_headers
     ):
