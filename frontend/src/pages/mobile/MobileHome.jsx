@@ -211,6 +211,11 @@ const PENDING_INTENT_FILTERS = [
   { label: '无', value: '无' },
 ];
 
+const PENDING_RESULT_FILTERS = [
+  { label: '全部结果', value: null },
+  { label: '等待志愿', value: '等待志愿' },
+];
+
 function SettingsSheet({ open, onClose }) {
   const { user, logout } = useAuth();
   const [token, setToken] = useState('');
@@ -316,18 +321,53 @@ function SettingsSheet({ open, onClose }) {
   );
 }
 
+const PENDING_FILTERS_STORAGE_KEY = 'crm-mobile-pending-filters';
+
+function readPendingFilters() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(PENDING_FILTERS_STORAGE_KEY) || '{}');
+    return {
+      selectedStatus: saved.selectedStatus || null,
+      selectedIntent: saved.selectedIntent || null,
+      selectedResult: saved.selectedResult || null,
+      selectedRegion: saved.selectedRegion || null,
+      pendingSearch: typeof saved.pendingSearch === 'string' ? saved.pendingSearch : '',
+    };
+  } catch {
+    return {
+      selectedStatus: null,
+      selectedIntent: null,
+      selectedResult: null,
+      selectedRegion: null,
+      pendingSearch: '',
+    };
+  }
+}
+
 export function PendingList() {
+  const restoredFilters = useMemo(readPendingFilters, []);
   const [items, setItems] = useState([]);
   const [counts, setCounts] = useState({});
   const [regions, setRegions] = useState([]);
   const [total, setTotal] = useState(0);
-  const [selectedStatus, setSelectedStatus] = useState(null);
-  const [selectedIntent, setSelectedIntent] = useState(null);
-  const [selectedRegion, setSelectedRegion] = useState(null);
-  const [pendingSearch, setPendingSearch] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState(restoredFilters.selectedStatus);
+  const [selectedIntent, setSelectedIntent] = useState(restoredFilters.selectedIntent);
+  const [selectedResult, setSelectedResult] = useState(restoredFilters.selectedResult);
+  const [selectedRegion, setSelectedRegion] = useState(restoredFilters.selectedRegion);
+  const [pendingSearch, setPendingSearch] = useState(restoredFilters.pendingSearch);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    sessionStorage.setItem(PENDING_FILTERS_STORAGE_KEY, JSON.stringify({
+      selectedStatus,
+      selectedIntent,
+      selectedResult,
+      selectedRegion,
+      pendingSearch,
+    }));
+  }, [selectedStatus, selectedIntent, selectedResult, selectedRegion, pendingSearch]);
 
   useEffect(() => {
     setLoading(true);
@@ -335,6 +375,7 @@ export function PendingList() {
     const params = { limit: 100 };
     if (selectedStatus) params.status = selectedStatus;
     if (selectedIntent) params.intent_level = selectedIntent;
+    if (selectedResult) params.status_detail = selectedResult;
     if (selectedRegion) params.region = selectedRegion;
     const trimmedSearch = pendingSearch.trim();
     if (trimmedSearch) params.search = trimmedSearch;
@@ -353,7 +394,7 @@ export function PendingList() {
         setError(e?.response?.data?.detail || e?.response?.data?.msg || '加载失败'),
       )
       .finally(() => setLoading(false));
-  }, [selectedStatus, selectedIntent, selectedRegion, pendingSearch]);
+  }, [selectedStatus, selectedIntent, selectedResult, selectedRegion, pendingSearch]);
 
   const visibleTotal = total || items.length;
 
@@ -406,6 +447,22 @@ export function PendingList() {
             className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
               selectedIntent === filter.value
                 ? 'bg-blue-600 text-white'
+                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+            }`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {PENDING_RESULT_FILTERS.map((filter) => (
+          <button
+            key={filter.value || 'all-result'}
+            type="button"
+            onClick={() => setSelectedResult(selectedResult === filter.value ? null : filter.value)}
+            className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
+              selectedResult === filter.value
+                ? 'bg-cyan-600 text-white'
                 : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
             }`}
           >

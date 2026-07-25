@@ -14,6 +14,7 @@ vi.mock('../../../api', () => ({
 describe('MobileHome PendingList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     api.get.mockResolvedValue({
       data: {
         code: 0,
@@ -71,6 +72,22 @@ describe('MobileHome PendingList', () => {
     });
   });
 
+  it('requests pending items by waiting-volunteer result', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '等待志愿' }));
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: { limit: 100, status_detail: '等待志愿' },
+      });
+    });
+  });
+
   it('requests pending items by name or phone tail search', async () => {
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -95,6 +112,59 @@ describe('MobileHome PendingList', () => {
         params: { limit: 100, status: '待回访' },
       });
     });
+  });
+
+  it('restores the original follow-up filters after returning from a student detail', async () => {
+    const first = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('button', { name: '长泰县 2' });
+    fireEvent.click(screen.getByRole('button', { name: '待回访 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'B' }));
+    fireEvent.click(screen.getByRole('button', { name: '等待志愿' }));
+    fireEvent.click(screen.getByRole('button', { name: '长泰县 2' }));
+    fireEvent.change(screen.getByPlaceholderText('搜索姓名或手机号尾号'), {
+      target: { value: '林' },
+    });
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: {
+          limit: 100,
+          status: '待回访',
+          intent_level: 'B',
+          status_detail: '等待志愿',
+          region: '长泰县',
+          search: '林',
+        },
+      });
+    });
+
+    first.unmount();
+    vi.clearAllMocks();
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: {
+          limit: 100,
+          status: '待回访',
+          intent_level: 'B',
+          status_detail: '等待志愿',
+          region: '长泰县',
+          search: '林',
+        },
+      });
+    });
+    expect(screen.getByPlaceholderText('搜索姓名或手机号尾号')).toHaveValue('林');
   });
 
   it('requests pending items by region with existing filters', async () => {

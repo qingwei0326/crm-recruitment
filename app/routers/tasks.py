@@ -194,6 +194,7 @@ async def today_tasks(
 @router.get("/handled")
 async def handled_students(
     status: str = Query(None),
+    status_detail: str = Query(None),
     intent_level: str = Query(None),
     search: str = Query(None),
     region: str = Query(None),
@@ -233,6 +234,9 @@ async def handled_students(
             filters.append(status_filter)
         except ValueError:
             pass
+
+    if status_detail and status_detail.strip():
+        shared_filters.append(Student.status_detail == status_detail.strip())
 
     if search and search.strip():
         q = search.strip()

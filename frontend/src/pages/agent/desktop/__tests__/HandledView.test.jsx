@@ -54,4 +54,16 @@ describe('HandledView', () => {
       });
     });
   });
+
+  it('passes waiting-volunteer result filter to handled tasks request', async () => {
+    render(<HandledView onOpenDetail={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '等待志愿' }));
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: { limit: 50, offset: 0, status_detail: '等待志愿' },
+      });
+    });
+  });
 });

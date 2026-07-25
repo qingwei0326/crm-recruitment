@@ -197,6 +197,37 @@ class TestAdminAgentTaskStats:
         assert follow_up_data["total"] == 6
         assert {item["status"] for item in follow_up_data["list"]} == {"待回访"}
 
+    async def test_agent_handled_tasks_filter_by_waiting_volunteer_result(
+        self, client, db, agent_headers, agent_user
+    ):
+        db.add_all(
+            [
+                Student(
+                    name="等待志愿待办",
+                    assigned_to=agent_user.id,
+                    status=StudentStatus.pending_visit,
+                    status_detail="等待志愿",
+                ),
+                Student(
+                    name="加微待办",
+                    assigned_to=agent_user.id,
+                    status=StudentStatus.pending_visit,
+                    status_detail="意向了解加微",
+                ),
+            ]
+        )
+        await db.commit()
+
+        resp = await client.get(
+            "/api/tasks/handled?status_detail=等待志愿",
+            headers=agent_headers,
+        )
+        data = resp.json()["data"]
+
+        assert data["list_total"] == 1
+        assert [item["name"] for item in data["list"]] == ["等待志愿待办"]
+        assert data["list"][0]["status_detail"] == "等待志愿"
+
     async def test_agent_handled_tasks_filter_by_intent_level(
         self, client, db, agent_headers, agent_user
     ):

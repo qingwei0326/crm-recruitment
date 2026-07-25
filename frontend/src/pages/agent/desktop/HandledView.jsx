@@ -27,6 +27,11 @@ const INTENT_FILTERS = [
   { label: '无', value: '无' },
 ];
 
+const RESULT_FILTERS = [
+  { label: '全部结果', value: null },
+  { label: '等待志愿', value: '等待志愿' },
+];
+
 export default function HandledView({ onOpenDetail }) {
   const [students, setStudents] = useState([]);
   const [counts, setCounts] = useState({});
@@ -34,17 +39,25 @@ export default function HandledView({ onOpenDetail }) {
   const [search, setSearch] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [selectedIntent, setSelectedIntent] = useState(null);
+  const [selectedResult, setSelectedResult] = useState(null);
   const [total, setTotal] = useState(0);
   const [listTotal, setListTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchData = useCallback(async (statusFilter = null, searchQuery = '', intentFilter = null, reset = true) => {
+  const fetchData = useCallback(async (
+    statusFilter = null,
+    searchQuery = '',
+    intentFilter = null,
+    resultFilter = null,
+    reset = true,
+  ) => {
     if (reset) setLoading(true);
     else setLoadingMore(true);
     try {
       const params = { limit: 50, offset: reset ? 0 : students.length };
       if (statusFilter) params.status = statusFilter;
       if (intentFilter) params.intent_level = intentFilter;
+      if (resultFilter) params.status_detail = resultFilter;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       const res = await api.get('/tasks/handled', { params });
       if (res.data.code === 0) {
@@ -64,10 +77,10 @@ export default function HandledView({ onOpenDetail }) {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchData(selectedStatus, search, selectedIntent, true);
+      fetchData(selectedStatus, search, selectedIntent, selectedResult, true);
     }, 300);
     return () => clearTimeout(timer);
-  }, [selectedStatus, selectedIntent, search]);
+  }, [selectedStatus, selectedIntent, selectedResult, search]);
 
   const hasMore = students.length < listTotal;
 
@@ -97,6 +110,20 @@ export default function HandledView({ onOpenDetail }) {
             type="button"
             onClick={() => setSelectedIntent(selectedIntent === filter.value ? null : filter.value)}
             className={`px-3 py-1 rounded-full text-xs font-medium transition ${selectedIntent === filter.value ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Result filters */}
+      <div className="flex flex-wrap gap-2 px-4 py-2 border-b dark:border-gray-700 bg-white dark:bg-gray-800">
+        {RESULT_FILTERS.map((filter) => (
+          <button
+            key={filter.value || 'all-result'}
+            type="button"
+            onClick={() => setSelectedResult(selectedResult === filter.value ? null : filter.value)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition ${selectedResult === filter.value ? 'bg-cyan-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
           >
             {filter.label}
           </button>
@@ -156,7 +183,7 @@ export default function HandledView({ onOpenDetail }) {
             ))}
             {hasMore && (
               <button
-                onClick={() => fetchData(selectedStatus, search, selectedIntent, false)}
+                onClick={() => fetchData(selectedStatus, search, selectedIntent, selectedResult, false)}
                 disabled={loadingMore}
                 className="w-full py-3 text-sm text-blue-600 dark:text-blue-400"
               >
