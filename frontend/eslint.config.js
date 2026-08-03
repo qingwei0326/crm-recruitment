@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 export default [
   js.configs.recommended,
   {
+    files: ['src/**/*.{js,jsx}'],
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
@@ -36,6 +37,7 @@ export default [
         File: 'readonly',
         FileReader: 'readonly',
         AbortController: 'readonly',
+        CustomEvent: 'readonly',
         requestAnimationFrame: 'readonly',
         cancelAnimationFrame: 'readonly',
         getComputedStyle: 'readonly',
@@ -64,7 +66,9 @@ export default [
       },
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      ...js.configs.recommended.rules,
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },

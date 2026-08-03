@@ -41,6 +41,7 @@ const actionTone = {
   删除线索: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200',
   数据清理: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200',
   线索回收: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
+  线索回收汇总: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
   Excel导入: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200',
 };
 
@@ -58,6 +59,10 @@ function canReviewAssignmentBatch(log) {
     log?.batch_id
       && (log.can_rollback_assignment || assignmentSummaryActions.has(log.action)),
   );
+}
+
+function canReviewReclaimBatch(log) {
+  return Boolean(log?.batch_id && log.can_rollback_reclaim);
 }
 
 function csvEscape(value) {
@@ -80,6 +85,8 @@ export default function AuditLogs() {
   const [loading, setLoading] = useState(false);
   const [rollbackModal, setRollbackModal] = useState(null);
   const [rollbackLoading, setRollbackLoading] = useState(false);
+  const [batchDetail, setBatchDetail] = useState(null);
+  const [batchDetailLoading, setBatchDetailLoading] = useState(false);
   const canExportAuditLogs = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.auditExport);
   const canRollbackAssignments = canPerformAdminOperation(
     user,
@@ -139,6 +146,30 @@ export default function AuditLogs() {
   useEffect(() => {
     fetchLogs(1);
   }, []);
+
+  useEffect(() => {
+    const batchId = filters.batchId.trim();
+    if (!batchId) {
+      setBatchDetail(null);
+      return undefined;
+    }
+    let active = true;
+    setBatchDetailLoading(true);
+    api
+      .get(`/operation-logs/batch/${encodeURIComponent(batchId)}`)
+      .then((res) => {
+        if (active) setBatchDetail(res.data.code === 0 ? res.data.data || null : null);
+      })
+      .catch(() => {
+        if (active) setBatchDetail(null);
+      })
+      .finally(() => {
+        if (active) setBatchDetailLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [filters.batchId]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total]);
   const actionOptions = useMemo(
@@ -212,7 +243,7 @@ export default function AuditLogs() {
     try {
       const res = await api.get(`/admin/assignment-rollbacks/${encodeURIComponent(batchId)}`);
       if (res.data.code === 0) {
-        setRollbackModal(res.data.data);
+        setRollbackModal({ ...res.data.data, kind: 'assignment' });
       } else {
         toast?.error(res.data.msg || '回滚预览失败');
       }
@@ -223,13 +254,33 @@ export default function AuditLogs() {
     }
   };
 
+  const openReclaimRollbackPreview = async (batchId) => {
+    if (!canRollbackAssignments || !batchId) return;
+    setRollbackLoading(true);
+    try {
+      const res = await api.get(`/admin/reclaim-rollbacks/${encodeURIComponent(batchId)}`);
+      if (res.data.code === 0) {
+        setRollbackModal({ ...res.data.data, kind: 'reclaim' });
+      } else {
+        toast?.error(res.data.msg || '回收回滚预览失败');
+      }
+    } catch {
+      toast?.error('回收回滚预览失败');
+    } finally {
+      setRollbackLoading(false);
+    }
+  };
+
   const confirmRollback = async () => {
     if (!canRollbackAssignments) return;
     if (!rollbackModal?.batch_id || rollbackLoading) return;
     setRollbackLoading(true);
     try {
+      const endpoint = rollbackModal.kind === 'reclaim'
+        ? '/admin/reclaim-rollbacks/'
+        : '/admin/assignment-rollbacks/';
       const res = await api.post(
-        `/admin/assignment-rollbacks/${encodeURIComponent(rollbackModal.batch_id)}`,
+        `${endpoint}${encodeURIComponent(rollbackModal.batch_id)}`,
         { confirm: true },
       );
       if (res.data.code === 0) {
@@ -379,6 +430,32 @@ export default function AuditLogs() {
             </div>
           )}
 
+          {filters.batchId.trim() && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+              {batchDetailLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin text-amber-700 dark:text-amber-300" />
+              ) : batchDetail ? (
+                <div className="space-y-3 text-sm text-amber-950 dark:text-amber-100">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-medium">
+                    <span>批次 {batchDetail.batch_id}</span>
+                    <span>涉及学生 {batchDetail.student_count}</span>
+                    <span>日志 {batchDetail.total_logs}</span>
+                    {batchDetail.truncated && <span>明细最多展示 500 条</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {(batchDetail.actions || []).map((item) => (
+                      <span key={item.action} className="rounded-full bg-white/70 px-2 py-1 dark:bg-amber-900/30">
+                        {item.action} {item.count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <span className="text-sm text-amber-800 dark:text-amber-200">未找到该批次详情</span>
+              )}
+            </div>
+          )}
+
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
               <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -460,6 +537,16 @@ export default function AuditLogs() {
                                 复盘
                               </Link>
                             )}
+                            {canReviewReclaimBatch(log) && canRollbackAssignments && (
+                              <button
+                                type="button"
+                                onClick={() => openReclaimRollbackPreview(log.batch_id)}
+                                className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-200"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                回收回滚
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-3">
@@ -529,7 +616,7 @@ export default function AuditLogs() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                    分配批次回滚预览
+                    {rollbackModal.kind === 'reclaim' ? '回收批次回滚预览' : '分配批次回滚预览'}
                   </h3>
                   <div className="mt-1 font-mono text-xs text-gray-500">
                     {rollbackModal.batch_id}
@@ -581,7 +668,9 @@ export default function AuditLogs() {
                         </td>
                         <td className="px-3 py-2 text-gray-500">{item.school_name || '-'}</td>
                         <td className="px-3 py-2 font-mono text-xs text-gray-500">
-                          {item.new_assigned_to ?? '未分配'} → {item.old_assigned_to ?? '未分配'}
+                          {rollbackModal.kind === 'reclaim'
+                            ? `${item.old_status || '原状态'} → 未联系`
+                            : `${item.new_assigned_to ?? '未分配'} → ${item.old_assigned_to ?? '未分配'}`}
                         </td>
                         <td className="px-3 py-2">
                           {item.status === 'ok' ? (

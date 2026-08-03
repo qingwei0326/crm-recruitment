@@ -163,6 +163,7 @@ describe('MobileStudentDetail follow-up workflow', () => {
       '新线索',
       '非常有意向',
       '意向了解加微',
+      '等待志愿',
       '未接',
       '空号',
       '高分段',

@@ -6,9 +6,12 @@ from sqlalchemy import select, text
 from app.domain_models import (
     AgentEmployment,
     EmploymentStatus,
+    HandoverBatch,
+    HandoverBatchStatus,
     StudentAssignment,
     WorkItem,
     WorkItemKind,
+    WorkItemStatus,
 )
 from app.models import OperationLog, Student, User, UserRole
 from app.services.assignment_service import (
@@ -146,6 +149,123 @@ async def test_reassignment_updates_history_projection_and_audit(db):
         "new_assigned_to": target.id,
         "new_assigned_at": CHANGED_AT.isoformat(),
     }
+
+
+@pytest.mark.asyncio
+async def test_reassignment_moves_all_active_source_work_items(db):
+    operator, source, target, student = await _seed_assignment(db)
+    items = []
+    for index, (kind, source_type) in enumerate(
+        (
+            (WorkItemKind.scheduled_follow_up, "follow_up"),
+            (WorkItemKind.home_visit, "home_visit"),
+            (WorkItemKind.campus_visit, "campus_visit"),
+            (WorkItemKind.enrollment_settlement, "enrollment"),
+        ),
+        start=1,
+    ):
+        item = WorkItem(
+            student_id=student.id,
+            kind=kind,
+            status=(
+                WorkItemStatus.blocked_suspension
+                if index == 1
+                else WorkItemStatus.open
+            ),
+            owner_agent_id=source.id,
+            creator_user_id=source.id,
+            source_type=source_type,
+            source_id=1000 + index,
+        )
+        db.add(item)
+        items.append(item)
+    await db.flush()
+
+    await apply_assignment_changes(
+        db,
+        [AssignmentTarget(student_id=student.id, agent_id=target.id)],
+        operator=operator,
+        reason="manual_assignment",
+        batch_id="assign-source-items",
+        at=CHANGED_AT,
+    )
+
+    for item in items:
+        assert item.owner_agent_id == target.id
+        assert item.creator_user_id == source.id
+        assert item.status == WorkItemStatus.open
+        assert item.version == 2
+        assert item.updated_at == CHANGED_AT
+
+
+@pytest.mark.asyncio
+async def test_unassignment_preserves_current_source_item_owner(db):
+    operator, source, _target, student = await _seed_assignment(db)
+    item = WorkItem(
+        student_id=student.id,
+        kind=WorkItemKind.scheduled_follow_up,
+        status=WorkItemStatus.open,
+        owner_agent_id=source.id,
+        creator_user_id=operator.id,
+        source_type="follow_up",
+        source_id=2001,
+    )
+    db.add(item)
+    await db.flush()
+
+    await apply_assignment_changes(
+        db,
+        [AssignmentTarget(student_id=student.id, agent_id=None)],
+        operator=operator,
+        reason="manual_reclaim",
+        batch_id="unassign-source-items",
+        at=CHANGED_AT,
+    )
+
+    assert item.owner_agent_id == source.id
+    assert item.status == WorkItemStatus.open
+    assert item.creator_user_id == operator.id
+    assert item.version == 1
+
+
+@pytest.mark.asyncio
+async def test_handover_assignment_leaves_source_items_for_transfer_step(db):
+    operator, source, target, student = await _seed_assignment(db)
+    batch = HandoverBatch(
+        source_agent_id=source.id,
+        status=HandoverBatchStatus.in_progress,
+        initiated_by=operator.id,
+        idempotency_key="assignment-handover-source-item",
+    )
+    db.add(batch)
+    await db.flush()
+    item = WorkItem(
+        student_id=student.id,
+        kind=WorkItemKind.campus_visit,
+        status=WorkItemStatus.blocked_handover,
+        owner_agent_id=source.id,
+        creator_user_id=source.id,
+        source_type="campus_visit",
+        source_id=3001,
+        handover_batch_id=batch.id,
+    )
+    db.add(item)
+    await db.flush()
+
+    await apply_assignment_changes(
+        db,
+        [AssignmentTarget(student_id=student.id, agent_id=target.id)],
+        operator=operator,
+        reason="handover_transfer",
+        batch_id="handover-source-items",
+        handover_batch_id=batch.id,
+        at=CHANGED_AT,
+    )
+
+    assert item.owner_agent_id == source.id
+    assert item.status == WorkItemStatus.blocked_handover
+    assert item.handover_batch_id == batch.id
+    assert item.version == 1
 
 
 @pytest.mark.asyncio

@@ -76,7 +76,7 @@ def test_snapshot_clone_migrates_and_never_changes_source(tmp_path):
         assert report["source_sha256_after"] == hashlib.sha256(original_bytes).hexdigest()
         assert report["destination_quick_check"] == "ok"
         assert report["destination_foreign_key_violations"] == 0
-        assert report["destination_revision"] == "20260711_03"
+        assert report["destination_revision"] == "20260726_01"
         assert report["legacy_row_count_mismatches"] == {}
         assert report["domain_audit"]["ok"] is True
         assert source.read_bytes() == original_bytes

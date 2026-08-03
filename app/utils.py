@@ -105,9 +105,36 @@ def parse_assignment_rollback_note(value: str) -> dict | None:
     return payload
 
 
+def make_reclaim_rollback_note(student) -> str:
+    """Serialize the student fields required to safely undo an invalid reclaim."""
+    return json.dumps(
+        {
+            "rollback_type": "invalid_reclaim",
+            "old_status": student.status.name,
+            "old_status_detail": student.status_detail or "",
+            "old_outcome_reason_code": student.outcome_reason_code,
+            "old_intent_level": student.intent_level.name,
+            "old_stage": student.stage.name,
+            "old_need_help": bool(student.need_help),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def parse_reclaim_rollback_note(value: str) -> dict | None:
+    try:
+        payload = json.loads(value or "")
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if payload.get("rollback_type") != "invalid_reclaim":
+        return None
+    return payload
+
+
 def make_operation_log(
     operator,
-    target_student_id: int,
+    target_student_id: int | None,
     case_no: str,
     action: str,
     content: str = "",

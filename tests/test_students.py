@@ -1271,6 +1271,28 @@ class TestAssignStudent:
         await db.refresh(student)
         assert student.assigned_to is None
 
+    async def test_manual_assign_rejects_invalid_students(
+        self, client, db, admin_headers, agent_user
+    ):
+        from app.models import Student, StudentStatus
+
+        student = Student(name="无效不能直接分配", status=StudentStatus.invalid)
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.post(
+            "/api/students/assign",
+            json={"student_ids": [student.id], "agent_id": agent_user.id},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "终态" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.assigned_to is None
+
     async def test_auto_assign_skips_unassigned_enrolled_students(
         self, client, db, admin_headers, agent_user
     ):

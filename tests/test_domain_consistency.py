@@ -9,8 +9,10 @@ from app.domain_models import (
     HandoverBatchStatus,
     HandoverItem,
     HandoverItemStatus,
+    StudentAssignment,
     WorkItem,
     WorkItemKind,
+    WorkItemStatus,
 )
 from app.models import FollowUp, IntentLevel, Student, StudentStage, StudentStatus
 from app.services.work_item_service import sync_source_work_item, sync_student_work_items
@@ -205,6 +207,51 @@ async def test_source_work_item_projection_corruption_is_reported(
 
     assert report["source_work_item_projection_mismatches"] == 1
     assert report["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_unassigned_source_item_preserves_its_current_active_owner(
+    db,
+    admin_user,
+    agent_user,
+    assignment_baseline,
+):
+    seeded = await _healthy_domain(db, admin_user, agent_user, assignment_baseline)
+    student = seeded["student"]
+    student.assigned_to = None
+    assignment = (
+        await db.execute(
+            select(StudentAssignment).where(
+                StudentAssignment.student_id == student.id,
+                StudentAssignment.ended_at.is_(None),
+            )
+        )
+    ).scalar_one()
+    assignment.ended_at = NOW
+    lead_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.lead_contact,
+                WorkItem.source_id == student.id,
+            )
+        )
+    ).scalar_one()
+    lead_item.status = WorkItemStatus.cancelled
+    lead_item.owner_agent_id = None
+    source_item = (
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.kind == WorkItemKind.scheduled_follow_up,
+                WorkItem.source_id == seeded["follow_up"].id,
+            )
+        )
+    ).scalar_one()
+    source_item.owner_agent_id = admin_user.id
+    await db.flush()
+
+    report = await audit_domain_consistency(db)
+
+    assert report["source_work_item_projection_mismatches"] == 0
 
 
 @pytest.mark.asyncio

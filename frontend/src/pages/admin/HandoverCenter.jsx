@@ -186,25 +186,34 @@ export default function HandoverCenter() {
 
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1 lg:h-screen lg:overflow-hidden">
         <PageHeader title="离职交接" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
           <button
             type="button"
             title="刷新交接数据"
             aria-label="刷新交接数据"
+            aria-busy={listQuery.isFetching || detailQuery.isFetching}
             onClick={() => Promise.all([listQuery.refetch(), detailQuery.refetch()])}
-            className="rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
           >
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            <RefreshCw
+              className={`h-4 w-4 ${listQuery.isFetching || detailQuery.isFetching ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
           </button>
         </PageHeader>
 
-        <div className="mx-auto grid max-w-[1600px] grid-cols-1 bg-white dark:bg-gray-900 lg:min-h-[calc(100vh-56px)] lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="border-b border-gray-200 dark:border-gray-700 lg:border-b-0 lg:border-r">
-            <div className="border-b px-4 py-3 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
-              交接批次 {listQuery.data ? `(${listQuery.data.total})` : ''}
+        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 bg-white dark:bg-gray-900 lg:h-[calc(100dvh-56px)] lg:grid-cols-[280px_minmax(0,1fr)] lg:overflow-hidden lg:border-x lg:border-gray-200 dark:lg:border-gray-800">
+          <aside className="flex min-w-0 flex-col border-b border-gray-200 bg-gray-50/60 dark:border-gray-800 dark:bg-gray-900/60 lg:border-b-0 lg:border-r">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 dark:border-gray-800 dark:text-gray-300">
+              <span>交接批次</span>
+              {listQuery.data && (
+                <span className="rounded-md bg-gray-200 px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  {listQuery.data.total}
+                </span>
+              )}
             </div>
-            <div className="max-h-[260px] overflow-y-auto lg:max-h-[calc(100vh-104px)]">
+            <div className="max-h-[240px] min-h-0 overflow-y-auto overscroll-contain lg:max-h-none lg:flex-1">
               <HandoverBatchList
                 batches={listQuery.data?.list || []}
                 selectedId={batchId}
@@ -216,29 +225,31 @@ export default function HandoverCenter() {
             </div>
           </aside>
 
-          <HandoverBatchDetail
-            batchId={batchId}
-            detail={detailQuery.data}
-            loading={detailQuery.isLoading}
-            error={detailQuery.isError}
-            conflictMessage={conflictMessage}
-            resultNotice={resultNotice}
-            filterValues={values}
-            onFilterChange={changeFilter}
-            onFilterReset={resetFilters}
-            onRetry={detailQuery.refetch}
-            selected={selected}
-            onToggle={toggleStudent}
-            onToggleAll={toggleAll}
-            targetAgentId={targetAgentId}
-            onTargetAgentChange={(value) => setTargetState({ batchId, value })}
-            targetAgents={targetAgents}
-            previewing={previewMutation.isPending}
-            onPreviewSelected={() => openPreview('selected')}
-            onPreviewAll={() => openPreview('all_remaining')}
-            canTransferAll={Boolean(user?.is_super_admin)}
-            onPageChange={(nextPage) => updateParams({ page: nextPage })}
-          />
+          <div className="min-w-0 lg:h-full lg:overflow-y-auto lg:overscroll-contain">
+            <HandoverBatchDetail
+              batchId={batchId}
+              detail={detailQuery.data}
+              loading={detailQuery.isLoading}
+              error={detailQuery.isError}
+              conflictMessage={conflictMessage}
+              resultNotice={resultNotice}
+              filterValues={values}
+              onFilterChange={changeFilter}
+              onFilterReset={resetFilters}
+              onRetry={detailQuery.refetch}
+              selected={selected}
+              onToggle={toggleStudent}
+              onToggleAll={toggleAll}
+              targetAgentId={targetAgentId}
+              onTargetAgentChange={(value) => setTargetState({ batchId, value })}
+              targetAgents={targetAgents}
+              previewing={previewMutation.isPending}
+              onPreviewSelected={() => openPreview('selected')}
+              onPreviewAll={() => openPreview('all_remaining')}
+              canTransferAll={Boolean(user?.is_super_admin)}
+              onPageChange={(nextPage) => updateParams({ page: nextPage })}
+            />
+          </div>
         </div>
       </main>
 

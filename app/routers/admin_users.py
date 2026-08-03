@@ -703,6 +703,11 @@ async def update_user(
     employment = await db.get(AgentEmployment, user.id)
     if employment is None:
         return Response.error(code=1, msg="员工状态记录不存在")
+    if body.role is not None and UserRole(body.role) != user.role:
+        return Response.error(
+            code=1,
+            msg="已有账号角色不可修改；请新建对应角色账号并通过交接流程处理",
+        )
     if not current_user.is_super_admin and (
         user.role == UserRole.admin
         or body.role == "admin"
@@ -721,37 +726,6 @@ async def update_user(
         if display_name != user.name:
             changes.append(f"姓名 {user.name}→{display_name}")
             user.name = display_name
-    if body.role is not None:
-        new_role = UserRole(body.role)
-        if new_role != user.role:
-            # 防止把唯一一个 admin / super admin 降级
-            if user.role == UserRole.admin and new_role != UserRole.admin:
-                admin_count = (
-                    await db.execute(
-                        select(func.count(User.id)).where(
-                            User.role == UserRole.admin, User.is_active
-                        )
-                    )
-                ).scalar() or 0
-                if admin_count <= 1:
-                    return Response.error(code=1, msg="系统至少需要保留一个管理员")
-                if (
-                    user.is_super_admin
-                    and user.is_active
-                    and await count_active_super_admins(db) <= 1
-                ):
-                    return Response.error(code=1, msg="系统至少需要保留一个超级管理员")
-            changes.append(f"角色 {user.role}→{new_role}")
-            user.role = new_role
-            if new_role != UserRole.admin and user.is_super_admin:
-                user.is_super_admin = False
-                changes.append("取消超级管理员")
-            if new_role != UserRole.admin and user.page_permissions:
-                user.page_permissions = ""
-                changes.append("清空页面权限")
-            if new_role != UserRole.admin and user.operation_permissions:
-                user.operation_permissions = ""
-                changes.append("清空操作权限")
     if body.is_super_admin is not None and body.is_super_admin != user.is_super_admin:
         if body.is_super_admin and user.role != UserRole.admin:
             return Response.error(code=1, msg="只有管理员账号可以设为超级管理员")
@@ -1090,5 +1064,6 @@ async def reset_user_password(
     )
     await db.commit()
     return Response.ok(
-        {"new_password": new_password, "msg": f"用户 {user.name} 密码已重置为 {new_password}"}
+        {"new_password": new_password},
+        msg=f"用户 {user.name} 密码已重置为 {new_password}",
     )

@@ -16,7 +16,7 @@ from app.database import get_db
 from app.models import OperationLog, Student, User, UserRole
 from app.schemas import Response
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
-from app.task_stats import TERMINAL_STUDENT_STATUSES
+from app.task_stats import ASSIGNABLE_STUDENT_STATUSES
 from app.utils import (
     make_batch_id,
     make_operation_log,
@@ -117,7 +117,7 @@ async def unassigned_school_groups(
         select(Student.school_name, region_expr.label("region"), func.count())
         .where(
             Student.assigned_to.is_(None),
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+            Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
         )
         .group_by(Student.school_name)
         .order_by(func.count().desc())
@@ -143,7 +143,7 @@ async def distribute_by_schools(
     where = [
         Student.school_name.in_(body.school_names),
         Student.assigned_to.is_(None),
-        Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+        Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
     ]
     result = await db.execute(select(Student).where(*where))
     students = result.scalars().all()
@@ -181,7 +181,7 @@ async def distribute_by_schools(
             select(Student.assigned_to, func.count(Student.id))
             .where(
                 Student.assigned_to.in_([a.id for a in agents]),
-                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+                Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
             )
             .group_by(Student.assigned_to)
         )

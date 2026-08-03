@@ -29,6 +29,7 @@ describe('outcome catalog', () => {
       'new_lead',
       'very_interested',
       'interested_wechat',
+      'waiting_volunteer',
       'missed_call',
       'enrolled_elsewhere',
       'phone_invalid',

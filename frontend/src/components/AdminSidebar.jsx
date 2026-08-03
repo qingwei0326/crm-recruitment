@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   ArrowRightLeft,
   BarChart3,
+  Bot,
   CalendarClock,
   ClipboardList,
   Gauge,
@@ -97,6 +98,7 @@ export const ADMIN_NAV_ITEMS = [
     icon: ClipboardList,
     permission: ADMIN_PAGE_PERMISSIONS.auditLogs,
   },
+  { to: '/admin/assistant', label: 'AI 助手', icon: Bot, superOnly: true },
   { to: '/admin/settings', label: '系统设置', icon: Settings, superOnly: true },
 ];
 

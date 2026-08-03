@@ -65,7 +65,7 @@ export default function AgentSidebar({
           {dark ? '浅色模式' : '深色模式'}
         </button>
         <button
-          onClick={onShowSettings}
+          onClick={() => { onCloseMenu?.(); onShowSettings(); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
         >
           <Settings className="w-4 h-4" /> 推送设置

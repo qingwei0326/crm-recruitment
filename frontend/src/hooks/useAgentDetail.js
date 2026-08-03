@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import api from '../api';
-import { getApiErrorMessage } from '../utils';
+import { getApiErrorMessage, unwrapApiResponse } from '../utils';
 
 /**
  * 管理学生详情面板相关逻辑
@@ -75,18 +75,22 @@ export default function useAgentDetail({ state, actions, students, toast }) {
 
   // 添加备注
   const addNote = useCallback(async (targetId, noteText) => {
-    const id = targetId || state.detail.student?.id;
-    if (!noteText.trim() || !id) return;
+    const id = Number(targetId);
+    const content = noteText?.trim();
+    if (!Number.isInteger(id) || id <= 0 || !content) return false;
     try {
-      await api.post('/notes', { student_id: id, content: noteText });
+      const response = await api.post('/notes', { student_id: id, content });
+      unwrapApiResponse(response);
       actions.setNoteText('');
       actions.setActionMsg('已记录');
       setTimeout(() => actions.setActionMsg(''), 2000);
-      loadDetail(id);
+      await loadDetail(id);
+      return true;
     } catch (e) {
       toast?.error('添加备注失败: ' + getApiErrorMessage(e));
+      return false;
     }
-  }, [state.detail.student, actions, loadDetail, toast]);
+  }, [actions, loadDetail, toast]);
 
   // 添加回访
   const addFollowUp = useCallback(async (current, followUpDate) => {

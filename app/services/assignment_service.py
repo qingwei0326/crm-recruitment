@@ -11,9 +11,18 @@ from app.domain_errors import (
     InactiveAssignmentTarget,
     StudentNotFound,
 )
-from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
+from app.domain_models import (
+    AgentEmployment,
+    EmploymentStatus,
+    PersonalGroup,
+    PersonalGroupMembership,
+    StudentAssignment,
+)
 from app.models import Student, User, UserRole
-from app.services.work_item_service import sync_students_work_items
+from app.services.work_item_service import (
+    sync_assignment_source_work_items,
+    sync_students_work_items,
+)
 from app.utils import (
     assignment_state_label,
     make_assignment_rollback_note,
@@ -130,6 +139,7 @@ async def apply_assignment_changes(
 
     changed: list[int] = []
     unchanged: list[int] = []
+    previous_agent_by_student: dict[int, int | None] = {}
     for student_id in sorted(requested):
         student = students[student_id]
         current = active_by_student.get(student_id)
@@ -141,6 +151,7 @@ async def apply_assignment_changes(
         if current_agent_id == target_agent_id:
             unchanged.append(student_id)
             continue
+        previous_agent_by_student[student_id] = current_agent_id
         current_assigned_at = student.assigned_at
         if current is not None:
             current.ended_at = now
@@ -184,11 +195,47 @@ async def apply_assignment_changes(
         )
         changed.append(student_id)
 
+    if changed:
+        membership_rows = await db.execute(
+            select(PersonalGroupMembership, PersonalGroup).join(
+                PersonalGroup,
+                PersonalGroup.id == PersonalGroupMembership.group_id,
+            ).where(
+                PersonalGroupMembership.student_id.in_(changed),
+                PersonalGroupMembership.archived_at.is_(None),
+                PersonalGroup.archived_at.is_(None),
+            )
+        )
+        for membership, group in membership_rows.all():
+            if group.owner_id != previous_agent_by_student.get(membership.student_id):
+                continue
+            membership.archived_at = now
+            membership.archived_by = operator.id
+            membership.archive_reason = "assignment_changed"
+            student = students[membership.student_id]
+            db.add(
+                make_operation_log(
+                    operator,
+                    student.id,
+                    student.case_no or "",
+                    "归档私人分组",
+                    f"group_id={group.id}; name={group.name}（负责人变更）",
+                    batch_id=batch_id,
+                )
+            )
+
+    changed_students = [students[student_id] for student_id in changed]
     await sync_students_work_items(
         db,
-        [students[student_id] for student_id in changed],
+        changed_students,
         operator,
         at=now,
     )
+    if handover_batch_id is None:
+        await sync_assignment_source_work_items(
+            db,
+            changed_students,
+            at=now,
+        )
     await db.flush()
     return AssignmentResult(tuple(changed), tuple(unchanged))

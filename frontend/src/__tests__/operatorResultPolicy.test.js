@@ -23,6 +23,8 @@ describe('operatorResultPolicy', () => {
   it('keeps normal result labels as workflow statuses', () => {
     expect(isFixedInvalidReason('已联系')).toBe(false);
     expect(displayStatusForOperatorResult('意向了解加微')).toBe('待回访');
+    expect(displayStatusForOperatorResult('等待志愿')).toBe('待回访');
+    expect(payloadForOperatorResult('等待志愿')).toEqual({ status: '等待志愿' });
     expect(payloadForOperatorResult('未接')).toEqual({ status: '未接' });
   });
 

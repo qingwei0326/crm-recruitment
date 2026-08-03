@@ -15,7 +15,9 @@ export default function SettingsModal({ show, onClose, tokenInput, setTokenInput
           const saved = JSON.parse(localStorage.getItem('crm_user') || '{}');
           saved.pushplus_token = tokenInput.trim();
           localStorage.setItem('crm_user', JSON.stringify(saved));
-        } catch {}
+        } catch {
+          // The token is already persisted remotely; stale local cache is non-fatal.
+        }
       } else {
         setTokenMsg(res.data.msg || '保存失败');
       }

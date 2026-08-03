@@ -7,6 +7,7 @@ import api from '../../../api';
 
 let mockUser;
 const mockConfirm = vi.fn();
+const mockToastSuccess = vi.fn();
 
 vi.mock('../../../api', () => ({
   default: {
@@ -42,7 +43,7 @@ vi.mock('../../../components/ConfirmDialog', () => ({
 vi.mock('../../../components/Toast', () => ({
   useToast: () => ({
     error: vi.fn(),
-    success: vi.fn(),
+    success: mockToastSuccess,
   }),
 }));
 
@@ -402,6 +403,8 @@ describe('AgentManage mobile navigation', () => {
     fireEvent.click(screen.getByText('普通管理'));
     fireEvent.click(await screen.findByText('编辑'));
 
+    expect(screen.queryByLabelText('角色')).not.toBeInTheDocument();
+    expect(screen.getByText('创建后不可修改')).toBeInTheDocument();
     const pagePermissionPanel = screen.getByText('页面权限').parentElement;
     expect(within(pagePermissionPanel).getByRole('checkbox', { name: /操作记录/ })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: /报表中心/ }));
@@ -412,10 +415,10 @@ describe('AgentManage mobile navigation', () => {
     const [, payload] = api.put.mock.calls[0];
     expect(payload).toMatchObject({
       name: '普通管理',
-      role: 'admin',
       is_super_admin: false,
       page_permissions: ['report_center'],
     });
+    expect(payload).not.toHaveProperty('role');
   });
 
   it('does not save status words as account display names', async () => {
@@ -485,5 +488,28 @@ describe('AgentManage mobile navigation', () => {
         idempotency_key: expect.stringMatching(/^handover-1-/),
       }),
     );
+  });
+
+  it('shows the generated temporary password after resetting an account', async () => {
+    api.post.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        data: { new_password: 'TempPass_123' },
+        msg: 'ok',
+      },
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/agents']}>
+        <AgentManage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText('叶'));
+    fireEvent.click(await screen.findByRole('button', { name: '重置密码' }));
+
+    await waitFor(() => {
+      expect(mockToastSuccess).toHaveBeenCalledWith('用户 叶 密码已重置为 TempPass_123');
+    });
   });
 });

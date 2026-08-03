@@ -59,6 +59,11 @@ _OPEN_SETTLEMENT_STATUSES = {
     SettlementStatus.postponed,
     SettlementStatus.disputed,
 }
+_ACTIVE_WORK_STATUSES = {
+    WorkItemStatus.open,
+    WorkItemStatus.blocked_suspension,
+    WorkItemStatus.blocked_handover,
+}
 
 
 def home_visit_is_open(task: HomeVisitTask) -> bool:
@@ -462,6 +467,77 @@ async def sync_students_work_items(
 
     await db.flush()
     return tuple(items)
+
+
+async def sync_assignment_source_work_items(
+    db: AsyncSession,
+    students: Sequence[Student],
+    *,
+    at: datetime | None = None,
+) -> tuple[WorkItem, ...]:
+    """Move active source-backed work items with an ordinary assignment change."""
+    now = at or utcnow()
+    students_by_id: dict[int, Student] = {}
+    for student in students:
+        if student.id is None:
+            raise DomainConflict("学生尚未保存，无法同步工作项")
+        students_by_id[student.id] = student
+    if not students_by_id:
+        return ()
+
+    rows = await db.execute(
+        select(WorkItem).where(
+            WorkItem.student_id.in_(sorted(students_by_id)),
+            WorkItem.status.in_(_ACTIVE_WORK_STATUSES),
+            ~or_(
+                and_(
+                    WorkItem.kind == WorkItemKind.lead_contact,
+                    WorkItem.source_type == "student",
+                ),
+                and_(
+                    WorkItem.kind == WorkItemKind.help_request,
+                    WorkItem.source_type == "help",
+                ),
+            ),
+        )
+    )
+    items = rows.scalars().all()
+    desired_owners: dict[int, int] = {}
+    for item in items:
+        student = students_by_id[item.student_id]
+        owner_agent_id = (
+            student.assigned_to
+            or item.owner_agent_id
+            or item.creator_user_id
+        )
+        if owner_agent_id is None:
+            raise DomainConflict(f"工作项 {item.id} 无可用负责人")
+        desired_owners[item.id] = owner_agent_id
+
+    work_status_by_owner = await _work_statuses_for_owners(
+        db,
+        sorted(set(desired_owners.values())),
+    )
+    changed_items: list[WorkItem] = []
+    for item in items:
+        owner_agent_id = desired_owners[item.id]
+        status = work_status_by_owner[owner_agent_id]
+        changed = (
+            item.owner_agent_id != owner_agent_id
+            or item.status != status
+            or item.handover_batch_id is not None
+        )
+        if not changed:
+            continue
+        item.owner_agent_id = owner_agent_id
+        item.status = status
+        item.handover_batch_id = None
+        item.version += 1
+        item.updated_at = now
+        changed_items.append(item)
+
+    await db.flush()
+    return tuple(changed_items)
 
 
 async def transfer_open_work_items(

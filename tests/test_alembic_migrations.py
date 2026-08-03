@@ -42,6 +42,17 @@ DOMAIN_TABLES = {
     "handover_transfers",
     "lead_outcome_reasons",
 }
+ASSISTANT_TABLES = {
+    "assistant_configs",
+    "assistant_sessions",
+    "assistant_runs",
+    "assistant_messages",
+    "assistant_tool_calls",
+}
+PERSONAL_GROUP_TABLES = {
+    "personal_groups",
+    "personal_group_memberships",
+}
 
 
 def run_alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -273,6 +284,15 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
             text("select version_num from alembic_version")
         ).scalar_one()
         assert revision == "20260711_03"
+    assistant_upgrade = run_alembic(db_path, "upgrade", "head")
+    assert assistant_upgrade.returncode == 0, assistant_upgrade.stderr
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    assert ASSISTANT_TABLES <= tables
+    assert PERSONAL_GROUP_TABLES <= tables
+    with Session(engine) as session:
+        revision = session.execute(text("select version_num from alembic_version")).scalar_one()
+        assert revision == "20260726_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()

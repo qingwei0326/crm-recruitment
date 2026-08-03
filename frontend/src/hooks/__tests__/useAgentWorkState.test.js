@@ -84,23 +84,51 @@ describe('useAgentWorkState', () => {
     expect(result.current.state.students[1].status).toBe('未接');
   });
 
+  it('updateStudent should ignore undefined fields', () => {
+    const { result } = renderHook(() => useAgentWorkState());
+
+    act(() => {
+      result.current.actions.setStudents([
+        { id: 1, name: 'A', status: '未联系', stage: '初步接触' },
+      ]);
+      result.current.actions.updateStudent(1, {
+        stage: '持续跟进',
+        status: undefined,
+      });
+    });
+
+    expect(result.current.state.students[0]).toEqual({
+      id: 1,
+      name: 'A',
+      status: '未联系',
+      stage: '持续跟进',
+    });
+  });
+
   it('removeStudentFromQueue should remove a student, clamp currentIdx, and decrement pending stats', () => {
     const { result } = renderHook(() => useAgentWorkState());
 
     act(() => {
       result.current.actions.setStudents([
-        { id: 1, name: 'A', status: '未联系' },
-        { id: 2, name: 'B', status: '未联系' },
+        { id: 1, name: 'A', school_name: '学校A', status: '未联系' },
+        { id: 2, name: 'B', school_name: '学校B', status: '未联系' },
       ]);
       result.current.actions.setStats({ total: 2, done: 0, pending: 2, follow_up: 0, progress_pct: 0 });
+      result.current.actions.setSchoolGroups([
+        { name: '学校A', count: 1 },
+        { name: '学校B', count: 1 },
+      ]);
       result.current.actions.setCurrentIdx(1);
+      result.current.actions.updateStudent(2, { status: '未接' });
     });
 
     act(() => {
       result.current.actions.removeStudentFromQueue(2);
     });
 
-    expect(result.current.state.students).toEqual([{ id: 1, name: 'A', status: '未联系' }]);
+    expect(result.current.state.students).toEqual([
+      { id: 1, name: 'A', school_name: '学校A', status: '未联系' },
+    ]);
     expect(result.current.state.currentIdx).toBe(0);
     expect(result.current.state.stats).toEqual({
       total: 1,
@@ -109,6 +137,7 @@ describe('useAgentWorkState', () => {
       follow_up: 0,
       progress_pct: 0,
     });
+    expect(result.current.state.schoolGroups).toEqual([{ name: '学校A', count: 1 }]);
   });
 
   it('setDialModal should update dial modal', () => {

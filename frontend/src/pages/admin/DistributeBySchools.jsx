@@ -83,19 +83,29 @@ export default function DistributeBySchools() {
     try {
       const res = await api.get('/admin/agents');
       if (res.data.code === 0) setAgents(res.data.data || []);
-    } catch {}
+    } catch {
+      // Agent choices are best-effort; the page still supports unassigned inspection.
+    }
   };
 
   const fetchSchoolStudents = async (schoolName) => {
+    setExpandedStudents([]);
     setExpandedLoading(true);
     try {
       const res = await api.get('/students', {
-        params: { page: 1, page_size: 200, school_name: schoolName, assignment: 'unassigned' },
+        params: {
+          page: 1,
+          page_size: 100,
+          school_name: schoolName,
+          assignment: 'unassigned',
+          assignable: 1,
+        },
       });
       if (res.data.code === 0) {
         setExpandedStudents(res.data.data?.list || []);
       }
     } catch (e) {
+      setExpandedStudents([]);
       toast?.error(getApiErrorMessage(e));
     } finally {
       setExpandedLoading(false);

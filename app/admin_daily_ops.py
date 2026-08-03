@@ -106,7 +106,10 @@ def _daily_ops_item(
 ) -> dict:
     review = reviews.get(key) or {}
     count = int(count or 0)
+    reviewed_count = max(int(review.get("reviewed_count") or 0), 0)
     status = review.get("status") or ("已处理" if count == 0 else "待处理")
+    if review and status in DAILY_OPS_CLOSED_STATUSES and count > reviewed_count:
+        status = "待处理"
     return {
         "key": key,
         "title": title,
@@ -116,7 +119,7 @@ def _daily_ops_item(
         "to": to,
         "status": status,
         "is_closed": count == 0 or status in DAILY_OPS_CLOSED_STATUSES,
-        "reviewed_count": int(review.get("reviewed_count") or 0),
+        "reviewed_count": reviewed_count,
         "reviewed_by": review.get("reviewed_by") or "",
         "reviewed_at": review["reviewed_at"].isoformat() if review.get("reviewed_at") else "",
         "note": review.get("note") or "",
@@ -573,5 +576,4 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
         },
         "items": items,
     }
-
 

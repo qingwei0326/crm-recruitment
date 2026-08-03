@@ -28,6 +28,7 @@ from app.models import (
     SystemConfig,
     User,
 )
+from app.routers.admin_governance import _is_work_hour
 from app.utils import today_cst_as_utc, utcnow
 
 
@@ -518,6 +519,51 @@ class TestAdminUpdateUser:
         assert resp.json()["code"] == 0
         assert resp.json()["data"]["name"] == "更新的名字"
 
+    async def test_update_user_rejects_role_change_and_preserves_assignment(
+        self,
+        client,
+        db,
+        admin_headers,
+        agent_user,
+        assignment_baseline,
+    ):
+        student = Student(name="角色不可变学生", status=StudentStatus.not_contacted)
+        assignment = await assignment_baseline(student, agent_user)
+        await db.commit()
+
+        resp = await client.put(
+            f"/api/admin/users/{agent_user.id}",
+            json={"role": "admin"},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert resp.status_code == 200
+        assert body["code"] == 1
+        assert "角色不可修改" in body["msg"]
+        await db.refresh(agent_user)
+        await db.refresh(student)
+        await db.refresh(assignment)
+        assert agent_user.role == "agent"
+        assert student.assigned_to == agent_user.id
+        assert assignment.ended_at is None
+
+    async def test_update_user_accepts_existing_role_value(
+        self, client, db, admin_headers, agent_user
+    ):
+        resp = await client.put(
+            f"/api/admin/users/{agent_user.id}",
+            json={"role": "agent", "name": "角色未变更"},
+            headers=admin_headers,
+        )
+        body = resp.json()
+
+        assert body["code"] == 0
+        assert body["data"]["role"] == "agent"
+        assert body["data"]["name"] == "角色未变更"
+        await db.refresh(agent_user)
+        assert agent_user.role == "agent"
+
     async def test_update_admin_page_permissions(
         self, client, db, admin_headers, normal_admin_user
     ):
@@ -919,7 +965,10 @@ class TestAdminResetPassword:
             headers=admin_headers,
         )
         assert resp.json()["code"] == 0
-        assert "new_password" in resp.json()["data"]
+        body = resp.json()
+        assert "new_password" in body["data"]
+        assert body["data"]["new_password"] in body["msg"]
+        assert body["msg"] != "ok"
 
     async def test_reset_not_found(self, client, admin_headers):
         resp = await client.post(
@@ -1471,7 +1520,7 @@ class TestLeadGovernanceRisk:
                 status=StudentStatus.not_contacted,
             ),
             Student(
-                name="预览清完删除",
+                name="预览转人工复核",
                 school_name="长泰一中",
                 guardian_phone="13800138004",
                 status=StudentStatus.not_contacted,
@@ -1489,16 +1538,18 @@ class TestLeadGovernanceRisk:
         assert data["duplicate_phone_count"] == 1
         assert data["affected_student_count"] == 2
         assert data["will_clear_count"] == 1
-        assert data["will_delete_count"] == 1
+        assert data["will_delete_count"] == 0
+        assert data["manual_review_count"] == 1
         assert data["preview_clear_students"][0]["name"] == "预览清号保留"
-        assert data["preview_delete_students"][0]["name"] == "预览清完删除"
+        assert data["preview_delete_students"] == []
+        assert data["preview_manual_review_students"][0]["name"] == "预览转人工复核"
         refreshed = (
-            await db.execute(select(Student).where(Student.name == "预览清完删除"))
+            await db.execute(select(Student).where(Student.name == "预览转人工复核"))
         ).scalar_one()
         assert refreshed.guardian_phone == "13800138004"
 
     async def test_duplicate_phone_cleanup_executes_with_batch_logs(
-        self, client, db, admin_headers
+        self, client, db, admin_headers, agent_user
     ):
         keep_student = Student(
             name="批次清号保留",
@@ -1507,16 +1558,26 @@ class TestLeadGovernanceRisk:
             guardian2_phone="13900139005",
             status=StudentStatus.not_contacted,
         )
-        delete_student = Student(
-            name="批次清完删除",
+        manual_student = Student(
+            name="批次转人工复核",
             school_name="长泰一中",
             guardian_phone="13800138005",
             status=StudentStatus.not_contacted,
         )
-        db.add_all([keep_student, delete_student])
+        db.add_all([keep_student, manual_student])
         await db.commit()
         keep_id = keep_student.id
-        delete_id = delete_student.id
+        manual_id = manual_student.id
+        assignment = StudentAssignment(
+            student_id=manual_id,
+            agent_id=agent_user.id,
+            started_at=utcnow(),
+            start_reason="测试历史保留",
+            started_by=agent_user.id,
+        )
+        db.add(assignment)
+        await db.commit()
+        assignment_id = assignment.id
 
         resp = await client.post(
             "/api/admin/lead-duplicates/cleanup",
@@ -1530,7 +1591,8 @@ class TestLeadGovernanceRisk:
         assert body["code"] == 0
         assert data["changed"] is True
         assert data["cleared_count"] == 1
-        assert data["deleted_count"] == 1
+        assert data["deleted_count"] == 0
+        assert data["manual_review_count"] == 1
         assert data["batch_id"].startswith("phone-dedupe-")
 
         kept = (
@@ -1540,12 +1602,20 @@ class TestLeadGovernanceRisk:
                 .execution_options(populate_existing=True)
             )
         ).scalar_one()
-        deleted = (
-            await db.execute(select(Student).where(Student.id == delete_id))
-        ).scalar_one_or_none()
+        manual = (
+            await db.execute(
+                select(Student)
+                .where(Student.id == manual_id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
         assert kept.guardian_phone == ""
         assert kept.guardian2_phone == "13900139005"
-        assert deleted is None
+        assert manual.guardian_phone == "13800138005"
+        preserved_assignment = (
+            await db.execute(select(StudentAssignment).where(StudentAssignment.id == assignment_id))
+        ).scalar_one()
+        assert preserved_assignment.student_id == manual_id
 
         logs = (
             (
@@ -1558,10 +1628,11 @@ class TestLeadGovernanceRisk:
             .scalars()
             .all()
         )
-        assert len(logs) == 3
-        assert [log.action for log in logs].count("数据清理") == 2
+        assert len(logs) == 2
+        assert [log.action for log in logs].count("数据清理") == 1
         assert logs[-1].action == "数据清理汇总"
         assert "清理重复手机号 1 个" in logs[-1].content
+        assert "保留待人工复核 1 条" in logs[-1].content
 
         verify_resp = await client.get("/api/admin/lead-duplicates", headers=admin_headers)
         assert verify_resp.json()["data"]["total_groups"] == 0
@@ -1597,13 +1668,23 @@ class TestLeadGovernanceRisk:
         )
         await db.commit()
 
+        before_review = await client.get("/api/admin/data-health", headers=admin_headers)
+        duplicate_signal = next(
+            item
+            for item in before_review.json()["data"]["signals"]
+            if item["key"] == "duplicate_phone"
+        )
+        assert duplicate_signal["current_count"] == 2
+        assert duplicate_signal["review_token"]
+
         review_resp = await client.post(
             "/api/admin/governance-reviews",
             json={
                 "key": "duplicate_phone",
                 "title": "重复手机号",
                 "detail": "已人工确认本批重复手机号",
-                "count": 2,
+                "count": 999,
+                "review_token": duplicate_signal["review_token"],
             },
             headers=admin_headers,
         )
@@ -1623,11 +1704,44 @@ class TestLeadGovernanceRisk:
         assert log.old_status == "2"
         assert log.new_status == "已复核"
         assert "重复手机号" in log.content
+        assert '"snapshot_hash"' in log.note_content
 
         health_resp = await client.get("/api/admin/data-health", headers=admin_headers)
         signals = {item["key"]: item for item in health_resp.json()["data"]["signals"]}
         assert signals["duplicate_phone"]["reviewed"] is True
         assert signals["duplicate_phone"]["count"] == 0
+        assert signals["duplicate_phone"]["current_count"] == 2
+        assert signals["duplicate_phone"]["reviewed_count"] == 2
+        assert signals["duplicate_phone"]["review_key"] == "duplicate_phone"
+
+        reviewed_student = (
+            await db.execute(select(Student).where(Student.name == "复核重复乙"))
+        ).scalar_one()
+        reviewed_student.guardian_phone = "13800139102"
+        db.add_all(
+            [
+                Student(
+                    name="新异常甲",
+                    guardian_phone="13800139103",
+                    status=StudentStatus.not_contacted,
+                ),
+                Student(
+                    name="新异常乙",
+                    guardian_phone="13800139103",
+                    status=StudentStatus.not_contacted,
+                ),
+            ]
+        )
+        await db.commit()
+
+        reopened_resp = await client.get("/api/admin/data-health", headers=admin_headers)
+        reopened = {
+            item["key"]: item for item in reopened_resp.json()["data"]["signals"]
+        }["duplicate_phone"]
+        assert reopened["current_count"] == 2
+        assert reopened["count"] == 2
+        assert reopened["reviewed"] is False
+        assert "异常对象已发生变化" in reopened["detail"]
 
     async def test_risk_alerts_returns_recent_high_risk_operations(
         self, client, db, admin_headers, admin_user
@@ -1670,6 +1784,9 @@ class TestLeadGovernanceRisk:
         assert body["code"] == 0
         alert_types = {alert["type"]: alert for alert in alerts}
         assert alert_types["delete_leads"]["severity"] == "high"
+        assert alert_types["delete_leads"]["current_count"] == 1
+        assert alert_types["delete_leads"]["reviewed_count"] == 0
+        assert alert_types["delete_leads"]["review_key"] == "delete_leads"
         assert alert_types["batch_distribution"]["count"] == 1
         assert alert_types["enrolled_status_change"]["severity"] == "high"
         assert alert_types["enrolled_status_change"]["q"] == "已报名"
@@ -1758,36 +1875,75 @@ class TestLeadGovernanceRisk:
         assert alert_types["campus_visit_pending"]["to"] == "/admin/work-center?queue=campus_visit"
         assert alert_types["unsettled_enrollments"]["to"] == "/admin/enrollment-settlement"
 
-    async def test_governance_review_suppresses_risk_alerts_until_count_increases(
+        health_resp = await client.get("/api/admin/data-health", headers=admin_headers)
+        health_signals = {
+            item["key"]: item for item in health_resp.json()["data"]["signals"]
+        }
+        assert health_signals["stale_a"]["review_key"] == "stale_a_students"
+
+    async def test_governance_review_reopens_when_entities_change_at_the_same_count(
         self, client, db, admin_headers, admin_user
     ):
         now = utcnow()
-        db.add_all(
-            [
-                OperationLog(
-                    operator_id=admin_user.id,
-                    operator_name=admin_user.name,
-                    action="删除线索",
-                    content="删除学生 张三",
-                    created_at=now,
-                ),
-                OperationLog(
-                    operator_id=admin_user.id,
-                    operator_name=admin_user.name,
-                    action="治理复核",
-                    content="确认复核 近期存在删除操作",
-                    old_status="1",
-                    new_status="已复核",
-                    batch_id="governance-review:delete_leads",
-                    created_at=now,
-                ),
-            ]
+        original_log = OperationLog(
+            operator_id=admin_user.id,
+            operator_name=admin_user.name,
+            action="删除线索",
+            content="删除学生 张三",
+            created_at=now,
+        )
+        db.add(original_log)
+        await db.commit()
+
+        before_review = await client.get("/api/admin/risk-alerts", headers=admin_headers)
+        delete_alert = next(
+            alert
+            for alert in before_review.json()["data"]["alerts"]
+            if alert["type"] == "delete_leads"
+        )
+        review_resp = await client.post(
+            "/api/admin/governance-reviews",
+            json={
+                "key": "delete_leads",
+                "title": delete_alert["title"],
+                "detail": delete_alert["detail"],
+                "count": 1,
+                "review_token": delete_alert["review_token"],
+            },
+            headers=admin_headers,
+        )
+        assert review_resp.json()["code"] == 0
+
+        reviewed_resp = await client.get("/api/admin/risk-alerts", headers=admin_headers)
+        alert_types = {alert["type"] for alert in reviewed_resp.json()["data"]["alerts"]}
+        assert "delete_leads" not in alert_types
+
+        original_log.created_at = now - timedelta(days=8)
+        db.add(
+            OperationLog(
+                operator_id=admin_user.id,
+                operator_name=admin_user.name,
+                action="删除线索",
+                content="删除学生 李四",
+                created_at=now,
+            )
         )
         await db.commit()
 
-        resp = await client.get("/api/admin/risk-alerts", headers=admin_headers)
-        alert_types = {alert["type"] for alert in resp.json()["data"]["alerts"]}
-        assert "delete_leads" not in alert_types
+        reopened_resp = await client.get("/api/admin/risk-alerts", headers=admin_headers)
+        reopened = next(
+            alert
+            for alert in reopened_resp.json()["data"]["alerts"]
+            if alert["type"] == "delete_leads"
+        )
+        assert reopened["current_count"] == 1
+        assert reopened["count"] == 1
+        assert reopened["reviewed"] is False
+
+    async def test_work_hour_detection_converts_utc_storage_to_cst(self):
+        assert _is_work_hour(datetime(2026, 7, 13, 1, 30)) is True
+        assert _is_work_hour(datetime(2026, 7, 13, 6, 30)) is True
+        assert _is_work_hour(datetime(2026, 7, 13, 3, 30)) is False
 
 
 @pytest.mark.asyncio
@@ -1892,6 +2048,7 @@ class TestDailyOps:
         follow_items = {item["key"]: item for item in follow_resp.json()["data"]["items"]}
         assert follow_items["home_visit_due"]["status"] == "已处理"
         assert follow_items["home_visit_due"]["is_closed"] is True
+        assert follow_items["home_visit_due"]["reviewed_count"] == items["home_visit_due"]["count"]
 
         log = (
             await db.execute(
@@ -1903,6 +2060,61 @@ class TestDailyOps:
         ).scalar_one()
         assert log.operator_id == admin_user.id
         assert log.new_status == "已处理"
+
+    async def test_daily_ops_reopens_closed_item_when_count_increases(
+        self, client, db, admin_headers
+    ):
+        first_student = Student(
+            name="首个求助待办",
+            status=StudentStatus.not_contacted,
+            need_help=True,
+        )
+        db.add(first_student)
+        await db.commit()
+
+        initial_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
+        initial_items = {
+            item["key"]: item for item in initial_resp.json()["data"]["items"]
+        }
+        reviewed_count = initial_items["help_requests"]["count"]
+        assert reviewed_count >= 1
+
+        review_resp = await client.post(
+            "/api/admin/daily-ops/reviews",
+            json={
+                "key": "help_requests",
+                "status": "已处理",
+                "count": reviewed_count,
+            },
+            headers=admin_headers,
+        )
+        assert review_resp.json()["code"] == 0
+
+        closed_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
+        closed_items = {
+            item["key"]: item for item in closed_resp.json()["data"]["items"]
+        }
+        assert closed_items["help_requests"]["is_closed"] is True
+
+        db.add(
+            Student(
+                name="新增求助待办",
+                status=StudentStatus.not_contacted,
+                need_help=True,
+            )
+        )
+        await db.commit()
+
+        reopened_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
+        reopened_data = reopened_resp.json()["data"]
+        reopened_items = {item["key"]: item for item in reopened_data["items"]}
+        reopened = reopened_items["help_requests"]
+
+        assert reopened["count"] == reviewed_count + 1
+        assert reopened["reviewed_count"] == reviewed_count
+        assert reopened["status"] == "待处理"
+        assert reopened["is_closed"] is False
+        assert reopened_data["summary"]["pending_items"] >= 1
 
     async def test_daily_ops_rejects_invalid_review_status(self, client, admin_headers):
         resp = await client.post(

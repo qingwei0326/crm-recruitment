@@ -97,14 +97,39 @@ describe('DistributeBySchools', () => {
       expect(api.get).toHaveBeenCalledWith('/students', {
         params: {
           page: 1,
-          page_size: 200,
+          page_size: 100,
           school_name: '龙海一中',
           assignment: 'unassigned',
+          assignable: 1,
         },
       });
     });
     expect(await screen.findByText('张三')).toBeInTheDocument();
     expect(api.get).not.toHaveBeenCalledWith('/admin/leads', expect.anything());
+  });
+
+  it('clears the previous school students when the next school request fails', async () => {
+    const defaultGet = api.get.getMockImplementation();
+    api.get.mockImplementation((url, config) => {
+      if (url === '/students' && config?.params?.school_name === '龙海二中') {
+        return Promise.reject(new Error('request failed'));
+      }
+      return defaultGet(url, config);
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <DistributeBySchools />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText('龙海一中'));
+    expect(await screen.findByText('张三')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('龙海二中'));
+
+    expect(await screen.findByText('暂无数据')).toBeInTheDocument();
+    expect(screen.queryByText('张三')).not.toBeInTheDocument();
   });
 
   it('groups schools by region and can select one whole region', async () => {

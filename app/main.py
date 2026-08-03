@@ -20,6 +20,7 @@ from app.routers import (
     admin,
     admin_assignment,
     admin_assignment_review,
+    admin_assistant,
     admin_config,
     admin_daily,
     admin_governance,
@@ -40,6 +41,7 @@ from app.routers import (
     lead_outcomes,
     notes,
     operation_logs,
+    personal_groups,
     stats,
     stats_agents,
     stats_dashboard,
@@ -126,12 +128,15 @@ app.include_router(calls.router)
 app.include_router(notes.router)
 app.include_router(follow_ups.router)
 app.include_router(lead_outcomes.router)
+app.include_router(personal_groups.router)
+app.include_router(personal_groups.admin_router)
 app.include_router(stats.router)
 app.include_router(stats_agents.router)
 app.include_router(stats_enrollment.router)
 app.include_router(stats_dashboard.router)
 app.include_router(tasks.router)
 app.include_router(admin.router)
+app.include_router(admin_assistant.router)
 app.include_router(admin_config.router)
 app.include_router(admin_governance.router)
 app.include_router(admin_handover.router)

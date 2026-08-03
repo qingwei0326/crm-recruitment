@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.auth import create_access_token, hash_password
+from app.domain_models import AgentEmployment, EmploymentStatus, WorkItemKind
 from app.models import (
     AttributionMethod,
     CampusVisitResult,
@@ -21,6 +22,7 @@ from app.models import (
     StudentStatus,
     User,
 )
+from app.services.work_item_service import sync_source_work_item, sync_student_work_items
 
 
 def _headers_for(user: User) -> dict:
@@ -43,6 +45,8 @@ async def _agent(db, username: str, name: str) -> User:
         is_active=True,
     )
     db.add(user)
+    await db.flush()
+    db.add(AgentEmployment(user_id=user.id, status=EmploymentStatus.active))
     await db.commit()
     await db.refresh(user)
     return user
@@ -154,6 +158,51 @@ async def test_admin_work_items_include_all_admissions_queues(
         settlement_notes="工作微信交接后待确认",
     )
     db.add_all([home, completed_home, campus, arrived_campus, follow, enrollment])
+    await db.flush()
+    await sync_student_work_items(db, student, admin_user)
+    for kind, source_type, source_id, creator_id, due_at in (
+        (WorkItemKind.home_visit, "home_visit", home.id, agent.id, yesterday),
+        (
+            WorkItemKind.home_visit,
+            "home_visit",
+            completed_home.id,
+            agent.id,
+            tomorrow,
+        ),
+        (WorkItemKind.campus_visit, "campus_visit", campus.id, agent.id, yesterday),
+        (
+            WorkItemKind.campus_visit,
+            "campus_visit",
+            arrived_campus.id,
+            agent.id,
+            tomorrow,
+        ),
+        (
+            WorkItemKind.scheduled_follow_up,
+            "follow_up",
+            follow.id,
+            agent.id,
+            tomorrow,
+        ),
+        (
+            WorkItemKind.enrollment_settlement,
+            "enrollment",
+            enrollment.id,
+            agent.id,
+            enrollment.enrolled_at,
+        ),
+    ):
+        await sync_source_work_item(
+            db,
+            kind,
+            source_type,
+            source_id,
+            student,
+            creator_id,
+            due_at,
+            False,
+            admin_user,
+        )
     await db.commit()
 
     resp = await client.get("/api/admissions/work-items", headers=admin_headers)
@@ -200,6 +249,29 @@ async def test_work_items_filter_queue_and_accept_follow_alias(
         settlement_status=SettlementStatus.unsettled,
     )
     db.add_all([follow, enrollment])
+    await db.flush()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.scheduled_follow_up,
+        "follow_up",
+        follow.id,
+        student,
+        agent.id,
+        follow.follow_up_date,
+        False,
+        admin_user,
+    )
+    await sync_source_work_item(
+        db,
+        WorkItemKind.enrollment_settlement,
+        "enrollment",
+        enrollment.id,
+        student,
+        agent.id,
+        enrollment.enrolled_at,
+        False,
+        admin_user,
+    )
     await db.commit()
 
     resp = await client.get("/api/admissions/work-items?queue=follow", headers=admin_headers)
@@ -218,7 +290,7 @@ async def test_agent_work_items_are_scoped_to_own_students_and_records(client, d
     other_student = await _student(db, other_agent, "别人学生")
     own_home = HomeVisitTask(
         student_id=own_student.id,
-        creator_agent_id=agent.id,
+        creator_agent_id=other_agent.id,
         status=HomeVisitStatus.pending,
         student_name_snapshot=own_student.name,
         guardian_phone_snapshot=own_student.guardian_phone,
@@ -227,7 +299,7 @@ async def test_agent_work_items_are_scoped_to_own_students_and_records(client, d
     )
     other_home = HomeVisitTask(
         student_id=other_student.id,
-        creator_agent_id=other_agent.id,
+        creator_agent_id=agent.id,
         status=HomeVisitStatus.pending,
         student_name_snapshot=other_student.name,
         guardian_phone_snapshot=other_student.guardian_phone,
@@ -235,6 +307,29 @@ async def test_agent_work_items_are_scoped_to_own_students_and_records(client, d
         school_name_snapshot=other_student.school_name,
     )
     db.add_all([own_home, other_home])
+    await db.flush()
+    await sync_source_work_item(
+        db,
+        WorkItemKind.home_visit,
+        "home_visit",
+        own_home.id,
+        own_student,
+        other_agent.id,
+        own_home.requested_visit_time,
+        False,
+        agent,
+    )
+    await sync_source_work_item(
+        db,
+        WorkItemKind.home_visit,
+        "home_visit",
+        other_home.id,
+        other_student,
+        agent.id,
+        other_home.requested_visit_time,
+        False,
+        other_agent,
+    )
     await db.commit()
 
     resp = await client.get("/api/admissions/work-items", headers=_headers_for(agent))
@@ -243,3 +338,8 @@ async def test_agent_work_items_are_scoped_to_own_students_and_records(client, d
     names = {row["student_name"] for row in resp.json()["data"]["list"]}
     assert "自己学生" in names
     assert "别人学生" not in names
+    own_row = next(
+        row for row in resp.json()["data"]["list"] if row["student_name"] == "自己学生"
+    )
+    assert own_row["agent_id"] == agent.id
+    assert own_row["agent_name"] == agent.name

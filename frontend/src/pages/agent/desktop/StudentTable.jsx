@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { ChevronUp, ChevronDown, Phone, StickyNote, Sparkles, AlertTriangle } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Phone,
+  Sparkles,
+  StickyNote,
+} from 'lucide-react';
 import { INTENT_BADGES, statusLabel } from '../../../labels';
 import { STATUS_STYLE, getContactOptions } from '../agentWorkUtils';
 import AssignedDaysBadge from '../shared/AssignedDaysBadge';
@@ -7,100 +15,105 @@ import StageProgress from '../shared/StageProgress';
 import ExpandedRow from './ExpandedRow';
 
 const COLUMNS = [
-  { key: 'name', label: '姓名', sortable: true, className: 'w-[16%]' },
-  { key: 'school_name', label: '学校', sortable: true, className: 'w-[24%]' },
-  { key: 'stage', label: '阶段', sortable: true, className: 'w-[18%]' },
-  { key: 'intent_level', label: '意向', sortable: true, className: 'w-[8%]' },
-  { key: 'status', label: '状态', sortable: true, className: 'w-[14%]' },
+  { key: 'name', label: '学生', className: 'w-[18%]' },
+  { key: 'school_name', label: '学校 / 地域', className: 'w-[22%]' },
+  { key: 'stage', label: '推进阶段', className: 'w-[21%]' },
+  { key: 'intent_level', label: '意向', className: 'w-[8%]' },
+  { key: 'status', label: '联系状态', className: 'w-[15%]' },
 ];
 
 export default function StudentTable({
-  students, expandedId, onToggleExpand,
-  sortConfig, onSort,
-  onDial, onQuickStatus, onUpdateStage, onAddNote, onOpenAi, onScoreChange,
-  dialCheckByStudent, lockedStudentId, noteText, onNoteTextChange,
+  students,
+  expandedId,
+  onToggleExpand,
+  sortConfig,
+  onSort,
+  onDial,
+  onQuickStatus,
+  onUpdateStage,
+  onAddNote,
+  onOpenAi,
+  onScoreChange,
+  dialCheckByStudent,
+  lockedStudentId,
+  noteText,
+  onNoteTextChange,
 }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const visibleIds = new Set(students.map((student) => student.id));
+  const visibleSelectedCount = [...selectedIds].filter((id) => visibleIds.has(id)).length;
+  const allSelected = students.length > 0 && visibleSelectedCount === students.length;
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === students.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(students.map((s) => s.id)));
-    }
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (allSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
   };
 
   const toggleSelect = (id) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
   };
 
-  const SortIcon = ({ colKey }) => {
-    if (sortConfig.key !== colKey) return null;
-    return sortConfig.direction === 'asc'
-      ? <ChevronUp className="w-3 h-3 inline" />
-      : <ChevronDown className="w-3 h-3 inline" />;
-  };
-
   return (
-    <div className="flex-1 overflow-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700">
+    <div className="min-h-0 flex-1 overflow-auto bg-gray-50 px-3 py-2 scroll-thin dark:bg-gray-950/50">
+      <table className="w-full min-w-[940px] table-fixed border-separate border-spacing-y-1 text-sm">
+        <thead className="sticky top-0 z-20 text-left">
           <tr>
-            <th className="w-10 px-3 py-2">
+            <th className="w-11 bg-gray-50 px-3 py-2 dark:bg-gray-950">
               <input
                 type="checkbox"
-                checked={selectedIds.size === students.length && students.length > 0}
+                checked={allSelected}
                 onChange={toggleSelectAll}
-                className="rounded"
-                aria-label={
-                  selectedIds.size === students.length && students.length > 0
-                    ? '取消选择全部学生'
-                    : '选择全部学生'
-                }
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                aria-label={allSelected ? '取消选择全部学生' : '选择全部学生'}
               />
             </th>
-            {COLUMNS.map((col) => (
-              <th
-                key={col.key}
-                className={`${col.className || ''} px-3 py-2 text-left text-xs font-medium text-gray-500 ${col.sortable ? 'cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 select-none' : ''}`}
-                onClick={() => col.sortable && onSort(col.key)}
-              >
-                {col.label} <SortIcon colKey={col.key} />
-              </th>
+            {COLUMNS.map((column) => (
+              <SortableHeader
+                key={column.key}
+                column={column}
+                sortConfig={sortConfig}
+                onSort={onSort}
+              />
             ))}
-            <th className="w-24 px-3 py-2 text-xs font-medium text-gray-500">操作</th>
+            <th className="w-32 bg-gray-50 px-3 py-2 text-xs font-medium text-gray-500 dark:bg-gray-950 dark:text-gray-400">
+              快捷操作
+            </th>
           </tr>
         </thead>
-        <tbody className="divide-y dark:divide-gray-700/50">
+        <tbody>
           {students.length === 0 ? (
             <tr>
-              <td colSpan={7} className="text-center py-12 text-gray-400">
-                暂无数据
+              <td colSpan={7} className="py-20 text-center text-xs font-medium text-gray-400 dark:text-gray-600">
+                暂无符合当前条件的话务任务
               </td>
             </tr>
           ) : (
-            students.map((s) => (
+            students.map((student) => (
               <StudentRow
-                key={s.id}
-                student={s}
-                isExpanded={expandedId === s.id}
-                isSelected={selectedIds.has(s.id)}
-                dialCheck={dialCheckByStudent[s.id]}
-                isLocked={lockedStudentId === s.id}
-                onToggleExpand={() => onToggleExpand(s.id)}
-                onSelect={() => toggleSelect(s.id)}
-                onDial={(key) => onDial(key, s.id)}
-                onQuickStatus={(status) => onQuickStatus(s.id, status)}
-                onUpdateStage={(stage) => onUpdateStage(s.id, stage)}
-                onAddNote={() => onAddNote(s.id)}
-                onOpenAi={() => onOpenAi(s)}
+                key={student.id}
+                student={student}
+                isExpanded={expandedId === student.id}
+                isSelected={selectedIds.has(student.id)}
+                dialCheck={dialCheckByStudent?.[student.id]}
+                isLocked={lockedStudentId === student.id}
+                onToggleExpand={() => onToggleExpand(student.id)}
+                onSelect={() => toggleSelect(student.id)}
+                onDial={(contactKey) => onDial(contactKey, student.id)}
+                onQuickStatus={(status) => onQuickStatus(student.id, status)}
+                onUpdateStage={(stage) => onUpdateStage(student.id, stage)}
+                onAddNote={() => onAddNote(student.id)}
+                onOpenAi={() => onOpenAi(student)}
                 onScoreChange={onScoreChange}
-                noteText={expandedId === s.id ? noteText : ''}
+                noteText={expandedId === student.id ? noteText : ''}
                 onNoteTextChange={onNoteTextChange}
               />
             ))
@@ -111,99 +124,154 @@ export default function StudentTable({
   );
 }
 
+function SortableHeader({ column, sortConfig, onSort }) {
+  const active = sortConfig.key === column.key;
+  return (
+    <th className={`${column.className} bg-gray-50 px-3 py-2 dark:bg-gray-950`}>
+      <button
+        type="button"
+        onClick={() => onSort(column.key)}
+        className={`inline-flex items-center gap-1 text-xs font-medium transition ${
+          active
+            ? 'text-blue-700 dark:text-blue-400'
+            : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+        }`}
+      >
+        {column.label}
+        {active && (
+          sortConfig.direction === 'asc'
+            ? <ChevronUp className="h-3 w-3" />
+            : <ChevronDown className="h-3 w-3" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 function StudentRow({
-  student: s, isExpanded, isSelected, isLocked,
-  onToggleExpand, onSelect, onDial, onQuickStatus, onUpdateStage,
-  onAddNote, onOpenAi, onScoreChange, noteText, onNoteTextChange,
+  student: student,
+  isExpanded,
+  isSelected,
+  dialCheck,
+  isLocked,
+  onToggleExpand,
+  onSelect,
+  onDial,
+  onQuickStatus,
+  onUpdateStage,
+  onAddNote,
+  onOpenAi,
+  onScoreChange,
+  noteText,
+  onNoteTextChange,
 }) {
-  const contacts = getContactOptions(s);
+  const contacts = getContactOptions(student);
+  const cellTone = isExpanded
+    ? 'border-blue-200 bg-blue-50/70 dark:border-blue-900 dark:bg-blue-950/25'
+    : 'border-gray-200 bg-white group-hover:border-blue-200 group-hover:bg-blue-50/30 dark:border-gray-800 dark:bg-gray-900 dark:group-hover:border-blue-900 dark:group-hover:bg-blue-950/15';
 
   return (
     <>
       <tr
-        className={`hover:bg-blue-50/50 dark:hover:bg-blue-900/10 cursor-pointer transition-colors ${
-          isExpanded ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''
-        }`}
+        className="group cursor-pointer transition-colors"
         onClick={onToggleExpand}
+        aria-expanded={isExpanded}
       >
-        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+        <td className={`rounded-l-lg border-y border-l px-3 py-2.5 ${cellTone}`} onClick={(event) => event.stopPropagation()}>
           <input
             type="checkbox"
             checked={isSelected}
             onChange={onSelect}
-            className="rounded"
-            aria-label={`${isSelected ? '取消选择' : '选择'} ${s.name || '学生'}`}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+            aria-label={`${isSelected ? '取消选择' : '选择'} ${student.name || '学生'}`}
           />
         </td>
-        <td className="px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-gray-900 dark:text-gray-100">{s.name}</span>
-            {s.need_help && (
-              <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
-            )}
-            <AssignedDaysBadge days={s.days_since_assigned} />
+        <td className={`border-y px-3 py-2.5 ${cellTone}`}>
+          <div className="flex min-w-0 items-center gap-2">
+            {isExpanded
+              ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+              : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" />}
+            <span className={`h-8 w-1 shrink-0 rounded-full ${intentRailClass(student.intent_level)}`} />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate font-semibold text-gray-900 dark:text-gray-100">{student.name}</span>
+                {student.need_help && (
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label="需要协助" />
+                )}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
+                <AssignedDaysBadge days={student.days_since_assigned} />
+                {student.score != null && <span className="tabular-nums">{student.score} 分</span>}
+              </div>
+            </div>
           </div>
         </td>
-        <td className="px-3 py-2 text-gray-600 dark:text-gray-400 max-w-[120px] truncate">
-          {s.school_name || '未知学校'}
+        <td className={`border-y px-3 py-2.5 ${cellTone}`}>
+          <div className="max-w-[220px] truncate font-medium text-gray-700 dark:text-gray-200" title={student.school_name || '未知学校'}>
+            {student.school_name || '未知学校'}
+          </div>
+          <div className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">{student.region || '地域未填写'}</div>
         </td>
-        <td className="px-3 py-2">
-          <StageProgress currentStage={s.stage} onStageClick={(stg) => onUpdateStage(stg)} compact />
+        <td className={`border-y px-3 py-2.5 ${cellTone}`} onClick={(event) => event.stopPropagation()}>
+          <StageProgress currentStage={student.stage} onStageClick={onUpdateStage} compact />
         </td>
-        <td className="px-3 py-2">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${INTENT_BADGES[s.intent_level] || INTENT_BADGES['无']}`}>
-            {s.intent_level === '无' ? '无' : `${s.intent_level}级`}
+        <td className={`border-y px-3 py-2.5 ${cellTone}`}>
+          <span className={`inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold ${INTENT_BADGES[student.intent_level] || INTENT_BADGES['无']}`}>
+            {student.intent_level === '无' ? '未评级' : `${student.intent_level}级`}
           </span>
         </td>
-        <td className="px-3 py-2">
-          <div className="flex flex-col items-start gap-1">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[s.status] || ''}`}>
-              {statusLabel(s.status)}
+        <td className={`border-y px-3 py-2.5 ${cellTone}`}>
+          <div className="flex items-center gap-1.5">
+            <span className={`inline-flex shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${STATUS_STYLE[student.status] || STATUS_STYLE['未联系']}`}>
+              {statusLabel(student.status)}
             </span>
-            {s.status_detail && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
-                {s.status_detail}
-              </span>
+            {dialCheck?.count > 0 && (
+              <span className="text-[10px] tabular-nums text-gray-400" title="24 小时内拨号次数">24h {dialCheck.count}次</span>
             )}
           </div>
+          {student.status_detail && (
+            <div className="mt-1 max-w-[160px] truncate text-[11px] text-gray-500 dark:text-gray-400" title={student.status_detail}>
+              {student.status_detail}
+            </div>
+          )}
         </td>
-        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center gap-1">
+        <td className={`rounded-r-lg border-y border-r px-3 py-2.5 ${cellTone}`} onClick={(event) => event.stopPropagation()}>
+          <div className="flex items-center justify-end gap-1">
             {contacts.length > 0 && (
-              <button
+              <IconButton
                 onClick={() => onDial(contacts[0].key)}
-                className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 text-green-600"
                 title={`拨打 ${contacts[0].name}`}
-                aria-label={`拨打 ${contacts[0].name}`}
+                label={`拨打 ${contacts[0].name}`}
+                className="text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
               >
-                <Phone className="w-4 h-4" />
-              </button>
+                <Phone className="h-4 w-4" />
+              </IconButton>
             )}
-            <button
+            <IconButton
               onClick={onAddNote}
-              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-600"
               title="写备注"
-              aria-label={`给 ${s.name || '学生'} 写备注`}
+              label={`给 ${student.name || '学生'} 写备注`}
+              className="text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
             >
-              <StickyNote className="w-4 h-4" />
-            </button>
-            <button
+              <StickyNote className="h-4 w-4" />
+            </IconButton>
+            <IconButton
               onClick={onOpenAi}
               disabled={isLocked}
-              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 disabled:opacity-30"
-              title="AI分析"
-              aria-label={`分析 ${s.name || '学生'}`}
+              title={isLocked ? '请先完成当前通话结果' : 'AI 分析'}
+              label={`分析 ${student.name || '学生'}`}
+              className="text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40"
             >
-              <Sparkles className="w-4 h-4" />
-            </button>
+              <Sparkles className="h-4 w-4" />
+            </IconButton>
           </div>
         </td>
       </tr>
       {isExpanded && (
         <tr>
-          <td colSpan={7} className="p-0">
+          <td colSpan={7} className="px-0 pb-1 pt-0">
             <ExpandedRow
-              student={s}
+              student={student}
               isLocked={isLocked}
               onDial={onDial}
               onQuickStatus={onQuickStatus}
@@ -219,4 +287,24 @@ function StudentRow({
       )}
     </>
   );
+}
+
+function IconButton({ children, className, label, ...props }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-30 ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function intentRailClass(level) {
+  if (level === 'A') return 'bg-red-500';
+  if (level === 'B') return 'bg-amber-500';
+  if (level === 'C') return 'bg-blue-500';
+  return 'bg-gray-300 dark:bg-gray-700';
 }

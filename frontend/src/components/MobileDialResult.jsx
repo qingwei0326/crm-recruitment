@@ -3,6 +3,7 @@ import { PhoneCall, X, Loader2, CalendarClock, MessageSquare } from 'lucide-reac
 import api from '../api';
 import { completePendingDial, readPendingDial } from '../dialSession';
 import logger from '../utils/logger';
+import { getApiErrorMessage, unwrapApiResponse } from '../utils';
 import { useConfirm } from './ConfirmDialog';
 import { isFixedInvalidReason, payloadForOperatorResult } from '../operatorResultPolicy';
 import { FALLBACK_OPERATOR_OUTCOMES } from '../domain/outcomeCatalog';
@@ -74,9 +75,11 @@ export default function MobileDialResult({ onUpdated }) {
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [completionPending, setCompletionPending] = useState(false);
   const [noteText, setNoteText] = useState('');
   const callRecordPromiseRef = useRef(null);
   const noteRecordedRef = useRef(false);
+  const businessSavedRef = useRef(false);
   const submittingRef = useRef(false);
 
   const tryLoadPending = useCallback(() => {
@@ -90,10 +93,12 @@ export default function MobileDialResult({ onUpdated }) {
       setFollowUpDate(defaultFollowUp());
       setSubmitting(false);
       setErrorText('');
+      setCompletionPending(false);
       setNoteText('');
       submittingRef.current = false;
       callRecordPromiseRef.current = null;
       noteRecordedRef.current = false;
+      businessSavedRef.current = false;
       setPending(data);
     }
   }, [pending]);
@@ -125,10 +130,15 @@ export default function MobileDialResult({ onUpdated }) {
     setShowFollowUp(false);
     setSubmitting(false);
     setErrorText('');
+    setCompletionPending(false);
     setNoteText('');
+    businessSavedRef.current = false;
   };
 
-  const putField = (payload) => api.put(`/students/${pending.studentId}`, payload);
+  const putField = async (payload) => {
+    const response = await api.put(`/students/${pending.studentId}`, payload);
+    return unwrapApiResponse(response);
+  };
 
   const beginSubmit = () => {
     if (submittingRef.current) return false;
@@ -143,16 +153,15 @@ export default function MobileDialResult({ onUpdated }) {
     setSubmitting(false);
   };
 
-  const recordNoteOnce = () => {
+  const recordNoteOnce = async () => {
     const content = noteText.trim();
     if (!content || noteRecordedRef.current) return;
+    const response = await api.post('/notes', { student_id: pending.studentId, content });
+    unwrapApiResponse(response);
     noteRecordedRef.current = true;
-    api.post('/notes', { student_id: pending.studentId, content })
-      .catch((e) => logger.error('记录备注失败:', e));
   };
 
   const recordCallOnce = () => {
-    recordNoteOnce();
     if (!callRecordPromiseRef.current) {
       callRecordPromiseRef.current = completePendingDial(pending.studentId, pending)
         .catch((e) => {
@@ -164,16 +173,30 @@ export default function MobileDialResult({ onUpdated }) {
   };
 
   const finishDial = async ({ businessSaved = false } = {}) => {
+    businessSavedRef.current = businessSavedRef.current || businessSaved;
     try {
+      await recordNoteOnce();
       await recordCallOnce();
       close();
       return true;
     } catch (e) {
-      logger.error('记录通话时长失败:', e);
-      setErrorText(businessSaved ? '状态已保存，通话记录待同步' : '通话记录同步失败，请重试');
+      logger.error('通话结果收尾同步失败:', e);
+      const notePending = noteText.trim() && !noteRecordedRef.current;
+      const prefix = businessSavedRef.current ? '处理结果已保存，' : '';
+      setErrorText(
+        notePending
+          ? `${prefix}备注保存失败：${getApiErrorMessage(e)}`
+          : `${prefix}通话记录同步失败，请重试`,
+      );
+      setCompletionPending(true);
       endSubmit();
       return false;
     }
+  };
+
+  const retryCompletion = async () => {
+    if (!beginSubmit()) return;
+    await finishDial({ businessSaved: businessSavedRef.current });
   };
 
   const handleClose = async () => {
@@ -198,6 +221,7 @@ export default function MobileDialResult({ onUpdated }) {
       }
 
       await putField(payloadForOperatorResult(btn));
+      businessSavedRef.current = true;
       onUpdated && onUpdated(
         pending.studentId,
         displayStatusForOperatorResult(btn),
@@ -205,7 +229,7 @@ export default function MobileDialResult({ onUpdated }) {
       );
 
       // 接通后可补充意向等级；待回访会在意向后继续设置回访时间。
-      if (status === '非常有意向' || status === '意向了解加微' || status === '已联系' || status === '待回访') {
+      if (['非常有意向', '意向了解加微', '等待志愿', '已联系', '待回访'].includes(status)) {
         setFlowStatus(status);
         setShowIntent(true);
         endSubmit();
@@ -226,7 +250,7 @@ export default function MobileDialResult({ onUpdated }) {
       await putField({ intent_level: level });
       onUpdated && onUpdated(pending.studentId, null);
       // 待回访：接着收集回访时间落 /follow-ups；其他：完成
-      if (flowStatus === '待回访' || flowStatus === '意向了解加微') {
+      if (['待回访', '意向了解加微', '等待志愿'].includes(flowStatus)) {
         setShowIntent(false);
         setShowFollowUp(true);
         endSubmit();
@@ -247,10 +271,11 @@ export default function MobileDialResult({ onUpdated }) {
       return;
     }
     try {
-      await api.post('/follow-ups', {
+      const response = await api.post('/follow-ups', {
         student_id: pending.studentId,
         follow_up_date: followUpDate.length === 16 ? followUpDate + ':00' : followUpDate,
       });
+      unwrapApiResponse(response);
       onUpdated && onUpdated(pending.studentId, null);
       await finishDial({ businessSaved: true });
     } catch (e) {
@@ -263,12 +288,12 @@ export default function MobileDialResult({ onUpdated }) {
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={handleClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[92dvh] overflow-y-auto overscroll-contain"
         onClick={(e) => e.stopPropagation()}
         aria-busy={submitting}
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 mr-4">
             <div className="w-9 h-9 shrink-0 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
               <PhoneCall className="w-5 h-5 text-green-600 dark:text-green-400" />
             </div>
@@ -281,14 +306,24 @@ export default function MobileDialResult({ onUpdated }) {
               </div>
             </div>
           </div>
-          <button onClick={handleClose} className="text-gray-400 p-1 -mr-1" aria-label="不记录，关闭">
+          <button onClick={handleClose} className="text-gray-400 p-1 -mr-1 shrink-0" aria-label="不记录，关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {errorText && (
-          <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-300">
-            {errorText}
+          <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-300">
+            <span>{errorText}</span>
+            {completionPending && (
+              <button
+                type="button"
+                onClick={retryCompletion}
+                disabled={submitting}
+                className="min-h-[36px] shrink-0 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 disabled:opacity-60 dark:border-red-800 dark:bg-gray-900 dark:text-red-300"
+              >
+                重试同步
+              </button>
+            )}
           </div>
         )}
 
@@ -309,7 +344,7 @@ export default function MobileDialResult({ onUpdated }) {
                 <button
                   key={q.label}
                   type="button"
-                  disabled={submitting}
+                  disabled={submitting || completionPending}
                   onClick={() => {
                     const d = new Date();
                     d.setDate(d.getDate() + q.offset.days);
@@ -317,7 +352,7 @@ export default function MobileDialResult({ onUpdated }) {
                     const pad = (n) => String(n).padStart(2, '0');
                     setFollowUpDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`);
                   }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95 disabled:opacity-60"
+                  className="px-3 py-1.5 min-h-[44px] rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95 disabled:opacity-60 flex items-center justify-center"
                 >
                   {q.label}
                 </button>
@@ -327,7 +362,7 @@ export default function MobileDialResult({ onUpdated }) {
               type="datetime-local"
               value={followUpDate}
               onChange={(e) => setFollowUpDate(e.target.value)}
-              disabled={submitting}
+              disabled={submitting || completionPending}
               className="w-full border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500"
             />
             <div className="flex gap-2">
@@ -337,7 +372,7 @@ export default function MobileDialResult({ onUpdated }) {
                   if (!beginSubmit()) return;
                   await finishDial({ businessSaved: true });
                 }}
-                disabled={submitting}
+                disabled={submitting || completionPending}
                 className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
               >
                 跳过
@@ -345,7 +380,7 @@ export default function MobileDialResult({ onUpdated }) {
               <button
                 type="button"
                 onClick={saveFollowUp}
-                disabled={submitting || !followUpDate}
+                disabled={submitting || completionPending || !followUpDate}
                 className="flex-1 min-h-[48px] rounded-xl bg-amber-600 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -361,8 +396,8 @@ export default function MobileDialResult({ onUpdated }) {
                   key={b.code}
                   type="button"
                   onClick={() => pickStatus(b)}
-                  disabled={submitting || showIntent}
-                  className={`min-h-[56px] rounded-lg px-1 text-sm font-medium leading-5 whitespace-normal text-white ${b.cls} active:scale-95 disabled:opacity-60`}
+                  disabled={submitting || showIntent || completionPending}
+                  className={`min-h-[52px] rounded-lg px-1 py-1 text-sm font-medium leading-normal whitespace-normal text-white ${b.cls} active:scale-95 disabled:opacity-60 flex items-center justify-center text-center`}
                 >
                   {b.label}
                 </button>
@@ -377,13 +412,13 @@ export default function MobileDialResult({ onUpdated }) {
                 onChange={(e) => setNoteText(e.target.value)}
                 placeholder="添加备注（可选）"
                 rows={2}
-                disabled={submitting}
-                className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
+                disabled={submitting || completionPending}
+                className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-base bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
             {showIntent && (
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                 <div className="text-xs text-gray-500 mb-2 text-center">
                   意向等级（可选，点一下即可，也可跳过）
                 </div>
@@ -393,7 +428,7 @@ export default function MobileDialResult({ onUpdated }) {
                       key={b.level}
                       type="button"
                       onClick={() => pickIntent(b.level)}
-                      disabled={submitting}
+                      disabled={submitting || completionPending}
                       className={`flex-1 min-h-[44px] rounded-lg text-sm font-semibold active:scale-95 disabled:opacity-60 ${b.cls}`}
                     >
                       {b.level}
@@ -406,8 +441,8 @@ export default function MobileDialResult({ onUpdated }) {
                     if (!beginSubmit()) return;
                     await finishDial({ businessSaved: true });
                   }}
-                  disabled={submitting}
-                  className="mt-2.5 w-full text-xs text-gray-400 py-1.5 disabled:opacity-60"
+                  disabled={submitting || completionPending}
+                  className="mt-2.5 w-full text-xs text-gray-400 py-2 disabled:opacity-60 text-center flex items-center justify-center min-h-[44px]"
                 >
                   跳过意向，完成
                 </button>

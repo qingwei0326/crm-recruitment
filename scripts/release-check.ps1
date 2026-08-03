@@ -10,7 +10,8 @@ param(
     [switch]$SkipLint,
     [switch]$SkipBuild,
     [switch]$SkipHealth,
-    [string]$HealthUrl = "http://127.0.0.1:8000/api/health"
+    [string]$HealthUrl = "http://127.0.0.1:8000/api/health",
+    [string]$ProductionReleaseDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,6 +108,15 @@ function Assert-ReleasePackagePolicy {
     $makeRelease = Get-Content -LiteralPath $makeReleasePath -Raw
     $excludeFiles = Get-PowerShellArrayItems -Text $makeRelease -Name "ExcludeFiles"
     $excludeDirs = Get-PowerShellArrayItems -Text $makeRelease -Name "ExcludeDirs"
+
+    foreach ($script in @(
+        "scripts\prepare-production-release.ps1",
+        "scripts\safe-ubuntu-deploy.sh",
+        "scripts\sqlite_online_backup.py",
+        "scripts\verify_production_release.py"
+    )) {
+        Assert-PathExists $script
+    }
 
     $includedScripts = @(
         "start.ps1",
@@ -229,23 +239,73 @@ Invoke-ReleaseStep -Name "P0 retired predictions API" -Command {
     Assert-RetiredPredictionApi
 }
 
+function Get-ProjectPython {
+    $isWindowsHost = $env:OS -eq "Windows_NT"
+    $candidates = if ($isWindowsHost) {
+        @(
+            (Join-Path $Root ".venv-win\Scripts\python.exe"),
+            (Join-Path $Root ".venv\Scripts\python.exe")
+        )
+    } else {
+        @(
+            (Join-Path $Root ".venv-py312\bin\python"),
+            (Join-Path $Root ".venv\bin\python")
+        )
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            try {
+                & $candidate -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+                if ($LASTEXITCODE -eq 0) {
+                    return $candidate
+                }
+            } catch {
+                continue
+            }
+        }
+    }
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        & $python.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+        if ($LASTEXITCODE -eq 0) {
+            return $python.Source
+        }
+    }
+
+    throw "Python interpreter not found. Create a project virtual environment before release checks."
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ProductionReleaseDir)) {
+    Invoke-ReleaseStep -Name "Production release package" -Command {
+        $python = Get-ProjectPython
+        $releasePath = [System.IO.Path]::GetFullPath($ProductionReleaseDir)
+        Invoke-CheckedCommand -FilePath $python -Arguments @(
+            "scripts/verify_production_release.py",
+            $releasePath
+        ) -WorkingDirectory $Root
+    }
+}
+
 if (-not [string]::IsNullOrWhiteSpace($env:DOMAIN_AUDIT_DATABASE)) {
     Invoke-ReleaseStep -Name "Domain consistency audit" -Command {
-        $venvPython = Join-Path $Root ".venv-win\Scripts\python.exe"
-        $python = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { "python" }
+        $python = Get-ProjectPython
         Invoke-CheckedCommand -FilePath $python -Arguments @(
             "scripts/audit_domain_consistency.py",
             "--database",
             $env:DOMAIN_AUDIT_DATABASE,
             "--expect-revision",
-            "20260711_03"
+            "20260726_01"
         ) -WorkingDirectory $Root
     }
 }
 
 if (-not $SkipBackendTests) {
     Invoke-ReleaseStep -Name "Backend tests" -Command {
-        Invoke-CheckedCommand -FilePath "python" -Arguments @("-m", "pytest", "-q") -WorkingDirectory $Root
+        $python = Get-ProjectPython
+        Write-Host "Python: $python"
+        Invoke-CheckedCommand -FilePath $python -Arguments @("-m", "pytest", "-q") -WorkingDirectory $Root
     }
 }
 

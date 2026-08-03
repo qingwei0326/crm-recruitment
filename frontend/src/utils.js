@@ -55,6 +55,19 @@ export function getApiErrorMessage(error) {
   return error?.response?.data?.detail || error?.response?.data?.msg || error?.message || '加载失败';
 }
 
+export function unwrapApiResponse(response) {
+  const body = response?.data;
+  if (body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'code')) {
+    if (body.code !== 0) {
+      const error = new Error(body.msg || body.detail || '请求失败');
+      error.response = response;
+      throw error;
+    }
+    return body.data;
+  }
+  return body;
+}
+
 export function buildStudentPayload(form) {
   const payload = { name: form.name.trim() };
   [

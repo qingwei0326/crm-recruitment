@@ -6,11 +6,17 @@
  * @param {Object} props
  * @param {function} props.onOpenDetail - 打开学生详情回调
  */
-import { useState, useEffect, useCallback } from 'react';
-import { Search, X, Loader2, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Search, X, Loader2, ChevronRight, ListChecks } from 'lucide-react';
 import api from '../../../api';
 import StatusBadge from '../../../components/StatusBadge';
 import IntentLevelBadge from '../../../components/IntentLevelBadge';
+import {
+  PersonalGroupBadges,
+  PersonalGroupBulkBar,
+  PersonalGroupFilter,
+  UNGROUPED_FILTER,
+} from '../../../components/PersonalGroups';
 
 const STATUS_FILTERS = [
   { label: '全部', value: null },
@@ -32,37 +38,82 @@ const RESULT_FILTERS = [
   { label: '等待志愿', value: '等待志愿' },
 ];
 
+function handledFiltersStorageKey() {
+  try {
+    const user = JSON.parse(localStorage.getItem('crm_user') || 'null');
+    return `crm-agent-handled-filters:${user?.id || 'anonymous'}`;
+  } catch {
+    return 'crm-agent-handled-filters:anonymous';
+  }
+}
+
+function readHandledFilters(storageKey) {
+  try {
+    return JSON.parse(sessionStorage.getItem(storageKey) || '{}');
+  } catch {
+    return {};
+  }
+}
+
 export default function HandledView({ onOpenDetail }) {
+  const [storageKey] = useState(handledFiltersStorageKey);
+  const [restoredFilters] = useState(() => readHandledFilters(storageKey));
   const [students, setStudents] = useState([]);
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState(null);
-  const [selectedIntent, setSelectedIntent] = useState(null);
-  const [selectedResult, setSelectedResult] = useState(null);
+  const [search, setSearch] = useState(restoredFilters.search || '');
+  const [selectedStatus, setSelectedStatus] = useState(restoredFilters.selectedStatus || null);
+  const [selectedIntent, setSelectedIntent] = useState(restoredFilters.selectedIntent || null);
+  const [selectedResult, setSelectedResult] = useState(restoredFilters.selectedResult || null);
+  const [selectedGroupId, setSelectedGroupId] = useState(restoredFilters.selectedGroupId || null);
   const [total, setTotal] = useState(0);
   const [listTotal, setListTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const studentCountRef = useRef(0);
+  const requestSeqRef = useRef(0);
+
+  useEffect(() => {
+    sessionStorage.setItem(storageKey, JSON.stringify({
+      search,
+      selectedStatus,
+      selectedIntent,
+      selectedResult,
+      selectedGroupId,
+    }));
+  }, [search, selectedGroupId, selectedIntent, selectedResult, selectedStatus, storageKey]);
+
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedStudentIds([]);
+  }, [search, selectedGroupId, selectedIntent, selectedResult, selectedStatus]);
 
   const fetchData = useCallback(async (
     statusFilter = null,
     searchQuery = '',
     intentFilter = null,
     resultFilter = null,
+    groupId = null,
     reset = true,
   ) => {
+    const requestId = ++requestSeqRef.current;
     if (reset) setLoading(true);
     else setLoadingMore(true);
     try {
-      const params = { limit: 50, offset: reset ? 0 : students.length };
+      const params = { limit: 50, offset: reset ? 0 : studentCountRef.current };
       if (statusFilter) params.status = statusFilter;
       if (intentFilter) params.intent_level = intentFilter;
       if (resultFilter) params.status_detail = resultFilter;
+      if (groupId === UNGROUPED_FILTER) params.ungrouped = true;
+      else if (groupId) params.personal_group_id = groupId;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       const res = await api.get('/tasks/handled', { params });
+      if (requestId !== requestSeqRef.current) return;
       if (res.data.code === 0) {
         const list = res.data.data.list || [];
         setStudents(prev => reset ? list : [...prev, ...list]);
+        studentCountRef.current = reset ? list.length : studentCountRef.current + list.length;
         setCounts(res.data.data.counts || {});
         setTotal(res.data.data.total || 0);
         setListTotal(res.data.data.list_total ?? res.data.data.total ?? 0);
@@ -70,19 +121,87 @@ export default function HandledView({ onOpenDetail }) {
     } catch {
       // silently fail
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (requestId === requestSeqRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, [students.length]);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchData(selectedStatus, search, selectedIntent, selectedResult, true);
+      fetchData(selectedStatus, search, selectedIntent, selectedResult, selectedGroupId, true);
     }, 300);
     return () => clearTimeout(timer);
-  }, [selectedStatus, selectedIntent, selectedResult, search]);
+  }, [selectedStatus, selectedIntent, selectedResult, selectedGroupId, search, fetchData]);
+
+  useEffect(() => {
+    const handleGroupChange = (event) => {
+      const membershipChanged = event.detail?.studentId || event.detail?.studentIds?.length;
+      const activeGroupChanged = selectedGroupId != null && event.detail?.groupId === selectedGroupId;
+      if (!membershipChanged && !activeGroupChanged) return;
+      fetchData(selectedStatus, search, selectedIntent, selectedResult, selectedGroupId, true);
+    };
+    window.addEventListener('personal-groups-changed', handleGroupChange);
+    return () => window.removeEventListener('personal-groups-changed', handleGroupChange);
+  }, [fetchData, search, selectedGroupId, selectedIntent, selectedResult, selectedStatus]);
 
   const hasMore = students.length < listTotal;
+  const selectedStudentIdSet = new Set(selectedStudentIds);
+  const allVisibleSelected = students.length > 0 && students.every((student) => selectedStudentIdSet.has(student.id));
+
+  const toggleStudent = (studentId) => {
+    setSelectedStudentIds((current) => (
+      current.includes(studentId)
+        ? current.filter((id) => id !== studentId)
+        : [...current, studentId]
+    ));
+  };
+
+  const toggleAllVisible = () => {
+    if (allVisibleSelected) {
+      const visibleIds = new Set(students.map((student) => student.id));
+      setSelectedStudentIds((current) => current.filter((id) => !visibleIds.has(id)));
+    } else {
+      setSelectedStudentIds((current) => [
+        ...new Set([...current, ...students.map((student) => student.id)]),
+      ]);
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedStudentIds([]);
+  };
+
+  const handleBulkApplied = (group) => {
+    const selectedIds = new Set(selectedStudentIds);
+    setStudents((current) => {
+      if (selectedGroupId === UNGROUPED_FILTER) {
+        const remaining = current.filter((student) => !selectedIds.has(student.id));
+        studentCountRef.current = remaining.length;
+        return remaining;
+      }
+      return current.map((student) => {
+        if (!selectedIds.has(student.id)) return student;
+        const currentGroups = Array.isArray(student.personal_groups) ? student.personal_groups : [];
+        if (currentGroups.some((item) => item.id === group.id)) return student;
+        return {
+          ...student,
+          personal_groups: [...currentGroups, {
+            id: group.id,
+            name: group.name,
+            color: group.color,
+          }],
+        };
+      });
+    });
+    if (selectedGroupId === UNGROUPED_FILTER) {
+      setListTotal((current) => Math.max(0, current - selectedIds.size));
+      setTotal((current) => Math.max(0, current - selectedIds.size));
+    }
+    exitSelectionMode();
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -130,9 +249,14 @@ export default function HandledView({ onOpenDetail }) {
         ))}
       </div>
 
-      {/* Search */}
+      {/* Personal groups */}
       <div className="px-4 py-2 border-b dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="relative">
+        <PersonalGroupFilter selectedGroupId={selectedGroupId} onSelect={setSelectedGroupId} />
+      </div>
+
+      {/* Search and bulk mode */}
+      <div className="flex items-center gap-2 border-b bg-white px-4 py-2 dark:border-gray-700 dark:bg-gray-800">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
@@ -147,7 +271,39 @@ export default function HandledView({ onOpenDetail }) {
             </button>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (selectionMode) exitSelectionMode();
+            else setSelectionMode(true);
+          }}
+          aria-pressed={selectionMode}
+          className={`inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-medium ${selectionMode ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-200' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'}`}
+        >
+          <ListChecks className="h-4 w-4" />
+          {selectionMode ? '退出整理' : '批量整理'}
+        </button>
       </div>
+
+      {selectionMode && (
+        <div className="flex min-h-[42px] items-center gap-2 border-b bg-gray-50 px-4 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={allVisibleSelected}
+            onChange={toggleAllVisible}
+            aria-label="选择当前已加载学生"
+            className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+          />
+          <span>选择当前已加载学生</span>
+          <span className="ml-auto text-gray-400">{students.length} 人</span>
+        </div>
+      )}
+
+      <PersonalGroupBulkBar
+        selectedStudentIds={selectedStudentIds}
+        onApplied={handleBulkApplied}
+        onCancel={exitSelectionMode}
+      />
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
@@ -160,30 +316,45 @@ export default function HandledView({ onOpenDetail }) {
         ) : (
           <div className="divide-y dark:divide-gray-700">
             {students.map((s) => (
-              <button
+              <div
                 key={s.id}
-                onClick={() => onOpenDetail(s.id)}
-                className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors flex items-center gap-3"
+                className={`flex items-center gap-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50 ${selectedStudentIdSet.has(s.id) ? 'bg-cyan-50 dark:bg-cyan-950/30' : ''}`}
               >
-                <div className="shrink-0 w-9 h-9 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 flex items-center justify-center font-semibold text-sm">
-                  {(s.name || '?').slice(0, 1)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{s.name}</span>
-                    <StatusBadge status={s.status} />
-                    <IntentLevelBadge level={s.intent_level} />
+                {selectionMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedStudentIdSet.has(s.id)}
+                    onChange={() => toggleStudent(s.id)}
+                    aria-label={`选择 ${s.name}`}
+                    className="ml-4 h-4 w-4 shrink-0 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => (selectionMode ? toggleStudent(s.id) : onOpenDetail(s.id))}
+                  className={`flex min-w-0 flex-1 items-center gap-3 py-3 text-left ${selectionMode ? 'pr-4' : 'px-4'}`}
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+                    {(s.name || '?').slice(0, 1)}
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {s.school_name || '-'}{s.region ? ` · ${s.region}` : ''}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{s.name}</span>
+                      <StatusBadge status={s.status} />
+                      <IntentLevelBadge level={s.intent_level} />
+                    </div>
+                    <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+                      {s.school_name || '-'}{s.region ? ` · ${s.region}` : ''}
+                    </div>
+                    <PersonalGroupBadges groups={s.personal_groups} className="mt-1" />
                   </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
-              </button>
+                  {!selectionMode && <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />}
+                </button>
+              </div>
             ))}
             {hasMore && (
               <button
-                onClick={() => fetchData(selectedStatus, search, selectedIntent, selectedResult, false)}
+                onClick={() => fetchData(selectedStatus, search, selectedIntent, selectedResult, selectedGroupId, false)}
                 disabled={loadingMore}
                 className="w-full py-3 text-sm text-blue-600 dark:text-blue-400"
               >

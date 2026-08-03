@@ -152,9 +152,7 @@ const ActionTypes = {
 function decrementStatsForRemovedStudent(stats, student) {
   if (!student) return stats;
   const total = Math.max((Number(stats.total) || 0) - 1, 0);
-  const pending = ['未联系', '新线索'].includes(student.status)
-    ? Math.max((Number(stats.pending) || 0) - 1, 0)
-    : (Number(stats.pending) || 0);
+  const pending = Math.max((Number(stats.pending) || 0) - 1, 0);
   const done = Number(stats.done) || 0;
   const followUp = Number(stats.follow_up) || 0;
   return {
@@ -165,6 +163,18 @@ function decrementStatsForRemovedStudent(stats, student) {
     follow_up: followUp,
     progress_pct: total > 0 ? Math.round(((done + followUp) / total) * 1000) / 10 : 0,
   };
+}
+
+function decrementSchoolGroups(groups, student) {
+  if (!student) return groups;
+  const schoolName = student.school_name || '未知学校';
+  return groups
+    .map((group) => (
+      group.name === schoolName
+        ? { ...group, count: Math.max((Number(group.count) || 0) - 1, 0) }
+        : group
+    ))
+    .filter((group) => group.count > 0);
 }
 
 // Reducer
@@ -319,13 +329,17 @@ function agentWorkReducer(state, action) {
     case ActionTypes.SET_BACKLOG_ALERT:
       return { ...state, backlogAlert: action.payload };
 
-    case ActionTypes.UPDATE_STUDENT:
+    case ActionTypes.UPDATE_STUDENT: {
+      const fields = Object.fromEntries(
+        Object.entries(action.fields || {}).filter(([, value]) => value !== undefined),
+      );
       return {
         ...state,
         students: state.students.map((s) =>
-          s.id === action.id ? { ...s, ...action.fields } : s
+          s.id === action.id ? { ...s, ...fields } : s
         ),
       };
+    }
 
     case ActionTypes.UPDATE_STUDENT_FIELD:
       return {
@@ -346,6 +360,7 @@ function agentWorkReducer(state, action) {
         students,
         currentIdx: Math.min(state.currentIdx, Math.max(students.length - 1, 0)),
         stats: decrementStatsForRemovedStudent(state.stats, removed),
+        schoolGroups: decrementSchoolGroups(state.schoolGroups, removed),
         dial: state.dial.lockedStudentId === action.id
           ? { ...state.dial, lockedStudentId: null }
           : state.dial,

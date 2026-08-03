@@ -6,6 +6,8 @@ import useSyncManager from './hooks/useSyncManager';
 import useErrorMonitor from './hooks/useErrorMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionStatus from './components/ConnectionStatus';
+import AssistantOverlay from './components/assistant/AssistantOverlay';
+import { AssistantProvider } from './context/AssistantContext';
 import { setGlobalToast } from './api';
 import { useEffect } from 'react';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from './adminPermissions';
@@ -32,6 +34,7 @@ const AuditLogs = lazy(() => import('./pages/admin/AuditLogs'));
 const HomeVisitManage = lazy(() => import('./pages/admin/HomeVisitManage'));
 const CampusVisitManage = lazy(() => import('./pages/admin/CampusVisitManage'));
 const EnrollmentSettlement = lazy(() => import('./pages/admin/EnrollmentSettlement'));
+const AdminAssistant = lazy(() => import('./pages/admin/AdminAssistant'));
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazy(() => import('./pages/mobile/MobileStudentDetail'));
 const MobileCallForm = lazy(() => import('./pages/mobile/MobileCallForm'));
@@ -85,7 +88,7 @@ function LoggedIn({ children }) {
 }
 
 export default function App() {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
   const { isOnline } = useSyncManager();
 
   // 启动全局错误监控
@@ -105,6 +108,7 @@ export default function App() {
   if (loading) return <LoadingScreen />;
 
   return (
+    <AssistantProvider active={Boolean(user?.role === 'admin' && user?.is_super_admin)}>
     <ErrorBoundary>
     <ConnectionStatus isOnline={isOnline} />
     <Suspense fallback={<LoadingScreen />}>
@@ -262,6 +266,14 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/assistant"
+          element={
+            <Protected role="admin" superAdmin>
+              <RouteError><AdminAssistant /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
           path="/admin/settings"
           element={
             <Protected role="admin" superAdmin>
@@ -360,6 +372,8 @@ export default function App() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
+    <AssistantOverlay />
     </ErrorBoundary>
+    </AssistantProvider>
   );
 }

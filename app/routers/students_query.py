@@ -30,7 +30,10 @@ from app.routers.students import (
 )
 from app.schemas import Response
 from app.status_policy import canonical_student_status, statuses_for_canonical
-from app.task_stats import ACTIVE_TASK_STATUSES
+from app.task_stats import (
+    ACTIVE_TASK_STATUSES,
+    ASSIGNABLE_STUDENT_STATUSES,
+)
 from app.utils import is_phone_query, normalize_phone, today_cst_as_utc
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
@@ -46,6 +49,7 @@ async def list_students(
     intent_level: str = Query(""),
     assigned_to: int = Query(None),
     assignment: str = Query(""),
+    assignable: str = Query(""),
     region: str = Query(""),
     stage: str = Query(""),
     need_help: str = Query(""),
@@ -103,6 +107,11 @@ async def list_students(
         if not is_admin(current_user) and assigned_to != current_user.id:
             raise HTTPException(status_code=403, detail="无权查看其他坐席的学生")
         query = query.where(Student.assigned_to == assigned_to)
+    if assignable == "1":
+        query = query.where(
+            Student.assigned_to.is_(None),
+            Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
+        )
     if region:
         query = query.where(Student.region == region)
     if school_name:
@@ -234,6 +243,7 @@ async def list_dispatch_regions(
             Student.school_name != "",
             Student.region != "",
             Student.assigned_to.is_(None),
+            Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
         )
         .group_by(Student.region)
         .order_by(func.count(Student.id).desc())
@@ -253,7 +263,11 @@ async def list_schools(
     可选 regions：仅统计属于这些区县的未分配学生。
     """
     cleaned_regions = [r.strip() for r in regions if r and r.strip()]
-    conditions = [Student.school_name != "", Student.assigned_to.is_(None)]
+    conditions = [
+        Student.school_name != "",
+        Student.assigned_to.is_(None),
+        Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
+    ]
     if cleaned_regions:
         conditions.append(Student.region.in_(cleaned_regions))
     result = await db.execute(
