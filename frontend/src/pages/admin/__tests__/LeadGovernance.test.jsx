@@ -63,7 +63,8 @@ describe('LeadGovernance', () => {
           batch_id: 'phone-dedupe-test',
           affected_student_count: 2,
           cleared_count: 1,
-          deleted_count: 1,
+          deleted_count: 0,
+          manual_review_count: 1,
         },
       },
     });
@@ -78,8 +79,12 @@ describe('LeadGovernance', () => {
               signals: [
                 {
                   key: 'duplicate_phone',
+                  review_key: 'duplicate_phone',
                   title: '重复手机号',
                   count: 2,
+                  current_count: 12,
+                  reviewed_count: 10,
+                  review_token: 'token-duplicate-phone',
                   severity: 'high',
                   detail: '1 个手机号出现在多条线索中，需复核是否重复导入。',
                   to: '/admin/governance?section=duplicates',
@@ -132,6 +137,18 @@ describe('LeadGovernance', () => {
                   detail: '近 7 天在工作时间外修改状态。',
                   to: '/admin/audit-logs?action=%E4%BF%AE%E6%94%B9%E7%8A%B6%E6%80%81',
                 },
+                {
+                  key: 'already_reviewed',
+                  review_key: 'already_reviewed',
+                  title: '已复核无需展示',
+                  count: 0,
+                  current_count: 4,
+                  reviewed_count: 4,
+                  reviewed: true,
+                  severity: 'low',
+                  detail: '本批异常已经复核。',
+                  to: '/admin/audit-logs',
+                },
               ],
             },
           },
@@ -167,7 +184,8 @@ describe('LeadGovernance', () => {
               duplicate_phone_count: 1,
               affected_student_count: 2,
               will_clear_count: 1,
-              will_delete_count: 1,
+              will_delete_count: 0,
+              manual_review_count: 1,
               duplicate_phones: ['13800138000'],
             },
           },
@@ -181,10 +199,14 @@ describe('LeadGovernance', () => {
               alerts: [
                 {
                   type: 'delete_leads',
+                  review_key: 'delete_leads',
                   title: '近期存在删除操作',
                   severity: 'high',
-                  count: 1,
-                  detail: '近 7 天有 1 条删除类操作，请复核是否为预期清理。',
+                  count: 154,
+                  current_count: 174,
+                  reviewed_count: 20,
+                  review_token: 'token-delete-leads',
+                  detail: '近 7 天有 174 条删除类操作，已复核 20 条，当前新增 154 条。',
                   category: '删除',
                 },
                 {
@@ -203,6 +225,17 @@ describe('LeadGovernance', () => {
                   count: 2,
                   detail: '当前有 2 条报名记录未结算。',
                   to: '/admin/enrollment-settlement',
+                },
+                {
+                  type: 'reviewed_risk',
+                  review_key: 'reviewed_risk',
+                  title: '已复核风险无需展示',
+                  severity: 'low',
+                  count: 0,
+                  current_count: 8,
+                  reviewed_count: 8,
+                  reviewed: true,
+                  detail: '本批风险已经复核。',
                 },
               ],
             },
@@ -230,6 +263,8 @@ describe('LeadGovernance', () => {
     expect(screen.getByText('A 级长期未跟进')).toBeInTheDocument();
     expect(screen.getByText('分配后无通话')).toBeInTheDocument();
     expect(screen.getByText('非工作时间状态变更')).toBeInTheDocument();
+    expect(screen.queryByText('已复核无需展示')).not.toBeInTheDocument();
+    expect(screen.queryByText('已复核风险无需展示')).not.toBeInTheDocument();
     expect(await screen.findByText('疑似重复线索')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /学生管理与分配/ })).toHaveAttribute('href', '/admin/leads');
     expect(screen.getByRole('link', { name: /智能分配/ })).toHaveAttribute('href', '/admin/smart-assign');
@@ -293,7 +328,8 @@ describe('LeadGovernance', () => {
         key: 'duplicate_phone',
         title: '重复手机号',
         detail: '1 个手机号出现在多条线索中，需复核是否重复导入。',
-        count: 2,
+        count: 12,
+        review_token: 'token-duplicate-phone',
       });
       expect(mockToastSuccess).toHaveBeenCalledWith('已确认复核');
     });
@@ -313,11 +349,88 @@ describe('LeadGovernance', () => {
       expect(api.post).toHaveBeenCalledWith('/admin/governance-reviews', {
         key: 'delete_leads',
         title: '近期存在删除操作',
-        detail: '近 7 天有 1 条删除类操作，请复核是否为预期清理。',
-        count: 1,
+        detail: '近 7 天有 174 条删除类操作，已复核 20 条，当前新增 154 条。',
+        count: 174,
+        review_token: 'token-delete-leads',
       });
       expect(mockToastSuccess).toHaveBeenCalledWith('已确认复核');
     });
+  });
+
+  it('keeps the review visible and shows the server message when its token is stale', async () => {
+    api.post.mockResolvedValueOnce({
+      data: {
+        code: 1,
+        data: null,
+        msg: '复核凭证已失效，请刷新页面后重试',
+      },
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
+        <LeadGovernance />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('重复手机号')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '确认已复核 重复手机号' }));
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith('复核凭证已失效，请刷新页面后重试');
+    });
+    expect(mockToastSuccess).not.toHaveBeenCalledWith('已确认复核');
+    expect(screen.getByRole('button', { name: '确认已复核 重复手机号' })).toBeInTheDocument();
+  });
+
+  it('hides completed review cards and removes the empty risk section', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/admin/data-health') {
+        return Promise.resolve({
+          data: {
+            code: 0,
+            data: {
+              status: 'ok',
+              total_issue_count: 0,
+              signals: [
+                {
+                  key: 'duplicate_phone',
+                  review_key: 'duplicate_phone',
+                  title: '重复手机号',
+                  count: 0,
+                  current_count: 12,
+                  reviewed_count: 12,
+                  reviewed: true,
+                  severity: 'low',
+                  detail: '已确认复核。',
+                  to: '/admin/governance?section=duplicates',
+                },
+              ],
+            },
+          },
+        });
+      }
+      if (url === '/admin/lead-duplicates') {
+        return Promise.resolve({ data: { code: 0, data: { total_groups: 0, groups: [] } } });
+      }
+      if (url === '/admin/lead-duplicates/cleanup-preview') {
+        return Promise.resolve({ data: { code: 0, data: { affected_student_count: 0 } } });
+      }
+      if (url === '/admin/risk-alerts') {
+        return Promise.resolve({ data: { code: 0, data: { alerts: [] } } });
+      }
+      return Promise.resolve({ data: { code: 0, data: {} } });
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/governance']}>
+        <LeadGovernance />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('疑似重复线索')).toBeInTheDocument();
+    expect(screen.queryByText('数据健康中心')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认已复核 重复手机号' })).not.toBeInTheDocument();
+    expect(screen.queryByText('异常变更提醒')).not.toBeInTheDocument();
   });
 
   it('confirms and runs duplicate phone cleanup with batch audit link', async () => {
@@ -335,16 +448,16 @@ describe('LeadGovernance', () => {
     );
 
     expect(await screen.findByText('重复手机号清理预览')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '清理重复手机号' }));
+    fireEvent.click(screen.getByRole('button', { name: '清理可安全处理项' }));
 
     await waitFor(() => {
       expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
         title: '清理重复手机号',
-        confirmText: '确认清理',
-        tone: 'danger',
+        confirmText: '清理安全项',
+        tone: 'warning',
       }));
       expect(api.post).toHaveBeenCalledWith('/admin/lead-duplicates/cleanup', { confirm: true });
-      expect(mockToastSuccess).toHaveBeenCalledWith('清理完成：清号 1 条，删除 1 条');
+      expect(mockToastSuccess).toHaveBeenCalledWith('清理完成：安全清号 1 条，待人工复核 1 条');
     });
   });
 
@@ -356,7 +469,7 @@ describe('LeadGovernance', () => {
     );
 
     expect(await screen.findByText('重复手机号清理预览')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '清理重复手机号' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '清理可安全处理项' })).not.toBeInTheDocument();
     expect(screen.getByText('当前账号仅可查看预览；清理重复手机号需授权操作权限。')).toBeInTheDocument();
   });
 });

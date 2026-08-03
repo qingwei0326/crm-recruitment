@@ -100,6 +100,10 @@ vi.mock('../pages/admin/SystemSettings', () => ({
   default: () => <div>system settings page</div>,
 }));
 
+vi.mock('../pages/admin/AdminAssistant', () => ({
+  default: () => <div>admin assistant page</div>,
+}));
+
 vi.mock('../pages/admin/AuditLogs', () => ({
   default: () => <div>audit logs page</div>,
 }));
@@ -242,6 +246,31 @@ describe('admin compatibility routes', () => {
 
     expect(await screen.findByText('admin dashboard page')).toBeInTheDocument();
     expect(screen.queryByText('system settings page')).not.toBeInTheDocument();
+  });
+
+  it('allows only super admins to open the full assistant page', async () => {
+    const { unmount } = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/assistant']}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('admin assistant page')).toBeInTheDocument();
+    unmount();
+
+    mockUser = {
+      id: 2,
+      role: 'admin',
+      name: '普通管理员',
+      must_change_password: false,
+      is_super_admin: false,
+    };
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/assistant']}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('admin dashboard page')).toBeInTheDocument();
+    expect(screen.queryByText('admin assistant page')).not.toBeInTheDocument();
   });
 
   it.each([

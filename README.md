@@ -156,7 +156,7 @@ $destination = ".\backups\server-audit\working\crm_domain_{0}.db" -f (
     --destination $destination
 ```
 
-命令会复制、预检、升级到 `20260711_03`，再校验源文件 SHA-256、旧表行数、
+命令会复制、预检、升级到 `20260714_01`，再校验源文件 SHA-256、旧表行数、
 `quick_check`、外键和领域一致性。需要让开发服务读取该副本时，先运行 `stop.ps1`，
 为根目录 `crm.db` 创建时间戳备份并核对哈希，再设置
 `$env:DATABASE_PATH=(Resolve-Path $destination).Path`；不得把工作副本写回服务器。
@@ -240,9 +240,13 @@ bash tunnel.sh status
 
 - 通话分析可使用 DeepSeek、小米 MiMo 或自定义兼容接口；未配置密钥时自动回退到本地关键词匹配。
 - AI 结果用于辅助判断，最终状态、阶段和备注仍以人工跟进为准。
+- 超级管理员可从右下角悬浮入口或 `/admin/assistant` 打开执行助手；桌面抽屉可调宽/最大化，手机端使用全屏面板。
+- 执行助手默认关闭，在系统设置中独立配置 OpenAI 格式的 Base URL、Model 和 API Key；密钥加密保存且接口只返回是否配置和末四位。
+- 模型只能调用服务端白名单工具，不能直接执行 SQL 或 Shell。查询自动执行，普通写入需确认，清洗和永久删除需二次确认并在执行前验证数据库备份。
+- 账号重置生成的随机密码只在本次确认响应中返回，数据库和助手历史不保存密码明文。
 - 回访提醒通过 PushPlus 推送；话务员配置个人 Token 时优先推送个人 Token，否则使用系统配置。
 - 管理端删除、回收、重复手机号清理、分配回滚、账号离职和系统设置修改都会写入操作记录，建议通过批次号复核。
-- Ubuntu 生产部署使用 `scripts/safe-ubuntu-deploy.sh`，只同步代码和前端构建产物，不覆盖服务器 `/home/qingwei/crm/crm.db` 和 `.env`。
+- Ubuntu 生产部署先用 `scripts/prepare-production-release.ps1` 冻结应用、前端和完整 Alembic 链，再由 `scripts/safe-ubuntu-deploy.sh` 部署。脚本锁定运行中 SQLite 的真实路径，先生成并校验快照，再使用候选版本执行受控增量迁移，最后通过单一 `.deploy/current` 指针切换代码；失败时自动回滚代码，但不会自动倒灌数据库快照或降级已经成功的加法迁移。
 
 ---
 
@@ -446,7 +450,7 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 - **Token 即时撤销**：管理员禁用账号或重置密码时，旧 token 立即失效（JWT 携带 tv 字段，user.token_version 递增触发）
 - **权限边界测试**：新增 4 套测试（设备追踪、软离职、权限隔离、token 撤销），守住话务员数据隔离红线
 - **部署脚本改进**：start.sh / stop.sh 重构，支持更可靠的前后端启停
-- **J1900 迁移文档更新**：新增纯 Python / PowerShell 修复方案，降低部署门槛
+- **迁移文档更新**：新增纯 Python / PowerShell 修复方案，降低部署门槛
 
 ### v1.1.2（2025-05-23）
 

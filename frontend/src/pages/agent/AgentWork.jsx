@@ -11,6 +11,7 @@ import useAgentStudents from '../../hooks/useAgentStudents';
 import useAgentDial from '../../hooks/useAgentDial';
 import useAgentDetail from '../../hooks/useAgentDetail';
 import useAgentFollowing from '../../hooks/useAgentFollowing';
+import useMobileDialAutoAdvance from '../../hooks/useMobileDialAutoAdvance';
 
 // Extracted components
 import AgentWorkDesktop from './AgentWorkDesktop';
@@ -48,6 +49,14 @@ export default function AgentWork() {
     handleCreate,
   } = useAgentStudents({ state, actions, toast });
 
+  const mobileAutoAdvance = useMobileDialAutoAdvance({
+    enabled: isMobile && state.ui.viewTab === 'today' && !state.detail.show,
+    students: filteredStudents,
+    currentStudentId: current?.id,
+    lockedStudentId: state.dial.lockedStudentId,
+    setCurrentIdx: actions.setCurrentIdx,
+  });
+
   // 拨号管理
   const {
     handleDial,
@@ -64,6 +73,7 @@ export default function AgentWork() {
     confirm,
     prompt,
     updateIntentById,
+    onFlowComplete: mobileAutoAdvance.handleDialComplete,
   });
 
   // 详情面板管理
@@ -116,6 +126,7 @@ export default function AgentWork() {
       />
       <DialResultModal
         dialModal={state.dial.modal}
+        mobile={isMobile}
         onStatusSelect={handleDialModalStatus}
         onIntentSelect={handleDialModalIntent}
         onFollowUpSelect={handleDialModalFollowUp}
@@ -199,6 +210,9 @@ export default function AgentWork() {
     setNoteText: actions.setNoteText,
     // 消息
     actionMsg: state.ui.actionMsg,
+    autoAdvanceNotice: mobileAutoAdvance.notice,
+    onUndoAutoAdvance: mobileAutoAdvance.undo,
+    onDismissAutoAdvance: mobileAutoAdvance.dismiss,
     // 拨号
     dialCheckByStudent: state.dial.checkByStudent,
     lockedStudentId: state.dial.lockedStudentId,

@@ -94,6 +94,13 @@ async def assign_students(
         names = "、".join(student.name for student in enrolled_students[:3])
         suffix = f" 等 {len(enrolled_students)} 人" if len(enrolled_students) > 3 else ""
         return Response.error(code=1, msg=f"已报名学生不能重新分配：{names}{suffix}")
+    terminal_students = [
+        student for student in students if student.status in TERMINAL_STUDENT_STATUSES
+    ]
+    if terminal_students:
+        names = "、".join(student.name for student in terminal_students[:3])
+        suffix = f" 等 {len(terminal_students)} 人" if len(terminal_students) > 3 else ""
+        return Response.error(code=1, msg=f"终态学生不能直接分配，请先恢复状态：{names}{suffix}")
 
     now = utcnow()
     batch_id = make_batch_id("assign")

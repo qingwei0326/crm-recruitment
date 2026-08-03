@@ -4,7 +4,13 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from app.config import DATABASE_URL, DATABASE_URL_SYNC, DB_ENGINE
+from app.config import (
+    APP_ENV,
+    DATABASE_URL,
+    DATABASE_URL_SYNC,
+    DB_ENGINE,
+    EXPECTED_ALEMBIC_REVISION,
+)
 from app.dial_recording import (
     DIAL_RECORDING_COMPLETED,
     DIAL_RECORDING_LEGACY_MISSING,
@@ -45,7 +51,15 @@ async def get_db():
 
 async def init_db():
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        if APP_ENV == "production":
+            await conn.run_sync(
+                lambda sync_connection: _assert_schema_revision(
+                    sync_connection,
+                    EXPECTED_ALEMBIC_REVISION,
+                )
+            )
+        else:
+            await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_drop_legacy_student_phone_column)
         await conn.run_sync(_migrate_student_phone_normalization)
         await conn.run_sync(_migrate_follow_up_columns)
@@ -64,6 +78,19 @@ async def init_db():
         await conn.run_sync(_migrate_legacy_student_status_values)
         await conn.run_sync(_migrate_legacy_student_stage_values)
         await conn.run_sync(_migrate_admissions_workflow_tables)
+
+
+def _assert_schema_revision(sync_connection, expected_revision: str) -> None:
+    inspector = inspect(sync_connection)
+    if "alembic_version" not in inspector.get_table_names():
+        raise RuntimeError("生产数据库缺少 alembic_version，拒绝自动建表")
+    actual_revision = sync_connection.execute(
+        text("SELECT version_num FROM alembic_version")
+    ).scalar_one_or_none()
+    if actual_revision != expected_revision:
+        raise RuntimeError(
+            f"生产数据库版本不匹配：expected={expected_revision}, actual={actual_revision}"
+        )
 
 
 def _migrate_user_token_version(sync_connection):

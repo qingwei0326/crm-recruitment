@@ -41,6 +41,7 @@ class StudentStatus(enum.StrEnum):
     expired = "已过期"
     very_interested = "非常有意向"
     interested_add_wechat = "意向了解加微"
+    waiting_volunteer = "等待志愿"
     not_reached = "未接"
     high_score = "高分段"
     not_interested = "无意向"
@@ -529,4 +530,5 @@ class DialLog(Base):
     )
 
 
+from app import assistant_models as assistant_models  # noqa: E402,F401
 from app import domain_models as domain_models  # noqa: E402,F401

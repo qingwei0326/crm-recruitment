@@ -45,6 +45,8 @@ ACTION_CATEGORY = {
     "分配回滚": "分配",
     "分配回滚汇总": "分配",
     "线索回收": "线索治理",
+    "线索回收汇总": "线索治理",
+    "回收回滚汇总": "线索治理",
     "回收无效线索": "线索治理",
     "分学校回收": "线索治理",
     "治理复核": "线索治理",
@@ -52,6 +54,7 @@ ACTION_CATEGORY = {
     "修改报名后状态": "状态变更",
     "手动评级": "状态变更",
     "AI分析": "状态变更",
+    "AI助手修改状态": "状态变更",
     "标记协助": "状态变更",
     "取消协助": "状态变更",
     "修改信息": "状态变更",
@@ -65,17 +68,34 @@ ACTION_CATEGORY = {
     "批量删除无效线索": "删除",
     "数据清理": "删除",
     "数据清理汇总": "数据维护",
+    "AI助手清理重复号码": "数据维护",
+    "AI助手数据清理汇总": "数据维护",
+    "AI助手删除无号码线索": "删除",
+    "AI助手批量删除无效线索": "删除",
     "数据修复": "数据维护",
     "数据还原": "数据维护",
     "手动备份": "数据维护",
+    "AI助手备份": "数据维护",
     "前端错误": "系统异常",
     "修改系统配置": "系统配置",
+    "修改AI助手配置": "系统配置",
+    "创建私人分组": "私人分组",
+    "修改私人分组": "私人分组",
+    "删除私人分组": "私人分组",
+    "加入私人分组": "私人分组",
+    "移出私人分组": "私人分组",
+    "归档私人分组": "私人分组",
+    "测试AI助手": "系统配置",
     "删除用户": "用户管理",
     "离职用户": "用户管理",
     "创建用户": "用户管理",
     "修改用户": "用户管理",
     "重置密码": "用户管理",
+    "AI助手重置密码": "用户管理",
     "解锁用户": "用户管理",
+    "AI助手批量分配": "分配",
+    "AI助手线索回收": "线索治理",
+    "AI助手执行": "AI助手",
 }
 
 ASSIGNMENT_ROLLBACK_BATCH_ACTIONS = {
@@ -250,6 +270,11 @@ async def list_operation_logs(
                     and log.batch_id
                     and log.action in ASSIGNMENT_ROLLBACK_BATCH_ACTIONS
                 ),
+                "can_rollback_reclaim": bool(
+                    user_has_operation_permission(current_user, ADMIN_OP_ASSIGNMENT_ROLLBACK)
+                    and log.batch_id
+                    and log.action == "线索回收汇总"
+                ),
                 "created_at": str(log.created_at),
             }
         )
@@ -262,6 +287,92 @@ async def list_operation_logs(
             "actions": actions,
             "categories": categories,
             "list": data,
+        }
+    )
+
+
+@router.get("/batch/{batch_id}")
+async def batch_operation_log_detail(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_page_permission(ADMIN_PAGE_AUDIT_LOGS)),
+):
+    """Return a compact, auditable summary and detail for one operation batch."""
+    batch_id = batch_id.strip()
+    if not batch_id:
+        return Response.error(code=1, msg="batch_id不能为空")
+
+    batch_filter = OperationLog.batch_id == batch_id
+    summary = (
+        await db.execute(
+            select(
+                func.count(OperationLog.id).label("total_logs"),
+                func.count(func.distinct(OperationLog.target_student_id)).label("student_count"),
+                func.min(OperationLog.created_at).label("first_at"),
+                func.max(OperationLog.created_at).label("last_at"),
+            ).where(batch_filter)
+        )
+    ).one()
+    if not summary.total_logs:
+        return Response.error(code=1, msg="未找到该操作批次")
+
+    action_rows = await db.execute(
+        select(OperationLog.action, func.count(OperationLog.id))
+        .where(batch_filter)
+        .group_by(OperationLog.action)
+        .order_by(func.count(OperationLog.id).desc(), OperationLog.action.asc())
+    )
+    operator_rows = await db.execute(
+        select(OperationLog.operator_id, OperationLog.operator_name)
+        .where(batch_filter)
+        .distinct()
+        .order_by(OperationLog.operator_name.asc())
+    )
+    detail_rows = await db.execute(
+        select(
+            OperationLog,
+            Student.name.label("student_name"),
+            Student.school_name.label("student_school_name"),
+        )
+        .outerjoin(Student, Student.id == OperationLog.target_student_id)
+        .where(batch_filter)
+        .order_by(OperationLog.created_at.asc(), OperationLog.id.asc())
+        .limit(500)
+    )
+    items = [
+        {
+            "id": log.id,
+            "operator_id": log.operator_id,
+            "operator_name": log.operator_name,
+            "student_id": log.target_student_id,
+            "student_name": student_name or "",
+            "school_name": student_school_name or "",
+            "action": log.action,
+            "content": log.content or "",
+            "old_status": log.old_status or "",
+            "new_status": log.new_status or "",
+            "note_content": log.note_content or "",
+            "created_at": str(log.created_at),
+        }
+        for log, student_name, student_school_name in detail_rows.all()
+    ]
+    return Response.ok(
+        {
+            "batch_id": batch_id,
+            "total_logs": int(summary.total_logs or 0),
+            "student_count": int(summary.student_count or 0),
+            "first_at": str(summary.first_at) if summary.first_at else "",
+            "last_at": str(summary.last_at) if summary.last_at else "",
+            "actions": [
+                {"action": action, "count": int(count or 0)}
+                for action, count in action_rows.all()
+            ],
+            "operators": [
+                {"operator_id": operator_id, "operator_name": operator_name or ""}
+                for operator_id, operator_name in operator_rows.all()
+            ],
+            "truncated": int(summary.total_logs or 0) > len(items),
+            "items": items,
         }
     )
 

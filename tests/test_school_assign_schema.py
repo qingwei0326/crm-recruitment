@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import select
 
-from app.models import OperationLog, Student, UserRole
+from app.models import OperationLog, Student, StudentStatus, UserRole
 from app.utils import parse_assignment_rollback_note
 
 
@@ -73,3 +73,56 @@ async def test_school_assign_valid_payload_trims_and_assigns(client, db, admin_h
     assert f"话务员：{agent_user.id}" in summary.content
     assert "样例：待分配" in summary.content
     assert summary.batch_id == body["data"]["batch_id"]
+
+
+@pytest.mark.asyncio
+async def test_school_dispatch_options_exclude_unassigned_terminal_students(
+    client, db, admin_headers
+):
+    invalid_only_school = "福建漳州蓝田经济开发区实验小学"
+    db.add_all(
+        [
+            Student(
+                name="无效学生",
+                school_name=invalid_only_school,
+                region="龙文区",
+                status=StudentStatus.invalid,
+            ),
+            Student(
+                name="可分配学生",
+                school_name="龙文区可分配学校",
+                region="龙文区",
+                status=StudentStatus.not_contacted,
+            ),
+            Student(
+                name="已报名学生",
+                school_name="龙文区可分配学校",
+                region="龙文区",
+                status=StudentStatus.enrolled,
+            ),
+        ]
+    )
+    await db.commit()
+
+    regions_resp = await client.get("/api/students/dispatch-regions", headers=admin_headers)
+    schools_resp = await client.get(
+        "/api/students/schools",
+        params={"regions": "龙文区"},
+        headers=admin_headers,
+    )
+    students_resp = await client.get(
+        "/api/students",
+        params={
+            "assignment": "unassigned",
+            "assignable": "1",
+            "school_name": "龙文区可分配学校",
+        },
+        headers=admin_headers,
+    )
+
+    assert regions_resp.status_code == 200
+    assert regions_resp.json()["data"] == [{"name": "龙文区", "count": 1}]
+    assert schools_resp.status_code == 200
+    assert schools_resp.json()["data"] == [{"name": "龙文区可分配学校", "count": 1}]
+    assert students_resp.status_code == 200
+    assert [item["name"] for item in students_resp.json()["data"]["list"]] == ["可分配学生"]

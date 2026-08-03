@@ -265,7 +265,11 @@ async def _source_projection_count(
 ) -> int:
     item = aliased(WorkItem)
     employment = aliased(AgentEmployment)
-    owner_id = func.coalesce(Student.assigned_to, source_owner_id)
+    owner_id = func.coalesce(
+        Student.assigned_to,
+        item.owner_agent_id,
+        source_owner_id,
+    )
     source_mismatches = await _count(
         db,
         select(func.count(func.distinct(source_model.id)))

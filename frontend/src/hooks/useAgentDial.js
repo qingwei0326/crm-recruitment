@@ -5,7 +5,14 @@ import { getApiErrorMessage } from '../utils';
 import logger from '../utils/logger';
 import { resolveOperatorResult } from '../operatorResultPolicy';
 
-const INTENT_STEP_STATUSES = ['非常有意向', '意向了解加微', '已联系', '待回访'];
+const INTENT_STEP_STATUSES = ['非常有意向', '意向了解加微', '等待志愿', '已联系', '待回访'];
+
+function successfulData(response, fallbackMessage) {
+  if (response.data?.code !== undefined && response.data.code !== 0) {
+    throw new Error(response.data.msg || fallbackMessage);
+  }
+  return response.data?.data || {};
+}
 
 /**
  * 管理拨号相关逻辑
@@ -19,10 +26,12 @@ export default function useAgentDial({
   confirm,
   prompt,
   updateIntentById,
+  onFlowComplete,
 }) {
   // 用 ref 缓存 lastFetchedId 防止重复请求
   const lastFetchedIdRef = useRef(null);
   const dialCompletionRef = useRef(null);
+  const finalizedFlowKeyRef = useRef(null);
   const dialingRef = useRef(new Set());
 
   const completeDialOnce = useCallback((modal) => {
@@ -32,19 +41,30 @@ export default function useAgentDial({
       return dialCompletionRef.current.promise;
     }
 
-    const promise = completePendingDial(modal.studentId, modal).catch((e) => {
-      if (dialCompletionRef.current?.promise === promise) {
-        dialCompletionRef.current = null;
-      }
-      throw e;
-    });
+    const promise = completePendingDial(modal.studentId, modal)
+      .then((result) => {
+        if (!result?.completed && dialCompletionRef.current?.promise === promise) {
+          dialCompletionRef.current = null;
+        }
+        return result;
+      })
+      .catch((e) => {
+        if (dialCompletionRef.current?.promise === promise) {
+          dialCompletionRef.current = null;
+        }
+        throw e;
+      });
     dialCompletionRef.current = { key, promise };
     return promise;
   }, []);
 
   const completeDialOrNotify = useCallback(async (modal, message) => {
     try {
-      await completeDialOnce(modal);
+      const result = await completeDialOnce(modal);
+      if (!result?.completed) {
+        toast?.error(message);
+        return false;
+      }
       return true;
     } catch (e) {
       logger.error('记录通话时长失败:', e);
@@ -52,6 +72,24 @@ export default function useAgentDial({
       return false;
     }
   }, [completeDialOnce, toast]);
+
+  const finalizeSavedDial = useCallback(async (modal, message, { removeFromQueue = false } = {}) => {
+    const completed = await completeDialOrNotify(modal, message);
+    if (!completed) return false;
+
+    const flowKey = `${modal.studentId}:${modal.dialLogId ?? ''}:${modal.dialStartedAt ?? ''}`;
+    if (finalizedFlowKeyRef.current === flowKey) return true;
+    finalizedFlowKeyRef.current = flowKey;
+
+    actions.setDialModal(null);
+    actions.setLockedStudent(null);
+    if (removeFromQueue) actions.removeStudentFromQueue?.(modal.studentId);
+    onFlowComplete?.({
+      studentId: modal.studentId,
+      removedFromQueue: removeFromQueue,
+    });
+    return true;
+  }, [actions, completeDialOrNotify, onFlowComplete]);
 
   // 加载拨号检查
   const refreshDialCheck = useCallback(async (id) => {
@@ -149,14 +187,14 @@ export default function useAgentDial({
     const modal = state.dial.modal;
     if (!modal) return;
 
-    let { status, invalidReason, fixedInvalid } = resolveOperatorResult(s);
+    let { status, invalidReason } = resolveOperatorResult(s);
     const needsIntentStep = INTENT_STEP_STATUSES.includes(status);
     let saved = false;
 
     if (invalidReason) {
       try {
         const res = await api.put(`/students/${modal.studentId}`, { status, invalid_reason: invalidReason });
-        const updated = res.data?.data || {};
+        const updated = successfulData(res, '更新状态失败');
         actions.updateStudent(modal.studentId, {
           status: updated.status || '无效',
           status_detail: updated.status_detail || invalidReason || '',
@@ -176,10 +214,9 @@ export default function useAgentDial({
           placeholder: '例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
         });
         if (!reason) return;
-        invalidReason = reason;
         try {
           const res = await api.put(`/students/${modal.studentId}`, { status, invalid_reason: reason });
-          const updated = res.data?.data || {};
+          const updated = successfulData(res, '更新状态失败');
           actions.updateStudent(modal.studentId, {
             status: updated.status || '无效',
             status_detail: updated.status_detail || reason,
@@ -201,10 +238,11 @@ export default function useAgentDial({
         }
         try {
           const res = await api.put(`/students/${modal.studentId}`, { status });
-          const updated = res.data?.data || {};
+          const updated = successfulData(res, '更新状态失败');
           const fallbackStatusByDetail = {
             非常有意向: '已联系',
             意向了解加微: '待回访',
+            等待志愿: '待回访',
           };
           actions.updateStudent(modal.studentId, {
             status: updated.status || fallbackStatusByDetail[status] || status,
@@ -224,54 +262,58 @@ export default function useAgentDial({
     if (needsIntentStep) {
       actions.setDialModal({ ...modal, status, showIntent: true });
     } else {
-      const completed = await completeDialOrNotify(modal, '状态已保存，通话记录待同步，请重试');
-      if (!completed) return;
-      actions.setDialModal(null);
-      actions.setLockedStudent(null);
-      if (status === '无效' && invalidReason && fixedInvalid) {
-        actions.removeStudentFromQueue?.(modal.studentId);
-      }
+      await finalizeSavedDial(
+        modal,
+        '状态已保存，通话记录待同步，请重试',
+        { removeFromQueue: true },
+      );
     }
-  }, [state.dial.modal, actions, toast, prompt, confirm, completeDialOrNotify]);
+  }, [state.dial.modal, actions, toast, prompt, confirm, finalizeSavedDial]);
 
   // 处理拨号结果弹窗 - 意向选择
   const handleDialModalIntent = useCallback(async (level) => {
     const modal = state.dial.modal;
     if (!modal) return;
-    await updateIntentById(modal.studentId, level);
+    const saved = await updateIntentById(modal.studentId, level);
+    if (saved === false) return;
     actions.setActionMsg('意向等级已更新');
     setTimeout(() => actions.setActionMsg(''), 2000);
-    if (modal.status === '意向了解加微' || modal.status === '待回访') {
+    if (['意向了解加微', '等待志愿', '待回访'].includes(modal.status)) {
       actions.setDialModal({ ...modal, showIntent: false, showFollowUp: true });
       return;
     }
-    const completed = await completeDialOrNotify(modal, '状态已保存，通话记录待同步，请重试');
-    if (!completed) return;
-    actions.setDialModal(null);
-    actions.setLockedStudent(null);
-  }, [state.dial.modal, actions, updateIntentById, completeDialOrNotify]);
+    await finalizeSavedDial(
+      modal,
+      '状态已保存，通话记录待同步，请重试',
+      { removeFromQueue: true },
+    );
+  }, [state.dial.modal, actions, updateIntentById, finalizeSavedDial]);
 
   // 处理拨号结果弹窗 - 回访设置
   const handleDialModalFollowUp = useCallback(async (date) => {
     const modal = state.dial.modal;
     if (!modal) return;
-    if (date) {
-      try {
-        await api.post('/follow-ups', {
-          student_id: modal.studentId,
-          follow_up_date: date.length === 16 ? date + ':00' : date,
-        });
-        actions.setActionMsg('回访提醒已设置');
-        setTimeout(() => actions.setActionMsg(''), 2000);
-      } catch (e) {
-        toast?.error(getApiErrorMessage(e));
+    if (!date) return;
+    try {
+      const response = await api.post('/follow-ups', {
+        student_id: modal.studentId,
+        follow_up_date: date.length === 16 ? date + ':00' : date,
+      });
+      if (response.data?.code !== undefined && response.data.code !== 0) {
+        throw new Error(response.data.msg || '回访提醒保存失败');
       }
+      actions.setActionMsg('回访提醒已设置');
+      setTimeout(() => actions.setActionMsg(''), 2000);
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
+      return;
     }
-    const completed = await completeDialOrNotify(modal, '状态已保存，通话记录待同步，请重试');
-    if (!completed) return;
-    actions.setDialModal(null);
-    actions.setLockedStudent(null);
-  }, [state.dial.modal, actions, toast, completeDialOrNotify]);
+    await finalizeSavedDial(
+      modal,
+      '状态已保存，通话记录待同步，请重试',
+      { removeFromQueue: true },
+    );
+  }, [state.dial.modal, actions, toast, finalizeSavedDial]);
 
   const handleDialModalClose = useCallback(async () => {
     const modal = state.dial.modal;

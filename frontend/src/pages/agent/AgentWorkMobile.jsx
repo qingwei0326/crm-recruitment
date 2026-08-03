@@ -4,6 +4,7 @@ import {
   Phone, Sparkles, Menu, Sun, Moon, Plus, X, Loader2,
   AlertTriangle, StickyNote, ChevronLeft, ChevronRight,
   Target, User, History, RefreshCw, CalendarClock, Home, MapPin,
+  CheckCircle2, Undo2,
 } from 'lucide-react';
 import api from '../../api';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
@@ -26,10 +27,9 @@ export default function AgentWorkMobile({
   viewTab, setViewTab,
   students, filteredStudents, filteredStats,
   schoolGroups, selectedSchool, setSelectedSchool,
-  currentIdx, setCurrentIdx, current,
+  currentIdx, current,
   lockedStudentId,
   showMenu, setShowMenu,
-  showCreate, setShowCreate, createErr, setCreateErr,
   showDetail, setShowDetail,
   detailStudent, detailLoading, detailError,
   detailCalls, detailNotes, detailFollowUps, detailVisits, detailIntentTimeline,
@@ -38,6 +38,7 @@ export default function AgentWorkMobile({
   showAi, setShowAi, activeStudent,
   noteText, setNoteText,
   actionMsg,
+  autoAdvanceNotice, onUndoAutoAdvance, onDismissAutoAdvance,
   dialCheckByStudent,
   // Handlers
   toggleTheme, dark,
@@ -47,6 +48,8 @@ export default function AgentWorkMobile({
   onAdmissionsStageSynced,
   prev, next,
   toggleNeedHelp,
+  onAddStudent,
+  onShowSettings,
   fetchFollowing,
   followingData, followingLoading,
   // Modals
@@ -62,16 +65,10 @@ export default function AgentWorkMobile({
   const currentNextAction = current
     ? getStudentNextAction(current, currentContacts.length > 0)
     : null;
-
-  const Sidebar = () => (
-    <AgentSidebar
-      viewTab={viewTab} onTabChange={setViewTab}
-      onAddStudent={() => { setShowCreate(true); setCreateErr(''); }}
-      onShowSettings={() => {}}
-      dark={dark} onToggleTheme={toggleTheme} onLogout={logout}
-      isMobile={true} onCloseMenu={() => setShowMenu(false)}
-    />
-  );
+  const changeViewTab = (tab) => {
+    setViewTab(tab);
+    if (tab === 'following') fetchFollowing();
+  };
 
   const submitHomeVisit = async (payload) => {
     setAdmissionSubmitting(true);
@@ -99,54 +96,96 @@ export default function AgentWorkMobile({
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 h-14 flex items-center justify-between shrink-0">
+      <header className="sticky top-0 z-20 flex min-h-[calc(56px+env(safe-area-inset-top))] shrink-0 items-center justify-between border-b bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center gap-2.5">
-          <button onClick={() => setShowMenu(true)} className="p-2 -ml-2">
+          <button onClick={() => setShowMenu(true)} className="-ml-2 inline-flex h-11 w-11 items-center justify-center rounded-lg" aria-label="打开导航">
             <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
           </button>
           <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100">话务工作台</h1>
           {viewTab === 'today' && <span className="text-xs text-gray-500">{filteredStats.done}/{filteredStats.total}</span>}
         </div>
-        <button onClick={toggleTheme} className="p-2 rounded-lg">
-          {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
-        </button>
-        <button onClick={() => { setShowCreate(true); setCreateErr(''); }} className="p-2 rounded-lg text-gray-500" title="手动添加学生">
-          <Plus className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={toggleTheme} className="inline-flex h-11 w-11 items-center justify-center rounded-lg" title="切换主题" aria-label="切换主题">
+            {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
+          </button>
+          <button onClick={onAddStudent} className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-500" title="手动添加学生" aria-label="手动添加学生">
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
       </header>
       {showMenu && (
         <div className="fixed inset-0 z-30">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMenu(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-800 shadow-2xl flex flex-col">
-            <Sidebar />
+            <AgentSidebar
+              viewTab={viewTab}
+              onTabChange={changeViewTab}
+              onAddStudent={onAddStudent}
+              onShowSettings={onShowSettings}
+              dark={dark}
+              onToggleTheme={toggleTheme}
+              onLogout={logout}
+              isMobile
+              onCloseMenu={() => setShowMenu(false)}
+            />
           </div>
         </div>
       )}
       {modals}
+      {autoAdvanceNotice && (
+        <div
+          role="status"
+          className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-50 flex items-center gap-3 rounded-lg border border-emerald-200 bg-white px-3 py-3 text-gray-900 shadow-xl dark:border-emerald-900 dark:bg-gray-800 dark:text-gray-100"
+        >
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {autoAdvanceNotice.message}
+          </span>
+          {autoAdvanceNotice.previousStudentId && (
+            <button
+              type="button"
+              onClick={onUndoAutoAdvance}
+            className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              返回上一位
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onDismissAutoAdvance}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+            aria-label="关闭自动前进提示"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       {viewTab === 'today' ? (
         <>
-          <div className="grid grid-cols-4 gap-px bg-gray-200 dark:bg-gray-700 shrink-0">
+          <div className="grid shrink-0 grid-cols-4 gap-px border-b bg-gray-200 dark:border-gray-700 dark:bg-gray-700">
             {[{ label: '总数', value: filteredStats.total }, { label: '完成', value: filteredStats.done },
               { label: '待联', value: filteredStats.pending }, { label: '回访', value: filteredStats.follow_up },
             ].map((s, i) => (
-              <div key={i} className="bg-white dark:bg-gray-800 px-2 py-3 text-center">
+              <div key={i} className="bg-white px-1 py-2.5 text-center dark:bg-gray-800">
                 <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{s.value}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{s.label}</div>
+                <div className="text-[11px] text-gray-500 dark:text-gray-400">{s.label}</div>
               </div>
             ))}
           </div>
           {schoolGroups.length > 1 && (
-            <div className="flex gap-2 px-3 py-2 overflow-x-auto shrink-0 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-              <button onClick={() => setSelectedSchool(null)}
-                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition ${!selectedSchool ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'}`}>
-                全部 {students.length}
-              </button>
-              {schoolGroups.map((g) => (
-                <button key={g.name} onClick={() => setSelectedSchool(selectedSchool === g.name ? null : g.name)}
-                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition ${selectedSchool === g.name ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'}`}>
-                  {g.name} {g.count}
-                </button>
-              ))}
+            <div className="shrink-0 border-b bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+              <select
+                value={selectedSchool || ''}
+                onChange={(e) => setSelectedSchool(e.target.value || null)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-base text-gray-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                aria-label="筛选学校"
+              >
+                <option value="">全部学校 ({students.length})</option>
+                {schoolGroups.map((g) => (
+                  <option key={g.name} value={g.name}>{g.name} ({g.count})</option>
+                ))}
+              </select>
             </div>
           )}
           {backlogBanner}
@@ -157,75 +196,78 @@ export default function AgentWorkMobile({
                 <Target className="w-10 h-10 mb-3" /><p className="text-sm">{selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}</p>
               </div>
             ) : (
-              <div className="p-4 space-y-4">
+              <div className="space-y-3 p-3">
                 {current && (
-                  <div className={`rounded-xl border dark:border-gray-700 p-4 ${current.need_help ? 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/10' : 'border-gray-200'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
+                  <div className={`rounded-lg border p-3 dark:border-gray-700 ${current.need_help ? 'border-red-300 bg-red-50/50 dark:border-red-700 dark:bg-red-900/10' : 'border-gray-200 bg-white shadow-sm dark:bg-gray-800'}`}>
+                    <div className="mb-2.5 flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-lg text-gray-900 dark:text-gray-100">{current.name}</span>
+                          <span className="min-w-0 max-w-full truncate text-lg font-bold text-gray-900 dark:text-gray-100">{current.name}</span>
                           {current.need_help && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />需协助</span>}
                           <AssignedDaysBadge days={current.days_since_assigned} />
                         </div>
-                        <div className="text-sm text-gray-500 font-mono mt-0.5">{current.school_name || '未知学校'}</div>
+                        <div className="mt-0.5 truncate text-sm text-gray-500">{current.school_name || '未知学校'}</div>
                       </div>
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="flex shrink-0 flex-col items-end gap-1">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status] || STATUS_STYLE['未联系']}`}>{statusLabel(current.status)}</span>
                         {current.status_detail && (
-                          <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+                          <span className="max-w-[100px] truncate rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-gray-700 dark:text-gray-300">
                             {current.status_detail}
                           </span>
                         )}
                       </div>
                     </div>
                     {currentNextAction && (
-                      <div className="mb-3">
+                      <div className="mb-2.5">
                         <span className={`inline-flex max-w-full items-center rounded-lg border px-2.5 py-1 text-xs font-medium ${NEXT_ACTION_TONE_CLASSES[currentNextAction.tone] || NEXT_ACTION_TONE_CLASSES.slate}`}>
                           {currentNextAction.label}
                         </span>
                       </div>
                     )}
-                    <div className="flex items-center gap-1 mb-3">
+                    <div className="mb-2.5 flex items-center gap-1">
                       {STAGES.map((s, i) => {
                         const idx = STAGES.indexOf(current.stage);
                         return <button key={s} onClick={() => updateStage(current.id, s)} className={`flex-1 h-1.5 rounded-full transition-all ${i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'} ${s === current.stage ? 'ring-2 ring-blue-300' : ''}`} title={stageLabel(s)} />;
                       })}
                     </div>
                     {lockedStudentId === current.id && (
-                      <div className="mb-3 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-300 dark:border-orange-700 rounded-lg text-center">
-                        <div className="text-sm font-bold text-orange-700 dark:text-orange-300 mb-1">⚠ 可继续拨联系人2，确认结果后再更新状态</div>
+                      <div className="mb-2.5 rounded-lg border border-orange-300 bg-orange-50 p-2 text-center dark:border-orange-700 dark:bg-orange-900/20">
+                        <div className="mb-1 flex items-center justify-center gap-1 text-xs font-bold text-orange-700 dark:text-orange-300">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          可继续拨联系人2，确认结果后再更新状态
+                        </div>
                         <div className="text-xs text-orange-500">已联系 / 待回访 / 未接通 / 已报名</div>
                       </div>
                     )}
-                    <div className="flex gap-2 mb-3">
+                    <div className="mb-2.5 grid grid-cols-3 gap-1.5">
                       {quickStatuses.map((s) => (
-                        <button key={s.outcome.code} onClick={() => updateStatus(current.id, s.outcome)} className={`flex min-h-[44px] items-center gap-1 px-3 py-2 text-white rounded-lg text-xs leading-4 whitespace-normal font-medium ${s.color}`}>
-                          <s.icon className="w-3.5 h-3.5" />{statusLabel(s.status)}
+                        <button key={s.outcome.code} onClick={() => updateStatus(current.id, s.outcome)} className={`flex min-h-[48px] items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-center text-xs font-medium leading-tight text-white whitespace-normal ${s.color}`}>
+                          <s.icon className="h-3.5 w-3.5 shrink-0" /><span>{statusLabel(s.status)}</span>
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                    <div className="mb-2.5 flex flex-col gap-2">
                       {currentContacts.map((contact) => {
                         const dc = dialCheckByStudent[current.id]; const cnt = dc?.count ?? 0; const warn = cnt >= 3;
-                        return <button key={contact.key} onClick={() => handleDial(contact.key, current.id)} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium text-white ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`} title={contact.phone}><Phone className="w-4 h-4" /> {contact.label} {contact.name}{dc && <span className="text-[10px] opacity-90">(24h 已 {cnt} 次)</span>}</button>;
+                        return <button key={contact.key} onClick={() => handleDial(contact.key, current.id)} className={`flex min-h-[52px] flex-wrap items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`} title={contact.phone}><Phone className="h-5 w-5 shrink-0" /> {contact.label} {contact.name}{dc && <span className="text-[10px] font-normal opacity-90">(24h 已 {cnt} 次)</span>}</button>;
                       })}
-                      {currentContacts.length === 0 && <button disabled className="flex items-center justify-center gap-1.5 py-2.5 bg-gray-300 dark:bg-gray-700 text-gray-500 rounded-lg text-sm font-medium"><Phone className="w-4 h-4" /> 无联系人电话</button>}
-                      <button onClick={() => openAiPanel(current)} disabled={lockedStudentId === current.id} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"><Sparkles className="w-4 h-4" /> AI分析</button>
+                      {currentContacts.length === 0 && <button disabled className="flex min-h-[52px] items-center justify-center gap-1.5 rounded-lg bg-gray-300 py-2 text-sm font-medium text-gray-500 dark:bg-gray-700"><Phone className="h-5 w-5" /> 无联系人电话</button>}
                     </div>
-                    <div className="flex gap-2 relative">
-                      <input value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addNote()} placeholder="写备注…" className={`flex-1 ${inputCls}`} />
-                      <button onClick={() => addNote()} className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"><StickyNote className="w-4 h-4" /></button>
+                    <button onClick={() => openAiPanel(current)} disabled={lockedStudentId === current.id} className="mb-2.5 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 py-2 text-xs font-medium text-purple-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-purple-900/60 dark:bg-purple-950/30 dark:text-purple-300"><Sparkles className="h-4 w-4" /> AI分析</button>
+                    <div className="relative flex items-center gap-2">
+                      <input value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addNote(current.id)} placeholder="写备注…" className={`${inputCls} min-w-0 flex-1 !h-11 !text-base`} />
+                      <button onClick={() => addNote(current.id)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white" title="保存备注" aria-label="保存备注"><StickyNote className="h-4 w-4" /></button>
                     </div>
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <button onClick={prev} disabled={currentIdx === 0 || lockedStudentId !== null} className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 border dark:border-gray-700 disabled:opacity-30"><ChevronLeft className="w-4 h-4" />上一条</button>
+                  <button onClick={prev} disabled={currentIdx === 0 || lockedStudentId !== null} className="flex min-h-[44px] items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm disabled:opacity-30 dark:border-gray-700 dark:bg-gray-800"><ChevronLeft className="w-4 h-4" />上一条</button>
                   <span className="text-xs text-gray-500">{currentIdx + 1}/{filteredStudents.length}</span>
-                  <button onClick={next} disabled={currentIdx >= filteredStudents.length - 1 || lockedStudentId !== null} className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm bg-white dark:bg-gray-800 border dark:border-gray-700 disabled:opacity-30">下一条<ChevronRight className="w-4 h-4" /></button>
+                  <button onClick={next} disabled={currentIdx >= filteredStudents.length - 1 || lockedStudentId !== null} className="flex min-h-[44px] items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm disabled:opacity-30 dark:border-gray-700 dark:bg-gray-800">下一条<ChevronRight className="w-4 h-4" /></button>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => current && loadDetail(current.id)} disabled={lockedStudentId !== null} className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"><User className="w-4 h-4" /> 学生详情</button>
-                  <button onClick={toggleNeedHelp} disabled={lockedStudentId !== null} className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed ${current?.need_help ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600'}`}><AlertTriangle className="w-4 h-4" /> {current?.need_help ? '取消协助' : '需要协助'}</button>
+                  <button onClick={() => current && loadDetail(current.id)} disabled={lockedStudentId !== null} className="flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-lg bg-gray-100 py-2 text-sm text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300"><User className="w-4 h-4" /> 学生详情</button>
+                  <button onClick={toggleNeedHelp} disabled={lockedStudentId !== null} className={`flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-lg py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${current?.need_help ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600'}`}><AlertTriangle className="w-4 h-4" /> {current?.need_help ? '取消协助' : '需要协助'}</button>
                 </div>
               </div>
             )}
@@ -275,35 +317,35 @@ export default function AgentWorkMobile({
         </div>
       )}
       {showDetail && detailStudent && (
-        <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col">
-          <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
+        <div className="fixed inset-0 z-40 flex flex-col bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+          <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
             <h3 className="font-semibold">{detailStudent.name}</h3>
-            <button onClick={() => setShowDetail(false)}><X className="w-5 h-5" /></button>
+            <button onClick={() => setShowDetail(false)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 dark:text-gray-300" aria-label="关闭学生详情"><X className="w-5 h-5" /></button>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {detailLoading && <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-lg"><Loader2 className="w-3.5 h-3.5 animate-spin" />加载学生详情...</div>}
             {detailError && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg"><AlertTriangle className="w-3.5 h-3.5 shrink-0" /><span className="flex-1">{detailError}</span><button onClick={() => loadDetail(detailStudent.id)} className="font-medium">重试</button></div>}
             <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-              <div className="text-xs text-gray-500 mb-1.5">意向等级（手动评级）</div>
+              <div className="mb-1.5 text-xs text-gray-500 dark:text-gray-400">意向等级（手动评级）</div>
               <div className="flex gap-2">{['A', 'B', 'C', '无'].map((level) => (
                 <button key={level} onClick={() => updateDetailField('intent_level', level)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${detailStudent.intent_level === level ? (level === 'A' ? 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300' : level === 'B' ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300' : level === 'C' ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200' : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400') : 'bg-white border dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>{level === '无' ? '无' : `${level}级`}</button>
               ))}</div>
             </div>
             <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 flex items-center justify-between">
-              <span className="text-xs text-gray-500">AI分析状态</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">AI分析状态</span>
               <span className={`text-xs px-2 py-1 rounded-full font-medium ${hasAnalysis ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>{hasAnalysis ? '✓ AI分析已完成' : '暂未分析'}</span>
             </div>
             <section className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-3">
-              <div className="flex items-center justify-between gap-3">
+              <div className="space-y-3">
                 <div>
                   <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">招生推进</div>
-                  <div className="text-xs text-gray-500">家访申请 / 到校预约</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">家访申请 / 到校预约</div>
                 </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'home' ? null : 'home')} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white">
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'home' ? null : 'home')} className="inline-flex min-h-[40px] items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white">
                     <Home className="w-3.5 h-3.5" />申请家访
                   </button>
-                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'campus' ? null : 'campus')} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white">
+                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'campus' ? null : 'campus')} className="inline-flex min-h-[40px] items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white">
                     <MapPin className="w-3.5 h-3.5" />预约到校
                   </button>
                 </div>
@@ -334,8 +376,8 @@ export default function AgentWorkMobile({
               ['school_name', '学校'],
             ].map(([k, label, contactKey]) => (
               <div key={k} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <div className="text-xs text-gray-500">{label}</div>
-                <div className="font-medium mt-0.5">
+                <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>
+                <div className="mt-0.5 font-medium text-gray-900 dark:text-gray-100">
                   {contactKey ? (
                     <PhoneLink
                       value={detailStudent[k]}
@@ -349,7 +391,7 @@ export default function AgentWorkMobile({
               </div>
             ))}
             <div className="pt-2 border-t dark:border-gray-700">
-              <div className="text-sm font-semibold mb-2">完整时间线</div>
+              <div className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">完整时间线</div>
               <StudentTimeline
                 student={detailStudent}
                 calls={detailCalls}
@@ -369,14 +411,14 @@ export default function AgentWorkMobile({
         </div>
       )}
       {/* Bottom tab bar */}
-      <div className="sticky bottom-0 z-20 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex">
-        <button onClick={() => setViewTab('today')} className={`flex-1 flex flex-col items-center py-2 ${viewTab === 'today' ? 'text-green-600' : 'text-gray-400'}`}>
+      <div className="sticky bottom-0 z-20 flex border-t bg-white pb-[env(safe-area-inset-bottom)] dark:border-gray-700 dark:bg-gray-800">
+        <button onClick={() => changeViewTab('today')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'today' ? 'text-green-600' : 'text-gray-400'}`}>
           <Target className="w-5 h-5" /><span className="text-[10px] mt-0.5">待拨打</span>
         </button>
-        <button onClick={() => setViewTab('handled')} className={`flex-1 flex flex-col items-center py-2 ${viewTab === 'handled' ? 'text-green-600' : 'text-gray-400'}`}>
+        <button onClick={() => changeViewTab('handled')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'handled' ? 'text-green-600' : 'text-gray-400'}`}>
           <CalendarClock className="w-5 h-5" /><span className="text-[10px] mt-0.5">待处理</span>
         </button>
-        <button onClick={() => { setViewTab('following'); fetchFollowing(); }} className={`flex-1 flex flex-col items-center py-2 ${viewTab === 'following' ? 'text-green-600' : 'text-gray-400'}`}>
+        <button onClick={() => changeViewTab('following')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'following' ? 'text-green-600' : 'text-gray-400'}`}>
           <History className="w-5 h-5" /><span className="text-[10px] mt-0.5">跟进中</span>
         </button>
       </div>

@@ -47,6 +47,7 @@ def test_normalize_status_for_write_maps_new_lead_button_to_default_status():
     [
         ("非常有意向", StudentStatus.contacted, "非常有意向"),
         ("意向了解加微", StudentStatus.pending_visit, "意向了解加微"),
+        ("等待志愿", StudentStatus.pending_visit, "等待志愿"),
         ("高分段", StudentStatus.invalid, "高分段"),
         ("孩子不想读", StudentStatus.invalid, "孩子不想读"),
         ("空号", StudentStatus.invalid, "空号"),

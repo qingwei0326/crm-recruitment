@@ -24,6 +24,7 @@ INVALID_REASON_STATUSES = (
 STATUS_DETAIL_VALUES = {
     "非常有意向",
     "意向了解加微",
+    "等待志愿",
     "高分段",
     "无意向",
     "孩子不想读",
@@ -42,6 +43,7 @@ _CANONICAL_STATUS_BY_NAME = {
     "rejected": StudentStatus.not_reached,
     "pending_visit": StudentStatus.pending_visit,
     "interested_add_wechat": StudentStatus.pending_visit,
+    "waiting_volunteer": StudentStatus.pending_visit,
     "enrolled": StudentStatus.enrolled,
     "invalid": StudentStatus.invalid,
     "completed": StudentStatus.invalid,
@@ -98,6 +100,7 @@ def normalize_status_for_write(status: StudentStatus | str) -> tuple[StudentStat
     if status_enum in (
         StudentStatus.very_interested,
         StudentStatus.interested_add_wechat,
+        StudentStatus.waiting_volunteer,
         *INVALID_REASON_STATUSES,
     ):
         detail = status_enum.value
@@ -129,6 +132,7 @@ def status_detail_value(status: StudentStatus | str | None, stored_detail: str |
     if status_enum in (
         StudentStatus.very_interested,
         StudentStatus.interested_add_wechat,
+        StudentStatus.waiting_volunteer,
         *INVALID_REASON_STATUSES,
     ):
         return status_enum.value

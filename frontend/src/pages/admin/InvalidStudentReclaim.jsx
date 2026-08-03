@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -33,6 +33,7 @@ import {
   Search,
   Trash2,
   X,
+  ClipboardList,
 } from 'lucide-react';
 
 export default function InvalidStudentReclaim() {
@@ -57,6 +58,7 @@ export default function InvalidStudentReclaim() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [reclaimingSchool, setReclaimingSchool] = useState(null);
   const [batchAction, setBatchAction] = useState('');
+  const [lastBatchId, setLastBatchId] = useState('');
   const canReclaimInvalid = canPerformAdminOperation(
     user,
     ADMIN_OPERATION_PERMISSIONS.invalidReclaim,
@@ -170,12 +172,43 @@ export default function InvalidStudentReclaim() {
     setSearchParams({}, { replace: true });
   };
 
+  const loadReclaimPreview = async (url, payload, fallbackCount) => {
+    const res = await api.post(url, payload);
+    if (res.data.code !== 0) {
+      throw new Error(res.data.msg || '预览失败');
+    }
+    const impact = res.data.data || {};
+    return {
+      studentCount: impact.student_count ?? fallbackCount,
+      assignedCount: impact.assigned_count ?? 0,
+      studentsWithNotes: impact.students_with_notes ?? 0,
+      noteCount: impact.note_count ?? 0,
+      previewToken: impact.preview_token || '',
+    };
+  };
+
+  const reclaimPreviewMessage = (impact) => (
+    `共 ${impact.studentCount} 条；其中 ${impact.assignedCount} 条仍有负责人，`
+    + `${impact.studentsWithNotes} 条有备注（共 ${impact.noteCount} 条）。`
+    + '\n\n回收后状态会重置为未联系，负责人会清空并进入未分配池；备注内容保留。'
+  );
+
   const handleReclaimSchool = async (schoolName, count) => {
     if (!canReclaimInvalid) return;
     const reasonText = invalidReason ? `（原因：${invalidReason}）` : '';
+    let impact;
+    try {
+      impact = await loadReclaimPreview('/admin/reclaim-by-school-preview', {
+        school_name: schoolName,
+        ...(invalidReason ? { invalid_reason: invalidReason } : {}),
+      }, count);
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
+      return;
+    }
     const ok = await confirm({
       title: '分学校回收',
-      message: `确定回收「${schoolName}」${reasonText}的 ${count} 条无效线索吗？\n\n回收后学员将进入未分配池，不分配给任何话务员。`,
+      message: `确定回收「${schoolName}」${reasonText}吗？\n\n${reclaimPreviewMessage(impact)}`,
       confirmText: '确认回收',
       tone: 'danger',
     });
@@ -186,9 +219,11 @@ export default function InvalidStudentReclaim() {
       const res = await api.post('/admin/reclaim-by-school', {
         school_name: schoolName,
         ...(invalidReason ? { invalid_reason: invalidReason } : {}),
+        ...(impact.previewToken ? { preview_token: impact.previewToken } : {}),
       });
       if (res.data.code === 0) {
         const d = res.data.data || {};
+        setLastBatchId(d.batch_id || '');
         toast?.success(`成功回收 ${d.reclaimed_count ?? count} 条线索，已进入未分配池`);
         setExpandedSchool(null);
         setExpandedStudents([]);
@@ -227,9 +262,18 @@ export default function InvalidStudentReclaim() {
     if (!canReclaimInvalid) return;
     const ids = [...selectedIds];
     if (ids.length === 0) return;
+    let impact;
+    try {
+      impact = await loadReclaimPreview('/admin/invalid-students/reclaim-preview', {
+        student_ids: ids,
+      }, ids.length);
+    } catch (e) {
+      toast?.error(getApiErrorMessage(e));
+      return;
+    }
     const ok = await confirm({
       title: '回收到未分配池',
-      message: `确定回收已选 ${ids.length} 条无效线索吗？\n\n回收后状态会重置为未联系，并清空无效原因、意向、阶段和求助标记。`,
+      message: `确定回收已选记录吗？\n\n${reclaimPreviewMessage(impact)}\n同时会清空无效原因、意向、阶段和求助标记。`,
       confirmText: '确认回收',
       tone: 'danger',
     });
@@ -237,8 +281,12 @@ export default function InvalidStudentReclaim() {
 
     setBatchAction('reclaim');
     try {
-      const res = await api.post('/admin/invalid-students/reclaim', { student_ids: ids });
+      const res = await api.post('/admin/invalid-students/reclaim', {
+        student_ids: ids,
+        ...(impact.previewToken ? { preview_token: impact.previewToken } : {}),
+      });
       if (res.data.code === 0) {
+        setLastBatchId(res.data.data?.batch_id || '');
         toast?.success(`成功回收 ${res.data.data?.reclaimed_count ?? ids.length} 条线索`);
         await refreshExpanded();
       } else {
@@ -331,7 +379,19 @@ export default function InvalidStudentReclaim() {
           </button>
         </header>
 
-        <div className="p-4 lg:p-6 space-y-4">
+          <div className="p-4 lg:p-6 space-y-4">
+          {lastBatchId && (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+              <ClipboardList className="h-4 w-4 shrink-0" />
+              <span>最近一次回收已生成批次记录：</span>
+              <Link
+                className="font-medium underline underline-offset-2"
+                to={`/admin/audit-logs?batch_id=${encodeURIComponent(lastBatchId)}`}
+              >
+                查看批次审计
+              </Link>
+            </div>
+          )}
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:justify-between">
               <div className="flex items-center gap-3">

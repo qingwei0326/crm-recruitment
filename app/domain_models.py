@@ -200,6 +200,84 @@ class StudentAssignment(Base):
     )
 
 
+class PersonalGroup(Base):
+    __tablename__ = "personal_groups"
+    __table_args__ = (
+        Index("ix_personal_groups_owner_archived", "owner_id", "archived_at"),
+        Index(
+            "uq_personal_groups_owner_name_active",
+            "owner_id",
+            "name",
+            unique=True,
+            sqlite_where=text("archived_at IS NULL"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(20), nullable=False)
+    color = Column(String(16), nullable=False, default="cyan")
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PersonalGroupMembership(Base):
+    __tablename__ = "personal_group_memberships"
+    __table_args__ = (
+        Index(
+            "uq_personal_group_memberships_active",
+            "group_id",
+            "student_id",
+            unique=True,
+            sqlite_where=text("archived_at IS NULL"),
+            postgresql_where=text("archived_at IS NULL"),
+        ),
+        Index(
+            "ix_personal_group_memberships_group_archived",
+            "group_id",
+            "archived_at",
+        ),
+        Index(
+            "ix_personal_group_memberships_student_archived",
+            "student_id",
+            "archived_at",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    group_id = Column(
+        Integer,
+        ForeignKey("personal_groups.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    archived_at = Column(DateTime, nullable=True)
+    archived_by = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    archive_reason = Column(String(64), nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class WorkItem(Base):
     __tablename__ = "work_items"
     __table_args__ = (

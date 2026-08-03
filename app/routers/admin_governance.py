@@ -1,10 +1,15 @@
+import base64
+import binascii
+import hashlib
+import hmac
+import json
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_lead_utils import (
@@ -21,15 +26,16 @@ from app.auth import (
     require_operation_permission,
     require_page_permission,
 )
+from app.config import SECRET_KEY
 from app.database import get_db
 from app.dial_recording import (
     DIAL_RECORDING_COMPLETED,
     DIAL_RECORDING_LEGACY_MISSING,
     DIAL_RECORDING_PENDING,
 )
+from app.domain_consistency import audit_domain_consistency
 from app.expiry import build_last_activity_subquery
 from app.models import (
-    Call,
     CampusVisitStatus,
     CampusVisitTask,
     DialLog,
@@ -38,17 +44,14 @@ from app.models import (
     HomeVisitStatus,
     HomeVisitTask,
     IntentLevel,
-    LeadViewLog,
-    Note,
     OperationLog,
     SettlementStatus,
     Student,
     StudentStatus,
     User,
-    Visit,
 )
 from app.schemas import Response
-from app.status_policy import canonical_status_value, status_detail_value, statuses_for_canonical
+from app.status_policy import status_detail_value, statuses_for_canonical
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
 from app.utils import make_operation_log, month_start_cst_as_utc, today_cst_as_utc, utcnow
 
@@ -64,6 +67,7 @@ class GovernanceReviewReq(BaseModel):
     title: str = ""
     detail: str = ""
     count: int = 0
+    review_token: str = ""
 
 
 class DailyOpsReviewReq(BaseModel):
@@ -73,6 +77,8 @@ class DailyOpsReviewReq(BaseModel):
     count: int = 0
 GOVERNANCE_REVIEW_PREFIX = "governance-review:"
 GOVERNANCE_REVIEW_TTL_DAYS = 7
+GOVERNANCE_REVIEW_TOKEN_MAX_AGE_SECONDS = 15 * 60
+_CST = timezone(timedelta(hours=8))
 
 
 
@@ -87,9 +93,11 @@ def _risk_alert(
     category: str = "",
     q: str = "",
     to: str = "",
+    entity_keys: list[str] | None = None,
 ) -> dict:
     return {
         "type": alert_type,
+        "review_key": alert_type,
         "title": title,
         "severity": severity,
         "count": count,
@@ -98,6 +106,7 @@ def _risk_alert(
         "category": category,
         "q": q,
         "to": to,
+        "_review_entities": entity_keys or [],
     }
 
 
@@ -120,7 +129,9 @@ WORK_HOUR_WINDOWS = (
 def _is_work_hour(dt: datetime | None) -> bool:
     if not dt:
         return True
-    minutes = dt.hour * 60 + dt.minute
+    utc_dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+    local_dt = utc_dt.astimezone(_CST)
+    minutes = local_dt.hour * 60 + local_dt.minute
     return any(start <= minutes < end for start, end in WORK_HOUR_WINDOWS)
 
 
@@ -132,21 +143,76 @@ def _health_signal(
     severity: str,
     detail: str,
     to: str,
+    review_key: str = "",
+    entity_keys: list[str] | None = None,
 ) -> dict:
     return {
         "key": key,
+        "review_key": review_key or key,
         "title": title,
         "count": int(count or 0),
         "severity": severity,
         "detail": detail,
         "to": to,
+        "_review_entities": entity_keys or [],
     }
+
+
+def _review_snapshot(entity_keys: list[str]) -> tuple[str, int]:
+    normalized = sorted({str(key).strip() for key in entity_keys if str(key).strip()})
+    digest = hashlib.sha256("\n".join(normalized).encode("utf-8")).hexdigest()
+    return digest, len(normalized)
+
+
+def _sign_governance_review_token(key: str, snapshot_hash: str, count: int) -> str:
+    payload = {
+        "v": 1,
+        "key": key,
+        "snapshot_hash": snapshot_hash,
+        "count": max(int(count), 0),
+        "issued_at": int(utcnow().replace(tzinfo=UTC).timestamp()),
+    }
+    raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode()
+    encoded = base64.urlsafe_b64encode(raw).rstrip(b"=")
+    signature = hmac.new(SECRET_KEY.encode(), encoded, hashlib.sha256).hexdigest().encode()
+    return f"{encoded.decode()}.{signature.decode()}"
+
+
+def _verify_governance_review_token(token: str, expected_key: str) -> dict | None:
+    try:
+        encoded_text, signature = token.split(".", 1)
+        encoded = encoded_text.encode()
+        expected_signature = hmac.new(
+            SECRET_KEY.encode(), encoded, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected_signature):
+            return None
+        padding = b"=" * (-len(encoded) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(encoded + padding).decode())
+        issued_at = int(payload.get("issued_at") or 0)
+        now_ts = int(utcnow().replace(tzinfo=UTC).timestamp())
+        if payload.get("v") != 1 or payload.get("key") != expected_key:
+            return None
+        if issued_at > now_ts + 60 or now_ts - issued_at > GOVERNANCE_REVIEW_TOKEN_MAX_AGE_SECONDS:
+            return None
+        snapshot_hash = str(payload.get("snapshot_hash") or "")
+        count = max(int(payload.get("count") or 0), 0)
+        if len(snapshot_hash) != 64:
+            return None
+        return {"snapshot_hash": snapshot_hash, "count": count}
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError, binascii.Error):
+        return None
 
 
 async def _latest_governance_reviews(db: AsyncSession, cutoff: datetime) -> dict[str, dict]:
     rows = (
         await db.execute(
-            select(OperationLog.batch_id, OperationLog.old_status, OperationLog.created_at)
+            select(
+                OperationLog.batch_id,
+                OperationLog.old_status,
+                OperationLog.note_content,
+                OperationLog.created_at,
+            )
             .where(
                 OperationLog.action == "治理复核",
                 OperationLog.batch_id.like(f"{GOVERNANCE_REVIEW_PREFIX}%"),
@@ -156,7 +222,7 @@ async def _latest_governance_reviews(db: AsyncSession, cutoff: datetime) -> dict
         )
     ).all()
     reviews = {}
-    for batch_id, old_status, reviewed_at in rows:
+    for batch_id, old_status, note_content, reviewed_at in rows:
         batch_id = batch_id or ""
         if not batch_id.startswith(GOVERNANCE_REVIEW_PREFIX):
             continue
@@ -167,41 +233,74 @@ async def _latest_governance_reviews(db: AsyncSession, cutoff: datetime) -> dict
             reviewed_count = int(old_status or 0)
         except (TypeError, ValueError):
             reviewed_count = 0
+        snapshot_hash = ""
+        snapshot_count = reviewed_count
+        try:
+            snapshot = json.loads(note_content or "{}")
+            if snapshot.get("v") == 1:
+                snapshot_hash = str(snapshot.get("snapshot_hash") or "")
+                snapshot_count = max(int(snapshot.get("count") or 0), 0)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
         reviews[key] = {
             "count": max(reviewed_count, 0),
+            "snapshot_hash": snapshot_hash,
+            "snapshot_count": snapshot_count,
             "reviewed_at": reviewed_at,
         }
     return reviews
 
 
 def _apply_governance_review(item: dict, reviews: dict[str, dict], key: str) -> dict:
+    public_item = {name: value for name, value in item.items() if name != "_review_entities"}
+    snapshot_hash, current_count = _review_snapshot(item.get("_review_entities") or [])
+    review_token = _sign_governance_review_token(key, snapshot_hash, current_count)
     review = reviews.get(key)
     if not review:
-        return {**item, "reviewed": False}
+        legacy_key = item.get("key") or item.get("type")
+        if legacy_key and legacy_key != key:
+            review = reviews.get(legacy_key)
+    if not review:
+        return {
+            **public_item,
+            "count": current_count,
+            "reviewed": False,
+            "reviewed_count": 0,
+            "current_count": current_count,
+            "review_token": review_token,
+        }
 
-    current_count = max(int(item.get("count") or 0), 0)
-    reviewed_count = max(int(review.get("count") or 0), 0)
+    reviewed_count = max(int(review.get("snapshot_count") or review.get("count") or 0), 0)
+    reviewed_snapshot_hash = str(review.get("snapshot_hash") or "")
     reviewed_at = review.get("reviewed_at")
     data = {
-        **item,
+        **public_item,
+        "count": current_count,
         "reviewed": False,
         "reviewed_count": reviewed_count,
+        "current_count": current_count,
         "reviewed_at": reviewed_at.isoformat() if reviewed_at else "",
+        "review_token": review_token,
     }
     if current_count <= 0:
         return data
-    if current_count <= reviewed_count:
+    if reviewed_snapshot_hash and hmac.compare_digest(snapshot_hash, reviewed_snapshot_hash):
         return {
             **data,
             "count": 0,
             "severity": "low",
             "reviewed": True,
-            "detail": f"已确认复核；如后续数量增加会重新提醒。原复核数量 {reviewed_count} 项。",
+            "detail": f"已确认复核本批 {reviewed_count} 项；异常对象变化后会重新提醒。",
         }
-    data["count"] = current_count - reviewed_count
-    if reviewed_count:
+    if reviewed_snapshot_hash:
         data["detail"] = (
-            f"{item.get('detail', '')} 已复核 {reviewed_count} 项，当前新增 {data['count']} 项。"
+            f"{public_item.get('detail', '')} 异常对象已发生变化，"
+            f"当前 {current_count} 项需重新复核。"
+        )
+    elif reviewed_count:
+        data["detail"] = (
+            f"{public_item.get('detail', '')} 旧复核记录没有对象快照，"
+            f"当前 {current_count} 项需重新复核。"
         )
     return data
 
@@ -447,6 +546,26 @@ async def data_quality(
     )
 
 
+@router.get("/domain-consistency")
+async def domain_consistency(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Run the read-only domain projection consistency audit on demand."""
+    report = await audit_domain_consistency(db)
+    failed_checks = [
+        key for key, value in report.items() if key != "ok" and int(value or 0) > 0
+    ]
+    return Response.ok(
+        {
+            "status": "ok" if report["ok"] else "warning",
+            "failed_checks": failed_checks,
+            "checks": report,
+            "generated_at": utcnow().isoformat(),
+        }
+    )
+
+
 @router.get("/data-health")
 async def data_health_center(
     db: AsyncSession = Depends(get_db),
@@ -460,9 +579,10 @@ async def data_health_center(
 
     duplicate_phones, duplicate_rows = await _build_duplicate_phone_cleanup_plan(db)
     duplicate_phone_student_count = len(duplicate_rows)
+    duplicate_phone_entities = [f"student:{row['student_id']}" for row in duplicate_rows]
 
     duplicate_phone_list = sorted(duplicate_phones)
-    same_name_school_phone_count = 0
+    same_name_school_phone_entities = []
     if duplicate_phone_list:
         same_phone_students_r = await db.execute(
             select(Student).where(
@@ -480,59 +600,76 @@ async def data_health_center(
                 continue
             for phone in _student_phone_values(student) & duplicate_phones:
                 groups.setdefault((name, school, phone), set()).add(student.id)
-        same_name_school_phone_count = sum(1 for ids in groups.values() if len(ids) >= 2)
+        same_name_school_phone_entities = [
+            f"same-name-school-phone:{name}|{school}|{phone}"
+            for (name, school, phone), ids in groups.items()
+            if len(ids) >= 2
+        ]
+    same_name_school_phone_count = len(same_name_school_phone_entities)
 
-    missing_phone_count = (
-        await db.execute(
-            select(func.count(Student.id)).where(
-                Student.status.in_(ACTIVE_TASK_STATUSES),
-                or_(Student.guardian_phone == "", Student.guardian_phone.is_(None)),
-                or_(Student.guardian2_phone == "", Student.guardian2_phone.is_(None)),
+    missing_phone_ids = list(
+        (
+            await db.execute(
+                select(Student.id).where(
+                    Student.status.in_(ACTIVE_TASK_STATUSES),
+                    or_(Student.guardian_phone == "", Student.guardian_phone.is_(None)),
+                    or_(Student.guardian2_phone == "", Student.guardian2_phone.is_(None)),
+                )
             )
-        )
-    ).scalar() or 0
+        ).scalars()
+    )
+    missing_phone_count = len(missing_phone_ids)
 
-    enrolled_status_change_count = (
-        await db.execute(
-            select(func.count(OperationLog.id)).where(
-                OperationLog.action == "修改状态",
-                OperationLog.created_at >= cutoff_7d,
-                or_(
-                    OperationLog.old_status.contains("已报名"),
-                    OperationLog.new_status.contains("已报名"),
-                    OperationLog.content.contains("已报名"),
-                ),
+    enrolled_status_change_ids = list(
+        (
+            await db.execute(
+                select(OperationLog.id).where(
+                    OperationLog.action == "修改状态",
+                    OperationLog.created_at >= cutoff_7d,
+                    or_(
+                        OperationLog.old_status.contains("已报名"),
+                        OperationLog.new_status.contains("已报名"),
+                        OperationLog.content.contains("已报名"),
+                    ),
+                )
             )
-        )
-    ).scalar() or 0
+        ).scalars()
+    )
+    enrolled_status_change_count = len(enrolled_status_change_ids)
 
     last_activity = build_last_activity_subquery()
     latest_activity_at = func.coalesce(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
     ).label("latest_activity_at")
-    stale_a_count = (
-        await db.execute(
-            select(func.count(Student.id))
-            .outerjoin(last_activity, last_activity.c.student_id == Student.id)
-            .where(
-                Student.intent_level == IntentLevel.A,
-                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-                latest_activity_at < stale_cutoff,
+    stale_a_ids = list(
+        (
+            await db.execute(
+                select(Student.id)
+                .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+                .where(
+                    Student.intent_level == IntentLevel.A,
+                    Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+                    latest_activity_at < stale_cutoff,
+                )
             )
-        )
-    ).scalar() or 0
+        ).scalars()
+    )
+    stale_a_count = len(stale_a_ids)
 
     dialed_student_ids = select(DialLog.student_id).distinct()
-    assigned_no_call_count = (
-        await db.execute(
-            select(func.count(Student.id)).where(
-                Student.assigned_to.is_not(None),
-                Student.assigned_at.is_not(None),
-                Student.status.in_(ACTIVE_TASK_STATUSES),
-                Student.id.not_in(dialed_student_ids),
+    assigned_no_call_ids = list(
+        (
+            await db.execute(
+                select(Student.id).where(
+                    Student.assigned_to.is_not(None),
+                    Student.assigned_at.is_not(None),
+                    Student.status.in_(ACTIVE_TASK_STATUSES),
+                    Student.id.not_in(dialed_student_ids),
+                )
             )
-        )
-    ).scalar() or 0
+        ).scalars()
+    )
+    assigned_no_call_count = len(assigned_no_call_ids)
 
     status_logs_r = await db.execute(
         select(OperationLog.id, OperationLog.created_at).where(
@@ -540,9 +677,10 @@ async def data_health_center(
             OperationLog.created_at >= cutoff_7d,
         )
     )
-    off_hours_status_change_count = sum(
-        1 for _, created_at in status_logs_r.all() if not _is_work_hour(created_at)
-    )
+    off_hours_status_change_ids = [
+        log_id for log_id, created_at in status_logs_r.all() if not _is_work_hour(created_at)
+    ]
+    off_hours_status_change_count = len(off_hours_status_change_ids)
 
     signals = [
         _health_signal(
@@ -552,6 +690,7 @@ async def data_health_center(
             severity="high" if duplicate_phone_student_count else "low",
             detail=f"{len(duplicate_phones)} 个手机号出现在多条线索中，需复核是否重复导入。",
             to="/admin/governance?section=duplicates",
+            entity_keys=duplicate_phone_entities,
         ),
         _health_signal(
             key="same_name_school_phone",
@@ -560,6 +699,7 @@ async def data_health_center(
             severity="high" if same_name_school_phone_count else "low",
             detail="同一个姓名、学校、手机号同时重复，优先级高于普通同名。",
             to="/admin/governance?section=duplicates",
+            entity_keys=same_name_school_phone_entities,
         ),
         _health_signal(
             key="missing_phone",
@@ -568,6 +708,7 @@ async def data_health_center(
             severity="medium" if missing_phone_count else "low",
             detail="活跃线索缺少两个监护人手机号，话务员无法有效拨打。",
             to="/admin/leads?active=1&missing_phone=1",
+            entity_keys=[f"student:{student_id}" for student_id in missing_phone_ids],
         ),
         _health_signal(
             key="enrolled_status_change",
@@ -576,14 +717,17 @@ async def data_health_center(
             severity="high" if enrolled_status_change_count else "low",
             detail="近 7 天涉及已报名的状态变更，需确认是否为正常报名登记。",
             to="/admin/audit-logs?action=%E4%BF%AE%E6%94%B9%E7%8A%B6%E6%80%81&q=%E5%B7%B2%E6%8A%A5%E5%90%8D",
+            entity_keys=[f"operation:{log_id}" for log_id in enrolled_status_change_ids],
         ),
         _health_signal(
             key="stale_a",
+            review_key="stale_a_students",
             title="A 级长期未跟进",
             count=stale_a_count,
             severity="high" if stale_a_count else "low",
             detail="A 级且 3 天以上无新活动，建议优先回访或主管介入。",
             to="/admin/work-center?queue=stale-a",
+            entity_keys=[f"student:{student_id}" for student_id in stale_a_ids],
         ),
         _health_signal(
             key="assigned_no_call",
@@ -592,6 +736,7 @@ async def data_health_center(
             severity="medium" if assigned_no_call_count else "low",
             detail="已分配但没有拨号记录，可能未真正开始处理。",
             to="/admin/leads?active=1",
+            entity_keys=[f"student:{student_id}" for student_id in assigned_no_call_ids],
         ),
         _health_signal(
             key="off_hours_status_change",
@@ -600,9 +745,17 @@ async def data_health_center(
             severity="high" if off_hours_status_change_count else "low",
             detail="近 7 天在 9:00-11:00、14:30-18:00、19:00-21:00 外修改状态。",
             to="/admin/audit-logs?action=%E4%BF%AE%E6%94%B9%E7%8A%B6%E6%80%81",
+            entity_keys=[f"operation:{log_id}" for log_id in off_hours_status_change_ids],
         ),
     ]
-    signals = [_apply_governance_review(signal, reviewed, signal["key"]) for signal in signals]
+    signals = [
+        _apply_governance_review(
+            signal,
+            reviewed,
+            signal.get("review_key") or signal["key"],
+        )
+        for signal in signals
+    ]
     total_issue_count = sum(item["count"] for item in signals)
     return Response.ok(
         {
@@ -624,9 +777,22 @@ async def acknowledge_governance_review(
     if not key:
         return Response.error(code=1, msg="缺少复核项")
     safe_key = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", key)[:40]
+    snapshot = _verify_governance_review_token(body.review_token, safe_key)
+    if not snapshot:
+        return Response.error(code=1, msg="复核凭证已失效，请刷新页面后重试")
     title = (body.title or key).strip()
     detail = (body.detail or "").strip()
-    count = max(int(body.count or 0), 0)
+    count = snapshot["count"]
+    snapshot_content = json.dumps(
+        {
+            "v": 1,
+            "snapshot_hash": snapshot["snapshot_hash"],
+            "count": count,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     db.add(
         make_operation_log(
             current_user,
@@ -636,6 +802,7 @@ async def acknowledge_governance_review(
             content=f"确认复核 {title}：{detail}" if detail else f"确认复核 {title}",
             old_status=str(count),
             new_status="已复核",
+            note_content=snapshot_content,
             batch_id=f"{GOVERNANCE_REVIEW_PREFIX}{safe_key}",
         )
     )
@@ -717,65 +884,52 @@ async def duplicate_phone_cleanup(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_operation_permission(ADMIN_OP_DUPLICATE_CLEANUP)),
 ):
-    """清理重复手机号；清完无号码的学生连同关联记录删除。"""
+    """清理可安全移除的重复手机号；无剩余号码的学生保留并交由人工处理。"""
     if not body.confirm:
         return Response.error(code=1, msg="需要确认后才能清理重复手机号")
 
     duplicate_phones, rows = await _build_duplicate_phone_cleanup_plan(db)
     summary = _duplicate_phone_cleanup_summary(rows, duplicate_phones)
-    if not rows:
-        return Response.ok({**summary, "batch_id": "", "changed": False})
+    safe_rows = [row for row in rows if not row.get("requires_manual_review")]
+    if not safe_rows:
+        return Response.ok(
+            {
+                **summary,
+                "batch_id": "",
+                "changed": False,
+                "cleared_count": 0,
+                "deleted_count": 0,
+            }
+        )
 
     batch_id = f"phone-dedupe-{datetime.now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3)}"
-    by_id = {row["student_id"]: row for row in rows}
+    by_id = {row["student_id"]: row for row in safe_rows}
     result = await db.execute(select(Student).where(Student.id.in_(list(by_id.keys()))))
     students = sorted(result.scalars().all(), key=lambda student: student.id)
 
     cleared_count = 0
-    deleted_count = 0
     for student in students:
         row = by_id[student.id]
         removed_text = "、".join(row["removed_phones"])
-        if row["will_delete"]:
-            db.add(
-                make_operation_log(
-                    current_user,
-                    student.id,
-                    student.case_no or "",
-                    "数据清理",
-                    content=(
-                        f"批次 {batch_id}：清理重复手机号 {removed_text} 后无可用号码，"
-                        f"删除学生 {student.name}（{student.school_name or '-'}）"
-                    ),
-                    old_status=canonical_status_value(student.status),
-                    new_status="已删除",
-                    batch_id=batch_id,
-                )
+        student.guardian_phone = row["new_guardian_phone"]
+        student.guardian2_phone = row["new_guardian2_phone"]
+        kept_phones = [
+            phone for phone in (row["new_guardian_phone"], row["new_guardian2_phone"]) if phone
+        ]
+        db.add(
+            make_operation_log(
+                current_user,
+                student.id,
+                student.case_no or "",
+                "数据清理",
+                content=(
+                    f"批次 {batch_id}：清理重复手机号 {removed_text}；"
+                    f"保留号码 {'、'.join(kept_phones)}"
+                ),
+                batch_id=batch_id,
             )
-            for model in (Call, Note, FollowUp, LeadViewLog, Visit, DialLog):
-                await db.execute(delete(model).where(model.student_id == student.id))
-            await db.delete(student)
-            deleted_count += 1
-        else:
-            student.guardian_phone = row["new_guardian_phone"]
-            student.guardian2_phone = row["new_guardian2_phone"]
-            kept_phones = [
-                phone for phone in (row["new_guardian_phone"], row["new_guardian2_phone"]) if phone
-            ]
-            db.add(
-                make_operation_log(
-                    current_user,
-                    student.id,
-                    student.case_no or "",
-                    "数据清理",
-                    content=(
-                        f"批次 {batch_id}：清理重复手机号 {removed_text}；"
-                        f"保留号码 {'、'.join(kept_phones)}"
-                    ),
-                    batch_id=batch_id,
-                )
-            )
-            cleared_count += 1
+        )
+        cleared_count += 1
 
     db.add(
         make_operation_log(
@@ -785,7 +939,8 @@ async def duplicate_phone_cleanup(
             action="数据清理汇总",
             content=(
                 f"批次 {batch_id}：清理重复手机号 {len(duplicate_phones)} 个，"
-                f"影响学生 {len(rows)} 条，清号保留 {cleared_count} 条，删除 {deleted_count} 条"
+                f"影响学生 {len(rows)} 条，安全清号 {cleared_count} 条，"
+                f"保留待人工复核 {summary['manual_review_count']} 条"
             ),
             batch_id=batch_id,
         )
@@ -797,7 +952,7 @@ async def duplicate_phone_cleanup(
             "batch_id": batch_id,
             "changed": True,
             "cleared_count": cleared_count,
-            "deleted_count": deleted_count,
+            "deleted_count": 0,
         }
     )
 
@@ -823,12 +978,12 @@ async def risk_alerts(
         .all()
     )
 
-    delete_count = sum(1 for log in rows if log.action in {"删除线索", "删除用户"})
-    batch_distribution_count = sum(
-        1 for log in rows if log.action in BATCH_DISTRIBUTION_SUMMARY_ACTIONS
-    )
-    enrolled_status_change_count = sum(
-        1
+    delete_log_ids = [log.id for log in rows if log.action in {"删除线索", "删除用户"}]
+    batch_distribution_log_ids = [
+        log.id for log in rows if log.action in BATCH_DISTRIBUTION_SUMMARY_ACTIONS
+    ]
+    enrolled_status_change_log_ids = [
+        log.id
         for log in rows
         if log.action == "修改状态"
         and (
@@ -836,60 +991,75 @@ async def risk_alerts(
             or "已报名" in (log.new_status or "")
             or "已报名" in (log.content or "")
         )
-    )
+    ]
+    delete_count = len(delete_log_ids)
+    batch_distribution_count = len(batch_distribution_log_ids)
+    enrolled_status_change_count = len(enrolled_status_change_log_ids)
 
     last_activity = build_last_activity_subquery()
     latest_activity_at = func.coalesce(
         last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
     ).label("latest_activity_at")
-    stale_a_count = (
-        await db.execute(
-            select(func.count(Student.id))
-            .outerjoin(last_activity, last_activity.c.student_id == Student.id)
-            .where(
-                Student.intent_level == IntentLevel.A,
-                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-                latest_activity_at < utcnow() - timedelta(days=3),
-            )
-        )
-    ).scalar() or 0
-    open_home_visit_count = (
-        await db.execute(
-            select(func.count(HomeVisitTask.id)).where(
-                HomeVisitTask.status.in_(
-                    [
-                        HomeVisitStatus.pending,
-                        HomeVisitStatus.confirmed,
-                        HomeVisitStatus.scheduled,
-                        HomeVisitStatus.postponed,
-                    ]
+    stale_a_ids = list(
+        (
+            await db.execute(
+                select(Student.id)
+                .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+                .where(
+                    Student.intent_level == IntentLevel.A,
+                    Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+                    latest_activity_at < utcnow() - timedelta(days=3),
                 )
             )
-        )
-    ).scalar() or 0
-    campus_due_count = (
-        await db.execute(
-            select(func.count(CampusVisitTask.id)).where(
-                or_(
-                    CampusVisitTask.status == CampusVisitStatus.pending,
-                    and_(
-                        CampusVisitTask.status.in_(
-                            [CampusVisitStatus.scheduled, CampusVisitStatus.rescheduled]
+        ).scalars()
+    )
+    open_home_visit_ids = list(
+        (
+            await db.execute(
+                select(HomeVisitTask.id).where(
+                    HomeVisitTask.status.in_(
+                        [
+                            HomeVisitStatus.pending,
+                            HomeVisitStatus.confirmed,
+                            HomeVisitStatus.scheduled,
+                            HomeVisitStatus.postponed,
+                        ]
+                    )
+                )
+            )
+        ).scalars()
+    )
+    campus_due_ids = list(
+        (
+            await db.execute(
+                select(CampusVisitTask.id).where(
+                    or_(
+                        CampusVisitTask.status == CampusVisitStatus.pending,
+                        and_(
+                            CampusVisitTask.status.in_(
+                                [CampusVisitStatus.scheduled, CampusVisitStatus.rescheduled]
+                            ),
+                            CampusVisitTask.appointment_at.is_not(None),
+                            CampusVisitTask.appointment_at < utcnow(),
                         ),
-                        CampusVisitTask.appointment_at.is_not(None),
-                        CampusVisitTask.appointment_at < utcnow(),
-                    ),
+                    )
                 )
             )
-        )
-    ).scalar() or 0
-    unsettled_enrollment_count = (
-        await db.execute(
-            select(func.count(EnrollmentRecord.id)).where(
-                EnrollmentRecord.settlement_status != SettlementStatus.settled
+        ).scalars()
+    )
+    unsettled_enrollment_ids = list(
+        (
+            await db.execute(
+                select(EnrollmentRecord.id).where(
+                    EnrollmentRecord.settlement_status != SettlementStatus.settled
+                )
             )
-        )
-    ).scalar() or 0
+        ).scalars()
+    )
+    stale_a_count = len(stale_a_ids)
+    open_home_visit_count = len(open_home_visit_ids)
+    campus_due_count = len(campus_due_ids)
+    unsettled_enrollment_count = len(unsettled_enrollment_ids)
 
     alerts = []
     if delete_count:
@@ -901,6 +1071,7 @@ async def risk_alerts(
                 count=delete_count,
                 detail=f"近 {days} 天有 {delete_count} 条删除类操作，请复核是否为预期清理。",
                 category="删除",
+                entity_keys=[f"operation:{log_id}" for log_id in delete_log_ids],
             )
         )
     if batch_distribution_count:
@@ -914,6 +1085,9 @@ async def risk_alerts(
                     f"近 {days} 天有 {batch_distribution_count} 条批量分配汇总，请抽查分配范围。"
                 ),
                 category="分配",
+                entity_keys=[
+                    f"operation:{log_id}" for log_id in batch_distribution_log_ids
+                ],
             )
         )
     if enrolled_status_change_count:
@@ -926,6 +1100,9 @@ async def risk_alerts(
                 detail=f"近 {days} 天有 {enrolled_status_change_count} 条涉及已报名的状态变更。",
                 action="修改状态",
                 q="已报名",
+                entity_keys=[
+                    f"operation:{log_id}" for log_id in enrolled_status_change_log_ids
+                ],
             )
         )
     if stale_a_count:
@@ -940,6 +1117,7 @@ async def risk_alerts(
                     "建议优先回访或主管介入。"
                 ),
                 to="/admin/work-center?queue=stale-a",
+                entity_keys=[f"student:{student_id}" for student_id in stale_a_ids],
             )
         )
     if open_home_visit_count:
@@ -954,6 +1132,7 @@ async def risk_alerts(
                     "需要确认安排、结果或后续动作。"
                 ),
                 to="/admin/work-center?queue=home_visit",
+                entity_keys=[f"home-visit:{task_id}" for task_id in open_home_visit_ids],
             )
         )
     if campus_due_count:
@@ -965,6 +1144,7 @@ async def risk_alerts(
                 count=campus_due_count,
                 detail=f"当前有 {campus_due_count} 个到校任务待预约或已过预约时间未确认到校结果。",
                 to="/admin/work-center?queue=campus_visit",
+                entity_keys=[f"campus-visit:{task_id}" for task_id in campus_due_ids],
             )
         )
     if unsettled_enrollment_count:
@@ -979,9 +1159,19 @@ async def risk_alerts(
                     "需在结算页确认归属。"
                 ),
                 to="/admin/enrollment-settlement",
+                entity_keys=[
+                    f"enrollment:{record_id}" for record_id in unsettled_enrollment_ids
+                ],
             )
         )
 
-    alerts = [_apply_governance_review(alert, reviewed, alert["type"]) for alert in alerts]
+    alerts = [
+        _apply_governance_review(
+            alert,
+            reviewed,
+            alert.get("review_key") or alert["type"],
+        )
+        for alert in alerts
+    ]
     alerts = [alert for alert in alerts if alert["count"] > 0]
     return Response.ok({"days": days, "alerts": alerts})

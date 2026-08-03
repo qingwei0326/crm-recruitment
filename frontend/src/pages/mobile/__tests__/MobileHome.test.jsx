@@ -8,6 +8,7 @@ import api from '../../../api';
 vi.mock('../../../api', () => ({
   default: {
     get: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -15,20 +16,27 @@ describe('MobileHome PendingList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    api.get.mockResolvedValue({
-      data: {
-        code: 0,
+    localStorage.clear();
+    api.get.mockImplementation((url) => {
+      if (url === '/personal-groups') {
+        return Promise.resolve({ data: { code: 0, data: [{ id: 8, name: '今晚再打', member_count: 2 }] } });
+      }
+      return Promise.resolve({
         data: {
-          total: 3,
-          counts: { 已联系: 1, 未接: 1, 待回访: 1 },
-          regions: [
-            { name: '长泰县', count: 2 },
-            { name: '漳浦县', count: 1 },
-          ],
-          list: [],
+          code: 0,
+          data: {
+            total: 3,
+            counts: { 已联系: 1, 未接: 1, 待回访: 1 },
+            regions: [
+              { name: '长泰县', count: 2 },
+              { name: '漳浦县', count: 1 },
+            ],
+            list: [],
+          },
         },
-      },
+      });
     });
+    api.post.mockResolvedValue({ data: { code: 0, data: { added_count: 1 } } });
   });
 
   it('renders status filters and requests follow-up items on selection', async () => {
@@ -86,6 +94,230 @@ describe('MobileHome PendingList', () => {
         params: { limit: 100, status_detail: '等待志愿' },
       });
     });
+  });
+
+  it('requests pending items by private group', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '今晚再打 2' }));
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: { limit: 100, personal_group_id: 8 },
+      });
+    });
+  });
+
+  it('requests only students without a private group', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '未分组' }));
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
+        params: { limit: 100, ungrouped: true },
+      });
+    });
+  });
+
+  it('shows group badges and batch-adds selected students on mobile', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/personal-groups') {
+        return Promise.resolve({
+          data: { code: 0, data: [{ id: 8, name: '今晚再打', color: 'cyan', member_count: 2 }] },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          code: 0,
+          data: {
+            total: 1,
+            list_total: 1,
+            counts: { 待回访: 1 },
+            regions: [],
+            list: [{
+              id: 12,
+              name: '陈同学',
+              status: '待回访',
+              school_name: '二中',
+              personal_groups: [{ id: 8, name: '今晚再打', color: 'cyan' }],
+            }],
+          },
+        },
+      });
+    });
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('陈同学')).toBeInTheDocument();
+    expect(screen.getByText('今晚再打', { selector: 'span' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '批量整理学生分组' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 陈同学' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '批量加入的分组' }), {
+      target: { value: '8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '加入' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/personal-groups/8/members', {
+        student_ids: [12],
+      });
+    });
+  });
+
+  it('removes batch-grouped students from the ungrouped queue', async () => {
+    let grouped = false;
+    const student = {
+      id: 13,
+      name: '未分组学生',
+      status: '待回访',
+      school_name: '三中',
+      personal_groups: [],
+    };
+    api.get.mockImplementation((url, options = {}) => {
+      if (url === '/personal-groups') {
+        return Promise.resolve({
+          data: { code: 0, data: [{ id: 8, name: '今晚再打', color: 'cyan', member_count: 2 }] },
+        });
+      }
+      const ungroupedList = options.params?.ungrouped && grouped ? [] : [student];
+      return Promise.resolve({
+        data: {
+          code: 0,
+          data: {
+            total: ungroupedList.length,
+            list_total: ungroupedList.length,
+            counts: { 待回访: ungroupedList.length },
+            regions: [],
+            list: ungroupedList,
+          },
+        },
+      });
+    });
+    api.post.mockImplementation(() => {
+      grouped = true;
+      return Promise.resolve({ data: { code: 0, data: { added_count: 1 } } });
+    });
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '未分组' }));
+    expect(await screen.findByText('未分组学生')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '批量整理学生分组' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 未分组学生' }));
+    fireEvent.change(screen.getByRole('combobox', { name: '批量加入的分组' }), {
+      target: { value: '8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '加入' }));
+
+    await waitFor(() => expect(screen.queryByText('未分组学生')).not.toBeInTheDocument());
+    expect(api.post).toHaveBeenCalledWith('/personal-groups/8/members', {
+      student_ids: [13],
+    });
+  });
+
+  it('loads more than the first mobile page', async () => {
+    api.get.mockImplementation((url, options = {}) => {
+      if (url === '/personal-groups') {
+        return Promise.resolve({ data: { code: 0, data: [] } });
+      }
+      const offset = options.params?.offset || 0;
+      return Promise.resolve({
+        data: {
+          code: 0,
+          data: {
+            total: 2,
+            list_total: 2,
+            counts: { 已联系: 2 },
+            regions: [],
+            list: offset === 0
+              ? [{ id: 1, name: '第一页学生', status: '已联系' }]
+              : [{ id: 2, name: '第二页学生', status: '已联系' }],
+          },
+        },
+      });
+    });
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('第一页学生')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多（剩余1）' }));
+
+    expect(await screen.findByText('第二页学生')).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/tasks/handled', {
+      params: { limit: 100, offset: 1 },
+    });
+  });
+
+  it('restores loaded pages and scroll position after returning from a student detail', async () => {
+    let returning = false;
+    api.get.mockImplementation((url, options = {}) => {
+      if (url === '/personal-groups') {
+        return Promise.resolve({ data: { code: 0, data: [] } });
+      }
+      if (returning) {
+        return new Promise(() => {});
+      }
+      const offset = options.params?.offset || 0;
+      return Promise.resolve({
+        data: {
+          code: 0,
+          data: {
+            total: 2,
+            list_total: 2,
+            counts: { 待回访: 2 },
+            regions: [],
+            list: offset === 0
+              ? [{ id: 1, name: '第一页学生', status: '待回访' }]
+              : [{ id: 2, name: '第二页学生', status: '待回访' }],
+          },
+        },
+      });
+    });
+
+    const first = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('第一页学生')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '加载更多（剩余1）' }));
+    expect(await screen.findByText('第二页学生')).toBeInTheDocument();
+
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 720 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    fireEvent.click(screen.getByRole('button', { name: /第二页学生/ }));
+    first.unmount();
+
+    returning = true;
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('第二页学生')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 720 }));
+    });
+
   });
 
   it('requests pending items by name or phone tail search', async () => {

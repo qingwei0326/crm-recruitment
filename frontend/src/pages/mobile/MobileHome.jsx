@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import logger from '../../utils/logger';
 import {
@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   X,
+  ListChecks,
 } from 'lucide-react';
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -22,10 +23,15 @@ import IntentLevelBadge from '../../components/IntentLevelBadge';
 import MobileDialResult from '../../components/MobileDialResult';
 import useTodayTasks from '../../hooks/useTodayTasks';
 import useDialFlow from '../../hooks/useDialFlow';
-import { formatDateTime } from '../../utils';
 import { useToast } from '../../components/Toast';
 import HelpModal from '../../components/HelpModal';
 import PhoneLink from '../../components/PhoneLink';
+import {
+  PersonalGroupBadges,
+  PersonalGroupBulkBar,
+  PersonalGroupFilter,
+  UNGROUPED_FILTER,
+} from '../../components/PersonalGroups';
 import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
 import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
 
@@ -321,15 +327,25 @@ function SettingsSheet({ open, onClose }) {
   );
 }
 
-const PENDING_FILTERS_STORAGE_KEY = 'crm-mobile-pending-filters';
+const PENDING_FILTERS_STORAGE_PREFIX = 'crm-mobile-pending-filters';
 
-function readPendingFilters() {
+function pendingFiltersStorageKey() {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(PENDING_FILTERS_STORAGE_KEY) || '{}');
+    const user = JSON.parse(localStorage.getItem('crm_user') || 'null');
+    return `${PENDING_FILTERS_STORAGE_PREFIX}:${user?.id || 'anonymous'}`;
+  } catch {
+    return `${PENDING_FILTERS_STORAGE_PREFIX}:anonymous`;
+  }
+}
+
+function readPendingFilters(storageKey) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
     return {
       selectedStatus: saved.selectedStatus || null,
       selectedIntent: saved.selectedIntent || null,
       selectedResult: saved.selectedResult || null,
+      selectedGroupId: saved.selectedGroupId || null,
       selectedRegion: saved.selectedRegion || null,
       pendingSearch: typeof saved.pendingSearch === 'string' ? saved.pendingSearch : '',
     };
@@ -338,86 +354,323 @@ function readPendingFilters() {
       selectedStatus: null,
       selectedIntent: null,
       selectedResult: null,
+      selectedGroupId: null,
       selectedRegion: null,
       pendingSearch: '',
     };
   }
 }
 
+function pendingFiltersFingerprint(filters) {
+  return JSON.stringify({
+    selectedStatus: filters.selectedStatus || null,
+    selectedIntent: filters.selectedIntent || null,
+    selectedResult: filters.selectedResult || null,
+    selectedGroupId: filters.selectedGroupId || null,
+    selectedRegion: filters.selectedRegion || null,
+    pendingSearch: typeof filters.pendingSearch === 'string' ? filters.pendingSearch.trim() : '',
+  });
+}
+
+function pendingListViewStorageKey(storageKey) {
+  return `${storageKey}:list-view`;
+}
+
+function readPendingListView(storageKey, filters) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(pendingListViewStorageKey(storageKey)) || 'null');
+    if (!saved || saved.fingerprint !== pendingFiltersFingerprint(filters)) return null;
+    if (!Array.isArray(saved.items) || saved.items.length === 0) return null;
+    return {
+      items: saved.items,
+      counts: saved.counts && typeof saved.counts === 'object' ? saved.counts : {},
+      regions: Array.isArray(saved.regions) ? saved.regions : [],
+      total: Number(saved.total) || 0,
+      listTotal: Number(saved.listTotal) || saved.items.length,
+      scrollY: Math.max(0, Number(saved.scrollY) || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function PendingList() {
-  const restoredFilters = useMemo(readPendingFilters, []);
-  const [items, setItems] = useState([]);
-  const [counts, setCounts] = useState({});
-  const [regions, setRegions] = useState([]);
-  const [total, setTotal] = useState(0);
+  const storageKey = useMemo(pendingFiltersStorageKey, []);
+  const restoredFilters = useMemo(() => readPendingFilters(storageKey), [storageKey]);
+  const restoredView = useMemo(
+    () => readPendingListView(storageKey, restoredFilters),
+    [storageKey, restoredFilters],
+  );
+  const [items, setItems] = useState(restoredView?.items || []);
+  const [counts, setCounts] = useState(restoredView?.counts || {});
+  const [regions, setRegions] = useState(restoredView?.regions || []);
+  const [total, setTotal] = useState(restoredView?.total || 0);
+  const [listTotal, setListTotal] = useState(restoredView?.listTotal || 0);
   const [selectedStatus, setSelectedStatus] = useState(restoredFilters.selectedStatus);
   const [selectedIntent, setSelectedIntent] = useState(restoredFilters.selectedIntent);
   const [selectedResult, setSelectedResult] = useState(restoredFilters.selectedResult);
+  const [selectedGroupId, setSelectedGroupId] = useState(restoredFilters.selectedGroupId);
   const [selectedRegion, setSelectedRegion] = useState(restoredFilters.selectedRegion);
   const [pendingSearch, setPendingSearch] = useState(restoredFilters.pendingSearch);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!restoredView);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [groupRevision, setGroupRevision] = useState(0);
   const navigate = useNavigate();
+  const pendingRequestSeqRef = useRef(0);
+  const itemsRef = useRef(items);
+  const restoreScrollRef = useRef(restoredView?.scrollY ?? null);
+  const activeFingerprintRef = useRef(pendingFiltersFingerprint(restoredFilters));
 
   useEffect(() => {
-    sessionStorage.setItem(PENDING_FILTERS_STORAGE_KEY, JSON.stringify({
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    sessionStorage.setItem(storageKey, JSON.stringify({
       selectedStatus,
       selectedIntent,
       selectedResult,
+      selectedGroupId,
       selectedRegion,
       pendingSearch,
     }));
-  }, [selectedStatus, selectedIntent, selectedResult, selectedRegion, pendingSearch]);
+  }, [storageKey, selectedStatus, selectedIntent, selectedResult, selectedGroupId, selectedRegion, pendingSearch]);
 
   useEffect(() => {
-    setLoading(true);
+    setSelectionMode(false);
+    setSelectedStudentIds([]);
+  }, [selectedStatus, selectedIntent, selectedResult, selectedGroupId, selectedRegion, pendingSearch]);
+
+  useEffect(() => {
+    const handleGroupChange = (event) => {
+      const membershipChanged = event.detail?.studentId || event.detail?.studentIds?.length;
+      const activeGroupChanged = selectedGroupId != null && event.detail?.groupId === selectedGroupId;
+      if (membershipChanged || activeGroupChanged) {
+        setGroupRevision((current) => current + 1);
+      }
+    };
+    window.addEventListener('personal-groups-changed', handleGroupChange);
+    return () => window.removeEventListener('personal-groups-changed', handleGroupChange);
+  }, [selectedGroupId]);
+
+  useEffect(() => {
+    const fingerprint = pendingFiltersFingerprint({
+      selectedStatus,
+      selectedIntent,
+      selectedResult,
+      selectedGroupId,
+      selectedRegion,
+      pendingSearch,
+    });
+    const continuingSameView = activeFingerprintRef.current === fingerprint;
+    if (!continuingSameView) {
+      activeFingerprintRef.current = fingerprint;
+      restoreScrollRef.current = null;
+      itemsRef.current = [];
+      setItems([]);
+      sessionStorage.removeItem(pendingListViewStorageKey(storageKey));
+    }
+    const requestId = ++pendingRequestSeqRef.current;
+    setLoading(itemsRef.current.length === 0);
     setError('');
-    const params = { limit: 100 };
+    const params = {
+      limit: continuingSameView
+        ? Math.min(200, Math.max(100, itemsRef.current.length))
+        : 100,
+    };
     if (selectedStatus) params.status = selectedStatus;
     if (selectedIntent) params.intent_level = selectedIntent;
     if (selectedResult) params.status_detail = selectedResult;
+    if (selectedGroupId === UNGROUPED_FILTER) params.ungrouped = true;
+    else if (selectedGroupId) params.personal_group_id = selectedGroupId;
     if (selectedRegion) params.region = selectedRegion;
     const trimmedSearch = pendingSearch.trim();
     if (trimmedSearch) params.search = trimmedSearch;
     api
       .get('/tasks/handled', { params })
       .then((r) => {
+        if (requestId !== pendingRequestSeqRef.current) return;
         if (r.data.code === 0) {
           const d = r.data.data;
           setItems(d?.list ?? (Array.isArray(d) ? d : []));
           setCounts(d?.counts ?? {});
           setRegions(d?.regions ?? []);
           setTotal(d?.total ?? 0);
+          setListTotal(d?.list_total ?? d?.total ?? 0);
         } else setError(r.data.msg || '加载失败');
       })
-      .catch((e) =>
-        setError(e?.response?.data?.detail || e?.response?.data?.msg || '加载失败'),
-      )
-      .finally(() => setLoading(false));
-  }, [selectedStatus, selectedIntent, selectedResult, selectedRegion, pendingSearch]);
+      .catch((e) => {
+        if (requestId === pendingRequestSeqRef.current) {
+          setError(e?.response?.data?.detail || e?.response?.data?.msg || '加载失败');
+        }
+      })
+      .finally(() => {
+        if (requestId === pendingRequestSeqRef.current) setLoading(false);
+      });
+  }, [storageKey, selectedStatus, selectedIntent, selectedResult, selectedGroupId, selectedRegion, pendingSearch, groupRevision]);
+
+  useLayoutEffect(() => {
+    if (restoreScrollRef.current === null || items.length === 0) return undefined;
+    const top = restoreScrollRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top, left: 0, behavior: 'auto' });
+      restoreScrollRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [items.length]);
+
+  const loadMore = async () => {
+    if (loadingMore || items.length >= listTotal) return;
+    const requestId = ++pendingRequestSeqRef.current;
+    setLoadingMore(true);
+    const params = { limit: 100, offset: items.length };
+    if (selectedStatus) params.status = selectedStatus;
+    if (selectedIntent) params.intent_level = selectedIntent;
+    if (selectedResult) params.status_detail = selectedResult;
+    if (selectedGroupId === UNGROUPED_FILTER) params.ungrouped = true;
+    else if (selectedGroupId) params.personal_group_id = selectedGroupId;
+    if (selectedRegion) params.region = selectedRegion;
+    const trimmedSearch = pendingSearch.trim();
+    if (trimmedSearch) params.search = trimmedSearch;
+    try {
+      const response = await api.get('/tasks/handled', { params });
+      if (requestId !== pendingRequestSeqRef.current) return;
+      if (response.data.code === 0) {
+        const data = response.data.data;
+        setItems((current) => {
+          const seen = new Set(current.map((student) => student.id));
+          const additions = (data?.list || []).filter((student) => !seen.has(student.id));
+          return [...current, ...additions];
+        });
+        setListTotal(data?.list_total ?? data?.total ?? listTotal);
+      } else {
+        setError(response.data.msg || '加载更多失败');
+      }
+    } catch (requestError) {
+      if (requestId === pendingRequestSeqRef.current) {
+        setError(requestError?.response?.data?.detail || '加载更多失败');
+      }
+    } finally {
+      if (requestId === pendingRequestSeqRef.current) setLoadingMore(false);
+    }
+  };
 
   const visibleTotal = total || items.length;
+  const selectedStudentIdSet = new Set(selectedStudentIds);
+  const allVisibleSelected = items.length > 0 && items.every((student) => selectedStudentIdSet.has(student.id));
+
+  const toggleStudent = (studentId) => {
+    setSelectedStudentIds((current) => (
+      current.includes(studentId)
+        ? current.filter((id) => id !== studentId)
+        : [...current, studentId]
+    ));
+  };
+
+  const toggleAllVisible = () => {
+    if (allVisibleSelected) {
+      const visibleIds = new Set(items.map((student) => student.id));
+      setSelectedStudentIds((current) => current.filter((id) => !visibleIds.has(id)));
+    } else {
+      setSelectedStudentIds((current) => [
+        ...new Set([...current, ...items.map((student) => student.id)]),
+      ]);
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedStudentIds([]);
+  };
+
+  const handleBulkApplied = (group) => {
+    const selectedIds = new Set(selectedStudentIds);
+    const updateGroups = (student) => {
+      if (!selectedIds.has(student.id)) return student;
+      const currentGroups = Array.isArray(student.personal_groups) ? student.personal_groups : [];
+      if (currentGroups.some((item) => item.id === group.id)) return student;
+      return {
+        ...student,
+        personal_groups: [...currentGroups, {
+          id: group.id,
+          name: group.name,
+          color: group.color,
+        }],
+      };
+    };
+    setItems((current) => {
+      const updated = selectedGroupId === UNGROUPED_FILTER
+        ? current.filter((student) => !selectedIds.has(student.id))
+        : current.map(updateGroups);
+      itemsRef.current = updated;
+      return updated;
+    });
+    if (selectedGroupId === UNGROUPED_FILTER) {
+      setListTotal((current) => Math.max(0, current - selectedIds.size));
+      setTotal((current) => Math.max(0, current - selectedIds.size));
+    }
+    exitSelectionMode();
+  };
+
+  const openStudentDetail = (studentId) => {
+    sessionStorage.setItem(pendingListViewStorageKey(storageKey), JSON.stringify({
+      fingerprint: pendingFiltersFingerprint({
+        selectedStatus,
+        selectedIntent,
+        selectedResult,
+        selectedGroupId,
+        selectedRegion,
+        pendingSearch,
+      }),
+      items,
+      counts,
+      regions,
+      total,
+      listTotal,
+      scrollY: window.scrollY,
+      anchorStudentId: studentId,
+    }));
+    navigate(`/mobile/student/${studentId}`);
+  };
 
   const filters = (
     <div className="space-y-2">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-gray-400" />
-        <input
-          value={pendingSearch}
-          onChange={(e) => setPendingSearch(e.target.value)}
-          placeholder="搜索姓名或手机号尾号"
-          className="w-full min-h-[44px] rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-900/30"
-        />
-        {pendingSearch && (
-          <button
-            type="button"
-            onClick={() => setPendingSearch('')}
-            className="absolute right-2 top-1/2 flex min-w-9 min-h-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:text-gray-600"
-            aria-label="清空待处理搜索"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={pendingSearch}
+            onChange={(e) => setPendingSearch(e.target.value)}
+            placeholder="搜索姓名或手机号尾号"
+            className="w-full min-h-[44px] rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-900/30"
+          />
+          {pendingSearch && (
+            <button
+              type="button"
+              onClick={() => setPendingSearch('')}
+              className="absolute right-2 top-1/2 flex min-w-9 min-h-9 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 hover:text-gray-600"
+              aria-label="清空待处理搜索"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (selectionMode) exitSelectionMode();
+            else setSelectionMode(true);
+          }}
+          aria-label={selectionMode ? '退出批量整理' : '批量整理学生分组'}
+          aria-pressed={selectionMode}
+          title={selectionMode ? '退出批量整理' : '批量整理'}
+          className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${selectionMode ? 'border-cyan-300 bg-cyan-100 text-cyan-800 dark:border-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+        >
+          <ListChecks className="h-5 w-5" />
+        </button>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {PENDING_STATUS_FILTERS.map((filter) => {
@@ -470,6 +723,10 @@ export function PendingList() {
           </button>
         ))}
       </div>
+      <PersonalGroupFilter
+        selectedGroupId={selectedGroupId}
+        onSelect={setSelectedGroupId}
+      />
       {regions.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-2">
           <button
@@ -531,33 +788,77 @@ export function PendingList() {
   return (
     <div className="space-y-3">
       {filters}
+      {selectionMode && (
+        <div className="flex min-h-[44px] items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={allVisibleSelected}
+            onChange={toggleAllVisible}
+            aria-label="选择当前已加载学生"
+            className="h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+          />
+          <span>选择当前已加载学生</span>
+          <span className="ml-auto text-gray-400">{items.length} 人</span>
+        </div>
+      )}
+      <PersonalGroupBulkBar
+        selectedStudentIds={selectedStudentIds}
+        onApplied={handleBulkApplied}
+        onCancel={exitSelectionMode}
+        className="sticky top-[72px] z-10 -mx-4"
+      />
       <div className="space-y-3">
         {items.map((it) => (
-          <button
+          <div
             key={it.id}
-            type="button"
-            onClick={() => navigate(`/mobile/student/${it.id}`)}
-            className="w-full text-left bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-3.5 min-[380px]:p-4"
+            data-student-id={it.id}
+            className={`flex items-center rounded-lg border bg-white dark:border-gray-700 dark:bg-gray-800 ${selectedStudentIdSet.has(it.id) ? 'border-cyan-400 bg-cyan-50 dark:border-cyan-700 dark:bg-cyan-950/30' : 'border-gray-200'}`}
           >
-            <div className="flex min-w-0 items-start gap-2">
-              <span className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                {it.name}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <StatusBadge status={it.status} />
-              <IntentLevelBadge level={it.intent_level} />
-            </div>
-            <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-              {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
-            </div>
-            {it.notes && (
-              <div className="text-xs text-gray-600 dark:text-gray-300 mt-1 break-words">
-                {it.notes}
-              </div>
+            {selectionMode && (
+              <input
+                type="checkbox"
+                checked={selectedStudentIdSet.has(it.id)}
+                onChange={() => toggleStudent(it.id)}
+                aria-label={`选择 ${it.name}`}
+                className="ml-3 h-5 w-5 shrink-0 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
+              />
             )}
-          </button>
+            <button
+              type="button"
+              onClick={() => (selectionMode ? toggleStudent(it.id) : openStudentDetail(it.id))}
+              className="min-w-0 flex-1 p-3.5 text-left min-[380px]:p-4"
+            >
+              <div className="flex min-w-0 items-start gap-2">
+                <span className="min-w-0 flex-1 truncate text-base font-semibold text-gray-900 dark:text-gray-100">
+                  {it.name}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <StatusBadge status={it.status} />
+                <IntentLevelBadge level={it.intent_level} />
+              </div>
+              <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
+                {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
+              </div>
+              <PersonalGroupBadges groups={it.personal_groups} className="mt-2" />
+              {it.notes && (
+                <div className="mt-1 break-words text-xs text-gray-600 dark:text-gray-300">
+                  {it.notes}
+                </div>
+              )}
+            </button>
+          </div>
         ))}
+        {items.length < listTotal && (
+          <button
+            type="button"
+            disabled={loadingMore}
+            onClick={loadMore}
+            className="min-h-[48px] w-full rounded-xl border border-blue-300 bg-white text-sm font-medium text-blue-600 disabled:opacity-60 dark:border-blue-700 dark:bg-gray-800 dark:text-blue-300"
+          >
+            {loadingMore ? '加载中…' : `加载更多（剩余${listTotal - items.length}）`}
+          </button>
+        )}
       </div>
     </div>
   );

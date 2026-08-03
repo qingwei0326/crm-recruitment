@@ -1,3 +1,5 @@
+import hashlib
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
@@ -5,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_lead_utils import _student_search_predicate, invalid_reason_predicate
 from app.auth import (
+    ADMIN_OP_ASSIGNMENT_ROLLBACK,
     ADMIN_OP_INVALID_DELETE,
     ADMIN_OP_INVALID_RECLAIM,
     ADMIN_PAGE_INVALID_RECLAIM,
@@ -12,6 +15,7 @@ from app.auth import (
     require_page_permission,
 )
 from app.database import get_db
+from app.domain_errors import DomainConflict
 from app.models import (
     Call,
     DialLog,
@@ -35,7 +39,15 @@ from app.status_policy import (
     status_detail_value,
     statuses_for_canonical,
 )
-from app.utils import make_batch_id, make_operation_log, mask_phone, utcnow
+from app.utils import (
+    make_batch_id,
+    make_operation_log,
+    make_reclaim_rollback_note,
+    mask_phone,
+    parse_assignment_rollback_note,
+    parse_reclaim_rollback_note,
+    utcnow,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["管理"])
 
@@ -69,13 +81,15 @@ async def reclaim_invalid_students_to_pool(
     students: list[Student],
     current_user: User,
     action: str = "回收无效线索",
-) -> int:
+) -> dict[str, int | str]:
     await require_reclaimable_reasons(db, students)
+    impact = await _reclaim_impact(db, students)
     reclaimed_count = 0
     now = utcnow()
     batch_id = make_batch_id("invalid-reclaim")
     for student in students:
         old_agent_id = student.assigned_to
+        rollback_note = make_reclaim_rollback_note(student)
         student.status = StudentStatus.not_contacted
         student.status_detail = ""
         student.outcome_reason_code = None
@@ -92,6 +106,7 @@ async def reclaim_invalid_students_to_pool(
                 content=f"从话务员 {old_agent_id or '未分配'} 回收，进入未分配池",
                 old_status="无效",
                 new_status="未联系",
+                note_content=rollback_note,
                 batch_id=batch_id,
             )
         )
@@ -104,7 +119,23 @@ async def reclaim_invalid_students_to_pool(
         batch_id=batch_id,
         at=now,
     )
-    return reclaimed_count
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="线索回收汇总",
+            content=(
+                f"{action}，共 {reclaimed_count} 条；"
+                f"原有负责人 {impact['assigned_count']} 条；"
+                f"有备注 {impact['students_with_notes']} 条（{impact['note_count']} 条备注）"
+            ),
+            old_status="无效",
+            new_status="未联系",
+            batch_id=batch_id,
+        )
+    )
+    return {**impact, "reclaimed_count": reclaimed_count, "batch_id": batch_id}
 
 
 @router.get("/invalid-students")
@@ -211,10 +242,91 @@ async def list_invalid_students(
 class ReclaimStudentsReq(BaseModel):
     student_ids: list[int]
     agent_id: int
+    preview_token: str | None = None
 
 
 class BulkInvalidStudentsReq(BaseModel):
     student_ids: list[int]
+    preview_token: str | None = None
+
+
+async def _reclaim_impact(
+    db: AsyncSession,
+    students: list[Student],
+) -> dict[str, int | str]:
+    """Build the confirmation summary without changing any rows."""
+    student_ids = [student.id for student in students]
+    note_count = 0
+    students_with_notes = 0
+    if student_ids:
+        note_rows = await db.execute(
+            select(Note.student_id, func.count(Note.id))
+            .where(Note.student_id.in_(student_ids))
+            .group_by(Note.student_id)
+        )
+        note_counts = dict(note_rows.all())
+        students_with_notes = len(note_counts)
+        note_count = sum(note_counts.values())
+    return {
+        "student_count": len(students),
+        "assigned_count": sum(student.assigned_to is not None for student in students),
+        "unassigned_count": sum(student.assigned_to is None for student in students),
+        "students_with_notes": students_with_notes,
+        "note_count": note_count,
+        "preview_token": _reclaim_preview_token(students),
+    }
+
+
+def _reclaim_preview_token(students: list[Student]) -> str:
+    snapshot = "|".join(
+        ":".join(
+            (
+                str(student.id),
+                str(student.status),
+                student.status_detail or "",
+                student.outcome_reason_code or "",
+                str(student.assigned_to or ""),
+                str(student.updated_at or ""),
+            )
+        )
+        for student in sorted(students, key=lambda item: item.id)
+    )
+    return hashlib.sha256(snapshot.encode("utf-8")).hexdigest()
+
+
+def _verify_reclaim_preview_token(
+    students: list[Student],
+    preview_token: str | None,
+) -> None:
+    if preview_token and preview_token != _reclaim_preview_token(students):
+        raise DomainConflict("预览后的学生数据已变化，请刷新后重新预览")
+
+
+@router.post("/invalid-students/reclaim-preview")
+async def preview_reclaim_invalid_students(
+    body: BulkInvalidStudentsReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_INVALID_RECLAIM)),
+):
+    """Preview selected invalid leads before moving them to the unassigned pool."""
+    if not body.student_ids:
+        return Response.error(code=1, msg="student_ids不能为空")
+    students = list(
+        (
+            await db.execute(select(Student).where(Student.id.in_(body.student_ids)))
+        ).scalars().all()
+    )
+    if not students:
+        return Response.error(code=1, msg="未找到指定的学生")
+    non_invalid = [
+        student
+        for student in students
+        if canonical_student_status(student.status) != StudentStatus.invalid
+    ]
+    if non_invalid:
+        return Response.error(code=1, msg="部分学生已不是无效状态，请刷新后重试")
+    await require_reclaimable_reasons(db, students)
+    return Response.ok(await _reclaim_impact(db, students))
 
 
 @router.post("/reclaim-students")
@@ -248,7 +360,9 @@ async def reclaim_invalid_students(
         names = ", ".join([s.name for s in non_invalid[:3]])
         return Response.error(code=1, msg=f"部分学生不是无效状态，无法回收: {names}")
 
+    _verify_reclaim_preview_token(students, body.preview_token)
     await require_reclaimable_reasons(db, students)
+    impact = await _reclaim_impact(db, students)
 
     # 回收：重置状态为未联系，重新分配
     now = utcnow()
@@ -256,6 +370,7 @@ async def reclaim_invalid_students(
     reclaimed_count = 0
     for student in students:
         old_agent_id = student.assigned_to
+        rollback_note = make_reclaim_rollback_note(student)
         student.status = StudentStatus.not_contacted
         student.status_detail = ""
         student.outcome_reason_code = None
@@ -279,6 +394,7 @@ async def reclaim_invalid_students(
                 ),
                 old_status="无效",
                 new_status="未联系",
+                note_content=rollback_note,
                 batch_id=batch_id,
             )
         )
@@ -296,6 +412,24 @@ async def reclaim_invalid_students(
         at=now,
     )
 
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="线索回收汇总",
+            content=(
+                f"回收无效线索并重新分配给 {agent.name}"
+                f"（ID:{body.agent_id}），共 {reclaimed_count} 条；"
+                f"原有负责人 {impact['assigned_count']} 条；"
+                f"有备注 {impact['students_with_notes']} 条（{impact['note_count']} 条备注）"
+            ),
+            old_status="无效",
+            new_status="未联系",
+            batch_id=batch_id,
+        )
+    )
+
     await db.commit()
 
     return Response.ok(
@@ -303,6 +437,7 @@ async def reclaim_invalid_students(
             "reclaimed_count": reclaimed_count,
             "agent_id": body.agent_id,
             "agent_name": agent.name,
+            "batch_id": batch_id,
         }
     )
 
@@ -331,11 +466,227 @@ async def reclaim_invalid_students_to_unassigned_pool(
         names = ", ".join([student.name for student in non_invalid[:3]])
         return Response.error(code=1, msg=f"部分学生不是无效状态，无法回收: {names}")
 
+    _verify_reclaim_preview_token(students, body.preview_token)
     reclaimed_count = await reclaim_invalid_students_to_pool(
         db, students, current_user, action="批量回收无效线索"
     )
     await db.commit()
-    return Response.ok({"reclaimed_count": reclaimed_count})
+    return Response.ok(reclaimed_count)
+
+
+class ReclaimRollbackReq(BaseModel):
+    confirm: bool = False
+
+
+RECLAIM_ROLLBACK_ACTIONS = {
+    "回收无效线索",
+    "批量回收无效线索",
+    "分学校回收",
+}
+
+
+async def _build_reclaim_rollback_plan(db: AsyncSession, batch_id: str) -> dict:
+    status_rows = await db.execute(
+        select(OperationLog)
+        .where(
+            OperationLog.batch_id == batch_id,
+            OperationLog.action.in_(RECLAIM_ROLLBACK_ACTIONS),
+            OperationLog.target_student_id.is_not(None),
+        )
+        .order_by(OperationLog.id.asc())
+    )
+    status_logs = status_rows.scalars().all()
+    assignment_rows = await db.execute(
+        select(OperationLog)
+        .where(
+            OperationLog.batch_id == batch_id,
+            OperationLog.action == "修改归属",
+            OperationLog.target_student_id.is_not(None),
+        )
+        .order_by(OperationLog.id.asc())
+    )
+    assignment_payloads = {}
+    for log in assignment_rows.scalars().all():
+        payload = parse_assignment_rollback_note(log.note_content or "")
+        if payload is not None:
+            assignment_payloads[log.target_student_id] = payload
+
+    student_ids = [log.target_student_id for log in status_logs]
+    students = {}
+    if student_ids:
+        rows = await db.execute(select(Student).where(Student.id.in_(student_ids)))
+        students = {student.id: student for student in rows.scalars().all()}
+
+    items = []
+    for log in status_logs:
+        student = students.get(log.target_student_id)
+        payload = parse_reclaim_rollback_note(log.note_content or "")
+        assignment = assignment_payloads.get(log.target_student_id)
+        expected_assigned_to = assignment.get("new_assigned_to") if assignment else None
+        status = "ok"
+        reason = ""
+        if payload is None:
+            status, reason = "skipped", "缺少回收快照"
+        elif student is None:
+            status, reason = "skipped", "学生不存在"
+        elif student.assigned_to != expected_assigned_to:
+            status, reason = "skipped", "负责人已变化"
+        elif (
+            student.status != StudentStatus.not_contacted
+            or student.status_detail
+            or student.outcome_reason_code is not None
+            or student.intent_level != IntentLevel.none
+            or student.stage != StudentStage.initial_contact
+            or student.need_help
+        ):
+            status, reason = "skipped", "学生状态已变化"
+        items.append(
+            {
+                "log_id": log.id,
+                "student_id": log.target_student_id,
+                "student_name": student.name if student else "",
+                "school_name": student.school_name if student else "",
+                "old_status": payload.get("old_status") if payload else "",
+                "old_assigned_to": assignment.get("old_assigned_to") if assignment else None,
+                "current_assigned_to": student.assigned_to if student else None,
+                "status": status,
+                "reason": reason,
+            }
+        )
+    rollbackable = [item for item in items if item["status"] == "ok"]
+    return {
+        "batch_id": batch_id,
+        "total_logs": len(status_logs),
+        "rollbackable_count": len(rollbackable),
+        "skipped_count": len(items) - len(rollbackable),
+        "items": items[:100],
+    }
+
+
+@router.get("/reclaim-rollbacks/{batch_id}")
+async def preview_reclaim_rollback(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_ASSIGNMENT_ROLLBACK)),
+):
+    batch_id = batch_id.strip()
+    if not batch_id:
+        return Response.error(code=1, msg="batch_id不能为空")
+    plan = await _build_reclaim_rollback_plan(db, batch_id)
+    if not plan["total_logs"]:
+        return Response.error(code=1, msg="未找到可回滚的回收批次")
+    return Response.ok(plan)
+
+
+@router.post("/reclaim-rollbacks/{batch_id}")
+async def rollback_reclaim_batch(
+    batch_id: str,
+    body: ReclaimRollbackReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_ASSIGNMENT_ROLLBACK)),
+):
+    batch_id = batch_id.strip()
+    if not batch_id:
+        return Response.error(code=1, msg="batch_id不能为空")
+    if not body.confirm:
+        return Response.error(code=1, msg="请确认后再执行回滚")
+
+    status_rows = await db.execute(
+        select(OperationLog)
+        .where(
+            OperationLog.batch_id == batch_id,
+            OperationLog.action.in_(RECLAIM_ROLLBACK_ACTIONS),
+            OperationLog.target_student_id.is_not(None),
+        )
+        .order_by(OperationLog.id.asc())
+    )
+    status_logs = status_rows.scalars().all()
+    assignment_rows = await db.execute(
+        select(OperationLog)
+        .where(
+            OperationLog.batch_id == batch_id,
+            OperationLog.action == "修改归属",
+            OperationLog.target_student_id.is_not(None),
+        )
+    )
+    assignment_payloads = {}
+    for log in assignment_rows.scalars().all():
+        payload = parse_assignment_rollback_note(log.note_content or "")
+        if payload is not None:
+            assignment_payloads[log.target_student_id] = payload
+    if not status_logs:
+        return Response.error(code=1, msg="未找到可回滚的回收批次")
+
+    student_ids = [log.target_student_id for log in status_logs]
+    rows = await db.execute(select(Student).where(Student.id.in_(student_ids)))
+    students = {student.id: student for student in rows.scalars().all()}
+    targets = []
+    skipped = 0
+    for log in status_logs:
+        student = students.get(log.target_student_id)
+        payload = parse_reclaim_rollback_note(log.note_content or "")
+        assignment = assignment_payloads.get(log.target_student_id)
+        expected_assigned_to = assignment.get("new_assigned_to") if assignment else None
+        if (
+            payload is None
+            or student is None
+            or student.assigned_to != expected_assigned_to
+            or student.status != StudentStatus.not_contacted
+            or student.status_detail
+            or student.outcome_reason_code is not None
+            or student.intent_level != IntentLevel.none
+            or student.stage != StudentStage.initial_contact
+            or student.need_help
+        ):
+            skipped += 1
+            continue
+        try:
+            old_status = StudentStatus[payload["old_status"]]
+            old_intent = IntentLevel[payload["old_intent_level"]]
+            old_stage = StudentStage[payload["old_stage"]]
+        except (KeyError, TypeError):
+            skipped += 1
+            continue
+        student.status = old_status
+        student.status_detail = payload.get("old_status_detail", "")
+        student.outcome_reason_code = payload.get("old_outcome_reason_code")
+        student.intent_level = old_intent
+        student.stage = old_stage
+        student.need_help = bool(payload.get("old_need_help"))
+        targets.append(
+            AssignmentTarget(
+                student_id=student.id,
+                agent_id=assignment.get("old_assigned_to") if assignment else None,
+            )
+        )
+
+    rolled_back = len(targets)
+    if targets:
+        await apply_assignment_changes(
+            db,
+            targets,
+            operator=current_user,
+            reason="invalid_reclaim_rollback",
+            batch_id=f"rollback:{batch_id}",
+        )
+    db.add(
+        make_operation_log(
+            current_user,
+            target_student_id=None,
+            case_no="",
+            action="回收回滚汇总",
+            content=f"回滚回收批次 {batch_id}，成功 {rolled_back} 条，跳过 {skipped} 条",
+            batch_id=batch_id,
+        )
+    )
+    await db.commit()
+    return Response.ok(
+        {
+            "batch_id": batch_id,
+            "rolled_back_count": rolled_back,
+            "skipped_count": skipped,
+        }
+    )
 
 
 @router.post("/invalid-students/delete")
@@ -375,6 +726,30 @@ async def delete_invalid_students(
 class ReclaimBySchoolReq(BaseModel):
     school_name: str
     invalid_reason: str | None = None
+    preview_token: str | None = None
+
+
+@router.post("/reclaim-by-school-preview")
+async def preview_reclaim_by_school(
+    body: ReclaimBySchoolReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_INVALID_RECLAIM)),
+):
+    """Preview a school-level invalid-lead reclaim without changing rows."""
+    if not body.school_name:
+        return Response.error(code=1, msg="school_name不能为空")
+    where = [
+        Student.school_name == body.school_name,
+        Student.status.in_(statuses_for_canonical(StudentStatus.invalid)),
+    ]
+    reason_clause = invalid_reason_predicate(body.invalid_reason or "")
+    if reason_clause is not None:
+        where.append(reason_clause)
+    students = list((await db.execute(select(Student).where(*where))).scalars().all())
+    if not students:
+        return Response.error(code=1, msg=f"学校「{body.school_name}」没有可回收的无效线索")
+    await require_reclaimable_reasons(db, students)
+    return Response.ok(await _reclaim_impact(db, students))
 
 
 @router.post("/reclaim-by-school")
@@ -400,18 +775,15 @@ async def reclaim_by_school(
     if not students:
         return Response.error(code=1, msg=f"学校「{body.school_name}」没有可回收的无效线索")
 
+    _verify_reclaim_preview_token(students, body.preview_token)
+
     reclaimed_count = await reclaim_invalid_students_to_pool(
         db, students, current_user, action="分学校回收"
     )
 
     await db.commit()
 
-    return Response.ok(
-        {
-            "reclaimed_count": reclaimed_count,
-            "school_name": body.school_name,
-        }
-    )
+    return Response.ok({**reclaimed_count, "school_name": body.school_name})
 
 
 @router.post("/delete-by-school")

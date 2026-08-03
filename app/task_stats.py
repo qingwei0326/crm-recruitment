@@ -18,6 +18,11 @@ ACTIVE_TASK_STATUSES = statuses_for_canonical(
     StudentStatus.pending_visit,
 )
 
+# Only unassigned students in these active workflow statuses belong to the
+# allocation pool. Keep this separate name so dashboards, distribution, and
+# assistant tools do not silently invent different eligibility rules.
+ASSIGNABLE_STUDENT_STATUSES = ACTIVE_TASK_STATUSES
+
 # 任务池内的细分口径。
 PENDING_TASK_STATUSES = (StudentStatus.not_contacted,)
 DONE_TASK_STATUSES = (StudentStatus.contacted,)

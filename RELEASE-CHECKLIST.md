@@ -10,9 +10,15 @@
 .\scripts\release-check.ps1
 ```
 
+生成生产候选包后，再把冻结目录加入同一门禁：
+
+```powershell
+.\scripts\release-check.ps1 -ProductionReleaseDir releases\production-20260714-01
+```
+
 脚本会依次执行：
 
-- `python -m pytest -q`
+- 项目虚拟环境中的 `python -m pytest -q`（优先 `.venv-win` / `.venv`）
 - `npm test`
 - `npm run lint`
 - `npm run build`
@@ -62,6 +68,48 @@ npx playwright test tests/e2e/handover-center.spec.js tests/e2e/handover-real-wo
 真实流程会自动创建临时 SQLite、迁移到 Alembic head、写入仅以 `e2e_` 开头的合成账号，并在结束后删除数据库。严禁把 `crm.db`、`backups/server-audit/` 下的服务器快照或任何含非 `e2e_` 用户的数据库传给 `scripts/seed_handover_e2e.py`；脚本也必须主动拒绝这些路径和数据。
 
 ## 打包
+
+### Ubuntu 生产发布包
+
+生产服务器只接收冻结后的最小运行时目录：
+
+```powershell
+.\scripts\prepare-production-release.ps1 -Version 20260714-01
+```
+
+该脚本每次都会重新执行 `vite build`，不提供跳过构建的发布参数。禁止从本地或生产目录单独复制某个 Vite JS/CSS 文件作为正式发布；`index.html`、入口 JS、懒加载分块、vendor 分块和 CSS 必须来自同一次构建并作为一个完整 `frontend/dist/` 冻结、校验和切换。
+
+该命令会重新构建前端，并在 `releases/production-<version>/` 生成：
+
+- `app/`、`alembic/`、`alembic.ini` 与 `frontend/dist/`
+- `requirements.txt`、`logging.json` 和 `data/school_regions.json`
+- SQLite 在线备份工具
+- `SHA256SUMS` 和包含 Git 来源、数据库起始/目标版本及逐文件哈希的 `release-manifest.json`
+- 同名 ZIP 及其 `.sha256`
+
+先在 WSL 中执行纯本地预检，不连接服务器：
+
+```bash
+PREPARE_ONLY=1 \
+SOURCE_ROOT=/mnt/d/招生系统/releases/production-20260714-01 \
+bash scripts/safe-ubuntu-deploy.sh
+```
+
+同一版本号默认不能覆盖；只有明确废弃旧候选时才能使用 `-Force` 重建。获得明确生产变更授权后，去掉 `PREPARE_ONLY=1` 执行受控部署。脚本会依次：
+
+1. 校验冻结目录内全部 SHA256、声明的起始/目标 revision，并确认候选 Alembic head 等于目标 revision；同时从 `index.html` 递归校验 JS/CSS 动态资产图，任一引用缺失都阻断发布。
+2. 获取远端部署锁，上传到独立版本目录，在远端再次校验精确文件集合，并把冻结版本收紧为目录 `0555`、文件 `0444`，阻止运行时字节码污染版本目录。
+3. 从运行中服务的 PID 环境和 `/proc/<pid>/cwd` 解析真实 SQLite 路径，要求与 `EXPECTED_DB_PATH` 一致且不位于可切换代码树中。
+4. 确认依赖、日志配置和区域数据未发生未受控变化；记录应用/schema guard 文件变化，并要求生产库只允许位于发布清单声明的起始 revision 或目标 revision。
+5. 对当前数据库执行只读 `quick_check`、外键检查和工作项负责人审计；磁盘空间不足或历史快照达到上限时阻断。
+6. 以 `0700/0600` 权限备份当前代码和数据库，快照必须保持当前 revision 且通过完整性校验。
+7. 如果生产库仍在起始 revision，使用候选发布包内的 Alembic 升级到目标 revision，再次验证 revision、`quick_check` 和外键；已经在目标 revision 时幂等跳过迁移。
+8. 在快照和迁移完成后执行工作项负责人数据修复；修复失败时不切换代码，修复成功后才进入发布切换。
+9. 让 `app` 与前端共同跟随 `.deploy/current`，原子替换当前版本指针并重启；确认新 PID 稳定、数据库路径未变化，并逐个比对内部服务返回的全部前端构建资产。
+10. 通过 `PUBLIC_BASE_URL` 再次比对公网首页、`manifest.json`、图标、全部 JS/CSS/字体/图片资产及健康接口；生产部署强制使用 `https://`，公网任一文件与候选构建不一致即自动回滚，回滚后还会重新验证公网是否恢复。生产证书目前为自签名，因此 `PUBLIC_CURL_INSECURE=1` 必须与固定的 `PUBLIC_PINNED_PUBKEY=sha256//...` 同时使用，仍会校验证书公钥；普通 HTTP 仅允许隔离的 `fake-public` 部署模拟显式开启，不能用于生产。证书续签或更换时先核对并更新 SPKI pin，换成受信任证书后应设为 `PUBLIC_CURL_INSECURE=0`。
+11. 任一步失败或收到中断信号时自动切回旧代码；数据库快照保留供人工研判，不自动覆盖生产库，也不自动降级已经成功的加法迁移或反向恢复已提交的数据修复。
+
+### 通用交付包
 
 检查通过后再打包：
 

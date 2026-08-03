@@ -1,7 +1,8 @@
 import pytest
+from sqlalchemy import select
 
 from app.migration_data.domain_backfill_20260711 import OUTCOME_ROWS
-from app.models import Student, StudentStatus
+from app.models import Note, Student, StudentStatus
 from app.services.lead_outcome_service import resolve_outcome_reason
 
 
@@ -97,6 +98,190 @@ async def test_unknown_invalid_reason_keeps_audit_text_and_uses_other_code(
     await db.refresh(sample_student)
     assert sample_student.status_detail == "明确转去海外学校"
     assert sample_student.outcome_reason_code == "other"
+
+
+@pytest.mark.asyncio
+async def test_reclaim_preview_reports_assignment_and_notes_without_mutating(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+    assignment_baseline,
+    sample_student,
+):
+    sample_student.status = StudentStatus.invalid
+    sample_student.status_detail = "无意向"
+    sample_student.outcome_reason_code = "no_intent"
+    await assignment_baseline(sample_student, agent_user)
+    db.add(Note(student_id=sample_student.id, agent_id=agent_user.id, content="保留备注"))
+    await db.commit()
+
+    preview = await client.post(
+        "/api/admin/invalid-students/reclaim-preview",
+        json={"student_ids": [sample_student.id]},
+        headers=admin_headers,
+    )
+
+    assert preview.status_code == 200
+    assert preview.json()["data"] | {
+        "preview_token": "ignored",
+    } == {
+        "student_count": 1,
+        "assigned_count": 1,
+        "unassigned_count": 0,
+        "students_with_notes": 1,
+        "note_count": 1,
+        "preview_token": "ignored",
+    }
+    await db.refresh(sample_student)
+    assert sample_student.status == StudentStatus.invalid
+    assert sample_student.assigned_to == agent_user.id
+
+    reclaimed = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={"student_ids": [sample_student.id]},
+        headers=admin_headers,
+    )
+
+    assert reclaimed.status_code == 200
+    await db.refresh(sample_student)
+    assert sample_student.status == StudentStatus.not_contacted
+    assert sample_student.assigned_to is None
+    assert (
+        await db.execute(select(Note).where(Note.student_id == sample_student.id))
+    ).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_reclaim_rejects_stale_preview_and_exposes_batch_audit(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+    assignment_baseline,
+    sample_student,
+):
+    sample_student.status = StudentStatus.invalid
+    sample_student.status_detail = "无意向"
+    sample_student.outcome_reason_code = "no_intent"
+    await assignment_baseline(sample_student, agent_user)
+    await db.commit()
+
+    preview = await client.post(
+        "/api/admin/invalid-students/reclaim-preview",
+        json={"student_ids": [sample_student.id]},
+        headers=admin_headers,
+    )
+    token = preview.json()["data"]["preview_token"]
+    sample_student.status_detail = "高分段"
+    sample_student.outcome_reason_code = "high_score"
+    await db.commit()
+
+    stale = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={"student_ids": [sample_student.id], "preview_token": token},
+        headers=admin_headers,
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "version_conflict"
+    await db.refresh(sample_student)
+    assert sample_student.status == StudentStatus.invalid
+    assert sample_student.assigned_to == agent_user.id
+
+    fresh = await client.post(
+        "/api/admin/invalid-students/reclaim-preview",
+        json={"student_ids": [sample_student.id]},
+        headers=admin_headers,
+    )
+    reclaimed = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={
+            "student_ids": [sample_student.id],
+            "preview_token": fresh.json()["data"]["preview_token"],
+        },
+        headers=admin_headers,
+    )
+    batch_id = reclaimed.json()["data"]["batch_id"]
+    audit = await client.get(
+        f"/api/operation-logs/batch/{batch_id}",
+        headers=admin_headers,
+    )
+    assert audit.status_code == 200
+    audit_data = audit.json()["data"]
+    assert audit_data["batch_id"] == batch_id
+    assert audit_data["student_count"] == 1
+    assert {item["action"] for item in audit_data["actions"]} >= {
+        "批量回收无效线索",
+        "修改归属",
+        "线索回收汇总",
+    }
+    rollback_preview = await client.get(
+        f"/api/admin/reclaim-rollbacks/{batch_id}",
+        headers=admin_headers,
+    )
+    assert rollback_preview.status_code == 200
+    assert rollback_preview.json()["data"]["rollbackable_count"] == 1
+    rolled_back = await client.post(
+        f"/api/admin/reclaim-rollbacks/{batch_id}",
+        json={"confirm": True},
+        headers=admin_headers,
+    )
+    assert rolled_back.status_code == 200
+    assert rolled_back.json()["data"]["rolled_back_count"] == 1
+    await db.refresh(sample_student)
+    assert sample_student.status == StudentStatus.invalid
+    assert sample_student.status_detail == "高分段"
+    assert sample_student.outcome_reason_code == "high_score"
+    assert sample_student.assigned_to == agent_user.id
+
+
+@pytest.mark.asyncio
+async def test_reclaim_to_agent_exposes_reclaim_batch_for_rollback(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+    sample_student,
+):
+    sample_student.status = StudentStatus.invalid
+    sample_student.status_detail = "无意向"
+    sample_student.outcome_reason_code = "no_intent"
+    await db.commit()
+
+    response = await client.post(
+        "/api/admin/reclaim-students",
+        json={"student_ids": [sample_student.id], "agent_id": agent_user.id},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    batch_id = response.json()["data"]["batch_id"]
+    audit = await client.get(
+        f"/api/operation-logs/batch/{batch_id}",
+        headers=admin_headers,
+    )
+    assert audit.status_code == 200
+    assert any(
+        item["action"] == "线索回收汇总"
+        for item in audit.json()["data"]["items"]
+    )
+    listed = await client.get(
+        "/api/operation-logs",
+        params={"batch_id": batch_id},
+        headers=admin_headers,
+    )
+    assert listed.status_code == 200
+    assert any(
+        item["action"] == "线索回收汇总" and item["can_rollback_reclaim"]
+        for item in listed.json()["data"]["list"]
+    )
+
+    rollback_preview = await client.get(
+        f"/api/admin/reclaim-rollbacks/{batch_id}",
+        headers=admin_headers,
+    )
+    assert rollback_preview.status_code == 200
+    assert rollback_preview.json()["data"]["rollbackable_count"] == 1
 
 
 @pytest.mark.asyncio

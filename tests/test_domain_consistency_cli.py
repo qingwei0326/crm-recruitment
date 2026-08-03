@@ -14,7 +14,7 @@ from app.models import User, UserRole
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _database(tmp_path: Path, revision: str = "20260711_03") -> Path:
+def _database(tmp_path: Path, revision: str = "20260726_01") -> Path:
     database = tmp_path / "domain-consistency.db"
     engine = create_engine(f"sqlite:///{database.as_posix()}")
     Base.metadata.create_all(engine)
@@ -30,7 +30,7 @@ def _database(tmp_path: Path, revision: str = "20260711_03") -> Path:
     return database
 
 
-def _run_cli(database: Path, revision: str = "20260711_03"):
+def _run_cli(database: Path, revision: str = "20260726_01"):
     env = os.environ.copy()
     env.setdefault("SECRET_KEY", "domain-consistency-cli-test")
     return subprocess.run(
@@ -101,7 +101,7 @@ def test_consistency_cli_rejects_unexpected_revision(tmp_path):
     assert report == {
         "actual_revision": "20260711_02",
         "error": "unexpected_revision",
-        "expected_revision": "20260711_03",
+        "expected_revision": "20260726_01",
     }
 
 

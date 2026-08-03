@@ -131,7 +131,7 @@ if ($RemoveBuildArtifacts) {
 Get-ChildItem -LiteralPath $Root -File -Filter "*.old" -ErrorAction SilentlyContinue |
     ForEach-Object { Add-Target -Path $_.FullName -Reason "旧日志轮转文件" }
 
-# ── 8) Windows/J1900 遗留守护脚本（已废弃；Ubuntu 服务器用 systemd，不需要）──
+# ── 8) Windows 遗留守护脚本（已废弃；Ubuntu 服务器用 systemd，不需要）──
 foreach ($name in @(
     "watchdog.ps1",
     "install-watchdog.ps1",

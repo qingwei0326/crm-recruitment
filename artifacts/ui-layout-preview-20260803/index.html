@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>招生话务 CRM - 运营工作台预览</title>
+  <style>
+    :root {
+      --ink: #172235;
+      --muted: #728096;
+      --line: #dfe5ec;
+      --surface: #ffffff;
+      --canvas: #f2f5f8;
+      --nav: #101d31;
+      --nav-muted: #9aa9bf;
+      --blue: #2563eb;
+      --blue-soft: #eaf1ff;
+      --green: #138a67;
+      --green-soft: #e6f6f0;
+      --amber: #b86a00;
+      --amber-soft: #fff3dc;
+      --red: #c2413f;
+      --red-soft: #ffebeb;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 14px;
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .frame { min-height: 100vh; display: flex; }
+    .sidebar {
+      width: 232px;
+      flex: 0 0 232px;
+      min-height: 100vh;
+      background: var(--nav);
+      color: #f7f9fc;
+      padding: 22px 14px 18px;
+      display: flex;
+      flex-direction: column;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 26px; }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: #2e6cf6;
+      color: white;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .brand strong { display: block; font-size: 15px; }
+    .brand span { display: block; margin-top: 3px; color: var(--nav-muted); font-size: 11px; }
+    .nav-label { padding: 0 10px 9px; color: #71829b; font-size: 11px; letter-spacing: 0; }
+    .nav { display: grid; gap: 4px; }
+    .nav a {
+      color: var(--nav-muted);
+      text-decoration: none;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 11px;
+      border-radius: 7px;
+    }
+    .nav a.active { background: #203353; color: white; box-shadow: inset 3px 0 #5d8cff; }
+    .nav a:hover { background: #1a2b47; color: white; }
+    .nav-icon { width: 20px; text-align: center; color: currentColor; font-size: 16px; }
+    .nav-badge { margin-left: auto; min-width: 22px; padding: 2px 6px; border-radius: 10px; background: #2c5fc6; color: white; text-align: center; font-size: 11px; }
+    .sidebar-foot { margin-top: auto; border-top: 1px solid #22314a; padding: 17px 10px 0; color: var(--nav-muted); font-size: 12px; }
+    .sidebar-foot strong { display: block; color: white; font-size: 13px; margin-bottom: 4px; }
+
+    .content { min-width: 0; flex: 1; }
+    .topbar {
+      height: 70px;
+      padding: 0 30px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .crumbs { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+    .crumbs strong { color: var(--ink); font-size: 14px; }
+    .top-actions { display: flex; align-items: center; gap: 12px; }
+    .search {
+      width: 220px;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 11px;
+      background: #fbfcfe;
+      color: var(--muted);
+    }
+    .user { display: flex; align-items: center; gap: 9px; padding-left: 10px; border-left: 1px solid var(--line); }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #dbe7ff; color: #2453a5; font-weight: 700; }
+
+    main { padding: 26px 30px 42px; max-width: 1600px; margin: 0 auto; }
+    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin-bottom: 22px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 24px; letter-spacing: 0; }
+    .subtitle { margin-top: 7px; color: var(--muted); }
+    .head-actions { display: flex; gap: 9px; }
+    .scope-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #f7f9fc; }
+    .scope-switch button { border: 0; border-radius: 5px; background: transparent; color: var(--muted); min-height: 30px; padding: 0 12px; }
+    .scope-switch button.active { background: white; color: var(--blue); box-shadow: 0 1px 3px rgba(23, 34, 53, .12); font-weight: 700; }
+    .btn { border: 1px solid var(--line); background: white; color: #405069; border-radius: 6px; min-height: 36px; padding: 0 13px; }
+    .btn.primary { border-color: var(--blue); background: var(--blue); color: white; }
+    .btn:hover { border-color: #9cb0cc; }
+    .btn.primary:hover { background: #1d4ed8; }
+
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 17px 18px 15px; min-height: 116px; }
+    .kpi-top { display: flex; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; }
+    .kpi-icon { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; font-size: 15px; font-weight: 700; }
+    .kpi.blue .kpi-icon { background: var(--blue-soft); color: var(--blue); }
+    .kpi.green .kpi-icon { background: var(--green-soft); color: var(--green); }
+    .kpi.amber .kpi-icon { background: var(--amber-soft); color: var(--amber); }
+    .kpi.red .kpi-icon { background: var(--red-soft); color: var(--red); }
+    .kpi strong { display: block; margin-top: 10px; font-size: 28px; letter-spacing: 0; }
+    .kpi-foot { display: flex; gap: 7px; align-items: center; margin-top: 5px; color: var(--muted); font-size: 11px; }
+    .up { color: var(--green); font-weight: 700; }
+    .global-strip { margin-bottom: 18px; padding: 13px 18px; border: 1px solid #cfdced; border-radius: var(--radius); background: #f8fbff; display: grid; grid-template-columns: 150px repeat(4, minmax(0, 1fr)) auto; align-items: center; gap: 14px; }
+    .global-label strong { display: block; color: var(--ink); font-size: 13px; }
+    .global-label span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+    .global-metric { padding-left: 14px; border-left: 1px solid #dce6f2; }
+    .global-metric span { display: block; color: var(--muted); font-size: 11px; }
+    .global-metric strong { display: block; margin-top: 4px; color: var(--ink); font-size: 18px; }
+    .global-link { color: var(--blue); text-decoration: none; font-size: 12px; white-space: nowrap; }
+
+    .section-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .85fr); gap: 18px; align-items: start; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .panel-head { min-height: 62px; padding: 15px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .panel-title { font-size: 15px; font-weight: 700; }
+    .panel-note { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .link { color: var(--blue); text-decoration: none; font-size: 12px; white-space: nowrap; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 13px 18px; text-align: left; border-bottom: 1px solid #edf0f4; white-space: nowrap; }
+    th { background: #fbfcfe; color: var(--muted); font-size: 11px; font-weight: 600; }
+    td { color: #3c4b60; }
+    tr:last-child td { border-bottom: 0; }
+    .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .status.invalid { color: var(--red); }
+    .status.follow { color: var(--amber); }
+    .status.uncontacted { color: #6d7d92; }
+    .status.contacted { color: var(--green); }
+    .delta { color: var(--muted); font-size: 11px; }
+    .bar { height: 7px; width: 150px; background: #edf1f5; border-radius: 4px; overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: inherit; background: var(--blue); }
+
+    .flow { padding: 18px; display: grid; gap: 18px; }
+    .flow-row { display: grid; grid-template-columns: 85px 1fr 42px; gap: 10px; align-items: center; }
+    .flow-row .from { color: #53647c; font-size: 12px; }
+    .flow-row .count { text-align: right; color: var(--ink); font-weight: 700; }
+    .flow-row .bar i.red { background: var(--red); }
+    .flow-row .bar i.amber { background: #e9a23b; }
+    .flow-row .bar i.green { background: var(--green); }
+    .flow-summary { padding: 14px 18px 17px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+    .flow-summary strong { color: var(--ink); }
+
+    .queue { margin-top: 18px; }
+    .queue-tools { display: flex; align-items: center; gap: 8px; }
+    .select { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: #fbfcfe; color: #53647c; font-size: 12px; }
+    .queue td:first-child { color: var(--blue); font-weight: 600; }
+    .owner { display: inline-flex; align-items: center; gap: 6px; color: #53647c; }
+    .mini-avatar { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #e2e8f0; color: #4a5c73; font-size: 10px; font-weight: 700; }
+    .tag { display: inline-flex; padding: 4px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .tag.red { color: var(--red); background: var(--red-soft); }
+    .tag.amber { color: var(--amber); background: var(--amber-soft); }
+    .tag.blue { color: var(--blue); background: var(--blue-soft); }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 12px 16px; color: var(--muted); font-size: 11px; }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .mobile-bar { display: none; }
+
+    @media (max-width: 980px) {
+      .sidebar { width: 200px; flex-basis: 200px; }
+      main { padding-left: 20px; padding-right: 20px; }
+      .topbar { padding-left: 20px; padding-right: 20px; }
+      .search { width: 170px; }
+      .section-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .frame { display: block; }
+      .sidebar { display: none; }
+      .mobile-bar { height: 58px; background: var(--nav); color: white; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
+      .mobile-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+      .mobile-brand .brand-mark { width: 28px; height: 28px; font-size: 12px; }
+      .mobile-menu { color: #b8c5d8; font-size: 18px; }
+      .topbar { height: 54px; padding: 0 15px; }
+      .crumbs span { display: none; }
+      .search { width: 126px; height: 32px; }
+      .user { border: 0; padding-left: 0; }
+      .user div:last-child { display: none; }
+      main { padding: 18px 15px 30px; }
+      .page-head { align-items: flex-start; flex-direction: column; gap: 13px; margin-bottom: 17px; }
+      h1 { font-size: 21px; }
+      .head-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .head-actions .btn { width: 100%; flex: none; padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+      .scope-switch { grid-column: 1 / -1; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .scope-switch button { min-width: 0; white-space: nowrap; }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .kpi { min-height: 108px; padding: 13px; }
+      .kpi strong { font-size: 23px; margin-top: 8px; }
+      .panel-head { padding: 13px 14px; }
+      .global-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; padding: 13px; }
+      .global-label { grid-column: 1 / -1; }
+      .global-metric { padding-left: 10px; }
+      .global-link { grid-column: 1 / -1; }
+      th, td { padding: 11px 13px; }
+      .queue-tools .select { max-width: 122px; }
+      .flow { padding: 15px 13px; }
+      .bar { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mobile-bar">
+    <div class="mobile-brand"><span class="brand-mark">CRM</span><span>招生话务 CRM</span></div>
+    <span class="mobile-menu">☰</span>
+  </div>
+  <div class="frame">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">CRM</span><div><strong>招生话务 CRM</strong><span>Admissions Call CRM</span></div></div>
+      <div class="nav-label">运营中心</div>
+      <nav class="nav">
+        <a class="active" href="#"><span class="nav-icon">▦</span>运营工作台</a>
+        <a href="#"><span class="nav-icon">◎</span>线索管理<span class="nav-badge">140</span></a>
+        <a href="#"><span class="nav-icon">◉</span>拨号中心</a>
+        <a href="#"><span class="nav-icon">▤</span>数据报表</a>
+        <a href="#"><span class="nav-icon">△</span>线索治理</a>
+        <a href="#"><span class="nav-icon">≡</span>操作审计</a>
+      </nav>
+      <div class="sidebar-foot"><strong>测试管理员</strong><span>管理员 · 今日已登录</span></div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <div class="crumbs"><span>运营中心 / </span><strong>运营工作台</strong></div>
+        <div class="top-actions">
+          <input class="search" aria-label="全局搜索" placeholder="搜索姓名 / 学校 / 案号">
+          <div class="user"><span class="avatar">管</span><div><strong>测试管理员</strong><small>管理端</small></div></div>
+        </div>
+      </header>
+
+      <main>
+        <section class="page-head">
+          <div><h1>今天，先处理最值得跟进的线索</h1><p class="subtitle">当前范围：今日 · 2026 年 8 月 3 日 · 示例数据预览</p></div>
+          <div class="head-actions"><div class="scope-switch" aria-label="数据范围"><button class="active">今日</button><button>全局</button></div><button class="btn">⇩ 导出报表</button><button class="btn primary">＋ 新建分配批次</button></div>
+        </section>
+
+        <section class="kpis" aria-label="今日关键指标">
+          <article class="kpi blue"><div class="kpi-top"><span>今日呼出</span><span class="kpi-icon">↗</span></div><strong>982</strong><div class="kpi-foot"><span class="up">+12.4%</span><span>较昨日</span></div></article>
+          <article class="kpi green"><div class="kpi-top"><span>状态变更</span><span class="kpi-icon">✓</span></div><strong>750</strong><div class="kpi-foot"><span>涉及 746 名学生</span></div></article>
+          <article class="kpi red"><div class="kpi-top"><span>改为无效</span><span class="kpi-icon">!</span></div><strong>723</strong><div class="kpi-foot"><span>占状态变更 96.4%</span></div></article>
+          <article class="kpi amber"><div class="kpi-top"><span>可分配池</span><span class="kpi-icon">□</span></div><strong>140</strong><div class="kpi-foot"><span>活动状态 · 未分配</span></div></article>
+        </section>
+
+        <section class="global-strip" aria-label="全局数据总览">
+          <div class="global-label"><strong>全局数据</strong><span>累计盘面 · 随时可切换</span></div>
+          <div class="global-metric"><span>累计线索</span><strong>18,420</strong></div>
+          <div class="global-metric"><span>累计呼出</span><strong>126,850</strong></div>
+          <div class="global-metric"><span>累计报名</span><strong>1,284</strong></div>
+          <div class="global-metric"><span>全局未分配</span><strong>1,026</strong></div>
+          <a class="global-link" href="#">进入全局视图 →</a>
+        </section>
+
+        <section class="section-grid">
+          <article class="panel">
+            <div class="panel-head"><div><div class="panel-title">今日状态变化</div><div class="panel-note">按状态流转查看，优先处理异常和高频变化</div></div><a class="link" href="#">查看全部 →</a></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>原状态</th><th>新状态</th><th>数量</th><th>占比</th><th>趋势</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="status uncontacted"><i class="dot"></i>未接</span></td><td><span class="status invalid"><i class="dot"></i>无效</span></td><td><strong>705</strong></td><td class="delta">94.0%</td><td><div class="bar"><i class="red" style="width:94%"></i></div></td></tr>
+                  <tr><td><span class="status uncontacted"><i class="dot"></i>未接</span></td><td><span class="status follow"><i class="dot"></i>待回访</span></td><td><strong>17</strong></td><td class="delta">2.3%</td><td><div class="bar"><i class="amber" style="width:38%"></i></div></td></tr>
+                  <tr><td><span class="status follow"><i class="dot"></i>待回访</span></td><td><span class="status invalid"><i class="dot"></i>无效</span></td><td><strong>10</strong></td><td class="delta">1.3%</td><td><div class="bar"><i class="red" style="width:24%"></i></div></td></tr>
+                  <tr><td><span class="status uncontacted"><i class="dot"></i>未联系</span></td><td><span class="status invalid"><i class="dot"></i>无效</span></td><td><strong>7</strong></td><td class="delta">0.9%</td><td><div class="bar"><i class="red" style="width:17%"></i></div></td></tr>
+                  <tr><td><span class="status uncontacted"><i class="dot"></i>未联系</span></td><td><span class="status uncontacted"><i class="dot"></i>未接</span></td><td><strong>4</strong></td><td class="delta">0.5%</td><td><div class="bar"><i style="width:12%"></i></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="flow-summary"><span>总变更 <strong>750</strong> 条</span><span>涉及学生 <strong>746</strong> 人</span><span class="link">打开审计</span></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head"><div><div class="panel-title">呼出与状态</div><div class="panel-note">今天的拨号动作和结果落点</div></div><a class="link" href="#">报表 →</a></div>
+            <div class="flow">
+              <div class="flow-row"><span class="from">今日呼出</span><div class="bar"><i style="width:100%"></i></div><span class="count">982</span></div>
+              <div class="flow-row"><span class="from">涉及学生</span><div class="bar"><i class="green" style="width:78%"></i></div><span class="count">770</span></div>
+              <div class="flow-row"><span class="from">状态变更</span><div class="bar"><i class="amber" style="width:76%"></i></div><span class="count">750</span></div>
+              <div class="flow-row"><span class="from">拨后变更</span><div class="bar"><i class="green" style="width:75%"></i></div><span class="count">745</span></div>
+            </div>
+            <div class="flow-summary"><span>录音完成 <strong>979</strong></span><span>待补录 <strong>3</strong></span></div>
+          </article>
+        </section>
+
+        <section class="panel queue">
+          <div class="panel-head"><div><div class="panel-title">优先处理队列</div><div class="panel-note">把需要人工判断的线索集中在一个列表里</div></div><div class="queue-tools"><select class="select" aria-label="队列筛选"><option>全部区域</option><option>龙文区</option><option>芗城区</option></select><a class="link" href="#">进入队列 →</a></div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>学生</th><th>学校</th><th>当前状态</th><th>最近动作</th><th>负责人</th><th>建议动作</th></tr></thead>
+              <tbody>
+                <tr><td>林同学</td><td>龙文区 · 漳州实验中学</td><td><span class="tag amber">待回访</span></td><td>今天 15:36 · 已拨号</td><td><span class="owner"><i class="mini-avatar">陈</i>陈老师</span></td><td><span class="tag blue">安排回访</span></td></tr>
+                <tr><td>黄同学</td><td>龙文区 · 龙文一中</td><td><span class="tag red">无效待复核</span></td><td>今天 15:28 · 状态变更</td><td><span class="owner"><i class="mini-avatar">未</i>未分配</span></td><td><span class="tag blue">查看原因</span></td></tr>
+                <tr><td>郑同学</td><td>龙文区 · 双十中学</td><td><span class="tag blue">未联系</span></td><td>昨天 18:02 · 进入池</td><td><span class="owner"><i class="mini-avatar">未</i>未分配</span></td><td><span class="tag blue">分配线索</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

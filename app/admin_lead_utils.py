@@ -200,6 +200,7 @@ def _duplicate_phone_cleanup_row(student: Student, duplicate_phones: set[str]) -
     for phone in (old_phone_1, old_phone_2):
         if phone in duplicate_phones and phone not in removed_phones:
             removed_phones.append(phone)
+    requires_manual_review = not (new_phone_1 or new_phone_2)
     return {
         "student_id": student.id,
         "name": student.name,
@@ -212,21 +213,29 @@ def _duplicate_phone_cleanup_row(student: Student, duplicate_phones: set[str]) -
         "new_guardian_phone": new_phone_1,
         "new_guardian2_phone": new_phone_2,
         "removed_phones": removed_phones,
-        "will_delete": not (new_phone_1 or new_phone_2),
+        "will_delete": False,
+        "requires_manual_review": requires_manual_review,
+        "manual_review_reason": (
+            "清除重复手机号后将无可用号码，需人工确认保留号码或合并方案"
+            if requires_manual_review
+            else ""
+        ),
     }
 
 
 def _duplicate_phone_cleanup_summary(rows: list[dict], duplicate_phones: set[str]) -> dict:
-    will_delete = [row for row in rows if row["will_delete"]]
-    will_clear = [row for row in rows if not row["will_delete"]]
+    manual_review = [row for row in rows if row.get("requires_manual_review")]
+    will_clear = [row for row in rows if not row.get("requires_manual_review")]
     return {
         "duplicate_phone_count": len(duplicate_phones),
         "affected_student_count": len(rows),
         "will_clear_count": len(will_clear),
-        "will_delete_count": len(will_delete),
+        "will_delete_count": 0,
+        "manual_review_count": len(manual_review),
         "duplicate_phones": sorted(duplicate_phones),
-        "preview_delete_students": will_delete[:20],
+        "preview_delete_students": [],
         "preview_clear_students": will_clear[:20],
+        "preview_manual_review_students": manual_review[:20],
     }
 
 
@@ -263,4 +272,3 @@ async def _build_duplicate_phone_cleanup_plan(db: AsyncSession) -> tuple[set[str
         if _student_phone_values(student) & duplicate_phones
     ]
     return duplicate_phones, rows
-

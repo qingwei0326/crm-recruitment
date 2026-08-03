@@ -79,7 +79,9 @@ describe('recordCallResult', () => {
     expect('  '.trim()).toBeFalsy();
   });
 
-  it('records call duration once when interested-add-wechat flow saves follow-up', async () => {
+  it.each(['意向了解加微', '等待志愿'])(
+    'records call duration once when %s flow saves follow-up',
+    async (resultLabel) => {
     sessionStorage.setItem(
       'pendingDial',
       JSON.stringify({
@@ -92,7 +94,7 @@ describe('recordCallResult', () => {
 
     renderDialResult();
 
-    fireEvent.click(await screen.findByRole('button', { name: '意向了解加微' }));
+    fireEvent.click(await screen.findByRole('button', { name: resultLabel }));
     fireEvent.click(await screen.findByRole('button', { name: 'A' }));
     fireEvent.click(await screen.findByRole('button', { name: '保存回访提醒' }));
 
@@ -211,6 +213,79 @@ describe('recordCallResult', () => {
     expect(screen.getByRole('button', { name: '空号' })).not.toBeDisabled();
   });
 
+  it('treats an HTTP 200 response with a non-zero business code as a failed status save', async () => {
+    const onUpdated = vi.fn();
+    api.put.mockImplementation((url) => {
+      if (url === '/students/42') {
+        return Promise.resolve({ data: { code: 1, msg: '状态写入被拒绝' } });
+      }
+      return Promise.resolve({ data: { code: 0, data: {} } });
+    });
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 60000,
+      }),
+    );
+
+    renderDialResult({ onUpdated });
+    fireEvent.click(await screen.findByRole('button', { name: '空号' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('处理结果保存失败，请重试');
+    expect(screen.getByText('张三')).toBeInTheDocument();
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(api.put.mock.calls.some(([url]) => url === '/students/dial-duration')).toBe(false);
+  });
+
+  it('waits for note persistence and retries completion without repeating the saved status', async () => {
+    api.post.mockImplementation((url) => {
+      if (url === '/notes') {
+        return Promise.resolve({ data: { code: 1, msg: '备注写入失败' } });
+      }
+      return Promise.resolve({ data: { code: 0, data: {} } });
+    });
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 60000,
+      }),
+    );
+
+    renderDialResult();
+    fireEvent.change(await screen.findByPlaceholderText('添加备注（可选）'), {
+      target: { value: '  明天下午回电  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '空号' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '处理结果已保存，备注保存失败：备注写入失败',
+    );
+    expect(api.post).toHaveBeenCalledWith('/notes', {
+      student_id: 42,
+      content: '明天下午回电',
+    });
+    expect(api.put.mock.calls.filter(([url]) => url === '/students/dial-duration')).toHaveLength(0);
+    expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
+      expect.objectContaining({ dialLogId: 9001 }),
+    );
+
+    api.post.mockResolvedValue({ data: { code: 0, data: {} } });
+    fireEvent.click(screen.getByRole('button', { name: '重试同步' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('张三')).not.toBeInTheDocument();
+    });
+    expect(api.put.mock.calls.filter(([url]) => url === '/students/42')).toHaveLength(1);
+    expect(api.post.mock.calls.filter(([url]) => url === '/notes')).toHaveLength(2);
+    expect(api.put.mock.calls.filter(([url]) => url === '/students/dial-duration')).toHaveLength(1);
+  });
+
   it('completes the dial session when the result sheet is closed', async () => {
     sessionStorage.setItem(
       'pendingDial',
@@ -255,9 +330,10 @@ describe('recordCallResult', () => {
     renderDialResult();
     fireEvent.click(await screen.findByRole('button', { name: '空号' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('状态已保存，通话记录待同步');
+    expect(await screen.findByRole('alert')).toHaveTextContent('处理结果已保存，通话记录同步失败，请重试');
     expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
       expect.objectContaining({ dialLogId: 9001 }),
     );
+    expect(screen.getByRole('button', { name: '重试同步' })).toBeInTheDocument();
   });
 });

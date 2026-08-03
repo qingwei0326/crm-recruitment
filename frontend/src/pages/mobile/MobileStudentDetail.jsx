@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -17,6 +17,7 @@ import StatusBadge from '../../components/StatusBadge';
 import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import StudentTimeline from '../../components/StudentTimeline';
+import { PersonalGroupMembershipEditor } from '../../components/PersonalGroups';
 import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -227,24 +228,34 @@ export default function MobileStudentDetail() {
   const [busyDelete, setBusyDelete] = useState(false);
   const [dialing, setDialing] = useState(false);
   const [toast, setToast] = useState('');
+  const detailRequestSeqRef = useRef(0);
 
   const isAdmin = user?.role === 'admin';
   const canModify = (item) => isAdmin || item?.agent_id === user?.id;
 
-  const loadDetail = () => {
+  const loadDetail = useCallback(() => {
+    const requestId = ++detailRequestSeqRef.current;
     setLoading(true);
     setError('');
     api
       .get(`/students/${id}/detail`)
-      .then((res) => setData(res.data.data || res.data))
-      .catch((e) => setError(getApiErrorMessage(e)))
-      .finally(() => setLoading(false));
-  };
+      .then((res) => {
+        if (requestId === detailRequestSeqRef.current) {
+          setData(res.data.data || res.data);
+        }
+      })
+      .catch((e) => {
+        if (requestId === detailRequestSeqRef.current) setError(getApiErrorMessage(e));
+      })
+      .finally(() => {
+        if (requestId === detailRequestSeqRef.current) setLoading(false);
+      });
+  }, [id]);
 
   useEffect(() => {
+    setData(null);
     loadDetail();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, loadDetail]);
 
   const student = data?.student;
   const calls = data?.calls || [];
@@ -670,6 +681,10 @@ export default function MobileStudentDetail() {
       <div className="p-3 space-y-3">
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
           <StudentInfoCard student={student} onDial={handleDial} />
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+          <PersonalGroupMembershipEditor studentId={student.id} />
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-4">

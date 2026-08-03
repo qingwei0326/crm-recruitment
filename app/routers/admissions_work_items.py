@@ -1,12 +1,13 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import aliased
 
 from app.auth import ADMIN_PAGE_WORK_CENTER, get_current_user
 from app.database import get_db
+from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
 from app.models import (
     CampusVisitResult,
     CampusVisitStatus,
@@ -29,6 +30,10 @@ router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
 WORK_ITEM_QUEUES = {"all", "home_visit", "campus_visit", "follow_up", "settlement", "help"}
 WORK_ITEM_QUEUE_ALIASES = {"follow": "follow_up", "visit": "campus_visit"}
 WORK_ITEM_PRIORITY_WEIGHT = {"high": 3, "normal": 2, "low": 1}
+ACTIVE_WORK_ITEM_STATUSES = {
+    WorkItemStatus.open,
+    WorkItemStatus.blocked_suspension,
+}
 SETTLEMENT_WORK_STATUSES = {
     SettlementStatus.disputed,
     SettlementStatus.postponed,
@@ -72,9 +77,9 @@ def _is_overdue(value: datetime | None, now: datetime) -> bool:
 def _work_priority(value: str | None, *, urgent: bool = False) -> str:
     if urgent:
         return "high"
-    if value == "高":
+    if value in {"高", "high"}:
         return "high"
-    if value == "低":
+    if value in {"低", "low"}:
         return "low"
     return "normal"
 
@@ -126,18 +131,30 @@ async def _build_home_visit_work_items(
     current_user: User,
     now: datetime,
 ) -> list[dict]:
-    conditions = [HomeVisitTask.status.in_(HOME_VISIT_WORK_STATUSES)]
+    owner = aliased(User)
+    conditions = [
+        HomeVisitTask.status.in_(HOME_VISIT_WORK_STATUSES),
+        WorkItem.status.in_(ACTIVE_WORK_ITEM_STATUSES),
+    ]
     if not is_admin(current_user):
-        conditions.append(HomeVisitTask.creator_agent_id == current_user.id)
+        conditions.append(WorkItem.owner_agent_id == current_user.id)
 
     result = await db.execute(
-        select(HomeVisitTask)
-        .options(joinedload(HomeVisitTask.creator_agent))
+        select(HomeVisitTask, WorkItem, owner)
+        .join(
+            WorkItem,
+            and_(
+                WorkItem.kind == WorkItemKind.home_visit,
+                WorkItem.source_type == "home_visit",
+                WorkItem.source_id == HomeVisitTask.id,
+            ),
+        )
+        .join(owner, owner.id == WorkItem.owner_agent_id)
         .where(*conditions)
         .order_by(HomeVisitTask.created_at.desc())
     )
     rows = []
-    for task in result.scalars().unique().all():
+    for task, work_item, owner_user in result.all():
         if task.status == HomeVisitStatus.completed and task.result not in HOME_VISIT_NEXT_RESULTS:
             continue
         if task.status == HomeVisitStatus.completed and not (
@@ -147,7 +164,12 @@ async def _build_home_visit_work_items(
         ):
             continue
 
-        due_at = task.next_follow_up_at or task.scheduled_at or task.requested_visit_time
+        due_at = (
+            work_item.due_at
+            or task.next_follow_up_at
+            or task.scheduled_at
+            or task.requested_visit_time
+        )
         overdue = _is_overdue(_as_dt(due_at), now)
         if task.status == HomeVisitStatus.pending:
             reason = "家访待确认"
@@ -170,14 +192,14 @@ async def _build_home_visit_work_items(
                 kind="home_visit",
                 source_id=task.id,
                 queue="home_visit",
-                priority=_work_priority(task.priority, urgent=overdue),
+                priority=_work_priority(work_item.priority, urgent=overdue),
                 title=f"{task.student_name_snapshot or '学生'} 家访",
                 student_id=task.student_id,
                 student_name=task.student_name_snapshot,
                 region=task.region_snapshot,
                 school_name=task.school_name_snapshot,
-                agent_id=task.creator_agent_id,
-                agent_name=task.creator_agent.name if task.creator_agent else "",
+                agent_id=work_item.owner_agent_id,
+                agent_name=owner_user.name,
                 due_at=due_at,
                 status=task.status.value,
                 reason=reason,
@@ -194,24 +216,36 @@ async def _build_campus_visit_work_items(
     current_user: User,
     now: datetime,
 ) -> list[dict]:
-    conditions = [CampusVisitTask.status.in_(CAMPUS_VISIT_WORK_STATUSES)]
+    owner = aliased(User)
+    conditions = [
+        CampusVisitTask.status.in_(CAMPUS_VISIT_WORK_STATUSES),
+        WorkItem.status.in_(ACTIVE_WORK_ITEM_STATUSES),
+    ]
     if not is_admin(current_user):
-        conditions.append(CampusVisitTask.creator_user_id == current_user.id)
+        conditions.append(WorkItem.owner_agent_id == current_user.id)
 
     result = await db.execute(
-        select(CampusVisitTask)
-        .options(joinedload(CampusVisitTask.creator_user))
+        select(CampusVisitTask, WorkItem, owner)
+        .join(
+            WorkItem,
+            and_(
+                WorkItem.kind == WorkItemKind.campus_visit,
+                WorkItem.source_type == "campus_visit",
+                WorkItem.source_id == CampusVisitTask.id,
+            ),
+        )
+        .join(owner, owner.id == WorkItem.owner_agent_id)
         .where(*conditions)
         .order_by(CampusVisitTask.created_at.desc())
     )
     rows = []
-    for task in result.scalars().unique().all():
+    for task, work_item, owner_user in result.all():
         if task.status in {CampusVisitStatus.arrived, CampusVisitStatus.no_show} and not (
             task.next_follow_up_at or task.next_action or task.result in CAMPUS_VISIT_NEXT_RESULTS
         ):
             continue
 
-        due_at = task.next_follow_up_at or task.appointment_at
+        due_at = work_item.due_at or task.next_follow_up_at or task.appointment_at
         overdue = _is_overdue(_as_dt(due_at), now)
         if task.status == CampusVisitStatus.pending:
             reason = "到校待预约"
@@ -231,14 +265,14 @@ async def _build_campus_visit_work_items(
                 kind="campus_visit",
                 source_id=task.id,
                 queue="campus_visit",
-                priority=_work_priority(None, urgent=overdue),
+                priority=_work_priority(work_item.priority, urgent=overdue),
                 title=f"{task.student_name_snapshot or '学生'} 到校参观",
                 student_id=task.student_id,
                 student_name=task.student_name_snapshot,
                 region=task.region_snapshot,
                 school_name=task.school_name_snapshot,
-                agent_id=task.creator_user_id,
-                agent_name=task.creator_user.name if task.creator_user else "",
+                agent_id=work_item.owner_agent_id,
+                agent_name=owner_user.name,
                 due_at=due_at,
                 status=task.status.value,
                 reason=reason,
@@ -255,34 +289,47 @@ async def _build_follow_up_work_items(
     current_user: User,
     now: datetime,
 ) -> list[dict]:
-    conditions = [FollowUp.is_completed.is_(False)]
+    owner = aliased(User)
+    conditions = [
+        FollowUp.is_completed.is_(False),
+        WorkItem.status.in_(ACTIVE_WORK_ITEM_STATUSES),
+    ]
     if not is_admin(current_user):
-        conditions.append(FollowUp.agent_id == current_user.id)
+        conditions.append(WorkItem.owner_agent_id == current_user.id)
 
     result = await db.execute(
-        select(FollowUp, Student, User)
+        select(FollowUp, Student, WorkItem, owner)
         .join(Student, Student.id == FollowUp.student_id)
-        .join(User, User.id == FollowUp.agent_id)
+        .join(
+            WorkItem,
+            and_(
+                WorkItem.kind == WorkItemKind.scheduled_follow_up,
+                WorkItem.source_type == "follow_up",
+                WorkItem.source_id == FollowUp.id,
+            ),
+        )
+        .join(owner, owner.id == WorkItem.owner_agent_id)
         .where(*conditions)
         .order_by(FollowUp.follow_up_date.asc())
     )
     rows = []
-    for follow, student, agent in result.all():
-        overdue = _is_overdue(follow.follow_up_date, now)
+    for follow, student, work_item, owner_user in result.all():
+        due_at = work_item.due_at or follow.follow_up_date
+        overdue = _is_overdue(due_at, now)
         rows.append(
             _work_item(
                 kind="follow_up",
                 source_id=follow.id,
                 queue="follow_up",
-                priority="high" if overdue else "normal",
+                priority=_work_priority(work_item.priority, urgent=overdue),
                 title=f"{student.name} 回访",
                 student_id=student.id,
                 student_name=student.name,
                 region=student.region,
                 school_name=student.school_name,
-                agent_id=agent.id,
-                agent_name=agent.name,
-                due_at=follow.follow_up_date,
+                agent_id=work_item.owner_agent_id,
+                agent_name=owner_user.name,
+                due_at=due_at,
                 status="待回访",
                 reason="逾期回访" if overdue else "待回访",
                 target_url=f"/admin/leads/{student.id}",
@@ -294,33 +341,45 @@ async def _build_follow_up_work_items(
 
 
 async def _build_settlement_work_items(db: AsyncSession, current_user: User) -> list[dict]:
-    conditions = [EnrollmentRecord.settlement_status.in_(SETTLEMENT_WORK_STATUSES)]
+    owner = aliased(User)
+    conditions = [
+        EnrollmentRecord.settlement_status.in_(SETTLEMENT_WORK_STATUSES),
+        WorkItem.status.in_(ACTIVE_WORK_ITEM_STATUSES),
+    ]
     if not is_admin(current_user):
-        conditions.append(EnrollmentRecord.attributed_agent_id == current_user.id)
+        conditions.append(WorkItem.owner_agent_id == current_user.id)
 
     result = await db.execute(
-        select(EnrollmentRecord)
-        .options(joinedload(EnrollmentRecord.attributed_agent))
+        select(EnrollmentRecord, WorkItem, owner)
+        .join(
+            WorkItem,
+            and_(
+                WorkItem.kind == WorkItemKind.enrollment_settlement,
+                WorkItem.source_type == "enrollment",
+                WorkItem.source_id == EnrollmentRecord.id,
+            ),
+        )
+        .join(owner, owner.id == WorkItem.owner_agent_id)
         .where(*conditions)
         .order_by(EnrollmentRecord.enrolled_at.desc())
     )
     rows = []
-    for record in result.scalars().unique().all():
+    for record, work_item, owner_user in result.all():
         urgent = record.settlement_status == SettlementStatus.disputed
         rows.append(
             _work_item(
                 kind="settlement",
                 source_id=record.id,
                 queue="settlement",
-                priority="high" if urgent else "normal",
+                priority=_work_priority(work_item.priority, urgent=urgent),
                 title=f"{record.student_name_snapshot or '学生'} 报名结算",
                 student_id=record.student_id,
                 student_name=record.student_name_snapshot,
                 region=record.region_snapshot,
                 school_name=record.school_name_snapshot,
-                agent_id=record.attributed_agent_id,
-                agent_name=record.attributed_agent.name if record.attributed_agent else "",
-                due_at=record.enrolled_at,
+                agent_id=work_item.owner_agent_id,
+                agent_name=owner_user.name,
+                due_at=work_item.due_at or record.enrolled_at,
                 status=record.settlement_status.value,
                 reason=f"结算{record.settlement_status.value}",
                 target_url="/admin/enrollment-settlement",
@@ -332,32 +391,44 @@ async def _build_settlement_work_items(db: AsyncSession, current_user: User) -> 
 
 
 async def _build_help_work_items(db: AsyncSession, current_user: User) -> list[dict]:
-    conditions = [Student.need_help.is_(True)]
+    owner = aliased(User)
+    conditions = [
+        Student.need_help.is_(True),
+        WorkItem.status.in_(ACTIVE_WORK_ITEM_STATUSES),
+    ]
     if not is_admin(current_user):
-        conditions.append(Student.assigned_to == current_user.id)
+        conditions.append(WorkItem.owner_agent_id == current_user.id)
 
     result = await db.execute(
-        select(Student, User)
-        .outerjoin(User, User.id == Student.assigned_to)
+        select(Student, WorkItem, owner)
+        .join(
+            WorkItem,
+            and_(
+                WorkItem.kind == WorkItemKind.help_request,
+                WorkItem.source_type == "help",
+                WorkItem.source_id == Student.id,
+            ),
+        )
+        .join(owner, owner.id == WorkItem.owner_agent_id)
         .where(*conditions)
         .order_by(Student.updated_at.desc())
     )
     rows = []
-    for student, agent in result.all():
+    for student, work_item, owner_user in result.all():
         rows.append(
             _work_item(
                 kind="help",
                 source_id=student.id,
                 queue="help",
-                priority="high",
+                priority=_work_priority(work_item.priority),
                 title=f"{student.name} 求助",
                 student_id=student.id,
                 student_name=student.name,
                 region=student.region,
                 school_name=student.school_name,
-                agent_id=student.assigned_to,
-                agent_name=agent.name if agent else "",
-                due_at=student.updated_at,
+                agent_id=work_item.owner_agent_id,
+                agent_name=owner_user.name,
+                due_at=work_item.due_at or student.updated_at,
                 status=student.status.value,
                 reason="话务员请求主管介入",
                 target_url=f"/admin/leads/{student.id}",

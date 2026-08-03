@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -19,6 +20,7 @@ import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
 import { formatDuration } from '../../utils';
 import { dashboardLeadUrls } from './adminWorkflow';
+import AssistantSettings from './settings/AssistantSettings';
 
 function SettingRow({ label, children }) {
   return (
@@ -44,10 +46,10 @@ const inputCls =
 function StatusPill({ status }) {
   const normalized = status || 'ok';
   const style = normalized === 'ok'
-    ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-700'
+    ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
     : normalized === 'warning'
-      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700'
-      : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700';
+      ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800'
+      : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800';
   const label = normalized === 'ok' ? '正常' : normalized === 'warning' ? '需关注' : '异常';
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${style}`}>
@@ -59,19 +61,19 @@ function StatusPill({ status }) {
 
 function OpsMetric({ label, value, tone = 'default', to }) {
   const valueCls = tone === 'warning'
-    ? 'text-amber-700 dark:text-amber-300'
+    ? 'text-amber-700 dark:text-amber-400'
     : tone === 'danger'
-      ? 'text-red-700 dark:text-red-300'
+      ? 'text-red-700 dark:text-red-400'
       : 'text-gray-900 dark:text-gray-100';
   const body = (
-    <div className="min-w-0 border-l-2 border-gray-200 dark:border-gray-700 pl-3 py-1">
+    <div className="h-full min-w-0 rounded-r-lg border-l-2 border-gray-200 bg-gray-50/50 py-1.5 pl-3 dark:border-gray-700 dark:bg-gray-800/40">
       <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{label}</div>
-      <div className={`mt-1 text-lg font-semibold ${valueCls}`}>{value}</div>
+      <div className={`mt-1 truncate text-lg font-bold tracking-tight ${valueCls}`}>{value}</div>
     </div>
   );
   if (!to) return body;
   return (
-    <Link to={to} className="block rounded-lg transition hover:bg-gray-50 dark:hover:bg-gray-700/50">
+    <Link to={to} className="block h-full rounded-lg transition hover:bg-gray-100 dark:hover:bg-gray-700/80">
       {body}
     </Link>
   );
@@ -134,6 +136,9 @@ export default function SystemSettings() {
   const [dataQuality, setDataQuality] = useState(null);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [qualityMessage, setQualityMessage] = useState(null);
+  const [consistency, setConsistency] = useState(null);
+  const [consistencyLoading, setConsistencyLoading] = useState(false);
+  const [consistencyMessage, setConsistencyMessage] = useState(null);
 
   const closeSidebar = () => setSidebarOpen(false);
 
@@ -169,6 +174,19 @@ export default function SystemSettings() {
       setQualityMessage({ type: 'error', text: err.response?.data?.msg || '数据质量加载失败' });
     } finally {
       setQualityLoading(false);
+    }
+  };
+
+  const runConsistencyAudit = async () => {
+    setConsistencyLoading(true);
+    setConsistencyMessage(null);
+    try {
+      const res = await api.get('/admin/domain-consistency');
+      setConsistency(res.data.data || null);
+    } catch (err) {
+      setConsistencyMessage({ type: 'error', text: err.response?.data?.msg || '一致性巡检失败' });
+    } finally {
+      setConsistencyLoading(false);
     }
   };
 
@@ -338,9 +356,22 @@ export default function SystemSettings() {
             {dark ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </PageHeader>
-        <form onSubmit={(e) => e.preventDefault()} className="p-4 lg:p-6 max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mb-4">
-            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center justify-between gap-3">
+
+        <div className="border-b border-gray-200 bg-white/90 px-4 backdrop-blur lg:sticky lg:top-14 lg:z-10 lg:px-6 dark:border-gray-800 dark:bg-gray-900/90">
+          <nav className="mx-auto flex max-w-[1600px] flex-wrap gap-x-6 gap-y-1 py-2.5 text-xs font-medium text-gray-600 dark:text-gray-400" aria-label="系统设置分区">
+            <a href="#system-health" aria-label="跳转到运行状态" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">运行</a>
+            <a href="#data-quality" aria-label="跳转到数据质量" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">质量</a>
+            <a href="#push-settings" aria-label="跳转到推送配置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">推送</a>
+            <a href="#ai-settings" aria-label="跳转到 AI 分析" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">AI</a>
+            <a href="#dial-settings" aria-label="跳转到拨号设置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">拨号</a>
+            <a href="#score-settings" aria-label="跳转到评分设置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">评分</a>
+            <a href="#backup-settings" aria-label="跳转到数据备份" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">备份</a>
+          </nav>
+        </div>
+
+        <form onSubmit={(e) => e.preventDefault()} className="mx-auto w-full max-w-[1600px] space-y-6 p-4 lg:p-6">
+          <div id="system-health" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3.5 dark:border-gray-700">
               <div className="min-w-0 flex items-center gap-2">
                 <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">运行状态</h1>
@@ -359,8 +390,8 @@ export default function SystemSettings() {
             <div className="p-4 lg:p-6">
               <RowMessage state={opsMessage} />
               {opsHealth ? (
-                <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
                     <OpsMetric label="数据库延迟" value={`${opsHealth.database?.db_ms ?? '-'} ms`} />
                     <OpsMetric
                       label="最新备份"
@@ -398,7 +429,7 @@ export default function SystemSettings() {
                       tone={opsHealth.business?.locked_users > 0 ? 'warning' : 'default'}
                     />
                   </div>
-                  <div className="grid gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-2">
+                  <div className="flex flex-wrap gap-x-6 gap-y-1.5 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-gray-700/60 dark:text-gray-400">
                     <div>生成时间：{opsHealth.generated_at?.replace('T', ' ').slice(0, 19) || '-'}</div>
                     <div>日志文件：{opsHealth.logs?.files?.filter((item) => item.exists).length ?? 0} 个可用</div>
                   </div>
@@ -411,8 +442,8 @@ export default function SystemSettings() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mb-4">
-            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center justify-between gap-3">
+          <div id="data-quality" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3.5 dark:border-gray-700">
               <div className="min-w-0 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                 <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">数据质量</h1>
@@ -432,7 +463,7 @@ export default function SystemSettings() {
               <RowMessage state={qualityMessage} />
               {dataQuality ? (
                 <div className="space-y-5">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
                     <OpsMetric
                       label="今日待完成"
                       value={todayRecording.pending}
@@ -484,8 +515,37 @@ export default function SystemSettings() {
                     />
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-lg border dark:border-gray-700 p-3">
+                  <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                          领域一致性巡检
+                        </span>
+                        {consistency && <StatusPill status={consistency.status} />}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={runConsistencyAudit}
+                        disabled={consistencyLoading}
+                        className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${consistencyLoading ? 'animate-spin' : ''}`} />
+                        运行巡检
+                      </button>
+                    </div>
+                    <RowMessage state={consistencyMessage} />
+                    {consistency && (
+                      <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                        {consistency.status === 'ok'
+                          ? '未发现状态、负责人、工作项或分配历史不一致。'
+                          : `发现 ${consistency.failed_checks?.length || 0} 项异常：${consistency.failed_checks?.join('、') || '请查看巡检结果'}`}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                       <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">待完成拨号排行</div>
                       {dataQuality.calls?.agents?.length ? (
                         <div className="space-y-2">
@@ -516,7 +576,7 @@ export default function SystemSettings() {
                       )}
                     </div>
 
-                    <div className="rounded-lg border dark:border-gray-700 p-3">
+                    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
                       <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">无效原因分布</div>
                       {dataQuality.students?.invalid_reasons?.length ? (
                         <div className="flex flex-wrap gap-2">
@@ -536,7 +596,7 @@ export default function SystemSettings() {
                     </div>
                   </div>
 
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                  <div className="border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-gray-700/60 dark:text-gray-400">
                     生成时间：{dataQuality.generated_at?.replace('T', ' ').slice(0, 19) || '-'}
                   </div>
                 </div>
@@ -548,8 +608,9 @@ export default function SystemSettings() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm">
-            <div className="px-4 py-4 border-b dark:border-gray-700">
+          <div className="mx-auto w-full max-w-5xl space-y-6">
+          <div id="push-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="border-b px-4 py-3.5 dark:border-gray-700">
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">推送配置</h1>
             </div>
             <div className="p-4 lg:p-6">
@@ -597,8 +658,8 @@ export default function SystemSettings() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
-            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+          <div id="ai-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">
               <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">AI 分析</h1>
             </div>
@@ -758,8 +819,10 @@ export default function SystemSettings() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
-            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+          <AssistantSettings />
+
+          <div id="dial-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">
               <Phone className="w-5 h-5 text-green-600 dark:text-green-400" />
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">拨号设置</h1>
             </div>
@@ -814,8 +877,8 @@ export default function SystemSettings() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
-            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
+          <div id="score-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">
               <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">评分设置</h1>
             </div>
@@ -850,8 +913,8 @@ export default function SystemSettings() {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm mt-4">
-            <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center justify-between">
+          <div id="backup-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center justify-between border-b px-4 py-3.5 dark:border-gray-700">
               <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">数据备份</h1>
               <button
                 type="button"
@@ -897,6 +960,7 @@ export default function SystemSettings() {
                 </ul>
               )}
             </div>
+          </div>
           </div>
         </form>
       </main>

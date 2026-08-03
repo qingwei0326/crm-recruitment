@@ -27,7 +27,6 @@ export default function ExpandedRow({
 
   useEffect(() => {
     let cancelled = false;
-    setDetail((prev) => ({ ...prev, loading: true, error: '' }));
     api
       .get(`/students/${s.id}/detail`)
       .then((res) => {
@@ -59,7 +58,7 @@ export default function ExpandedRow({
   };
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-800 border-t dark:border-gray-700 px-4 py-3 space-y-3">
+    <div className="mx-2 space-y-4 rounded-lg border border-blue-100 bg-white px-4 py-4 shadow-sm animate-fadeIn dark:border-blue-950 dark:bg-gray-900">
       {/* Row 1: Guardian info + Stage */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
         <div>
@@ -124,11 +123,11 @@ export default function ExpandedRow({
 
       {/* Row 3: Quick status + AI */}
       <div className="flex items-center gap-2 flex-wrap">
-        <QuickStatusButtons onStatus={(st) => onQuickStatus(st)} />
+        <QuickStatusButtons disabled={isLocked} onStatus={(st) => onQuickStatus(st)} />
         <button
           onClick={onOpenAi}
           disabled={isLocked}
-          className="flex items-center justify-center gap-1.5 py-2 px-3 bg-purple-600 text-white rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-35"
         >
           <Sparkles className="w-3.5 h-3.5" /> AI分析
         </button>

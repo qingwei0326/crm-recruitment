@@ -7,6 +7,7 @@ vi.mock('../../api', () => ({
   default: {
     get: vi.fn(),
     put: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -37,6 +38,7 @@ const baseArgs = (overrides = {}) => ({
   confirm: vi.fn().mockResolvedValue(true),
   prompt: vi.fn().mockResolvedValue(''),
   updateIntentById: vi.fn(),
+  onFlowComplete: vi.fn(),
   ...overrides,
 });
 
@@ -46,6 +48,7 @@ describe('useAgentDial', () => {
     sessionStorage.clear();
     api.get.mockResolvedValue({ data: { code: 0, data: { count: 0 } } });
     api.put.mockResolvedValue({ data: { code: 0, data: {} } });
+    api.post.mockResolvedValue({ data: { code: 0, data: {} } });
   });
 
   it('loads pending dial when page becomes visible after tel return', async () => {
@@ -155,6 +158,7 @@ describe('useAgentDial', () => {
     sessionStorage.setItem('pendingDial', JSON.stringify(modal));
     const actions = baseArgs().actions;
     const prompt = vi.fn();
+    const onFlowComplete = vi.fn();
     const { result } = renderHook(() =>
       useAgentDial(baseArgs({
         state: { dial: { modal } },
@@ -165,6 +169,7 @@ describe('useAgentDial', () => {
           { id: 44, name: '王五', status: '无效' },
         ],
         prompt,
+        onFlowComplete,
       })),
     );
 
@@ -185,6 +190,10 @@ describe('useAgentDial', () => {
     expect(actions.removeStudentFromQueue).toHaveBeenCalledWith(42);
     expect(actions.setLockedStudent).toHaveBeenCalledWith(null);
     expect(actions.setDialModal).toHaveBeenCalledWith(null);
+    expect(onFlowComplete).toHaveBeenCalledWith({
+      studentId: 42,
+      removedFromQueue: true,
+    });
     expect(api.put).toHaveBeenCalledWith('/students/dial-duration', null, {
       params: {
         student_id: 42,
@@ -192,6 +201,111 @@ describe('useAgentDial', () => {
         duration_seconds: expect.any(Number),
       },
     });
+  });
+
+  it('auto-advances only after a saved result and duration both complete', async () => {
+    const modal = {
+      studentId: 42,
+      studentName: '张三',
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 45000,
+    };
+    sessionStorage.setItem('pendingDial', JSON.stringify(modal));
+    const actions = baseArgs().actions;
+    const onFlowComplete = vi.fn();
+    const { result } = renderHook(() => useAgentDial(baseArgs({
+      state: { dial: { modal } },
+      actions,
+      onFlowComplete,
+      students: [{ id: 42, name: '张三', status: '未联系' }],
+    })));
+
+    await act(async () => {
+      await result.current.handleDialModalStatus('未接');
+      await result.current.handleDialModalStatus('未接');
+    });
+
+    expect(onFlowComplete).toHaveBeenCalledTimes(1);
+    expect(onFlowComplete).toHaveBeenCalledWith({
+      studentId: 42,
+      removedFromQueue: true,
+    });
+    expect(actions.removeStudentFromQueue).toHaveBeenCalledWith(42);
+  });
+
+  it('keeps the follow-up step open and does not advance when reminder save fails', async () => {
+    const modal = {
+      studentId: 42,
+      studentName: '张三',
+      status: '待回访',
+      showFollowUp: true,
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 45000,
+    };
+    sessionStorage.setItem('pendingDial', JSON.stringify(modal));
+    api.post.mockRejectedValueOnce(new Error('network failed'));
+    const actions = baseArgs().actions;
+    const onFlowComplete = vi.fn();
+    const toast = { error: vi.fn() };
+    const { result } = renderHook(() => useAgentDial(baseArgs({
+      state: { dial: { modal } },
+      actions,
+      onFlowComplete,
+      toast,
+    })));
+
+    await act(async () => {
+      await result.current.handleDialModalFollowUp('2026-07-13T09:00');
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('network failed');
+    expect(onFlowComplete).not.toHaveBeenCalled();
+    expect(actions.setDialModal).not.toHaveBeenCalledWith(null);
+    expect(actions.setLockedStudent).not.toHaveBeenCalledWith(null);
+    expect(api.put).not.toHaveBeenCalledWith(
+      '/students/dial-duration',
+      null,
+      expect.anything(),
+    );
+  });
+
+  it('does not advance when the pending dial session belongs to another student', async () => {
+    const modal = {
+      studentId: 42,
+      studentName: '张三',
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 45000,
+    };
+    sessionStorage.setItem('pendingDial', JSON.stringify({
+      ...modal,
+      studentId: 99,
+    }));
+    const actions = baseArgs().actions;
+    const onFlowComplete = vi.fn();
+    const toast = { error: vi.fn() };
+    const { result } = renderHook(() => useAgentDial(baseArgs({
+      state: { dial: { modal } },
+      actions,
+      onFlowComplete,
+      toast,
+      students: [{ id: 42, name: '张三', status: '未联系' }],
+    })));
+
+    await act(async () => {
+      await result.current.handleDialModalStatus('未接');
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('状态已保存，通话记录待同步，请重试');
+    expect(onFlowComplete).not.toHaveBeenCalled();
+    expect(actions.setDialModal).not.toHaveBeenCalledWith(null);
+    expect(actions.setLockedStudent).not.toHaveBeenCalledWith(null);
+
+    sessionStorage.setItem('pendingDial', JSON.stringify(modal));
+    await act(async () => {
+      await result.current.handleDialModalStatus('未接');
+    });
+
+    expect(onFlowComplete).toHaveBeenCalledTimes(1);
   });
 
   it('keeps modal and lock when saving status fails', async () => {
@@ -250,6 +364,82 @@ describe('useAgentDial', () => {
     expect(actions.setLockedStudent).not.toHaveBeenCalledWith(null);
     expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
       expect.objectContaining({ dialLogId: 9001 }),
+    );
+  });
+
+  it('routes waiting-volunteer results through intent and follow-up steps', async () => {
+    const statusModal = {
+      studentId: 42,
+      studentName: '张三',
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 45000,
+    };
+    const actions = baseArgs().actions;
+    const statusHook = renderHook(() => useAgentDial(baseArgs({
+      state: { dial: { modal: statusModal } },
+      actions,
+    })));
+
+    await act(async () => {
+      await statusHook.result.current.handleDialModalStatus('等待志愿');
+    });
+
+    expect(api.put).toHaveBeenCalledWith('/students/42', { status: '等待志愿' });
+    expect(actions.setDialModal).toHaveBeenCalledWith({
+      ...statusModal,
+      status: '等待志愿',
+      showIntent: true,
+    });
+    statusHook.unmount();
+
+    const intentModal = { ...statusModal, status: '等待志愿', showIntent: true };
+    const intentActions = baseArgs().actions;
+    const intentHook = renderHook(() => useAgentDial(baseArgs({
+      state: { dial: { modal: intentModal } },
+      actions: intentActions,
+    })));
+
+    await act(async () => {
+      await intentHook.result.current.handleDialModalIntent('B');
+    });
+
+    expect(intentActions.setDialModal).toHaveBeenCalledWith({
+      ...intentModal,
+      showIntent: false,
+      showFollowUp: true,
+    });
+  });
+
+  it('keeps the intent modal and lock when intent persistence reports failure', async () => {
+    const modal = {
+      studentId: 42,
+      studentName: '张三',
+      status: '已联系',
+      showIntent: true,
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 45000,
+    };
+    const actions = baseArgs().actions;
+    const updateIntentById = vi.fn().mockResolvedValue(false);
+    const { result } = renderHook(() =>
+      useAgentDial(baseArgs({
+        state: { dial: { modal } },
+        actions,
+        updateIntentById,
+      })),
+    );
+
+    await act(async () => {
+      await result.current.handleDialModalIntent('A');
+    });
+
+    expect(updateIntentById).toHaveBeenCalledWith(42, 'A');
+    expect(actions.setDialModal).not.toHaveBeenCalled();
+    expect(actions.setLockedStudent).not.toHaveBeenCalled();
+    expect(api.put).not.toHaveBeenCalledWith(
+      '/students/dial-duration',
+      null,
+      expect.anything(),
     );
   });
 });

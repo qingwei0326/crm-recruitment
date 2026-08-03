@@ -16,7 +16,7 @@ tunnel: 5dd5b752-a226-4d4e-bb65-7a2541806a62
 credentials-file: C:/Users/青微/.cloudflared/5dd5b752-a226-4d4e-bb65-7a2541806a62.json
 
 ingress:
-  # Map the public CRM domain to the local J1900 CRM service
+  # Map the public CRM domain to the local CRM service
   - hostname: crm.qing-wei.com
     service: http://127.0.0.1:8000
 

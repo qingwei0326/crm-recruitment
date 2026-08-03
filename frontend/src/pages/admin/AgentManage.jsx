@@ -10,7 +10,7 @@ import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { createIdempotencyKey } from '../../domain/handover';
-import { adminRecycleStatusBadgeClass, statusLabel } from '../../labels';
+import { adminRecycleStatusBadgeClass } from '../../labels';
 import {
   ADMIN_OPERATION_PERMISSION_OPTIONS,
   ADMIN_OPERATION_PERMISSIONS,
@@ -52,6 +52,8 @@ import {
   AlertTriangle,
   Lock,
   Unlock,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function AgentManage() {
@@ -107,6 +109,21 @@ export default function AgentManage() {
   const canEditAccount = (account) =>
     canEditUsers && (!isAdminAccount(account) || canGrantAdminPermissions);
   const canOperateAdminAccount = (account) => !isAdminAccount(account) || canGrantAdminPermissions;
+  const canShowLifecycleAction = (account) => {
+    if (!isAgentAccount(account)) return false;
+    const status = employmentStatus(account);
+    if (status === 'active') return canEditAccount(account) || canStartHandover;
+    if (status === 'suspended') return canEditAccount(account);
+    if (status === 'handover_pending') return canOffboardUsers;
+    return false;
+  };
+  const hasAccountListActions = (account) =>
+    canEditAccount(account)
+    || (canUnlockUsers && canOperateAdminAccount(account) && isLocked(account))
+    || (canAssignStudents
+      && employmentStatus(account) === 'active'
+      && isAgentAccount(account))
+    || canShowLifecycleAction(account);
   const activeAgents = useMemo(
     () => agents.filter(
       (agent) => isAgentAccount(agent) && employmentStatus(agent) === 'active',
@@ -336,7 +353,6 @@ export default function AgentManage() {
           name: form.name.trim(),
         };
         if (canGrantAdminPermissions) {
-          body.role = form.role;
           body.is_super_admin = Boolean(form.is_super_admin);
           body.page_permissions =
             form.role === 'admin' && !form.is_super_admin
@@ -477,7 +493,14 @@ export default function AgentManage() {
     if (!ok) return;
     try {
       const res = await api.post(`/admin/users/${agent.id}/reset-password`);
-      toast?.success(res.data.msg || '密码已重置');
+      const newPassword = res.data?.data?.new_password;
+      const successMessage =
+        res.data?.msg && res.data.msg !== 'ok'
+          ? res.data.msg
+          : newPassword
+            ? `用户 ${agent.name} 密码已重置为 ${newPassword}`
+            : '密码已重置';
+      toast?.success(successMessage);
     } catch (err) {
       toast?.error(err.response?.data?.msg || '操作失败');
     }
@@ -584,6 +607,7 @@ export default function AgentManage() {
         >
           {canCreateUsers && (
             <button
+              type="button"
               onClick={openCreateModal}
               aria-label="添加账号"
               className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
@@ -594,7 +618,10 @@ export default function AgentManage() {
           )}
           {isMobile && (
             <button
+              type="button"
               onClick={toggle}
+              aria-label={dark ? '切换到浅色模式' : '切换到深色模式'}
+              title={dark ? '切换到浅色模式' : '切换到深色模式'}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               {dark ? (
@@ -606,38 +633,45 @@ export default function AgentManage() {
           )}
         </PageHeader>
 
-        <div className="p-4 lg:p-6 max-w-6xl mx-auto">
-          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+        <div className="mx-auto w-full max-w-[1600px] p-3 sm:p-4 lg:p-6">
+          <div className="grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-6">
             {/* Agent list — on mobile, show as full-width when no agent selected, hidden when viewing tasks */}
-            <div className={`lg:w-80 shrink-0 ${isMobile && selectedAgent ? 'hidden' : ''}`}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
-                <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            <div className={`${isMobile && selectedAgent ? 'hidden' : ''} lg:sticky lg:top-[4.75rem] lg:self-start`}>
+              <div className="overflow-hidden rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div className="border-b bg-gray-50 px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                      <Users className="w-4 h-4" /> 账号列表 ({visibleAgents.length})
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      账号列表 ({visibleAgents.length})
                     </h3>
-                    <div className="inline-flex max-w-full overflow-x-auto rounded-lg border text-xs dark:border-gray-700">
-                      {agentFilterOptions.map((option) => (
-                        <button
-                          key={option.key}
-                          type="button"
-                          onClick={() => {
-                            setAgentStatusFilter(option.key);
-                            setSelectedAgent(null);
-                          }}
-                          className={`shrink-0 px-2.5 py-1 transition-colors ${
-                            agentStatusFilter === option.key
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                          }`}
-                        >
-                          {option.label} {option.count}
-                        </button>
-                      ))}
-                    </div>
+                    <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                      共 {agents.length}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-5 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-900/60" aria-label="员工状态筛选">
+                    {agentFilterOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        aria-label={`${option.label} ${option.count}`}
+                        aria-pressed={agentStatusFilter === option.key}
+                        onClick={() => {
+                          setAgentStatusFilter(option.key);
+                          setSelectedAgent(null);
+                        }}
+                        className={`flex min-h-11 min-w-0 flex-col items-center justify-center rounded-md px-1 py-1 text-[11px] leading-4 transition-colors ${
+                          agentStatusFilter === option.key
+                            ? 'bg-white font-semibold text-blue-700 shadow-sm dark:bg-gray-700 dark:text-blue-300'
+                            : 'text-gray-500 hover:bg-white/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700/70 dark:hover:text-gray-200'
+                        }`}
+                      >
+                        <span className="whitespace-nowrap">{option.label}</span>
+                        <span className="font-mono text-[10px] opacity-80">{option.count}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <div className="divide-y dark:divide-gray-700 max-h-[calc(100vh-14rem)] overflow-y-auto">
+                <div className="max-h-[calc(100dvh-11.5rem)] divide-y overflow-y-auto overscroll-contain dark:divide-gray-700 lg:max-h-[calc(100dvh-11rem)]">
                   {loading ? (
                     <div className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
                       加载中...
@@ -653,35 +687,49 @@ export default function AgentManage() {
                       <div
                         key={a.id}
                         onClick={() => viewAgentTasks(a)}
-                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 ${selectedAgent?.id === a.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : ''}`}
+                        className={`cursor-pointer px-3 py-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/70 ${selectedAgent?.id === a.id ? 'border-l-2 border-l-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 flex flex-wrap items-center gap-1.5">
-                              <span className="truncate max-w-[7.5rem] break-normal whitespace-nowrap">
-                                {a.name}
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            <span className="max-w-[10rem] truncate">{a.name}</span>
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                              {roleLabel(a)}
+                            </span>
+                            <EmploymentStatusBadge account={a} />
+                            {isLocked(a) && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-orange-100 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                                <Lock className="h-3 w-3" />
+                                已锁定
                               </span>
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300">
-                                {roleLabel(a)}
-                              </span>
-                              <EmploymentStatusBadge account={a} />
-                              {isLocked(a) && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 inline-flex items-center gap-0.5">
-                                  <Lock className="w-3 h-3" />
-                                  已锁定
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                              @{a.username}
-                            </div>
-                            {permissionSummary(a) && (
-                              <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">
-                                {permissionSummary(a)}
-                              </div>
                             )}
                           </div>
-                          <div className="shrink-0 flex flex-wrap justify-end gap-1 max-w-[10rem]">
+                          <div className="mt-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+                            @{a.username}
+                          </div>
+                          {permissionSummary(a) && (
+                            <div className="mt-1 truncate text-xs text-gray-400 dark:text-gray-500" title={permissionSummary(a)}>
+                              {permissionSummary(a)}
+                            </div>
+                          )}
+                        </div>
+                        {isAgentAccount(a) && (
+                          <div className="mt-2 grid grid-cols-3 rounded-md border border-gray-100 bg-gray-50/70 py-1.5 text-center text-xs text-gray-500 dark:border-gray-700/60 dark:bg-gray-900/30 dark:text-gray-400">
+                            <span className="flex items-center justify-center gap-1" title="总任务">
+                              <Target className="h-3 w-3" />
+                              <span className="font-mono">{a.total_tasks ?? 0}</span>
+                            </span>
+                            <span className="flex items-center justify-center gap-1 border-x border-gray-200 dark:border-gray-700" title="已完成">
+                              <CheckCircle2 className="h-3 w-3" />
+                              <span className="font-mono">{a.done_tasks ?? 0}</span>
+                            </span>
+                            <span className="flex items-center justify-center gap-1" title="今日拨号">
+                              <Phone className="h-3 w-3" />
+                              <span className="font-mono">{a.today_calls ?? 0}</span>
+                            </span>
+                          </div>
+                        )}
+                        {hasAccountListActions(a) && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-2 dark:border-gray-700/70">
                             {canUnlockUsers && canOperateAdminAccount(a) && isLocked(a) && (
                               <button
                                 onClick={(e) => {
@@ -689,9 +737,9 @@ export default function AgentManage() {
                                   handleUnlock(a);
                                 }}
                                 title="解锁账号（清除登录失败锁定）"
-                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 text-xs whitespace-nowrap"
+                                className="inline-flex min-h-8 items-center gap-1 whitespace-nowrap rounded-lg border border-orange-300 px-2 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/20"
                               >
-                                <Unlock className="w-3.5 h-3.5" />
+                                <Unlock className="h-3.5 w-3.5" />
                                 解锁
                               </button>
                             )}
@@ -701,9 +749,11 @@ export default function AgentManage() {
                                   e.stopPropagation();
                                   openEditModal(a);
                                 }}
-                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                title={`编辑 ${a.name}`}
+                                aria-label={`编辑 ${a.name}`}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"
                               >
-                                <Edit3 className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+                                <Edit3 className="h-3.5 w-3.5" />
                               </button>
                             )}
                             {canAssignStudents
@@ -714,9 +764,9 @@ export default function AgentManage() {
                                   e.stopPropagation();
                                   openRecycleModal(a);
                                 }}
-                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-xs whitespace-nowrap"
+                                className="inline-flex min-h-8 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-300 px-2 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/20"
                               >
-                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                                <ArrowRightLeft className="h-3.5 w-3.5" />
                                 回收
                               </button>
                             )}
@@ -759,22 +809,6 @@ export default function AgentManage() {
                               />
                             )}
                           </div>
-                        </div>
-                        {isAgentAccount(a) && (
-                          <div className="flex gap-3 mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            <span className="flex items-center gap-1">
-                              <Target className="w-3 h-3" />
-                              {a.total_tasks}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" />
-                              {a.done_tasks}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3 h-3" />
-                              {a.today_calls}
-                            </span>
-                          </div>
                         )}
                       </div>
                     ))
@@ -784,58 +818,66 @@ export default function AgentManage() {
             </div>
 
             {/* Task detail — on mobile, full screen when viewing */}
-            <div className={`flex-1 ${isMobile && !selectedAgent ? 'hidden' : ''}`}>
+            <div className={`min-w-0 ${isMobile && !selectedAgent ? 'hidden' : ''}`}>
               {/* Mobile back button */}
               {isMobile && selectedAgent && (
                 <button
                   onClick={() => setSelectedAgent(null)}
-                  className="mb-3 flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400"
+                  className="mb-3 inline-flex min-h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-blue-600 dark:border-gray-700 dark:bg-gray-800 dark:text-blue-400"
                 >
                   <ArrowLeft className="w-4 h-4" /> 返回列表
                 </button>
               )}
 
               {!selectedAgent ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm flex flex-col items-center justify-center py-20 text-gray-300 dark:text-gray-600">
+                <div className="flex min-h-[24rem] flex-col items-center justify-center rounded-lg border bg-white py-20 text-gray-300 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600">
                   <Eye className="w-12 h-12 mb-3" />
-                  <p className="text-sm">点击左侧账号查看详情</p>
+                  <p className="text-sm">未选择账号</p>
                 </div>
               ) : taskLoading ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm flex items-center justify-center py-20">
+                <div className="flex min-h-[24rem] items-center justify-center rounded-lg border bg-white py-20 shadow-sm dark:border-gray-700 dark:bg-gray-800">
                   <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
                 </div>
               ) : !isAgentAccount(selectedAgent) ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4 lg:p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="font-semibold text-gray-800 dark:text-gray-100">
+                <div className="rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                  <div className="flex flex-col gap-4 border-b px-4 py-4 dark:border-gray-700 sm:flex-row sm:items-start sm:justify-between lg:px-5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-gray-900 dark:text-gray-100">
                         {selectedAgent.name}
-                      </h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        @{selectedAgent.username} · {roleLabel(selectedAgent)}
+                        </h3>
+                        <span className="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                          {roleLabel(selectedAgent)}
+                        </span>
+                        <EmploymentStatusBadge account={selectedAgent} />
+                      </div>
+                      <p className="mt-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+                        @{selectedAgent.username}
                       </p>
                       {permissionSummary(selectedAgent) && (
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        <p className="mt-2 max-w-3xl text-xs leading-5 text-gray-500 dark:text-gray-400">
                           {permissionSummary(selectedAgent)}
                         </p>
                       )}
                     </div>
                     {(canEditAccount(selectedAgent)
                       || (canResetPasswords && canOperateAdminAccount(selectedAgent))) && (
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <div className="flex flex-wrap gap-2 sm:justify-end">
                         {canEditAccount(selectedAgent) && (
                           <button
                             onClick={() => openEditModal(selectedAgent)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
                           >
+                            <Edit3 className="h-3.5 w-3.5" />
                             编辑
                           </button>
                         )}
                         {canResetPasswords && canOperateAdminAccount(selectedAgent) && (
                           <button
                             onClick={() => handleResetPassword(selectedAgent)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20"
                           >
+                            <KeyRound className="h-3.5 w-3.5" />
                             重置密码
                           </button>
                         )}
@@ -843,7 +885,7 @@ export default function AgentManage() {
                           && ['active', 'suspended'].includes(employmentStatus(selectedAgent)) && (
                           <button
                             onClick={() => handleToggleActive(selectedAgent)}
-                            className={`text-xs px-3 py-1.5 rounded-lg ${employmentStatus(selectedAgent) === 'active' ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50'}`}
+                            className={`min-h-9 rounded-lg border px-3 py-1.5 text-xs font-medium ${employmentStatus(selectedAgent) === 'active' ? 'border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20' : 'border-green-300 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-300 dark:hover:bg-green-900/20'}`}
                           >
                             {employmentStatus(selectedAgent) === 'active' ? '暂停' : '恢复'}
                           </button>
@@ -851,20 +893,20 @@ export default function AgentManage() {
                       </div>
                     )}
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
+                  <div className="grid gap-3 p-4 sm:grid-cols-3 lg:p-5">
+                    <div className="rounded-lg border-l-2 border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-gray-600 dark:bg-gray-900/30">
                       <div className="text-xs text-gray-500 dark:text-gray-400">状态</div>
                       <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
                         {employmentLabel(selectedAgent)}
                       </div>
                     </div>
-                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
+                    <div className="rounded-lg border-l-2 border-blue-300 bg-gray-50/70 px-3 py-2 dark:border-blue-800 dark:bg-gray-900/30">
                       <div className="text-xs text-gray-500 dark:text-gray-400">权限</div>
                       <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
                         {roleLabel(selectedAgent)}
                       </div>
                     </div>
-                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900/40 px-3 py-2">
+                    <div className="rounded-lg border-l-2 border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-gray-600 dark:bg-gray-900/30">
                       <div className="text-xs text-gray-500 dark:text-gray-400">创建时间</div>
                       <div className="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">
                         {formatDateTime(selectedAgent.created_at) || '-'}
@@ -874,43 +916,50 @@ export default function AgentManage() {
                 </div>
               ) : agentTasks ? (
                 <div className="space-y-4">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4 lg:p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h3 className="font-semibold text-gray-800 dark:text-gray-100">
-                          {agentTasks.agent.name}
-                        </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                  <div className="rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                    <div className="flex flex-col gap-4 border-b px-4 py-4 dark:border-gray-700 sm:flex-row sm:items-start sm:justify-between lg:px-5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                            {agentTasks.agent.name}
+                          </h3>
+                          <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                            {roleLabel(selectedAgent)}
+                          </span>
+                          <EmploymentStatusBadge account={selectedAgent} />
+                        </div>
+                        <p className="mt-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
                           @{agentTasks.agent.username}
                         </p>
-                        <EmploymentStatusBadge account={selectedAgent} className="mt-1" />
                       </div>
                       {(canEditAccount(selectedAgent)
                         || (canResetPasswords && canOperateAdminAccount(selectedAgent))
                         || (canUnlockUsers && canOperateAdminAccount(selectedAgent))
                         || canAssignStudents
                         || canOffboardUsers) && (
-                        <div className="flex flex-wrap justify-end gap-2">
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
                           {canEditAccount(selectedAgent) && (
                             <button
                               onClick={() => openEditModal(selectedAgent)}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
                             >
+                              <Edit3 className="h-3.5 w-3.5" />
                               编辑
                             </button>
                           )}
                           {canResetPasswords && canOperateAdminAccount(selectedAgent) && (
                             <button
                               onClick={() => handleResetPassword(selectedAgent)}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20"
                             >
+                              <KeyRound className="h-3.5 w-3.5" />
                               重置密码
                             </button>
                           )}
                           {canUnlockUsers && canOperateAdminAccount(selectedAgent) && isLocked(selectedAgent) && (
                             <button
                               onClick={() => handleUnlock(selectedAgent)}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-900/50 inline-flex items-center gap-1"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-orange-300 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-300 dark:hover:bg-orange-900/20"
                             >
                               <Unlock className="w-3.5 h-3.5" />
                               解锁
@@ -919,7 +968,7 @@ export default function AgentManage() {
                           {canAssignStudents && employmentStatus(selectedAgent) === 'active' && (
                             <button
                               onClick={() => openRecycleModal(selectedAgent)}
-                              className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 inline-flex items-center gap-1"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-900/20"
                             >
                               <ArrowRightLeft className="w-3.5 h-3.5" />
                               回收
@@ -952,9 +1001,7 @@ export default function AgentManage() {
                         </div>
                       )}
                     </div>
-                    <div
-                      className={`grid ${isMobile ? 'grid-cols-3' : 'grid-cols-4 lg:grid-cols-7'} gap-2`}
-                    >
+                    <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4 xl:grid-cols-7 lg:p-5">
                       {[
                         {
                           label: '总任务',
@@ -994,22 +1041,22 @@ export default function AgentManage() {
                       ].map((s, i) => (
                         <div
                           key={i}
-                          className="text-center p-2 rounded-lg bg-gray-50 dark:bg-gray-800"
+                          className="min-w-0 rounded-lg border-l-2 border-gray-200 bg-gray-50/70 px-2 py-2 text-center dark:border-gray-600 dark:bg-gray-900/30"
                         >
-                          <div className={`text-lg font-bold ${s.color}`}>{s.value}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{s.label}</div>
+                          <div className={`truncate text-lg font-bold tracking-tight ${s.color}`}>{s.value}</div>
+                          <div className="truncate text-xs text-gray-500 dark:text-gray-400">{s.label}</div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
-                    <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                  <div className="overflow-hidden rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                    <div className="border-b bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
                       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
                         任务列表 ({agentTasks.list.length})
                       </h4>
                     </div>
-                    <div className="divide-y dark:divide-gray-700 max-h-[calc(100vh-28rem)] overflow-y-auto">
+                    <div className="max-h-[60dvh] divide-y overflow-y-auto overscroll-contain dark:divide-gray-700 lg:max-h-[calc(100dvh-24rem)]">
                       {agentTasks.list.length === 0 ? (
                         <div className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
                           暂无任务
@@ -1161,22 +1208,28 @@ export default function AgentManage() {
 
       {recycleAgent && (
         <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-[1px] sm:p-4"
           onClick={closeRecycleModal}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden"
+            className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                {recycleAgent.name} 的线索回收
-              </h3>
+            <div className="flex items-start justify-between gap-4 border-b px-4 py-3.5 dark:border-gray-700 sm:px-5">
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
+                  {recycleAgent.name} 的线索回收
+                </h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {recycleLoading ? '正在读取可回收线索' : `共 ${recycleStudents.length} 条可回收线索`}
+                </p>
+              </div>
               <button
                 onClick={closeRecycleModal}
-                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                aria-label="关闭线索回收"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
@@ -1190,8 +1243,8 @@ export default function AgentManage() {
                   该话务员暂无可回收线索
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900/60 text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead className="sticky top-0 border-b bg-gray-50 text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
                     <tr>
                       <th className="px-4 py-3 w-12 text-left">
                         <input
@@ -1253,14 +1306,14 @@ export default function AgentManage() {
             </div>
 
             {recycleSelected.size > 0 && (
-              <div className="border-t dark:border-gray-700 px-5 py-4 bg-white dark:bg-gray-800 flex flex-col lg:flex-row lg:items-center gap-3">
+              <div className="flex flex-col gap-3 border-t bg-white px-4 py-3.5 pb-[max(14px,env(safe-area-inset-bottom))] dark:border-gray-700 dark:bg-gray-800 lg:flex-row lg:items-center lg:px-5">
                 <div className="text-sm text-gray-600 dark:text-gray-400 lg:mr-auto">
-                  已选 {recycleSelected.size} 条
+                  已选 <span className="font-semibold text-gray-900 dark:text-gray-100">{recycleSelected.size}</span> 条
                 </div>
                 <button
                   onClick={() => handleRecycleReassign('auto')}
                   disabled={recycleActionLoading}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-green-600 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-900/20"
                 >
                   {recycleActionLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1272,7 +1325,8 @@ export default function AgentManage() {
                 <select
                   value={recycleAgentId}
                   onChange={(e) => setRecycleAgentId(e.target.value)}
-                  className={`${inputCls} lg:w-56`}
+                  aria-label="目标坐席"
+                  className={`${inputCls} min-h-10 lg:w-56`}
                 >
                   <option value="">选择坐席</option>
                   {activeAgents.map((agent) => (
@@ -1284,7 +1338,7 @@ export default function AgentManage() {
                 <button
                   onClick={() => handleRecycleReassign('manual')}
                   disabled={recycleActionLoading || !recycleAgentId}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   {recycleActionLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1302,52 +1356,66 @@ export default function AgentManage() {
       {/* Add/Edit Modal */}
       {showModal && (
         <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-[1px] sm:p-4"
           onClick={() => setShowModal(false)}
         >
           <div
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6"
+            className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                {editingUser ? '编辑账号' : '添加账号'}
-              </h3>
+            <div className="flex items-start justify-between gap-4 border-b px-4 py-3.5 dark:border-gray-700 sm:px-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
+                    {editingUser ? '编辑账号' : '添加账号'}
+                  </h3>
+                  {editingUser && (
+                    <p className="mt-0.5 truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+                      @{editingUser.username}
+                    </p>
+                  )}
+                </div>
+              </div>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                aria-label="关闭账号编辑"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
               >
-                <X className="w-5 h-5 text-gray-500" />
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-3">
-              {!editingUser && (
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4 sm:p-5">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {!editingUser && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                      用户名
+                    </label>
+                    <input
+                      value={form.username}
+                      onChange={(e) => setForm({ ...form, username: e.target.value })}
+                      className={inputCls}
+                      placeholder="登录账号"
+                    />
+                  </div>
+                )}
                 <div>
-                  <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                    用户名
-                  </label>
+                  <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">姓名</label>
                   <input
-                    value={form.username}
-                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className={inputCls}
-                    placeholder="登录账号"
+                    placeholder="显示名称"
                   />
                 </div>
-              )}
-              <div>
-                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">姓名</label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className={inputCls}
-                  placeholder="显示名称"
-                />
-              </div>
-              {canGrantAdminPermissions && (
-                <div>
+                {canGrantAdminPermissions && !editingUser && (
+                  <div>
                   <label
                     htmlFor="account-role"
-                    className="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+                    className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400"
                   >
                     角色
                   </label>
@@ -1370,12 +1438,40 @@ export default function AgentManage() {
                     <option value="agent">话务员</option>
                     <option value="admin">普通管理员</option>
                   </select>
-                </div>
-              )}
+                  </div>
+                )}
+                {canGrantAdminPermissions && editingUser && (
+                  <div>
+                    <div className="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">
+                      角色
+                    </div>
+                    <div className={`${inputCls} flex items-center justify-between gap-2 bg-gray-50 text-gray-700 dark:bg-gray-900/40 dark:text-gray-300`}>
+                      <span>{roleLabel(editingUser)}</span>
+                      <span className="text-xs text-gray-400">创建后不可修改</span>
+                    </div>
+                  </div>
+                )}
+                {(!editingUser || canResetPasswords) && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                      密码{editingUser ? '（留空不修改）' : ''}
+                    </label>
+                    <input
+                      type="password"
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      className={inputCls}
+                      placeholder={editingUser ? '留空则不修改密码' : '设置密码'}
+                    />
+                  </div>
+                )}
+              </div>
+
               {canGrantAdminPermissions && form.role === 'admin' && (
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors ${form.is_super_admin ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300' : 'border-gray-200 bg-gray-50/70 text-gray-700 hover:border-blue-300 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300'}`}>
                   <input
                     type="checkbox"
+                    aria-label="超级管理员"
                     checked={Boolean(form.is_super_admin)}
                     onChange={(e) =>
                       setForm({
@@ -1387,22 +1483,28 @@ export default function AgentManage() {
                           : form.operation_permissions || [],
                       })
                     }
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
-                  超级管理员
+                  <span className="min-w-0">
+                    <span className="block font-semibold">超级管理员</span>
+                    <span className="mt-0.5 block text-xs leading-5 opacity-75">
+                      拥有全部页面和操作权限，启用后无需单独勾选权限。
+                    </span>
+                  </span>
                 </label>
               )}
+
               {canGrantAdminPermissions && form.role === 'admin' && !form.is_super_admin && (
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                <div className="space-y-4 border-t border-gray-100 pt-5 dark:border-gray-700/70">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="border-b bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-100">
                       页面权限
                     </div>
-                    <div className="mt-2 space-y-2">
+                    <div className="grid gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
                       {ADMIN_PAGE_PERMISSION_OPTIONS.map((option) => (
                         <label
                           key={option.key}
-                          className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300"
+                          className={`flex cursor-pointer items-start gap-2 rounded-md border p-2.5 text-sm transition-colors ${normalizeAdminPagePermissions(form.page_permissions).includes(option.key) ? 'border-blue-300 bg-blue-50/70 text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200' : 'border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700/40'}`}
                         >
                           <input
                             type="checkbox"
@@ -1414,7 +1516,7 @@ export default function AgentManage() {
                           />
                           <span className="min-w-0">
                             <span className="block font-medium">{option.label}</span>
-                            <span className="block text-xs leading-5 text-gray-500 dark:text-gray-400">
+                            <span className="mt-0.5 block text-xs leading-5 text-gray-500 dark:text-gray-400">
                               {option.description}
                             </span>
                           </span>
@@ -1422,21 +1524,21 @@ export default function AgentManage() {
                       ))}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="border-b bg-gray-50 px-3 py-2.5 text-sm font-semibold text-gray-800 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-100">
                       操作权限
                     </div>
-                    <div className="mt-2 space-y-3">
+                    <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
                       {ADMIN_OPERATION_PERMISSION_OPTIONS.map((group) => (
-                        <div key={group.group}>
-                          <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        <div key={group.group} className="rounded-md border border-gray-200 p-2.5 dark:border-gray-700">
+                          <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
                             {group.group}
                           </div>
-                          <div className="mt-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                          <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2 md:grid-cols-1 2xl:grid-cols-2">
                             {group.items.map((option) => (
                               <label
                                 key={option.key}
-                                className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+                                className={`flex min-h-8 cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs transition-colors ${normalizeAdminOperationPermissions(form.operation_permissions).includes(option.key) ? 'bg-blue-50 font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-200' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50'}`}
                               >
                                 <input
                                   type="checkbox"
@@ -1456,28 +1558,24 @@ export default function AgentManage() {
                   </div>
                 </div>
               )}
-              {(!editingUser || canResetPasswords) && (
-                <div>
-                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                  密码{editingUser ? '（留空不修改）' : ''}
-                </label>
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className={inputCls}
-                  placeholder={editingUser ? '留空则不修改密码' : '设置密码'}
-                />
-              </div>
-              )}
               {formError && (
-                <div className="text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-3 py-2 rounded-lg">
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
                   {formError}
                 </div>
               )}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] dark:border-gray-700 dark:bg-gray-800 sm:px-5">
               <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="min-h-10 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                取消
+              </button>
+              <button
+                type="button"
                 onClick={handleSave}
-                className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700"
+                className="inline-flex min-h-10 min-w-28 items-center justify-center rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
               >
                 {editingUser ? '保存修改' : '创建账号'}
               </button>

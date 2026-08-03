@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import AdminLayout from '../../components/AdminLayout';
 import api from '../../api';
+import { getApiErrorMessage, unwrapApiResponse } from '../../utils';
 import logger from '../../utils/logger';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
@@ -104,6 +105,23 @@ function duplicateSearchHref(group) {
   return `/admin/leads?q=${encodeURIComponent(searchText)}`;
 }
 
+function governanceReviewKey(item, fallback = '') {
+  return item?.review_key || fallback;
+}
+
+function reviewSnapshotCount(item) {
+  const rawCurrentCount = item?.current_count;
+  const currentCount = Number(rawCurrentCount);
+  if (rawCurrentCount !== undefined && rawCurrentCount !== null && Number.isFinite(currentCount)) {
+    return Math.max(currentCount, 0);
+  }
+  return Math.max(Number(item?.reviewed_count || 0) + Number(item?.count || 0), 0);
+}
+
+function isPendingReview(item) {
+  return !item?.reviewed && Number(item?.count || 0) > 0;
+}
+
 export default function LeadGovernance() {
   const { dark, toggle } = useTheme();
   const { user } = useAuth();
@@ -128,6 +146,9 @@ export default function LeadGovernance() {
     ADMIN_OPERATION_PERMISSIONS.governanceReview,
   );
   const closeSidebar = () => setSidebarOpen(false);
+  const pendingHealthSignals = (health?.signals || []).filter(isPendingReview);
+  const pendingRiskAlerts = riskAlerts.filter(isPendingReview);
+  const showRiskAlerts = loadingSignals || pendingRiskAlerts.length > 0;
 
   const loadSignals = () => {
     setLoadingSignals(true);
@@ -210,22 +231,22 @@ export default function LeadGovernance() {
 
   const runDuplicatePhoneCleanup = async () => {
     const preview = cleanupPreview || {};
-    if (!preview.affected_student_count || !canCleanupPhones) return;
+    if (!preview.will_clear_count || !canCleanupPhones) return;
     const ok = await confirm({
       title: '清理重复手机号',
       message:
         `将清理 ${preview.duplicate_phone_count || 0} 个重复手机号，影响 ${preview.affected_student_count || 0} 条学生。\n` +
-        `清号后保留 ${preview.will_clear_count || 0} 条，清完无号码将删除 ${preview.will_delete_count || 0} 条。\n` +
+        `可安全清号 ${preview.will_clear_count || 0} 条；另有 ${preview.manual_review_count || 0} 条清号后无可用号码，将保留并转人工处理。\n` +
         '系统会生成审计批次号，方便在操作记录中追踪。',
-      confirmText: '确认清理',
-      tone: 'danger',
+      confirmText: '清理安全项',
+      tone: 'warning',
     });
     if (!ok) return;
     setCleaningPhones(true);
     try {
       const res = await api.post('/admin/lead-duplicates/cleanup', { confirm: true });
       const data = res.data.data || {};
-      toast?.success(`清理完成：清号 ${data.cleared_count || 0} 条，删除 ${data.deleted_count || 0} 条`);
+      toast?.success(`清理完成：安全清号 ${data.cleared_count || 0} 条，待人工复核 ${data.manual_review_count || 0} 条`);
       if (data.batch_id) {
         setRiskAlerts((current) => [
           {
@@ -250,20 +271,42 @@ export default function LeadGovernance() {
 
   const acknowledgeReview = async (item, key) => {
     if (!canAcknowledgeReview) return;
-    if (!key || reviewingKey) return;
-    setReviewingKey(key);
+    const reviewKey = governanceReviewKey(item, key);
+    if (!reviewKey || reviewingKey) return;
+    setReviewingKey(reviewKey);
     try {
-      await api.post('/admin/governance-reviews', {
-        key,
-        title: item.title || key,
+      const response = await api.post('/admin/governance-reviews', {
+        key: reviewKey,
+        title: item.title || reviewKey,
         detail: item.detail || '',
-        count: item.count || 0,
+        count: reviewSnapshotCount(item),
+        review_token: item.review_token || '',
       });
+      unwrapApiResponse(response);
+      setHealth((current) => {
+        if (!current) return current;
+        const signals = (current.signals || []).map((signal) => (
+          governanceReviewKey(signal, signal.key) === reviewKey
+            ? { ...signal, count: 0, reviewed: true }
+            : signal
+        ));
+        return {
+          ...current,
+          signals,
+          total_issue_count: signals.reduce(
+            (total, signal) => total + (isPendingReview(signal) ? Number(signal.count || 0) : 0),
+            0,
+          ),
+        };
+      });
+      setRiskAlerts((current) => current.filter(
+        (alert) => governanceReviewKey(alert, alert.type) !== reviewKey,
+      ));
       toast?.success('已确认复核');
       await loadSignals();
     } catch (e) {
       logger.error('确认复核失败:', e);
-      toast?.error('确认复核失败');
+      toast?.error(getApiErrorMessage(e));
     } finally {
       setReviewingKey('');
     }
@@ -309,6 +352,7 @@ export default function LeadGovernance() {
         </header>
 
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
+          {(loadingSignals || pendingHealthSignals.length > 0) && (
           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -332,7 +376,7 @@ export default function LeadGovernance() {
                 <div className="col-span-full py-8 text-center text-gray-400">
                   <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                 </div>
-              ) : (health?.signals || []).map((signal) => (
+              ) : pendingHealthSignals.map((signal) => (
                 <div
                   key={signal.key}
                   className={`rounded-lg border p-3 ${
@@ -359,13 +403,18 @@ export default function LeadGovernance() {
                     {signal.count > 0 && canAcknowledgeReview && (
                       <button
                         type="button"
-                        disabled={reviewingKey === signal.key}
-                        onClick={() => acknowledgeReview(signal, signal.key)}
+                        disabled={reviewingKey === governanceReviewKey(signal, signal.key)}
+                        onClick={() => acknowledgeReview(
+                          signal,
+                          governanceReviewKey(signal, signal.key),
+                        )}
                         aria-label={`确认已复核 ${signal.title}`}
                         className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-xs font-medium text-white disabled:opacity-60"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
-                        {reviewingKey === signal.key ? '确认中...' : '确认已复核'}
+                        {reviewingKey === governanceReviewKey(signal, signal.key)
+                          ? '确认中...'
+                          : '确认已复核'}
                       </button>
                     )}
                   </div>
@@ -373,8 +422,9 @@ export default function LeadGovernance() {
               ))}
             </div>
           </div>
+          )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className={`grid gap-4 ${showRiskAlerts ? 'lg:grid-cols-2' : ''}`}>
             <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -441,17 +491,21 @@ export default function LeadGovernance() {
                     <div className="text-sm font-semibold">重复手机号清理预览</div>
                     <div className="mt-1 text-xs leading-5">
                       {cleanupPreview.duplicate_phone_count} 个重复手机号，影响 {cleanupPreview.affected_student_count} 条；
-                      清号保留 {cleanupPreview.will_clear_count} 条，清完无号码删除 {cleanupPreview.will_delete_count} 条。
+                      可安全清号 {cleanupPreview.will_clear_count} 条，需人工处理 {cleanupPreview.manual_review_count || 0} 条，系统不会删除学生或历史记录。
                     </div>
-                    {canCleanupPhones ? (
+                    {canCleanupPhones && cleanupPreview.will_clear_count > 0 ? (
                       <button
                         type="button"
                         disabled={cleaningPhones}
                         onClick={runDuplicatePhoneCleanup}
-                        className="mt-3 inline-flex min-h-9 items-center justify-center rounded-lg bg-red-600 px-3 text-xs font-medium text-white disabled:opacity-60"
+                        className="mt-3 inline-flex min-h-9 items-center justify-center rounded-lg bg-amber-600 px-3 text-xs font-medium text-white disabled:opacity-60"
                       >
-                        {cleaningPhones ? '清理中...' : '清理重复手机号'}
+                        {cleaningPhones ? '清理中...' : '清理可安全处理项'}
                       </button>
+                    ) : canCleanupPhones ? (
+                      <div className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-black/20 dark:text-amber-100">
+                        当前没有可自动清理项，请在重复组中逐条人工确认。
+                      </div>
                     ) : (
                       <div className="mt-3 rounded-lg bg-white/70 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-black/20 dark:text-amber-100">
                         当前账号仅可查看预览；清理重复手机号需授权操作权限。
@@ -462,6 +516,7 @@ export default function LeadGovernance() {
               </div>
             </section>
 
+            {showRiskAlerts && (
             <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -469,7 +524,7 @@ export default function LeadGovernance() {
                   异常变更提醒
                 </div>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {riskAlerts.length} 项
+                  {pendingRiskAlerts.length} 项
                 </span>
               </div>
               <div className="mt-3 space-y-3">
@@ -477,12 +532,8 @@ export default function LeadGovernance() {
                   <div className="py-8 text-center text-gray-400">
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                   </div>
-                ) : riskAlerts.length === 0 ? (
-                  <div className="rounded-lg bg-gray-50 px-3 py-4 text-sm text-gray-500 dark:bg-gray-900/40 dark:text-gray-400">
-                    近期暂无高风险操作提醒。
-                  </div>
                 ) : (
-                  riskAlerts.map((alert) => (
+                  pendingRiskAlerts.map((alert) => (
                     <div
                       key={alert.type}
                       className={`rounded-lg border p-3 ${severityClasses[alert.severity] || severityClasses.low}`}
@@ -507,13 +558,18 @@ export default function LeadGovernance() {
                       {alert.count > 0 && canAcknowledgeReview && (
                         <button
                           type="button"
-                          disabled={reviewingKey === alert.type}
-                          onClick={() => acknowledgeReview(alert, alert.type)}
+                          disabled={reviewingKey === governanceReviewKey(alert, alert.type)}
+                          onClick={() => acknowledgeReview(
+                            alert,
+                            governanceReviewKey(alert, alert.type),
+                          )}
                           aria-label={`确认已复核 ${alert.title}`}
                           className="ml-3 mt-3 inline-flex min-h-8 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-xs font-medium text-white disabled:opacity-60"
                         >
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          {reviewingKey === alert.type ? '确认中...' : '确认已复核'}
+                          {reviewingKey === governanceReviewKey(alert, alert.type)
+                            ? '确认中...'
+                            : '确认已复核'}
                         </button>
                       )}
                     </div>
@@ -521,6 +577,7 @@ export default function LeadGovernance() {
                 )}
               </div>
             </section>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">

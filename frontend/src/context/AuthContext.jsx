@@ -54,6 +54,13 @@ export function AuthProvider({ children }) {
     } catch {
       // Local logout should still complete if the network request fails.
     }
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index);
+      if (key?.startsWith('crm-mobile-pending-filters')
+        || key?.startsWith('crm-agent-handled-filters')) {
+        sessionStorage.removeItem(key);
+      }
+    }
     localStorage.removeItem('crm_user');
     setUser(null);
   };

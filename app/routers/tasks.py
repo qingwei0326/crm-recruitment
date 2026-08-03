@@ -1,11 +1,12 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
 from app.database import get_db
+from app.domain_models import PersonalGroup, PersonalGroupMembership
 from app.models import Call, FollowUp, IntentLevel, OperationLog, Student, StudentStatus, User
 from app.schemas import Response
 from app.status_policy import (
@@ -75,12 +76,86 @@ def _handled_status_priority_expr():
     )
 
 
+async def _personal_group_predicate(
+    db: AsyncSession,
+    owner_id: int,
+    personal_group_id: int | None,
+    ungrouped: bool,
+):
+    if personal_group_id is not None and ungrouped:
+        raise HTTPException(status_code=422, detail="分组筛选与未分组筛选不能同时使用")
+
+    active_memberships = (
+        select(PersonalGroupMembership.student_id)
+        .join(PersonalGroup, PersonalGroup.id == PersonalGroupMembership.group_id)
+        .where(
+            PersonalGroup.owner_id == owner_id,
+            PersonalGroup.archived_at.is_(None),
+            PersonalGroupMembership.archived_at.is_(None),
+        )
+    )
+
+    if ungrouped:
+        return ~Student.id.in_(active_memberships)
+
+    if personal_group_id is None:
+        return None
+
+    owned_group = await db.scalar(
+        select(PersonalGroup.id).where(
+            PersonalGroup.id == personal_group_id,
+            PersonalGroup.owner_id == owner_id,
+            PersonalGroup.archived_at.is_(None),
+        )
+    )
+    if owned_group is None:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    return Student.id.in_(
+        active_memberships.where(PersonalGroup.id == personal_group_id)
+    )
+
+
+async def _personal_groups_by_student(
+    db: AsyncSession,
+    owner_id: int,
+    student_ids: list[int],
+) -> dict[int, list[dict]]:
+    if not student_ids:
+        return {}
+
+    rows = await db.execute(
+        select(
+            PersonalGroupMembership.student_id,
+            PersonalGroup.id,
+            PersonalGroup.name,
+            PersonalGroup.color,
+        )
+        .join(PersonalGroup, PersonalGroup.id == PersonalGroupMembership.group_id)
+        .where(
+            PersonalGroup.owner_id == owner_id,
+            PersonalGroup.archived_at.is_(None),
+            PersonalGroupMembership.student_id.in_(student_ids),
+            PersonalGroupMembership.archived_at.is_(None),
+        )
+        .order_by(PersonalGroup.created_at, PersonalGroup.id)
+    )
+    groups_by_student: dict[int, list[dict]] = {}
+    for student_id, group_id, name, color in rows.all():
+        groups_by_student.setdefault(student_id, []).append(
+            {"id": group_id, "name": name, "color": color}
+        )
+    return groups_by_student
+
+
 @router.get("/today")
 async def today_tasks(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     search: str = Query(None),
     school_name: str = Query(None),
+    personal_group_id: int | None = Query(None),
+    ungrouped: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -95,6 +170,16 @@ async def today_tasks(
         Student.assigned_to == current_user.id,
         Student.status.in_(AGENT_TODAY_TASK_STATUSES),
     )
+
+    group_filter = await _personal_group_predicate(
+        db,
+        current_user.id,
+        personal_group_id,
+        ungrouped,
+    )
+    if group_filter is not None:
+        stats_where = (*stats_where, group_filter)
+        base_where = (*base_where, group_filter)
 
     filters = list(base_where)
     # search 条件单独留存，便于学校分组聚合复用（学校分组必须排除 school_name 过滤，
@@ -145,6 +230,11 @@ async def today_tasks(
         .limit(limit)
     )
     students = result.scalars().all()
+    groups_by_student = await _personal_groups_by_student(
+        db,
+        current_user.id,
+        [student.id for student in students],
+    )
     truncated = stats["total"] > len(students) + offset
 
     now = utcnow()
@@ -184,6 +274,7 @@ async def today_tasks(
                     "assigned_at": str(s.assigned_at) if s.assigned_at else None,
                     "days_since_assigned": _days_since(s.assigned_at),
                     "updated_at": str(s.updated_at),
+                    "personal_groups": groups_by_student.get(s.id, []),
                 }
                 for s in students
             ],
@@ -198,6 +289,8 @@ async def handled_students(
     intent_level: str = Query(None),
     search: str = Query(None),
     region: str = Query(None),
+    personal_group_id: int | None = Query(None),
+    ungrouped: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -246,6 +339,15 @@ async def handled_students(
     if region and region.strip():
         region_filter = Student.region == region.strip()
         filters.append(region_filter)
+
+    group_filter = await _personal_group_predicate(
+        db,
+        current_user.id,
+        personal_group_id,
+        ungrouped,
+    )
+    if group_filter is not None:
+        shared_filters.append(group_filter)
 
     filters.extend(shared_filters)
     count_filters = list(base_where) + shared_filters
@@ -317,6 +419,11 @@ async def handled_students(
         .limit(limit)
     )
     students = result.scalars().all()
+    groups_by_student = await _personal_groups_by_student(
+        db,
+        current_user.id,
+        [student.id for student in students],
+    )
 
     return Response.ok(
         {
@@ -337,6 +444,7 @@ async def handled_students(
                     "status_detail": status_detail_value(s.status, s.status_detail),
                     "stage": s.stage,
                     "intent_level": s.intent_level,
+                    "personal_groups": groups_by_student.get(s.id, []),
                 }
                 for s in students
             ],
