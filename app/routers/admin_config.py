@@ -5,7 +5,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin_config import ALLOWED_CONFIG_KEYS, mask_config_value, validate_config_value
+from app.admin_config import (
+    ALLOWED_CONFIG_KEYS,
+    ASSIGNMENT_CAPACITY_DEFAULTS,
+    mask_config_value,
+    validate_capacity_settings,
+    validate_config_value,
+)
 from app.auth import require_super_admin
 from app.database import get_db
 from app.models import SystemConfig, User
@@ -54,6 +60,36 @@ async def update_system_config(
     if err:
         return Response.error(code=1, msg=err)
     value = normalized
+
+    if key in ASSIGNMENT_CAPACITY_DEFAULTS:
+        capacity_result = await db.execute(
+            select(SystemConfig).where(
+                SystemConfig.key.in_(tuple(ASSIGNMENT_CAPACITY_DEFAULTS))
+            )
+        )
+        capacity_values = {
+            setting_key: str(default)
+            for setting_key, default in ASSIGNMENT_CAPACITY_DEFAULTS.items()
+        }
+        capacity_values.update(
+            {item.key: item.value.strip() for item in capacity_result.scalars().all()}
+        )
+        capacity_values[key] = value
+        try:
+            valid, capacity_error = validate_capacity_settings(
+                lookback_days=int(capacity_values["assignment_capacity_lookback_days"]),
+                observed_days=int(capacity_values["assignment_capacity_observed_days"]),
+                min_daily_capacity=int(capacity_values["assignment_capacity_min"]),
+                max_daily_capacity=int(capacity_values["assignment_capacity_max"]),
+                insufficient_history_mode=capacity_values[
+                    "assignment_capacity_insufficient_history"
+                ],
+            )
+        except (TypeError, ValueError):
+            valid = False
+            capacity_error = "现有招生容量配置无效"
+        if not valid:
+            return Response.error(code=1, msg=capacity_error or "Invalid capacity settings")
 
     result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
     item = result.scalar_one_or_none()
