@@ -159,3 +159,51 @@ async def test_config_update_writes_masked_audit_log(client, admin_headers, db, 
     assert "sk-newsecret5678" not in log.content
     assert "****1234" in log.content
     assert "****5678" in log.content
+
+
+@pytest.mark.asyncio
+async def test_capacity_config_rejects_invalid_min_max_without_writing(
+    client, admin_headers, db
+):
+    db.add_all(
+        [
+            SystemConfig(key="assignment_capacity_min", value="150"),
+            SystemConfig(key="assignment_capacity_max", value="200"),
+        ]
+    )
+    await db.commit()
+
+    response = await client.put(
+        "/api/admin/config",
+        json={"key": "assignment_capacity_min", "value": "300"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 1
+    stored = await db.get(SystemConfig, "assignment_capacity_min")
+    assert stored.value == "150"
+
+
+@pytest.mark.asyncio
+async def test_capacity_config_rejects_observed_days_above_lookback_without_writing(
+    client, admin_headers, db
+):
+    db.add_all(
+        [
+            SystemConfig(key="assignment_capacity_lookback_days", value="7"),
+            SystemConfig(key="assignment_capacity_observed_days", value="5"),
+        ]
+    )
+    await db.commit()
+
+    response = await client.put(
+        "/api/admin/config",
+        json={"key": "assignment_capacity_observed_days", "value": "8"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 1
+    stored = await db.get(SystemConfig, "assignment_capacity_observed_days")
+    assert stored.value == "5"
