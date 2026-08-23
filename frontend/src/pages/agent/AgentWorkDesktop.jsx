@@ -8,13 +8,12 @@ import PaginationBar from './desktop/PaginationBar';
 import FollowingView from './desktop/FollowingView';
 import HandledView from './desktop/HandledView';
 import StudentDetailDrawer from './desktop/StudentDetailDrawer';
-import AiPanel from './AiPanel';
 import { STAGES } from '../../labels';
 
 export default function AgentWorkDesktop({
   user, dark, toggleTheme, logout,
   viewTab, setViewTab,
-  students, filteredStudents, filteredStats, schoolGroups,
+  students, filteredStudents, filteredStats, taskProgress, intentCounts, schoolGroups,
   currentIdx, setCurrentIdx,
   expandedId, setExpandedId,
   sortConfig, setSortConfig,
@@ -30,12 +29,12 @@ export default function AgentWorkDesktop({
   modals,
   actionMsg,
   noteText, setNoteText,
-  dialCheckByStudent, lockedStudentId,
-  handleDial, updateStatus, updateStage, addNote, openAiPanel, updateScore,
+  lockedStudentId,
+  handleDial, updateStatus, updateStage, addNote, updateScore,
   detailLoading, detailError, detailCalls, detailNotes, detailFollowUps, detailVisits,
-  detailIntentTimeline, detailAdmissionsTimeline, hasAnalysis, updateDetailField,
-  showDetail, detailStudent, showAi, activeStudent,
-  setShowDetail, setShowAi, loadDetail,
+  detailIntentTimeline, detailAdmissionsTimeline, updateDetailField,
+  showDetail, detailStudent,
+  setShowDetail, loadDetail,
   onAdmissionsStageSynced,
 }) {
   const handleSort = (key) => {
@@ -67,19 +66,21 @@ export default function AgentWorkDesktop({
       return 0;
     });
   }, [filteredStudents, sortConfig]);
+  const progressedTaskCount = (Number(taskProgress?.done) || 0) + (Number(taskProgress?.follow_up) || 0);
+  const progressTaskTotal = taskProgress?.total ?? filteredStats.total;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="flex h-screen overflow-hidden bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       {modals}
       {/* Sidebar */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex h-14 items-center gap-3 border-b border-gray-200 px-4 dark:border-gray-800">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 shadow-sm shadow-blue-600/20">
-            <Phone className="w-4 h-4 text-white" />
+      <aside className="flex w-64 shrink-0 flex-col bg-slate-950 text-white">
+        <div className="flex items-center gap-3 border-b border-slate-800/90 px-5 py-5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-950/30">
+            <Phone className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <div className="text-sm font-bold text-gray-900 dark:text-gray-100">招生话务台</div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">{user?.name}</div>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold tracking-wide text-white">招生话务 CRM</div>
+            <div className="mt-0.5 truncate text-[10px] font-medium text-slate-500">话务执行工作台 · {user?.name || '坐席'}</div>
           </div>
         </div>
         <AgentSidebar
@@ -96,12 +97,15 @@ export default function AgentWorkDesktop({
       {/* Main content */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* Toolbar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {viewTab === 'today' ? '待拨打' : viewTab === 'handled' ? '待处理' : '跟进中'}
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/90 bg-white/95 px-5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+          <div className="min-w-0">
+            <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
+              招生运营 / 话务执行
+            </div>
+            <h2 className="truncate text-base font-bold leading-5 text-slate-900 dark:text-gray-100">
+              {viewTab === 'today' ? '待拨打任务' : viewTab === 'handled' ? '待处理线索' : '跟进中学生'}
             </h2>
-            <p className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
+            <p className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">
               {viewTab === 'today' ? '今日分配任务' : viewTab === 'handled' ? '已产生联系结果的线索' : '需要持续推进的学生'}
             </p>
           </div>
@@ -124,8 +128,8 @@ export default function AgentWorkDesktop({
             </button>
             {viewTab === 'today' && (
               <span className="text-xs text-gray-500 ml-1">
-                <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">{filteredStats.done}</span>
-                /{filteredStats.total}
+                <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">{progressedTaskCount}</span>
+                /{progressTaskTotal}
               </span>
             )}
           </div>
@@ -153,10 +157,12 @@ export default function AgentWorkDesktop({
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               totalCount={filteredStudents.length}
+              queueTotal={taskProgress?.pending}
+              intentCounts={intentCounts}
             />
 
             {/* Stats progress */}
-            <StatsBar stats={filteredStats} variant="full" />
+            <StatsBar stats={filteredStats} progressStats={taskProgress} variant="full" />
 
             {/* Student table */}
             <StudentTable
@@ -169,9 +175,7 @@ export default function AgentWorkDesktop({
               onQuickStatus={updateStatus}
               onUpdateStage={updateStage}
               onAddNote={addNote}
-              onOpenAi={openAiPanel}
               onScoreChange={updateScore}
-              dialCheckByStudent={dialCheckByStudent}
               lockedStudentId={lockedStudentId}
               noteText={noteText}
               onNoteTextChange={setNoteText}
@@ -198,17 +202,6 @@ export default function AgentWorkDesktop({
           />
         )}
 
-        {/* AI panel overlay (right side, hidden on mobile) */}
-        {showAi && activeStudent && (
-          <div className="hidden lg:flex fixed right-0 top-0 bottom-0 w-96 bg-white dark:bg-gray-800 border-l dark:border-gray-700 flex-col z-30 shadow-xl">
-            <AiPanel
-              activeStudent={activeStudent}
-              onClose={() => setShowAi(false)}
-              onStatusUpdate={updateStatus}
-            />
-          </div>
-        )}
-
         <StudentDetailDrawer
           open={showDetail}
           student={detailStudent}
@@ -220,7 +213,6 @@ export default function AgentWorkDesktop({
           visits={detailVisits}
           intentTimeline={detailIntentTimeline}
           admissionsTimeline={detailAdmissionsTimeline}
-          hasAnalysis={hasAnalysis}
           onClose={() => setShowDetail(false)}
           onRetry={() => detailStudent && loadDetail(detailStudent.id)}
           onUpdateField={updateDetailField}

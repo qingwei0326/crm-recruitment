@@ -5,7 +5,6 @@ import {
   ChevronRight,
   ChevronUp,
   Phone,
-  Sparkles,
   StickyNote,
 } from 'lucide-react';
 import { INTENT_BADGES, statusLabel } from '../../../labels';
@@ -32,9 +31,7 @@ export default function StudentTable({
   onQuickStatus,
   onUpdateStage,
   onAddNote,
-  onOpenAi,
   onScoreChange,
-  dialCheckByStudent,
   lockedStudentId,
   noteText,
   onNoteTextChange,
@@ -103,7 +100,6 @@ export default function StudentTable({
                 student={student}
                 isExpanded={expandedId === student.id}
                 isSelected={selectedIds.has(student.id)}
-                dialCheck={dialCheckByStudent?.[student.id]}
                 isLocked={lockedStudentId === student.id}
                 onToggleExpand={() => onToggleExpand(student.id)}
                 onSelect={() => toggleSelect(student.id)}
@@ -111,7 +107,6 @@ export default function StudentTable({
                 onQuickStatus={(status) => onQuickStatus(student.id, status)}
                 onUpdateStage={(stage) => onUpdateStage(student.id, stage)}
                 onAddNote={() => onAddNote(student.id)}
-                onOpenAi={() => onOpenAi(student)}
                 onScoreChange={onScoreChange}
                 noteText={expandedId === student.id ? noteText : ''}
                 onNoteTextChange={onNoteTextChange}
@@ -152,7 +147,6 @@ function StudentRow({
   student: student,
   isExpanded,
   isSelected,
-  dialCheck,
   isLocked,
   onToggleExpand,
   onSelect,
@@ -160,7 +154,6 @@ function StudentRow({
   onQuickStatus,
   onUpdateStage,
   onAddNote,
-  onOpenAi,
   onScoreChange,
   noteText,
   onNoteTextChange,
@@ -225,9 +218,6 @@ function StudentRow({
             <span className={`inline-flex shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${STATUS_STYLE[student.status] || STATUS_STYLE['未联系']}`}>
               {statusLabel(student.status)}
             </span>
-            {dialCheck?.count > 0 && (
-              <span className="text-[10px] tabular-nums text-gray-400" title="24 小时内拨号次数">24h {dialCheck.count}次</span>
-            )}
           </div>
           {student.status_detail && (
             <div className="mt-1 max-w-[160px] truncate text-[11px] text-gray-500 dark:text-gray-400" title={student.status_detail}>
@@ -255,15 +245,6 @@ function StudentRow({
             >
               <StickyNote className="h-4 w-4" />
             </IconButton>
-            <IconButton
-              onClick={onOpenAi}
-              disabled={isLocked}
-              title={isLocked ? '请先完成当前通话结果' : 'AI 分析'}
-              label={`分析 ${student.name || '学生'}`}
-              className="text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/40"
-            >
-              <Sparkles className="h-4 w-4" />
-            </IconButton>
           </div>
         </td>
       </tr>
@@ -277,7 +258,6 @@ function StudentRow({
               onQuickStatus={onQuickStatus}
               onUpdateStage={onUpdateStage}
               onAddNote={onAddNote}
-              onOpenAi={onOpenAi}
               onScoreChange={onScoreChange}
               noteText={noteText}
               onNoteTextChange={onNoteTextChange}

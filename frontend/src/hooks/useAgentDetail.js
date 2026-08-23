@@ -54,7 +54,6 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         intentTimeline: data.intent_timeline || [],
         admissionsTimeline: data.admissions_timeline || [],
         noteIdx: 0,
-        hasAnalysis: calls.some((c) => c.ai_summary || c.ai_intent || c.ai_confidence != null),
       });
     } catch (e) {
       actions.setDetail({ loading: false, error: getApiErrorMessage(e) });
@@ -126,17 +125,11 @@ export default function useAgentDetail({ state, actions, students, toast }) {
     }
   }, [actions, toast]);
 
-  // 打开 AI 面板
-  const openAiPanel = useCallback((student) => {
-    actions.setAi({ activeStudent: student, show: true });
-  }, [actions]);
-
   return {
     loadDetail,
     updateDetailField,
     addNote,
     addFollowUp,
     addVisit,
-    openAiPanel,
   };
 }

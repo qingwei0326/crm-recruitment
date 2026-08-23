@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StickyNote, Sparkles, Pencil, Check, X, Loader2, AlertTriangle } from 'lucide-react';
+import { StickyNote, Pencil, Check, X, Loader2, AlertTriangle } from 'lucide-react';
 import api from '../../../api';
 import { stageLabel } from '../../../labels';
 import { getApiErrorMessage } from '../../../utils';
@@ -10,7 +10,7 @@ import QuickStatusButtons from '../shared/QuickStatusButtons';
 
 export default function ExpandedRow({
   student: s, isLocked,
-  onDial, onQuickStatus, onUpdateStage, onAddNote, onOpenAi, onScoreChange,
+  onDial, onQuickStatus, onUpdateStage, onAddNote, onScoreChange,
   noteText, onNoteTextChange,
 }) {
   const [editingScore, setEditingScore] = useState(false);
@@ -121,16 +121,9 @@ export default function ExpandedRow({
         <StageProgress currentStage={s.stage} onStageClick={onUpdateStage} />
       </div>
 
-      {/* Row 3: Quick status + AI */}
+      {/* Row 3: Quick status */}
       <div className="flex items-center gap-2 flex-wrap">
         <QuickStatusButtons disabled={isLocked} onStatus={(st) => onQuickStatus(st)} />
-        <button
-          onClick={onOpenAi}
-          disabled={isLocked}
-          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-35"
-        >
-          <Sparkles className="w-3.5 h-3.5" /> AI分析
-        </button>
       </div>
 
       {/* Row 5: Note input */}

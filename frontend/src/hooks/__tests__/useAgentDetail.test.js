@@ -19,7 +19,6 @@ function makeActions() {
     updateStudentField: vi.fn(),
     setFollowUpDate: vi.fn(),
     setVisit: vi.fn(),
-    setAi: vi.fn(),
   };
 }
 
@@ -90,5 +89,16 @@ describe('useAgentDetail.addNote', () => {
     expect(actions.setNoteText).not.toHaveBeenCalled();
     expect(api.get).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith('添加备注失败: 备注保存被拒绝');
+  });
+
+  it('does not expose an AI panel action', () => {
+    const { result } = renderHook(() => useAgentDetail({
+      state: { detail: { student: null } },
+      actions: makeActions(),
+      students: [],
+      toast: { error: vi.fn() },
+    }));
+
+    expect(result.current).not.toHaveProperty('openAiPanel');
   });
 });
