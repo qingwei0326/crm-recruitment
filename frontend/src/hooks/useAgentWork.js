@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useConfirm } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
 import useAgentWorkState from './useAgentWorkState';
 import useAgentStudents from './useAgentStudents';
@@ -20,7 +19,6 @@ const STATUS_WITH_INTENT = ['已联系', '待回访'];
 export default function useAgentWork() {
   const { user, logout } = useAuth();
   const { dark, toggle: toggleTheme } = useTheme();
-  const confirm = useConfirm();
   const toast = useToast();
   const recordedDialRef = useRef(null);
 
@@ -50,7 +48,6 @@ export default function useAgentWork() {
     addNote: addNoteBase,
     addFollowUp: addFollowUpBase,
     addVisit: addVisitBase,
-    openAiPanel,
   } = useAgentDetail({ state, actions, students, toast });
 
   // ── 4. 跟进中 + 积压提醒 ──
@@ -105,16 +102,6 @@ export default function useAgentWork() {
       window.removeEventListener('pageshow', onFocus);
     };
   }, [tryLoadPendingDial]);
-
-  // 拨号检查：跟随当前展示学生的 id 变化
-  useEffect(() => {
-    if (current) {
-      api.get('/calls/check', { params: { student_id: current.id, within_hours: 24 } }).then((r) => {
-        if (r.data.code === 0) actions.setDialCheck(current.id, r.data.data);
-      }).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id]);
 
   // ── 7. 导航 ──
   const prev = useCallback(() => {
@@ -208,29 +195,7 @@ export default function useAgentWork() {
   }, [state.dial.modal, actions, recordDialDurationOnce]);
 
   // ── 13. 拨号主流程 ──
-  const refreshDialCheck = useCallback(async (id) => {
-    try {
-      const r = await api.get('/calls/check', { params: { student_id: id, within_hours: 24 } });
-      if (r.data.code === 0) {
-        actions.setDialCheck(id, r.data.data);
-        return r.data.data;
-      }
-    } catch { /* 静默 */ }
-    return null;
-  }, [actions]);
-
   const handleDial = useCallback(async (id, contactKey) => {
-    const check = await refreshDialCheck(id);
-    const count = check?.count ?? 0;
-    if (count >= 3) {
-      const ok = await confirm({
-        title: '拨号频次提醒',
-        message: `该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`,
-        confirmText: '仍要拨打',
-        tone: 'danger',
-      });
-      if (!ok) return;
-    }
     let phone = '';
     try {
       const r = await api.get(`/students/phone/${id}`);
@@ -241,7 +206,7 @@ export default function useAgentWork() {
       }
     } catch (err) {
       if (err?.response?.status === 403) {
-        toast?.error(err.response.data?.detail || '当前不允许拨号');
+        toast?.error(err.response.data?.detail || '当前无权拨号');
         return;
       }
       toast?.error(err?.response?.data?.detail || '获取电话失败');
@@ -256,8 +221,7 @@ export default function useAgentWork() {
     }));
     window.location.href = `tel:${phone}`;
     actions.setLockedStudent(id);
-    refreshDialCheck(id);
-  }, [refreshDialCheck, confirm, students, actions, toast]);
+  }, [students, actions, toast]);
 
   // ── 14. 返回所有 props ──
   return {
@@ -275,7 +239,6 @@ export default function useAgentWork() {
     current,
     currentIdx: state.currentIdx,
     lockedStudentId: state.dial.lockedStudentId,
-    dialCheckByStudent: state.dial.checkByStudent,
     noteText,
     actionMsg: state.ui.actionMsg,
 
@@ -296,9 +259,6 @@ export default function useAgentWork() {
     detailNotes: state.detail.notes,
     detailNotesError: state.detail.notesError,
     noteIdx: state.detail.noteIdx,
-    hasAnalysis: state.detail.hasAnalysis,
-    showAi: state.ai.show,
-    activeStudent: state.ai.activeStudent,
     showCreate: state.create.show,
     createErr: state.create.error,
     showSettings: state.settings.show,
@@ -323,9 +283,7 @@ export default function useAgentWork() {
     addNote,
     addFollowUp,
     addVisit,
-    openAiPanel,
     handleDial,
-    refreshDialCheck,
     dismissBacklogAlert,
     prev,
     next,

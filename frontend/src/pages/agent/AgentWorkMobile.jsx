@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
-  Phone, Sparkles, Menu, Sun, Moon, Plus, X, Loader2,
+  Phone, Menu, Sun, Moon, Plus, X, Loader2,
   AlertTriangle, StickyNote, ChevronLeft, ChevronRight,
   Target, User, History, RefreshCw, CalendarClock, Home, MapPin,
-  CheckCircle2, Undo2,
+  CheckCircle2, Flame, Undo2,
 } from 'lucide-react';
 import api from '../../api';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
@@ -13,7 +13,6 @@ import {
   STATUS_STYLE, inputCls, getContactOptions, quickStatusForOutcome,
 } from './agentWorkUtils';
 import AssignedDaysBadge from './shared/AssignedDaysBadge';
-import AiPanel from './AiPanel';
 import AgentSidebar from './desktop/AgentSidebar';
 import HandledView from './desktop/HandledView';
 import PhoneLink from '../../components/PhoneLink';
@@ -25,8 +24,9 @@ import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/stud
 export default function AgentWorkMobile({
   // State
   viewTab, setViewTab,
-  students, filteredStudents, filteredStats,
+  students, filteredStudents, filteredStats, taskProgress, intentCounts,
   schoolGroups, selectedSchool, setSelectedSchool,
+  selectedIntent, setSelectedIntent,
   currentIdx, current,
   lockedStudentId,
   showMenu, setShowMenu,
@@ -34,16 +34,13 @@ export default function AgentWorkMobile({
   detailStudent, detailLoading, detailError,
   detailCalls, detailNotes, detailFollowUps, detailVisits, detailIntentTimeline,
   detailAdmissionsTimeline,
-  hasAnalysis,
-  showAi, setShowAi, activeStudent,
   noteText, setNoteText,
   actionMsg,
   autoAdvanceNotice, onUndoAutoAdvance, onDismissAutoAdvance,
-  dialCheckByStudent,
   // Handlers
   toggleTheme, dark,
   handleDial, updateStatus, updateStage,
-  addNote, openAiPanel,
+  addNote,
   loadDetail, updateDetailField,
   onAdmissionsStageSynced,
   prev, next,
@@ -65,6 +62,15 @@ export default function AgentWorkMobile({
   const currentNextAction = current
     ? getStudentNextAction(current, currentContacts.length > 0)
     : null;
+  const progressStats = taskProgress || filteredStats || {};
+  const progressed = (Number(progressStats.done) || 0) + (Number(progressStats.follow_up) || 0);
+  const progress = Math.min(Math.max(Number(progressStats.progress_pct) || 0, 0), 100);
+  const intentCountTotal = Object.values(intentCounts || {})
+    .reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const allTaskCount = intentCountTotal || students.length;
+  const aTaskCount = Number.isFinite(Number(intentCounts?.A))
+    ? Number(intentCounts.A)
+    : students.filter((student) => student.intent_level === 'A').length;
   const changeViewTab = (tab) => {
     setViewTab(tab);
     if (tab === 'following') fetchFollowing();
@@ -95,14 +101,21 @@ export default function AgentWorkMobile({
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-      <header className="sticky top-0 z-20 flex min-h-[calc(56px+env(safe-area-inset-top))] shrink-0 items-center justify-between border-b bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-700 dark:bg-gray-800">
+    <div className="flex min-h-screen flex-col bg-slate-100 dark:bg-gray-950">
+      <header className="sticky top-0 z-20 flex min-h-[calc(64px+env(safe-area-inset-top))] shrink-0 items-center justify-between border-b border-slate-200/90 bg-white/95 px-3 pt-[env(safe-area-inset-top)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
         <div className="flex items-center gap-2.5">
-          <button onClick={() => setShowMenu(true)} className="-ml-2 inline-flex h-11 w-11 items-center justify-center rounded-lg" aria-label="打开导航">
-            <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+          <button onClick={() => setShowMenu(true)} className="-ml-2 inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-gray-800" aria-label="打开导航">
+            <Menu className="h-5 w-5 text-slate-600 dark:text-gray-300" />
           </button>
-          <h1 className="text-sm font-bold text-gray-900 dark:text-gray-100">话务工作台</h1>
-          {viewTab === 'today' && <span className="text-xs text-gray-500">{filteredStats.done}/{filteredStats.total}</span>}
+          <div className="min-w-0">
+            <div className="truncate text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
+              招生运营 / 话务执行
+            </div>
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-sm font-bold leading-5 text-slate-900 dark:text-gray-100">话务工作台</h1>
+              {viewTab === 'today' && <span className="text-xs text-gray-500">{progressed}/{progressStats.total ?? 0}</span>}
+            </div>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <button onClick={toggleTheme} className="inline-flex h-11 w-11 items-center justify-center rounded-lg" title="切换主题" aria-label="切换主题">
@@ -115,8 +128,8 @@ export default function AgentWorkMobile({
       </header>
       {showMenu && (
         <div className="fixed inset-0 z-30">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMenu(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-64 bg-white dark:bg-gray-800 shadow-2xl flex flex-col">
+          <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-[1px]" onClick={() => setShowMenu(false)} />
+          <div className="absolute bottom-0 left-0 top-0 flex w-72 max-w-[86vw] flex-col bg-slate-950 text-white shadow-2xl">
             <AgentSidebar
               viewTab={viewTab}
               onTabChange={changeViewTab}
@@ -163,9 +176,21 @@ export default function AgentWorkMobile({
       )}
       {viewTab === 'today' ? (
         <>
+          <section className="shrink-0 border-b border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-gray-600 dark:text-gray-300">
+              <span>今日任务进度</span>
+              <span className="tabular-nums text-blue-600 dark:text-blue-400">{progress}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+              <div className="h-full rounded-full bg-blue-600 transition-[width] duration-500" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+              已推进 {progressed} / {progressStats.total ?? 0} 项任务
+            </div>
+          </section>
           <div className="grid shrink-0 grid-cols-4 gap-px border-b bg-gray-200 dark:border-gray-700 dark:bg-gray-700">
-            {[{ label: '总数', value: filteredStats.total }, { label: '完成', value: filteredStats.done },
-              { label: '待联', value: filteredStats.pending }, { label: '回访', value: filteredStats.follow_up },
+            {[{ label: '总任务', value: progressStats.total ?? 0 }, { label: '已推进', value: progressed },
+              { label: '待首次联系', value: progressStats.pending ?? 0 }, { label: '待回访', value: progressStats.follow_up ?? 0 },
             ].map((s, i) => (
               <div key={i} className="bg-white px-1 py-2.5 text-center dark:bg-gray-800">
                 <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{s.value}</div>
@@ -173,8 +198,35 @@ export default function AgentWorkMobile({
               </div>
             ))}
           </div>
-          {schoolGroups.length > 1 && (
-            <div className="shrink-0 border-b bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+          <div className="shrink-0 space-y-2 border-b bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
+            <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-800" aria-label="任务队列">
+              <button
+                type="button"
+                onClick={() => setSelectedIntent(null)}
+                aria-pressed={!selectedIntent}
+                className={`flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md px-2 text-xs font-semibold transition ${
+                  !selectedIntent
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100'
+                }`}
+              >
+                全部任务 <span className="tabular-nums opacity-80">{allTaskCount}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIntent(selectedIntent === 'A' ? null : 'A')}
+                aria-pressed={selectedIntent === 'A'}
+                className={`flex min-h-9 flex-1 items-center justify-center gap-1 rounded-md px-2 text-xs font-semibold transition ${
+                  selectedIntent === 'A'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30'
+                }`}
+              >
+                <Flame className="h-3.5 w-3.5" />
+                A级优先 <span className="tabular-nums opacity-80">{aTaskCount}</span>
+              </button>
+            </div>
+            {schoolGroups.length > 1 && (
               <select
                 value={selectedSchool || ''}
                 onChange={(e) => setSelectedSchool(e.target.value || null)}
@@ -186,14 +238,14 @@ export default function AgentWorkMobile({
                   <option key={g.name} value={g.name}>{g.name} ({g.count})</option>
                 ))}
               </select>
-            </div>
-          )}
+            )}
+          </div>
           {backlogBanner}
           {actionMsg && <div className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm px-4 py-2 text-center">{actionMsg}</div>}
           <div className="flex-1 overflow-y-auto bg-white dark:bg-gray-800">
             {filteredStudents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <Target className="w-10 h-10 mb-3" /><p className="text-sm">{selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}</p>
+                <Target className="w-10 h-10 mb-3" /><p className="text-sm">{selectedIntent === 'A' ? '暂无 A 级优先任务' : selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}</p>
               </div>
             ) : (
               <div className="space-y-3 p-3">
@@ -247,13 +299,11 @@ export default function AgentWorkMobile({
                       ))}
                     </div>
                     <div className="mb-2.5 flex flex-col gap-2">
-                      {currentContacts.map((contact) => {
-                        const dc = dialCheckByStudent[current.id]; const cnt = dc?.count ?? 0; const warn = cnt >= 3;
-                        return <button key={contact.key} onClick={() => handleDial(contact.key, current.id)} className={`flex min-h-[52px] flex-wrap items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-white shadow-sm ${warn ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-300 dark:ring-red-700' : 'bg-green-600 hover:bg-green-700'}`} title={contact.phone}><Phone className="h-5 w-5 shrink-0" /> {contact.label} {contact.name}{dc && <span className="text-[10px] font-normal opacity-90">(24h 已 {cnt} 次)</span>}</button>;
-                      })}
+                      {currentContacts.map((contact) => (
+                        <button key={contact.key} onClick={() => handleDial(contact.key, current.id)} className="flex min-h-[52px] flex-wrap items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-green-700" title={contact.phone}><Phone className="h-5 w-5 shrink-0" /> {contact.label} {contact.name}</button>
+                      ))}
                       {currentContacts.length === 0 && <button disabled className="flex min-h-[52px] items-center justify-center gap-1.5 rounded-lg bg-gray-300 py-2 text-sm font-medium text-gray-500 dark:bg-gray-700"><Phone className="h-5 w-5" /> 无联系人电话</button>}
                     </div>
-                    <button onClick={() => openAiPanel(current)} disabled={lockedStudentId === current.id} className="mb-2.5 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 py-2 text-xs font-medium text-purple-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-purple-900/60 dark:bg-purple-950/30 dark:text-purple-300"><Sparkles className="h-4 w-4" /> AI分析</button>
                     <div className="relative flex items-center gap-2">
                       <input value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addNote(current.id)} placeholder="写备注…" className={`${inputCls} min-w-0 flex-1 !h-11 !text-base`} />
                       <button onClick={() => addNote(current.id)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white" title="保存备注" aria-label="保存备注"><StickyNote className="h-4 w-4" /></button>
@@ -331,10 +381,6 @@ export default function AgentWorkMobile({
                 <button key={level} onClick={() => updateDetailField('intent_level', level)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${detailStudent.intent_level === level ? (level === 'A' ? 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300' : level === 'B' ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300' : level === 'C' ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200' : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400') : 'bg-white border dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>{level === '无' ? '无' : `${level}级`}</button>
               ))}</div>
             </div>
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 flex items-center justify-between">
-              <span className="text-xs text-gray-500 dark:text-gray-400">AI分析状态</span>
-              <span className={`text-xs px-2 py-1 rounded-full font-medium ${hasAnalysis ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>{hasAnalysis ? '✓ AI分析已完成' : '暂未分析'}</span>
-            </div>
             <section className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-3">
               <div className="space-y-3">
                 <div>
@@ -405,20 +451,15 @@ export default function AgentWorkMobile({
           </div>
         </div>
       )}
-      {showAi && activeStudent && (
-        <div className="fixed inset-0 z-40 bg-white dark:bg-gray-800 flex flex-col">
-          <AiPanel activeStudent={activeStudent} onClose={() => setShowAi(false)} onStatusUpdate={updateStatus} />
-        </div>
-      )}
       {/* Bottom tab bar */}
-      <div className="sticky bottom-0 z-20 flex border-t bg-white pb-[env(safe-area-inset-bottom)] dark:border-gray-700 dark:bg-gray-800">
-        <button onClick={() => changeViewTab('today')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'today' ? 'text-green-600' : 'text-gray-400'}`}>
+      <div className="sticky bottom-0 z-20 flex border-t border-slate-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+        <button onClick={() => changeViewTab('today')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'today' ? 'text-emerald-600' : 'text-gray-400'}`}>
           <Target className="w-5 h-5" /><span className="text-[10px] mt-0.5">待拨打</span>
         </button>
-        <button onClick={() => changeViewTab('handled')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'handled' ? 'text-green-600' : 'text-gray-400'}`}>
+        <button onClick={() => changeViewTab('handled')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'handled' ? 'text-emerald-600' : 'text-gray-400'}`}>
           <CalendarClock className="w-5 h-5" /><span className="text-[10px] mt-0.5">待处理</span>
         </button>
-        <button onClick={() => changeViewTab('following')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'following' ? 'text-green-600' : 'text-gray-400'}`}>
+        <button onClick={() => changeViewTab('following')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'following' ? 'text-emerald-600' : 'text-gray-400'}`}>
           <History className="w-5 h-5" /><span className="text-[10px] mt-0.5">跟进中</span>
         </button>
       </div>

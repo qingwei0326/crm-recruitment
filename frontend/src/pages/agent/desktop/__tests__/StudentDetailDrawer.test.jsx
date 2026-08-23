@@ -42,7 +42,6 @@ function renderDrawer(extraProps = {}) {
       visits={[]}
       intentTimeline={[]}
       admissionsTimeline={[]}
-      hasAnalysis={false}
       {...props}
     />,
   );
@@ -52,6 +51,14 @@ describe('StudentDetailDrawer admissions actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.post.mockResolvedValue({ data: { code: 0, data: { id: 99 } } });
+  });
+
+  it('keeps the standard note action and omits AI analysis controls', () => {
+    renderDrawer();
+
+    expect(screen.queryByText('AI分析状态')).not.toBeInTheDocument();
+    expect(screen.queryByText('AI分析')).not.toBeInTheDocument();
+    expect(screen.getByText('完整时间线')).toBeInTheDocument();
   });
 
   it('submits a home visit request from the detail drawer', async () => {

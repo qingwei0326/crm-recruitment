@@ -5,6 +5,8 @@ const initialState = {
   // 学生列表相关
   students: [],
   stats: { total: 0, done: 0, pending: 0, follow_up: 0, progress_pct: 0 },
+  taskProgress: { total: 0, done: 0, pending: 0, follow_up: 0, progress_pct: 0 },
+  intentCounts: { A: 0, B: 0, C: 0, '无': 0 },
   schoolGroups: [],
   currentIdx: 0,
 
@@ -33,20 +35,12 @@ const initialState = {
     loading: false,
     error: '',
     notesError: '',
-    hasAnalysis: false,
-  },
-
-  // AI 面板相关
-  ai: {
-    show: false,
-    activeStudent: null,
   },
 
   // 拨号相关
   dial: {
     modal: null,
     lockedStudentId: null,
-    checkByStudent: {},
   },
 
   // 跟进相关
@@ -100,6 +94,8 @@ const initialState = {
 const ActionTypes = {
   SET_STUDENTS: 'SET_STUDENTS',
   SET_STATS: 'SET_STATS',
+  SET_TASK_PROGRESS: 'SET_TASK_PROGRESS',
+  SET_INTENT_COUNTS: 'SET_INTENT_COUNTS',
   SET_SCHOOL_GROUPS: 'SET_SCHOOL_GROUPS',
   SET_CURRENT_IDX: 'SET_CURRENT_IDX',
   SET_FILTER: 'SET_FILTER',
@@ -113,15 +109,10 @@ const ActionTypes = {
   SET_DETAIL_NOTES: 'SET_DETAIL_NOTES',
   SET_DETAIL_NOTES_ERROR: 'SET_DETAIL_NOTES_ERROR',
   SET_NOTE_IDX: 'SET_NOTE_IDX',
-  SET_HAS_ANALYSIS: 'SET_HAS_ANALYSIS',
   TOGGLE_DETAIL: 'TOGGLE_DETAIL',
-
-  SET_AI: 'SET_AI',
-  TOGGLE_AI: 'TOGGLE_AI',
 
   SET_DIAL_MODAL: 'SET_DIAL_MODAL',
   SET_LOCKED_STUDENT: 'SET_LOCKED_STUDENT',
-  SET_DIAL_CHECK: 'SET_DIAL_CHECK',
 
   SET_FOLLOWING: 'SET_FOLLOWING',
   SET_FOLLOWING_LOADING: 'SET_FOLLOWING_LOADING',
@@ -177,6 +168,42 @@ function decrementSchoolGroups(groups, student) {
     .filter((group) => group.count > 0);
 }
 
+function updateTaskProgressForRemovedStudent(progress, student) {
+  if (!progress || !student) return progress;
+
+  const next = {
+    ...progress,
+    total: Number(progress.total) || 0,
+    done: Number(progress.done) || 0,
+    pending: Number(progress.pending) || 0,
+    follow_up: Number(progress.follow_up) || 0,
+  };
+  next.pending = Math.max(next.pending - 1, 0);
+
+  if (student.status === '已报名' || student.status === '无效') {
+    next.total = Math.max(next.total - 1, 0);
+  } else if (student.status === '已联系') {
+    next.done += 1;
+  } else if (student.status === '未接' || student.status === '待回访') {
+    next.follow_up += 1;
+  }
+
+  next.progress_pct = next.total > 0
+    ? Math.round(((next.done + next.follow_up) / next.total) * 1000) / 10
+    : 0;
+  return next;
+}
+
+function decrementIntentCount(intentCounts, student) {
+  if (!intentCounts || !student?.intent_level) return intentCounts;
+  const level = student.intent_level;
+  if (!(level in intentCounts)) return intentCounts;
+  return {
+    ...intentCounts,
+    [level]: Math.max((Number(intentCounts[level]) || 0) - 1, 0),
+  };
+}
+
 // Reducer
 function agentWorkReducer(state, action) {
   switch (action.type) {
@@ -185,6 +212,12 @@ function agentWorkReducer(state, action) {
 
     case ActionTypes.SET_STATS:
       return { ...state, stats: action.payload };
+
+    case ActionTypes.SET_TASK_PROGRESS:
+      return { ...state, taskProgress: action.payload };
+
+    case ActionTypes.SET_INTENT_COUNTS:
+      return { ...state, intentCounts: action.payload };
 
     case ActionTypes.SET_SCHOOL_GROUPS:
       return { ...state, schoolGroups: action.payload };
@@ -233,9 +266,7 @@ function agentWorkReducer(state, action) {
           loading: action.payload.loading ?? state.detail.loading,
           error: action.payload.error ?? state.detail.error,
           notesError: action.payload.notesError ?? state.detail.notesError,
-          hasAnalysis: action.payload.hasAnalysis ?? state.detail.hasAnalysis,
         },
-        ai: { ...state.ai, show: false },
       };
 
     case ActionTypes.SET_DETAIL_LOADING:
@@ -253,36 +284,14 @@ function agentWorkReducer(state, action) {
     case ActionTypes.SET_NOTE_IDX:
       return { ...state, detail: { ...state.detail, noteIdx: action.payload } };
 
-    case ActionTypes.SET_HAS_ANALYSIS:
-      return { ...state, detail: { ...state.detail, hasAnalysis: action.payload } };
-
     case ActionTypes.TOGGLE_DETAIL:
       return { ...state, detail: { ...state.detail, show: action.payload ?? !state.detail.show } };
-
-    case ActionTypes.SET_AI:
-      return {
-        ...state,
-        ai: { ...state.ai, ...action.payload },
-        detail: { ...state.detail, show: false },
-      };
-
-    case ActionTypes.TOGGLE_AI:
-      return { ...state, ai: { ...state.ai, show: action.payload ?? !state.ai.show } };
 
     case ActionTypes.SET_DIAL_MODAL:
       return { ...state, dial: { ...state.dial, modal: action.payload } };
 
     case ActionTypes.SET_LOCKED_STUDENT:
       return { ...state, dial: { ...state.dial, lockedStudentId: action.payload } };
-
-    case ActionTypes.SET_DIAL_CHECK:
-      return {
-        ...state,
-        dial: {
-          ...state.dial,
-          checkByStudent: { ...state.dial.checkByStudent, [action.id]: action.data },
-        },
-      };
 
     case ActionTypes.SET_FOLLOWING:
       return { ...state, following: { ...state.following, data: action.payload } };
@@ -360,6 +369,8 @@ function agentWorkReducer(state, action) {
         students,
         currentIdx: Math.min(state.currentIdx, Math.max(students.length - 1, 0)),
         stats: decrementStatsForRemovedStudent(state.stats, removed),
+        taskProgress: updateTaskProgressForRemovedStudent(state.taskProgress, removed),
+        intentCounts: decrementIntentCount(state.intentCounts, removed),
         schoolGroups: decrementSchoolGroups(state.schoolGroups, removed),
         dial: state.dial.lockedStudentId === action.id
           ? { ...state.dial, lockedStudentId: null }
@@ -379,6 +390,8 @@ export default function useAgentWorkState() {
   const actions = useMemo(() => ({
     setStudents: (p) => dispatch({ type: ActionTypes.SET_STUDENTS, payload: p }),
     setStats: (p) => dispatch({ type: ActionTypes.SET_STATS, payload: p }),
+    setTaskProgress: (p) => dispatch({ type: ActionTypes.SET_TASK_PROGRESS, payload: p }),
+    setIntentCounts: (p) => dispatch({ type: ActionTypes.SET_INTENT_COUNTS, payload: p }),
     setSchoolGroups: (p) => dispatch({ type: ActionTypes.SET_SCHOOL_GROUPS, payload: p }),
     setCurrentIdx: (p) => dispatch({ type: ActionTypes.SET_CURRENT_IDX, payload: p }),
 
@@ -393,15 +406,10 @@ export default function useAgentWorkState() {
     setDetailNotes: (p) => dispatch({ type: ActionTypes.SET_DETAIL_NOTES, payload: p }),
     setDetailNotesError: (p) => dispatch({ type: ActionTypes.SET_DETAIL_NOTES_ERROR, payload: p }),
     setNoteIdx: (p) => dispatch({ type: ActionTypes.SET_NOTE_IDX, payload: p }),
-    setHasAnalysis: (p) => dispatch({ type: ActionTypes.SET_HAS_ANALYSIS, payload: p }),
     toggleDetail: (p) => dispatch({ type: ActionTypes.TOGGLE_DETAIL, payload: p }),
-
-    setAi: (p) => dispatch({ type: ActionTypes.SET_AI, payload: p }),
-    toggleAi: (p) => dispatch({ type: ActionTypes.TOGGLE_AI, payload: p }),
 
     setDialModal: (p) => dispatch({ type: ActionTypes.SET_DIAL_MODAL, payload: p }),
     setLockedStudent: (p) => dispatch({ type: ActionTypes.SET_LOCKED_STUDENT, payload: p }),
-    setDialCheck: (id, data) => dispatch({ type: ActionTypes.SET_DIAL_CHECK, id, data }),
 
     setFollowing: (p) => dispatch({ type: ActionTypes.SET_FOLLOWING, payload: p }),
     setFollowingLoading: (p) => dispatch({ type: ActionTypes.SET_FOLLOWING_LOADING, payload: p }),

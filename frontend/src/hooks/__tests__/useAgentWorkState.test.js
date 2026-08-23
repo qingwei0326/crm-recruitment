@@ -12,7 +12,11 @@ describe('useAgentWorkState', () => {
     expect(state.currentIdx).toBe(0);
     expect(state.filters.searchQuery).toBe('');
     expect(state.detail.show).toBe(false);
-    expect(state.ai.show).toBe(false);
+    expect(state).not.toHaveProperty('ai');
+    expect(state.detail).not.toHaveProperty('hasAnalysis');
+    expect(result.current.actions).not.toHaveProperty('setAi');
+    expect(result.current.actions).not.toHaveProperty('toggleAi');
+    expect(result.current.actions).not.toHaveProperty('setHasAnalysis');
   });
 
   it('should have stable actions reference', () => {
@@ -138,6 +142,38 @@ describe('useAgentWorkState', () => {
       progress_pct: 0,
     });
     expect(result.current.state.schoolGroups).toEqual([{ name: '学校A', count: 1 }]);
+  });
+
+  it('updates the full task progress when a pending student is completed', () => {
+    const { result } = renderHook(() => useAgentWorkState());
+
+    act(() => {
+      result.current.actions.setStudents([
+        { id: 1, name: 'A', status: '未联系', intent_level: 'A' },
+      ]);
+      result.current.actions.setTaskProgress({
+        total: 2,
+        done: 1,
+        pending: 1,
+        follow_up: 0,
+        progress_pct: 50,
+      });
+      result.current.actions.setIntentCounts({ A: 1, B: 0, C: 0, '无': 0 });
+      result.current.actions.updateStudent(1, { status: '已联系' });
+    });
+
+    act(() => {
+      result.current.actions.removeStudentFromQueue(1);
+    });
+
+    expect(result.current.state.taskProgress).toEqual({
+      total: 2,
+      done: 2,
+      pending: 0,
+      follow_up: 0,
+      progress_pct: 100,
+    });
+    expect(result.current.state.intentCounts).toEqual({ A: 0, B: 0, C: 0, '无': 0 });
   });
 
   it('setDialModal should update dial modal', () => {

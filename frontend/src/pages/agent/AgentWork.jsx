@@ -39,6 +39,8 @@ export default function AgentWork() {
     filteredStudents,
     sortedStudents,
     filteredStats,
+    taskProgress,
+    intentCounts,
     current,
     fetchToday,
     updateStatus,
@@ -67,7 +69,6 @@ export default function AgentWork() {
   } = useAgentDial({
     state,
     actions,
-    current,
     students,
     toast,
     confirm,
@@ -83,7 +84,6 @@ export default function AgentWork() {
     addNote,
     addFollowUp,
     addVisit,
-    openAiPanel,
   } = useAgentDetail({ state, actions, students, toast });
 
   // 跟进管理
@@ -161,6 +161,8 @@ export default function AgentWork() {
     filteredStudents,
     sortedStudents,
     filteredStats,
+    taskProgress,
+    intentCounts,
     schoolGroups: state.schoolGroups,
     currentIdx: state.currentIdx,
     setCurrentIdx: actions.setCurrentIdx,
@@ -200,11 +202,6 @@ export default function AgentWork() {
     detailIntentTimeline: state.detail.intentTimeline,
     detailAdmissionsTimeline: state.detail.admissionsTimeline,
     detailNotesError: state.detail.notesError,
-    hasAnalysis: state.detail.hasAnalysis,
-    // AI
-    showAi: state.ai.show,
-    setShowAi: actions.toggleAi,
-    activeStudent: state.ai.activeStudent,
     // 备注
     noteText: state.noteText,
     setNoteText: actions.setNoteText,
@@ -214,7 +211,6 @@ export default function AgentWork() {
     onUndoAutoAdvance: mobileAutoAdvance.undo,
     onDismissAutoAdvance: mobileAutoAdvance.dismiss,
     // 拨号
-    dialCheckByStudent: state.dial.checkByStudent,
     lockedStudentId: state.dial.lockedStudentId,
     // 跟进
     followingData: state.following.data,
@@ -226,7 +222,6 @@ export default function AgentWork() {
     updateStage,
     updateIntentById,
     addNote: (id) => addNote(id, state.noteText),
-    openAiPanel,
     updateScore,
     loadDetail,
     updateDetailField,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckSquare, History, Home, Loader2, MapPin, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, CheckSquare, History, Home, Loader2, MapPin, X } from 'lucide-react';
 import api from '../../../api';
 import HomeVisitForm from '../../../components/admissions/HomeVisitForm';
 import CampusVisitForm from '../../../components/admissions/CampusVisitForm';
@@ -31,7 +31,6 @@ export default function StudentDetailDrawer({
   visits = [],
   intentTimeline = [],
   admissionsTimeline = [],
-  hasAnalysis,
   onClose,
   onRetry,
   onUpdateField,
@@ -210,20 +209,6 @@ export default function StudentDetailDrawer({
                 </button>
               ))}
             </div>
-          </section>
-
-          <section className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <span className="text-xs text-gray-500">AI分析状态</span>
-            <span
-              className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${
-                hasAnalysis
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                  : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-              }`}
-            >
-              {hasAnalysis && <Sparkles className="w-3 h-3" />}
-              {hasAnalysis ? 'AI分析已完成' : '暂未分析'}
-            </span>
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
