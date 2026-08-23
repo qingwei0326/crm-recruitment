@@ -288,21 +288,23 @@ async def get_intent_timeline(
 ):
     student = await get_accessible_student(db, student_id, current_user)
 
-    result = await db.execute(
-        select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
-        .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
-        .order_by(Call.created_at.asc())
-    )
-    timeline = [
-        {
-            "call_id": call_id,
-            "intent": ai_intent,
-            "confidence": ai_confidence,
-            "agent_id": agent_id,
-            "at": str(created_at),
-        }
-        for call_id, ai_intent, ai_confidence, agent_id, created_at in result.all()
-    ]
+    timeline = []
+    if is_admin(current_user):
+        result = await db.execute(
+            select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
+            .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
+            .order_by(Call.created_at.asc())
+        )
+        timeline = [
+            {
+                "call_id": call_id,
+                "intent": ai_intent,
+                "confidence": ai_confidence,
+                "agent_id": agent_id,
+                "at": str(created_at),
+            }
+            for call_id, ai_intent, ai_confidence, agent_id, created_at in result.all()
+        ]
 
     return Response.ok(
         {
@@ -341,29 +343,37 @@ async def get_student_detail(
         .order_by(Call.created_at.desc())
         .limit(50)
     )
-    calls = [
-        {
+    calls = []
+    for c, agent_name in calls_r.all():
+        call_payload = {
             "id": c.id,
             "agent_id": c.agent_id,
             "agent_name": agent_name or "",
             "duration_seconds": c.duration_seconds,
-            "ai_intent": c.ai_intent,
-            "ai_confidence": c.ai_confidence,
-            "ai_summary": c.ai_summary,
-            "ai_reasons": c.ai_reasons,
             "created_at": str(c.created_at),
         }
-        for c, agent_name in calls_r.all()
-    ]
+        if is_admin(current_user):
+            call_payload.update(
+                {
+                    "ai_intent": c.ai_intent,
+                    "ai_confidence": c.ai_confidence,
+                    "ai_summary": c.ai_summary,
+                    "ai_reasons": c.ai_reasons,
+                }
+            )
+        calls.append(call_payload)
 
     # 备注（最近 50）
-    notes_r = await db.execute(
+    notes_query = (
         select(Note, User.name)
         .outerjoin(User, Note.agent_id == User.id)
         .where(Note.student_id == student.id)
         .order_by(Note.created_at.desc())
         .limit(50)
     )
+    if not is_admin(current_user):
+        notes_query = notes_query.where(Note.source != "ai")
+    notes_r = await db.execute(notes_query)
     notes = [
         {
             "id": n.id,
@@ -489,22 +499,24 @@ async def get_student_detail(
         reverse=True,
     )
 
-    # 意向轨迹：合并 AI 分析（Call）和手动评级（OperationLog）
-    intent_r = await db.execute(
-        select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
-        .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
-        .order_by(Call.created_at.asc())
-    )
-    ai_events = [
-        {
-            "source": "ai",
-            "intent_level": ai_intent,
-            "confidence": ai_conf,
-            "agent_id": aid,
-            "created_at": str(created_at),
-        }
-        for cid, ai_intent, ai_conf, aid, created_at in intent_r.all()
-    ]
+    # 意向轨迹：管理员保留 AI 分析，坐席只看手动评级。
+    ai_events = []
+    if is_admin(current_user):
+        intent_r = await db.execute(
+            select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
+            .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
+            .order_by(Call.created_at.asc())
+        )
+        ai_events = [
+            {
+                "source": "ai",
+                "intent_level": ai_intent,
+                "confidence": ai_conf,
+                "agent_id": aid,
+                "created_at": str(created_at),
+            }
+            for cid, ai_intent, ai_conf, aid, created_at in intent_r.all()
+        ]
 
     manual_r = await db.execute(
         select(OperationLog)
