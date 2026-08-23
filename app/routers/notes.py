@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.dial_guard import require_recent_agent_dial
-from app.models import Note, Student, User, UserRole
-from app.permissions import get_accessible_student
+from app.models import Note, Student, User
+from app.permissions import get_accessible_student, is_admin
 from app.schemas import NoteCreate, NoteUpdate, Response
 from app.utils import make_operation_log
 
@@ -61,13 +61,15 @@ async def list_notes(
     current_user: User = Depends(get_current_user),
 ):
     await get_accessible_student(db, student_id, current_user)
-    result = await db.execute(
+    query = (
         select(Note, User, Student)
         .outerjoin(User, Note.agent_id == User.id)
         .outerjoin(Student, Note.student_id == Student.id)
         .where(Note.student_id == student_id)
-        .order_by(Note.created_at.desc())
     )
+    if not is_admin(current_user):
+        query = query.where(Note.source != "ai")
+    result = await db.execute(query.order_by(Note.created_at.desc()))
     rows = result.all()
     data = []
     for n, agent, student in rows:
@@ -89,7 +91,9 @@ async def _get_note_for_modify(db: AsyncSession, note_id: int, user: User) -> No
     note = result.scalar_one_or_none()
     if not note:
         raise HTTPException(status_code=404, detail="备注不存在")
-    if user.role != UserRole.admin and note.agent_id != user.id:
+    if not is_admin(user) and note.source == "ai":
+        raise HTTPException(status_code=403, detail="话务员不可修改或删除AI备注")
+    if not is_admin(user) and note.agent_id != user.id:
         raise HTTPException(status_code=403, detail="无权修改他人的备注")
     return note
 

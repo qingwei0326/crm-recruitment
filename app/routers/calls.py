@@ -101,6 +101,9 @@ async def create_call(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.role == UserRole.agent:
+        raise HTTPException(status_code=403, detail="话务员不可使用AI通话分析")
+
     student_result = await db.execute(select(Student).where(Student.id == body.student_id))
     student = student_result.scalar_one_or_none()
     if student is None:
@@ -174,6 +177,27 @@ async def create_call(
     )
 
 
+def _call_payload(call: Call, *, include_analysis: bool) -> dict:
+    payload = {
+        "id": call.id,
+        "student_id": call.student_id,
+        "agent_id": call.agent_id,
+        "duration_seconds": call.duration_seconds,
+        "created_at": str(call.created_at),
+    }
+    if include_analysis:
+        payload.update(
+            {
+                "ai_intent": call.ai_intent,
+                "ai_confidence": call.ai_confidence,
+                "ai_summary": call.ai_summary,
+                "ai_reasons": call.ai_reasons,
+                "analyzed_at": str(call.analyzed_at) if call.analyzed_at else None,
+            }
+        )
+    return payload
+
+
 @router.get("")
 async def list_calls(
     page: int = Query(1, ge=1),
@@ -206,18 +230,7 @@ async def list_calls(
             "page": page,
             "page_size": page_size,
             "list": [
-                {
-                    "id": c.id,
-                    "student_id": c.student_id,
-                    "agent_id": c.agent_id,
-                    "duration_seconds": c.duration_seconds,
-                    "ai_intent": c.ai_intent,
-                    "ai_confidence": c.ai_confidence,
-                    "ai_summary": c.ai_summary,
-                    "ai_reasons": c.ai_reasons,
-                    "analyzed_at": str(c.analyzed_at) if c.analyzed_at else None,
-                    "created_at": str(c.created_at),
-                }
+                _call_payload(c, include_analysis=current_user.role == UserRole.admin)
                 for c in calls
             ],
         }
