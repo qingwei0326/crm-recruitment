@@ -23,6 +23,7 @@ function workflowOutcome(code, label, status, displayStatus, statusDetail = '') 
     invalidReason: '',
     terminal: code === 'enrolled',
     reclaimable: false,
+    agentVisible: code !== 'enrolled',
     operatorVisible: true,
     className: outcomeStyles[code],
   };
@@ -59,7 +60,7 @@ export const FALLBACK_OUTCOME_CATALOG = [
 ];
 
 export const FALLBACK_OPERATOR_OUTCOMES = FALLBACK_OUTCOME_CATALOG.filter(
-  (item) => item.operatorVisible,
+  (item) => item.operatorVisible && item.agentVisible !== false,
 );
 
 const fallbackByCode = Object.fromEntries(

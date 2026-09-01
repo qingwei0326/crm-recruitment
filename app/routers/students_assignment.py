@@ -1,14 +1,15 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ADMIN_OP_STUDENT_ASSIGN, require_operation_permission
 from app.database import get_db
 from app.models import Student, StudentStage, StudentStatus, User, UserRole
 from app.schemas import Response
+from app.services.assignment_capacity_service import build_capacity_plan
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
-from app.task_stats import TERMINAL_STUDENT_STATUSES
+from app.task_stats import ASSIGNABLE_STUDENT_STATUSES, TERMINAL_STUDENT_STATUSES
 from app.utils import (
     make_batch_id,
     make_operation_log,
@@ -25,6 +26,7 @@ def _is_enrolled_student(student: Student) -> bool:
 class AssignReq(BaseModel):
     student_ids: list[int]
     agent_id: int
+    override_reason: str = Field(default="", max_length=200)
 
 
 class SchoolAssignReq(BaseModel):
@@ -114,6 +116,7 @@ async def assign_students(
         reason="manual_assignment",
         batch_id=batch_id,
         at=now,
+        capacity_override_reason=body.override_reason,
     )
     _add_batch_summary_log(
         db,
@@ -142,21 +145,11 @@ async def auto_assign(
     if not agents:
         return Response.error(code=1, msg="没有可用的话务员")
 
-    load = {}
-    for a in agents:
-        cnt = await db.execute(
-            select(func.count(Student.id)).where(
-                Student.assigned_to == a.id,
-                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-            )
-        )
-        load[a.id] = cnt.scalar() or 0
-
     unassigned_result = await db.execute(
         select(Student)
         .where(
             Student.assigned_to.is_(None),
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+            Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
         )
         .order_by(Student.created_at.asc())
     )
@@ -164,23 +157,25 @@ async def auto_assign(
     if not unassigned:
         return Response.ok({"message": "没有未分配的学生", "distribution": {}})
 
-    distribution = {a.id: 0 for a in agents}
     now = utcnow()
     batch_id = make_batch_id("auto-assign")
-    by_agent: dict[int, list[int]] = {}
-    assigned_by_student_id: dict[int, int] = {}
-    for student in unassigned:
-        min_agent_id = min(load, key=load.get)
-        by_agent.setdefault(min_agent_id, []).append(student.id)
-        assigned_by_student_id[student.id] = min_agent_id
-        load[min_agent_id] += 1
-        distribution[min_agent_id] += 1
+    plan = await build_capacity_plan(
+        db,
+        [student.id for student in unassigned],
+        [agent.id for agent in agents],
+        at=now,
+    )
+    assignments_by_agent = plan.assignments_by_agent
+    distribution = {
+        agent.id: len(assignments_by_agent.get(agent.id, ())) for agent in agents
+    }
 
     await apply_assignment_changes(
         db,
         [
-            AssignmentTarget(student_id=student.id, agent_id=assigned_by_student_id[student.id])
-            for student in unassigned
+            AssignmentTarget(student_id=student_id, agent_id=agent_id)
+            for agent_id, student_ids in assignments_by_agent.items()
+            for student_id in student_ids
         ],
         operator=current_user,
         reason="auto_assignment",
@@ -195,7 +190,8 @@ async def auto_assign(
         current_user,
         action="自动分配汇总",
         content=(
-            f"自动均摊未分配线索，共 {len(unassigned)} 名；"
+            f"自动均摊未分配线索，共 {plan.planned_count} 名；"
+            f"超容量留池 {plan.overflow_count} 名；"
             f"分布：{distribution_text}；"
             f"样例：{_student_names_preview(unassigned)}"
         ),
@@ -210,7 +206,12 @@ async def auto_assign(
     ]
 
     return Response.ok(
-        {"total_assigned": len(unassigned), "distribution": result, "batch_id": batch_id}
+        {
+            "total_assigned": plan.planned_count,
+            "overflow_count": plan.overflow_count,
+            "distribution": result,
+            "batch_id": batch_id,
+        }
     )
 
 
@@ -233,58 +234,46 @@ async def region_assign(
                 if r:
                     region_map.setdefault(r, []).append(a)
 
-    # 活跃负载基线（排除终态学生），避免历史已报名/已过期影响公平
-    load = {}
-    for a in agents:
-        cnt = await db.execute(
-            select(func.count(Student.id)).where(
-                Student.assigned_to == a.id,
-                Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-            )
-        )
-        load[a.id] = cnt.scalar() or 0
     agent_name_by_id = {a.id: a.name for a in agents}
 
     unassigned_result = await db.execute(
         select(Student)
         .where(
             Student.assigned_to.is_(None),
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+            Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
         )
         .order_by(Student.created_at.asc())
     )
     unassigned = unassigned_result.scalars().all()
 
-    distribution = {a.name: {"matched": 0, "fallback": 0} for a in agents}
     now = utcnow()
     batch_id = make_batch_id("region-assign")
-    total_assigned = 0
-    by_agent: dict[int, list[int]] = {}
-    assigned_by_student_id: dict[int, int] = {}
-
-    for student in unassigned:
-        matched_candidates = region_map.get(student.region or "", [])
-        if matched_candidates:
-            # 同地区多话务员：选负载最小者
-            chosen = min(matched_candidates, key=lambda a: load[a.id])
-            agent_id = chosen.id
-            distribution[chosen.name]["matched"] += 1
-        else:
-            agent_id = min(load, key=load.get)
-            name = agent_name_by_id.get(agent_id, "")
-            if name:
-                distribution[name]["fallback"] += 1
-
-        by_agent.setdefault(agent_id, []).append(student.id)
-        assigned_by_student_id[student.id] = agent_id
-        load[agent_id] += 1
-        total_assigned += 1
+    preferred = {
+        student.id: [agent.id for agent in region_map.get(student.region or "", [])]
+        for student in unassigned
+    }
+    plan = await build_capacity_plan(
+        db,
+        [student.id for student in unassigned],
+        [agent.id for agent in agents],
+        at=now,
+        preferred_agent_ids_by_student=preferred,
+    )
+    student_by_id = {student.id: student for student in unassigned}
+    distribution = {a.name: {"matched": 0, "fallback": 0} for a in agents}
+    for agent_id, student_ids in plan.assignments_by_agent.items():
+        for student_id in student_ids:
+            student = student_by_id[student_id]
+            matched_ids = {agent.id for agent in region_map.get(student.region or "", [])}
+            bucket = "matched" if agent_id in matched_ids else "fallback"
+            distribution[agent_name_by_id[agent_id]][bucket] += 1
 
     await apply_assignment_changes(
         db,
         [
-            AssignmentTarget(student_id=student.id, agent_id=assigned_by_student_id[student.id])
-            for student in unassigned
+            AssignmentTarget(student_id=student_id, agent_id=agent_id)
+            for agent_id, student_ids in plan.assignments_by_agent.items()
+            for student_id in student_ids
         ],
         operator=current_user,
         reason="region_assignment",
@@ -296,7 +285,8 @@ async def region_assign(
         current_user,
         action="区域分配汇总",
         content=(
-            f"区域分配未分配线索，共 {total_assigned} 名；"
+            f"区域分配未分配线索，共 {plan.planned_count} 名；"
+            f"超容量留池 {plan.overflow_count} 名；"
             f"样例：{_student_names_preview(unassigned)}"
         ),
         batch_id=batch_id,
@@ -304,7 +294,8 @@ async def region_assign(
     await db.commit()
     return Response.ok(
         {
-            "total_assigned": total_assigned,
+            "total_assigned": plan.planned_count,
+            "overflow_count": plan.overflow_count,
             "distribution": distribution,
             "batch_id": batch_id,
         }
@@ -334,7 +325,7 @@ async def school_assign(
     conditions = [
         Student.school_name == school,
         Student.assigned_to.is_(None),
-        Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+        Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
     ]
     if regions:
         conditions.append(Student.region.in_(regions))
@@ -350,26 +341,18 @@ async def school_assign(
 
     now = utcnow()
     batch_id = make_batch_id("school-assign")
-    by_agent: dict[int, list[int]] = {}
-    agent_id_list = [a.id for a in agents]
-    counts = {a_id: 0 for a_id in agent_id_list}
-
-    for student in students:
-        # 轮询：选当前分配数量最少的话务员
-        min_agent_id = min(counts, key=counts.get)
-        by_agent.setdefault(min_agent_id, []).append(student.id)
-        counts[min_agent_id] += 1
-
-    assigned_by_student_id = {
-        student_id: agent_id
-        for agent_id, ids in by_agent.items()
-        for student_id in ids
-    }
+    plan = await build_capacity_plan(
+        db,
+        [student.id for student in students],
+        [agent.id for agent in agents],
+        at=now,
+    )
     await apply_assignment_changes(
         db,
         [
-            AssignmentTarget(student_id=student.id, agent_id=assigned_by_student_id[student.id])
-            for student in students
+            AssignmentTarget(student_id=student_id, agent_id=agent_id)
+            for agent_id, student_ids in plan.assignments_by_agent.items()
+            for student_id in student_ids
         ],
         operator=current_user,
         reason="school_assignment",
@@ -380,8 +363,9 @@ async def school_assign(
         db,
         current_user,
         action="学校分配汇总",
-        content=(
-            f"学校「{school}」分发，共 {len(students)} 名；"
+            content=(
+            f"学校「{school}」分发，共 {plan.planned_count} 名；"
+            f"超容量留池 {plan.overflow_count} 名；"
             f"区县：{('、'.join(regions) if regions else '全部')}；"
             f"话务员：{', '.join(str(a.id) for a in agents)}；"
             f"样例：{_student_names_preview(students)}"
@@ -391,8 +375,12 @@ async def school_assign(
     await db.commit()
     return Response.ok(
         {
-            "total_assigned": len(students),
-            "distribution": {f"agent_{a_id}": len(ids) for a_id, ids in by_agent.items()},
+            "total_assigned": plan.planned_count,
+            "overflow_count": plan.overflow_count,
+            "distribution": {
+                f"agent_{a_id}": len(ids)
+                for a_id, ids in plan.assignments_by_agent.items()
+            },
             "batch_id": batch_id,
         }
     )

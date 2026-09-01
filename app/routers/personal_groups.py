@@ -12,7 +12,6 @@ from app.auth import (
 from app.database import get_db
 from app.domain_models import PersonalGroup, PersonalGroupMembership
 from app.models import Student, User, UserRole
-
 from app.schemas import Response
 from app.utils import make_operation_log, utcnow
 
@@ -250,7 +249,11 @@ async def add_members(
     student_ids = sorted(set(body.student_ids))
     rows = await db.execute(select(Student).where(Student.id.in_(student_ids)))
     students = {student.id: student for student in rows.scalars().all()}
-    invalid = [student_id for student_id in student_ids if student_id not in students or students[student_id].assigned_to != current_user.id]
+    invalid = [
+        student_id
+        for student_id in student_ids
+        if student_id not in students or students[student_id].assigned_to != current_user.id
+    ]
     if invalid:
         raise HTTPException(status_code=409, detail=f"只能整理自己当前负责的学生: {invalid[:5]}")
 
@@ -395,7 +398,9 @@ async def audit_group_members(
                     "student_id": student.id,
                     "student_name": student.name,
                     "case_no": student.case_no or "",
-                    "archived_at": membership.archived_at.isoformat() if membership.archived_at else None,
+                    "archived_at": (
+                        membership.archived_at.isoformat() if membership.archived_at else None
+                    ),
                     "archive_reason": membership.archive_reason or "",
                 }
                 for membership, student in rows.all()

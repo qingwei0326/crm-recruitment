@@ -77,7 +77,7 @@ async def download_backup(
     ext = _get_backup_extension()
     if (
         not name.startswith("crm_")
-        or not name.endswith(ext)
+        or not (name.endswith(ext) or name.endswith(f"{ext}.enc"))
         or "/" in name
         or "\\" in name
         or ".." in name

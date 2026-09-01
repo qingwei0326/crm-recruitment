@@ -23,7 +23,9 @@ describe('outcome catalog', () => {
       { code: 'enrolled_elsewhere', label: '已报名其他学校', terminal: true, reclaimable: false },
       { code: 'phone_invalid', label: '空号', terminal: true, reclaimable: true },
     ]);
-    const operatorResults = catalog.filter((item) => item.operatorVisible);
+    const operatorResults = catalog.filter(
+      (item) => item.operatorVisible && item.agentVisible !== false,
+    );
 
     expect(operatorResults.map((item) => item.code)).toEqual([
       'new_lead',
@@ -33,7 +35,6 @@ describe('outcome catalog', () => {
       'missed_call',
       'enrolled_elsewhere',
       'phone_invalid',
-      'enrolled',
     ]);
     expect(isOutcomeReclaimable(
       { outcome_reason_code: 'enrolled_elsewhere' },

@@ -749,6 +749,94 @@ async def test_enrollment_summary_groups_by_attributed_agent(client, db, admin_h
 
 
 @pytest.mark.asyncio
+async def test_enrollment_finance_snapshot_calculates_student_and_commission_amounts(
+    client, db, admin_headers, agent_user
+):
+    student = await _create_assigned_student(db, agent_user, name="补贴报名学生")
+
+    response = await client.post(
+        "/api/admissions/enrollments",
+        json={
+            "student_id": student.id,
+            "source": "管理员补录",
+            "tuition_list_amount": 10000,
+            "student_subsidy_amount": 2000,
+            "student_paid_amount": 5000,
+            "external_subsidy_amount": 5000,
+            "commission_base_amount": 800,
+            "commission_subsidy_amount": 300,
+            "commission_adjustment_amount": -50,
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["student_due_amount"] == 8000
+    assert data["school_received_amount"] == 10000
+    assert data["commission_due_amount"] == 1050
+    assert data["commission_paid_amount"] == 0
+
+    summary = await client.get("/api/admissions/enrollments/summary", headers=admin_headers)
+    row = summary.json()["data"]["list"][0]
+    assert row["commission_due_total"] == 1050
+    assert row["school_received_total"] == 10000
+
+
+@pytest.mark.asyncio
+async def test_enrollment_finance_update_requires_reason_and_locks_after_settlement(
+    client, db, admin_headers, agent_user
+):
+    student = await _create_assigned_student(db, agent_user, name="结算金额学生")
+    create_response = await client.post(
+        "/api/admissions/enrollments",
+        json={
+            "student_id": student.id,
+            "source": "管理员补录",
+            "commission_base_amount": 600,
+        },
+        headers=admin_headers,
+    )
+    enrollment_id = create_response.json()["data"]["id"]
+
+    without_reason = await client.patch(
+        f"/api/admissions/enrollments/{enrollment_id}",
+        json={"commission_subsidy_amount": 200},
+        headers=admin_headers,
+    )
+    assert without_reason.status_code == 400
+
+    updated = await client.patch(
+        f"/api/admissions/enrollments/{enrollment_id}",
+        json={
+            "commission_subsidy_amount": 200,
+            "finance_change_reason": "确认该学生专项佣金补贴",
+        },
+        headers=admin_headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["data"]["commission_due_amount"] == 800
+
+    settled = await client.patch(
+        f"/api/admissions/enrollments/{enrollment_id}",
+        json={"settlement_status": "已结算"},
+        headers=admin_headers,
+    )
+    assert settled.status_code == 200
+    assert settled.json()["data"]["commission_paid_amount"] == 800
+
+    after_settlement = await client.patch(
+        f"/api/admissions/enrollments/{enrollment_id}",
+        json={
+            "commission_base_amount": 900,
+            "finance_change_reason": "不应直接修改已结算记录",
+        },
+        headers=admin_headers,
+    )
+    assert after_settlement.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_settlement_batch_preview_exports_filtered_unsettled_records(
     client, db, admin_headers, agent_user
 ):
@@ -808,7 +896,7 @@ async def test_settlement_batch_preview_exports_filtered_unsettled_records(
         )
     ).scalar_one()
     assert log.old_status == "1"
-    assert "金额 500.00" in log.content
+    assert "学生实付 500.00" in log.content
 
 
 @pytest.mark.asyncio

@@ -213,10 +213,6 @@ async function installApiMocks(page, user = adminUser) {
       return;
     }
 
-    if (path === '/students/agent/settings') {
-      await route.fulfill({ json: ok({ dial_max_per_24h: 3 }) });
-      return;
-    }
     if (path === '/tasks/yesterday') {
       await route.fulfill({ json: ok({ stale_unconcat: [] }) });
       return;

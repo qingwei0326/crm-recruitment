@@ -122,38 +122,65 @@ const workItems = [
   },
 ];
 
-const staleAItems = [
-  {
-    id: 601,
-    name: '周八',
-    region: '云霄',
-    school_name: '云霄一中',
-    status: '跟进中',
-    status_detail: '持续跟进',
-    stage: 'interested',
-    intent_level: 'A',
-    assigned_to: 12,
-    agent_name: '吴坐席',
-    last_activity_at: '2026-06-29T08:30:00',
-    days_since: 4,
-  },
-];
+const staleWorkItem = {
+  id: 'stale_a:601',
+  kind: 'stale_a',
+  queue: 'stale-a',
+  priority: 'high',
+  title: '周八 A 级超时',
+  student_id: 601,
+  student_name: '周八',
+  region: '云霄',
+  school_name: '云霄一中',
+  agent_name: '吴坐席',
+  due_at: '2026-06-29T08:30:00',
+  status: '跟进中',
+  reason: '4天未推进',
+  target_url: '/admin/leads/601',
+  source_id: 601,
+};
+
+const allWorkItems = [...workItems, staleWorkItem];
+const queueCounts = {
+  all: allWorkItems.length,
+  lead_contact: 0,
+  home_visit: 1,
+  campus_visit: 1,
+  follow_up: 1,
+  settlement: 1,
+  help: 1,
+  'stale-a': 1,
+};
 
 function mockLoads() {
   api.get.mockImplementation((url, config = {}) => {
     if (url === '/admissions/work-items') {
-      expect(config.params).toEqual({ queue: 'all', page_size: 100 });
+      const params = config.params || {};
+      expect(params.page_size).toBe(50);
+      let rows = params.queue === 'all'
+        ? allWorkItems
+        : allWorkItems.filter((item) => item.queue === params.queue);
+      if (params.q) {
+        const query = String(params.q).toLowerCase();
+        rows = rows.filter((item) => [item.title, item.student_name, item.region, item.school_name, item.agent_name, item.reason]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(query)));
+      }
+      const page = Number(params.page || 1);
+      const start = (page - 1) * params.page_size;
       return Promise.resolve({
         data: {
           data: {
-            list: workItems,
+            total: rows.length,
+            page,
+            page_size: params.page_size,
+            has_more: start + params.page_size < rows.length,
+            list: rows.slice(start, start + params.page_size),
+            queue_counts: queueCounts,
+            regions: ['云霄', '龙海', '芗城', '漳浦', '南靖', '平和'],
           },
         },
       });
-    }
-    if (url === '/admin/stale-a') {
-      expect(config.params).toEqual({ days: 3 });
-      return Promise.resolve({ data: { data: staleAItems } });
     }
     return Promise.resolve({ data: { data: {} } });
   });
@@ -180,6 +207,7 @@ describe('AdminWorkCenter', () => {
     expect(screen.getByText('孙七 求助')).toBeInTheDocument();
     expect(screen.getByText('周八 A 级超时')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '全部 6' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '待首呼 0' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '家访 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '到校 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '回访 1' })).toBeInTheDocument();
@@ -215,9 +243,23 @@ describe('AdminWorkCenter', () => {
     expect(screen.queryByText('张三 家访')).not.toBeInTheDocument();
     await waitFor(() => {
       expect(api.get).toHaveBeenCalledWith('/admissions/work-items', {
-        params: { queue: 'all', page_size: 100 },
+        params: { queue: 'follow_up', page: 1, page_size: 50 },
       });
     });
+  });
+
+  it('filters the queue locally by student, school, or agent', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/work-center']}>
+        <AdminWorkCenter />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('张三 家访')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '周八' } });
+
+    expect(await screen.findByText('周八 A 级超时')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('张三 家访')).not.toBeInTheDocument());
   });
 
   it('shows stale A students from daily ops queue links', async () => {
@@ -231,5 +273,44 @@ describe('AdminWorkCenter', () => {
     expect(screen.getByText('4天未推进')).toBeInTheDocument();
     expect(screen.queryByText('张三 家访')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: '查看' })).toHaveAttribute('href', '/admin/leads/601');
+    expect(api.get).not.toHaveBeenCalledWith('/admin/stale-a', expect.anything());
+  });
+
+  it('uses server pagination when the queue has more than one page', async () => {
+    const firstPageItem = workItems[0];
+    const secondPageItem = workItems[1];
+    api.get.mockImplementation((url, config = {}) => {
+      if (url !== '/admissions/work-items') return Promise.resolve({ data: { data: {} } });
+      const requestPage = Number(config.params?.page || 1);
+      return Promise.resolve({
+        data: {
+          data: {
+            total: 51,
+            page: requestPage,
+            page_size: 50,
+            has_more: requestPage === 1,
+            list: [requestPage === 1 ? firstPageItem : secondPageItem],
+            queue_counts: { ...queueCounts, all: 51 },
+            regions: ['龙海', '芗城'],
+          },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/work-center']}>
+        <AdminWorkCenter />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('张三 家访')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+
+    expect(await screen.findByText('李四 到校参观')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/admissions/work-items', {
+        params: { queue: 'all', page: 2, page_size: 50 },
+      });
+    });
   });
 });

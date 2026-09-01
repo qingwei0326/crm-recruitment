@@ -3,6 +3,7 @@ import { STAGES, stageLabel } from '../../../labels';
 export default function StageProgress({ currentStage, onStageClick, compact = false }) {
   const currentIndex = Math.max(STAGES.indexOf(currentStage), 0);
   const progress = STAGES.length > 1 ? (currentIndex / (STAGES.length - 1)) * 100 : 0;
+  const editableStages = STAGES.filter((stage) => stage !== '已报名');
 
   if (compact) {
     return (
@@ -13,7 +14,7 @@ export default function StageProgress({ currentStage, onStageClick, compact = fa
           className="h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 outline-none transition focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
           aria-label="设置跟进阶段"
         >
-          {STAGES.map((stage) => (
+          {editableStages.map((stage) => (
             <option key={stage} value={stage}>{stageLabel(stage)}</option>
           ))}
         </select>
@@ -32,7 +33,7 @@ export default function StageProgress({ currentStage, onStageClick, compact = fa
         className="h-9 min-w-[170px] rounded-lg border border-gray-200 bg-white px-2 text-sm font-medium text-gray-700 outline-none transition focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
         aria-label="设置跟进阶段"
       >
-        {STAGES.map((stage) => (
+          {editableStages.map((stage) => (
           <option key={stage} value={stage}>{stageLabel(stage)}</option>
         ))}
       </select>

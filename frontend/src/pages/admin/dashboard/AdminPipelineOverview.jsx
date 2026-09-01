@@ -47,7 +47,7 @@ export function AdminMetricStrip({ cards, loading, onRetry }) {
                 <span className="text-2xl font-black tabular-nums text-gray-950 dark:text-white xl:text-3xl">
                   {loading ? '-' : card.error ? '--' : card.value}
                 </span>
-                <span className="truncate text-xs font-semibold text-gray-500 dark:text-gray-400 xl:text-sm">
+                <span className="min-w-0 break-words text-xs font-semibold leading-4 text-gray-500 dark:text-gray-400 xl:text-sm">
                   {card.label}
                 </span>
               </div>
@@ -63,7 +63,7 @@ export function AdminMetricStrip({ cards, loading, onRetry }) {
           </>
         );
         const className =
-          'flex min-h-[104px] items-center gap-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm transition dark:border-gray-800 dark:bg-gray-900 xl:p-6';
+          'flex min-h-[104px] items-center gap-4 rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition dark:border-gray-800 dark:bg-gray-900 xl:p-6';
 
         return card.error ? (
           <button
@@ -98,7 +98,7 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
   const maxValue = Math.max(...Object.values(stageStats || {}).map(Number), 1);
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
@@ -167,7 +167,7 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
 
 function ConversionFunnel({ funnelData, error, onRetry, retrying }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-4 flex items-center gap-2">
         <TrendingUp className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
         <h2 className="text-xs font-semibold text-gray-900 dark:text-gray-100">全链路招生流转漏斗</h2>
@@ -192,7 +192,7 @@ function RegionRanking({ stats, error, onRetry, retrying }) {
   );
 
   return (
-    <section className="flex min-h-[230px] flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="flex min-h-[230px] flex-col rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <MapPin className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />

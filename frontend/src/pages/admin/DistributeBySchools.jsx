@@ -202,7 +202,8 @@ export default function DistributeBySchools() {
       if (res.data.code === 0) {
         const d = res.data.data || {};
         const distStr = Object.entries(d.distribution || {}).map(([k, v]) => `${k}:${v}`).join('、');
-        toast?.success(`成功分发 ${d.distributed_count} 名学员：${distStr}`);
+        const overflow = d.overflow_count ? `，${d.overflow_count} 名留在未分配池` : '';
+        toast?.success(`成功分发 ${d.distributed_count} 名学员${overflow}：${distStr}`);
         setSelectedSchools(new Set());
         fetchGroups();
       } else {

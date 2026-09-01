@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PhoneCall, X, Loader2, CalendarClock, MessageSquare } from 'lucide-react';
+import {
+  PhoneCall,
+  X,
+  Loader2,
+  CalendarClock,
+  MessageSquare,
+  ChevronLeft,
+} from 'lucide-react';
 import api from '../api';
 import { completePendingDial, readPendingDial } from '../dialSession';
 import logger from '../utils/logger';
@@ -17,7 +24,7 @@ import {
  *
  * 工作原理：useDialFlow 在唤起 tel: 前把 { studentId, studentName, dialStartedAt }
  * 写入 sessionStorage('pendingDial')。话务员从系统拨号界面返回 App 时，
- * 本组件读取该标记并弹出，让其选联系状况（+意向等级），PUT /students/{id} 落库。
+ * 本组件读取该标记并弹出，让其选联系状况和处理结果，PUT /students/{id} 落库。
  *
  * 自动记录通话时长（visibilitychange 时间差）和备注。
  *
@@ -25,13 +32,72 @@ import {
  * @param {function} props.onUpdated - 落库成功后回调 (studentId, status) => void
  */
 
+const CONTACT_CHOICES = [
+  {
+    key: 'connected',
+    label: '已接通',
+    hint: '进入意向判断',
+    className: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+  },
+  {
+    key: 'missed',
+    label: '未接',
+    hint: '安排下一次重拨',
+    className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  },
+  {
+    key: 'invalid',
+    label: '号码无效',
+    hint: '空号或停机',
+    className: 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  },
+];
+
+const CONNECTED_INTENT_CODES = new Set([
+  'very_interested',
+  'interested_wechat',
+  'waiting_volunteer',
+]);
+
+const CONNECTED_RESULT_CODES = new Set([
+  'high_score',
+  'no_intent',
+  'child_declined',
+  'enrolled_elsewhere',
+  'enrolled',
+]);
+
+const HIDDEN_RESULT_CODES = new Set(['missed_call', 'phone_invalid']);
+
+function toDateTimeLocalValue(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // 默认回访时间：明天上午 9 点，<input type="datetime-local"> 格式
 function defaultFollowUp() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
   d.setHours(9, 0, 0, 0);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toDateTimeLocalValue(d);
+}
+
+// 未接默认安排 10 分钟后重拨，避免“点了未接”就无声结束。
+function defaultMissedFollowUp() {
+  const d = new Date(Date.now() + 10 * 60 * 1000);
+  d.setSeconds(0, 0);
+  return toDateTimeLocalValue(d);
+}
+
+function laterTodayOrTomorrow() {
+  const now = new Date();
+  const d = new Date(now);
+  d.setHours(17, 30, 0, 0);
+  if (d <= now) {
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+  }
+  return toDateTimeLocalValue(d);
 }
 
 // 统一后的处理结果。无效原因类按钮直接写入对应原因，避免话务员重复备注。
@@ -45,20 +111,13 @@ function statusButton(outcome) {
 
 export const STATUS_BUTTONS = FALLBACK_OPERATOR_OUTCOMES.map(statusButton);
 
-const INTENT_BUTTONS = [
-  { level: 'A', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
-  { level: 'B', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-  { level: 'C', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-  { level: '无', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' },
-];
-
 /**
  * 手机端“打完电话选结果”底部弹窗。
  *
  * 工作原理：useDialFlow 在唤起 tel: 前把 { studentId, studentName } 写入
  * sessionStorage('pendingDial')。话务员从系统拨号界面返回 App 时
  * （visibilitychange / focus / pageshow，部分浏览器会重载则走 mount），
- * 本组件读取该标记并弹出，让其选联系状况（+意向等级），PUT /students/{id} 落库。
+ * 本组件读取该标记并弹出，让其选联系状况和处理结果，PUT /students/{id} 落库。
  *
  * 这样补齐了手机端缺失的“打完电话更新联系状况”——桌面端 AgentWork 早已有此逻辑。
  *
@@ -67,11 +126,15 @@ const INTENT_BUTTONS = [
 export default function MobileDialResult({ onUpdated }) {
   const confirm = useConfirm();
   const { results } = useLeadOutcomeCatalog();
-  const statusButtons = results.map(statusButton);
+  // 新线索是管理员回收/重新分配后的初始状态，话务员不能在拨号结果里再次选回。
+  const statusButtons = results
+    .map(statusButton)
+    .filter((button) => button.code !== 'new_lead');
   const [pending, setPending] = useState(null); // { studentId, studentName, dialStartedAt }
-  const [showIntent, setShowIntent] = useState(false);
-  const [flowStatus, setFlowStatus] = useState(null); // 记住本次选的联系状况
+  const [resultStep, setResultStep] = useState('contact'); // contact | connected | invalid
+  const [showMoreResults, setShowMoreResults] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpMode, setFollowUpMode] = useState(null); // intent | missed
   const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState('');
@@ -87,9 +150,10 @@ export default function MobileDialResult({ onUpdated }) {
     if (pending) return;
     const data = readPendingDial();
     if (data?.studentId) {
-      setShowIntent(false);
-      setFlowStatus(null);
+      setResultStep('contact');
+      setShowMoreResults(false);
       setShowFollowUp(false);
+      setFollowUpMode(null);
       setFollowUpDate(defaultFollowUp());
       setSubmitting(false);
       setErrorText('');
@@ -125,9 +189,10 @@ export default function MobileDialResult({ onUpdated }) {
   const close = () => {
     submittingRef.current = false;
     setPending(null);
-    setShowIntent(false);
-    setFlowStatus(null);
+    setResultStep('contact');
+    setShowMoreResults(false);
     setShowFollowUp(false);
+    setFollowUpMode(null);
     setSubmitting(false);
     setErrorText('');
     setCompletionPending(false);
@@ -200,13 +265,16 @@ export default function MobileDialResult({ onUpdated }) {
   };
 
   const handleClose = async () => {
+    if (showFollowUp && followUpMode === 'missed') {
+      setErrorText('未接需要先安排下一次重拨');
+      return;
+    }
     if (!beginSubmit()) return;
     await finishDial();
   };
 
-  const pickStatus = async (btn) => {
+  const pickStatus = async (btn, options = {}) => {
     if (!beginSubmit()) return;
-    const status = btn.label;
     try {
       if (btn.code === 'enrolled') {
         const ok = await confirm({
@@ -228,12 +296,21 @@ export default function MobileDialResult({ onUpdated }) {
         btn.invalidReason || '',
       );
 
-      // 接通后可补充意向等级；待回访会在意向后继续设置回访时间。
-      if (['非常有意向', '意向了解加微', '等待志愿', '已联系', '待回访'].includes(status)) {
-        setFlowStatus(status);
-        setShowIntent(true);
+      if (options.followUpMode === 'missed') {
+        setFollowUpMode('missed');
+        setFollowUpDate(defaultMissedFollowUp());
+        setShowFollowUp(true);
         endSubmit();
-        return; // Don't close yet, show intent step
+        return;
+      }
+
+      // 需要继续跟进的结果直接进入回访时间，不再插入 A/B/C 意向等级步骤。
+      if (['interested_wechat', 'waiting_volunteer'].includes(btn.code)) {
+        setFollowUpMode('intent');
+        setFollowUpDate(defaultFollowUp());
+        setShowFollowUp(true);
+        endSubmit();
+        return;
       }
 
       await finishDial({ businessSaved: true });
@@ -244,30 +321,34 @@ export default function MobileDialResult({ onUpdated }) {
     }
   };
 
-  const pickIntent = async (level) => {
-    if (!beginSubmit()) return;
-    try {
-      await putField({ intent_level: level });
-      onUpdated && onUpdated(pending.studentId, null);
-      // 待回访：接着收集回访时间落 /follow-ups；其他：完成
-      if (['待回访', '意向了解加微', '等待志愿'].includes(flowStatus)) {
-        setShowIntent(false);
-        setShowFollowUp(true);
-        endSubmit();
-      } else {
-        await finishDial({ businessSaved: true });
-      }
-    } catch (e) {
-      logger.error('意向等级同步失败:', e);
-      setErrorText('意向等级保存失败，请重试');
-      endSubmit();
+  const pickContact = (choice) => {
+    setErrorText('');
+    setShowMoreResults(false);
+    if (choice === 'connected') {
+      setResultStep('connected');
+      return;
     }
+    if (choice === 'invalid') {
+      setResultStep('invalid');
+      return;
+    }
+    const missedButton = statusButtons.find((button) => button.code === 'missed_call');
+    if (!missedButton) {
+      setErrorText('未找到未接结果，请刷新后重试');
+      return;
+    }
+    void pickStatus(missedButton, { followUpMode: 'missed' });
   };
 
   const saveFollowUp = async () => {
     if (!beginSubmit()) return;
     if (!followUpDate) {
-      await finishDial({ businessSaved: true });
+      setErrorText(
+        followUpMode === 'missed'
+          ? '请先安排下一次重拨时间'
+          : '请先选择回访时间',
+      );
+      endSubmit();
       return;
     }
     try {
@@ -284,6 +365,26 @@ export default function MobileDialResult({ onUpdated }) {
       endSubmit();
     }
   };
+
+  const connectedIntentButtons = statusButtons.filter((button) =>
+    CONNECTED_INTENT_CODES.has(button.code));
+  const connectedResultButtons = statusButtons.filter((button) =>
+    CONNECTED_RESULT_CODES.has(button.code));
+  const moreResultButtons = statusButtons.filter((button) =>
+    !HIDDEN_RESULT_CODES.has(button.code)
+    && !CONNECTED_INTENT_CODES.has(button.code)
+    && !CONNECTED_RESULT_CODES.has(button.code));
+  const phoneInvalidButton = statusButtons.find((button) => button.code === 'phone_invalid');
+
+  const headerMessage = submitting
+    ? '保存中，请稍候'
+    : showFollowUp
+      ? followUpMode === 'missed' ? '未接，请安排下一次重拨' : '设置回访时间，到点会提醒你'
+      : resultStep === 'contact'
+        ? '先选择本次拨打结果'
+        : resultStep === 'connected'
+          ? '已接通，请选择后续结果'
+          : '确认号码是否无效';
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={handleClose}>
@@ -302,7 +403,7 @@ export default function MobileDialResult({ onUpdated }) {
                 {pending.studentName || '本次通话'}
               </div>
               <div className="text-xs text-gray-500">
-                {submitting ? '保存中，请稍候' : '通话已完成，请选择处理结果'}
+                {headerMessage}
               </div>
             </div>
           </div>
@@ -331,27 +432,54 @@ export default function MobileDialResult({ onUpdated }) {
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
               <CalendarClock className="w-4 h-4" />
-              设置回访时间，到点会提醒你
+              {followUpMode === 'missed'
+                ? '安排下一次重拨，任务不会沉底'
+                : '设置回访时间，到点会提醒你'}
             </div>
             {/* 快捷时间 */}
             <div className="flex gap-2 flex-wrap">
-              {[
-                { label: '明天上午', offset: { days: 1, hours: 9 } },
-                { label: '后天上午', offset: { days: 2, hours: 9 } },
-                { label: '3天后', offset: { days: 3, hours: 9 } },
-                { label: '1周后', offset: { days: 7, hours: 9 } },
-              ].map((q) => (
+              {(followUpMode === 'missed'
+                ? [
+                  { label: '10分钟后', value: defaultMissedFollowUp },
+                  { label: '今天晚些时候', value: laterTodayOrTomorrow },
+                  { label: '明天上午', value: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 1);
+                    d.setHours(9, 0, 0, 0);
+                    return toDateTimeLocalValue(d);
+                  } },
+                ]
+                : [
+                  { label: '明天上午', value: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 1);
+                    d.setHours(9, 0, 0, 0);
+                    return toDateTimeLocalValue(d);
+                  } },
+                  { label: '后天上午', value: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 2);
+                    d.setHours(9, 0, 0, 0);
+                    return toDateTimeLocalValue(d);
+                  } },
+                  { label: '3天后', value: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 3);
+                    d.setHours(9, 0, 0, 0);
+                    return toDateTimeLocalValue(d);
+                  } },
+                  { label: '1周后', value: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + 7);
+                    d.setHours(9, 0, 0, 0);
+                    return toDateTimeLocalValue(d);
+                  } },
+                ]).map((q) => (
                 <button
                   key={q.label}
                   type="button"
                   disabled={submitting || completionPending}
-                  onClick={() => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + q.offset.days);
-                    d.setHours(q.offset.hours, 0, 0, 0);
-                    const pad = (n) => String(n).padStart(2, '0');
-                    setFollowUpDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:00`);
-                  }}
+                  onClick={() => setFollowUpDate(q.value())}
                   className="px-3 py-1.5 min-h-[44px] rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95 disabled:opacity-60 flex items-center justify-center"
                 >
                   {q.label}
@@ -366,17 +494,19 @@ export default function MobileDialResult({ onUpdated }) {
               className="w-full border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-amber-500"
             />
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!beginSubmit()) return;
-                  await finishDial({ businessSaved: true });
-                }}
-                disabled={submitting || completionPending}
-                className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
-              >
-                跳过
-              </button>
+              {followUpMode !== 'missed' && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!beginSubmit()) return;
+                    await finishDial({ businessSaved: true });
+                  }}
+                  disabled={submitting || completionPending}
+                  className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
+                >
+                  跳过
+                </button>
+              )}
               <button
                 type="button"
                 onClick={saveFollowUp}
@@ -384,25 +514,156 @@ export default function MobileDialResult({ onUpdated }) {
                 className="flex-1 min-h-[48px] rounded-xl bg-amber-600 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                保存回访提醒
+                {followUpMode === 'missed' ? '保存下一次重拨' : '保存回访提醒'}
               </button>
             </div>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2">
-              {statusButtons.map((b) => (
-                <button
-                  key={b.code}
-                  type="button"
-                  onClick={() => pickStatus(b)}
-                  disabled={submitting || showIntent || completionPending}
-                  className={`min-h-[52px] rounded-lg px-1 py-1 text-sm font-medium leading-normal whitespace-normal text-white ${b.cls} active:scale-95 disabled:opacity-60 flex items-center justify-center text-center`}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
+            {resultStep !== 'contact' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setResultStep('contact');
+                  setShowMoreResults(false);
+                }}
+                disabled={submitting || completionPending}
+                className="inline-flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 min-h-[36px] disabled:opacity-60"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                返回上一步
+              </button>
+            )}
+
+            {resultStep === 'contact' && (
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                  第一步：本次拨打结果
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {CONTACT_CHOICES.map((choice) => (
+                    <button
+                      key={choice.key}
+                      type="button"
+                      onClick={() => pickContact(choice.key)}
+                      disabled={submitting || completionPending}
+                      className={`min-h-[70px] rounded-xl border px-3 text-left active:scale-95 disabled:opacity-60 ${choice.className}`}
+                    >
+                      <div className="text-base font-semibold">{choice.label}</div>
+                      <div className="mt-1 text-xs opacity-75">{choice.hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {resultStep === 'connected' && (
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                    第二步：已接通后的处理结果
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    先选最符合的一项，需要回访时再设置时间
+                  </div>
+                </div>
+
+                {connectedIntentButtons.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-500">意向/跟进</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {connectedIntentButtons.map((b) => (
+                        <button
+                          key={b.code}
+                          type="button"
+                          onClick={() => pickStatus(b)}
+                          disabled={submitting || completionPending}
+                          className="min-h-[52px] rounded-lg border border-blue-200 bg-blue-50 px-2 text-sm font-medium text-blue-700 active:scale-95 disabled:opacity-60 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {connectedResultButtons.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-gray-500">明确结论</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {connectedResultButtons.map((b) => (
+                        <button
+                          key={b.code}
+                          type="button"
+                          onClick={() => pickStatus(b)}
+                          disabled={submitting || completionPending}
+                          className={`min-h-[52px] rounded-lg border px-2 text-sm font-medium active:scale-95 disabled:opacity-60 ${b.code === 'enrolled'
+                            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/30 dark:text-green-300'
+                            : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {moreResultButtons.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowMoreResults((value) => !value)}
+                      disabled={submitting || completionPending}
+                      className="w-full min-h-[40px] rounded-lg border border-dashed border-gray-300 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400 disabled:opacity-60"
+                    >
+                      {showMoreResults ? '收起其他结果' : `更多结果（${moreResultButtons.length}）`}
+                    </button>
+                    {showMoreResults && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {moreResultButtons.map((b) => (
+                          <button
+                            key={b.code}
+                            type="button"
+                            onClick={() => pickStatus(b)}
+                            disabled={submitting || completionPending}
+                            className="min-h-[48px] rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-600 active:scale-95 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+                          >
+                            {b.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {resultStep === 'invalid' && (
+              <div className="space-y-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                    第二步：确认号码无效
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    确认后会从待处理队列移除，后续可由管理员回收
+                  </div>
+                </div>
+                {phoneInvalidButton ? (
+                  <button
+                    type="button"
+                    onClick={() => pickStatus(phoneInvalidButton)}
+                    disabled={submitting || completionPending}
+                    className="w-full min-h-[56px] rounded-xl border border-gray-300 bg-gray-100 text-gray-700 text-sm font-semibold active:scale-95 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                  >
+                    确认空号/停机
+                  </button>
+                ) : (
+                  <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                    当前结果目录没有号码无效选项，请刷新后重试。
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 备注输入 */}
             <div className="relative">
@@ -416,38 +677,6 @@ export default function MobileDialResult({ onUpdated }) {
                 className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-base bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
-
-            {showIntent && (
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-2 text-center">
-                  意向等级（可选，点一下即可，也可跳过）
-                </div>
-                <div className="flex gap-2 justify-center">
-                  {INTENT_BUTTONS.map((b) => (
-                    <button
-                      key={b.level}
-                      type="button"
-                      onClick={() => pickIntent(b.level)}
-                      disabled={submitting || completionPending}
-                      className={`flex-1 min-h-[44px] rounded-lg text-sm font-semibold active:scale-95 disabled:opacity-60 ${b.cls}`}
-                    >
-                      {b.level}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!beginSubmit()) return;
-                    await finishDial({ businessSaved: true });
-                  }}
-                  disabled={submitting || completionPending}
-                  className="mt-2.5 w-full text-xs text-gray-400 py-2 disabled:opacity-60 text-center flex items-center justify-center min-h-[44px]"
-                >
-                  跳过意向，完成
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>

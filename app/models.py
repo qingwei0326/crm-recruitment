@@ -10,8 +10,10 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy import Enum as SAEnum
@@ -424,6 +426,7 @@ class CampusVisitTask(Base):
 class EnrollmentRecord(Base):
     __tablename__ = "enrollment_records"
     __table_args__ = (
+        UniqueConstraint("student_id", name="uq_enrollment_records_student"),
         Index("ix_enrollment_records_student_id", "student_id"),
         Index("ix_enrollment_records_attributed_agent_id", "attributed_agent_id"),
         Index("ix_enrollment_records_enrolled_at", "enrolled_at"),
@@ -451,6 +454,17 @@ class EnrollmentRecord(Base):
         SAEnum(AttributionMethod), nullable=False, default=AttributionMethod.current_agent
     )
     attribution_reason = Column(Text, default="", nullable=False)
+    tuition_list_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    student_subsidy_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    student_due_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    student_paid_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    external_subsidy_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    school_received_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    commission_base_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    commission_subsidy_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    commission_adjustment_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    commission_due_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    commission_paid_amount = Column(Numeric(12, 2), default=0, nullable=False)
     amount = Column(Float, nullable=True)
     settlement_status = Column(
         SAEnum(SettlementStatus), nullable=False, default=SettlementStatus.unsettled

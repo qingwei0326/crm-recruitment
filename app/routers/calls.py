@@ -1,6 +1,5 @@
 import asyncio
 import os
-from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
@@ -10,7 +9,7 @@ from app.ai_analyzer import analyze_transcript
 from app.auth import get_current_user
 from app.database import get_db
 from app.limiter import limiter
-from app.models import Call, DialLog, IntentLevel, Note, Student, SystemConfig, User, UserRole
+from app.models import Call, IntentLevel, Note, Student, SystemConfig, User, UserRole
 from app.permissions import can_access_student
 from app.pushplus import notify_a_level_change_background
 from app.schemas import CallCreate, Response
@@ -52,45 +51,6 @@ async def _resolve_ai_engine(db: AsyncSession) -> tuple[str | None, str | None, 
 
 def _agent_can_access_student(student: Student, user: User) -> bool:
     return can_access_student(user, student)
-
-
-@router.get("/check")
-async def check_today_call(
-    student_id: int = Query(...),
-    within_hours: int = Query(24, ge=1, le=168),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    student_result = await db.execute(select(Student).where(Student.id == student_id))
-    student = student_result.scalar_one_or_none()
-    if student is None:
-        raise HTTPException(status_code=404, detail="学生不存在")
-    if not _agent_can_access_student(student, current_user):
-        raise HTTPException(status_code=403, detail="无权查看该学员的通话记录")
-
-    since = utcnow() - timedelta(hours=within_hours)
-    result = await db.execute(
-        select(DialLog.dialed_at)
-        .where(DialLog.student_id == student_id, DialLog.dialed_at >= since)
-        .order_by(DialLog.dialed_at.desc())
-    )
-    rows = result.all()
-    count = len(rows)
-    last_call_at = str(rows[0][0]) if rows else None
-
-    return Response.ok(
-        {
-            "count": count,
-            "last_call_at": last_call_at,
-            "within_hours": within_hours,
-            "already_called": count > 0,
-            "message": (
-                f"{within_hours}h 内该学生已被拨打 {count} 次（最近 {last_call_at}）"
-                if count
-                else ""
-            ),
-        }
-    )
 
 
 @router.post("/analyze")

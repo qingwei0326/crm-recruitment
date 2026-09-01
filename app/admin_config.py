@@ -1,13 +1,8 @@
-import re
-
 SCORE_DAILY_CALL_TARGET_MAX = 1000
 
 ALLOWED_CONFIG_KEYS = {
     "pushplus_token",
     "stale_days",
-    "dial_window_start",
-    "dial_window_end",
-    "dial_max_per_24h",
     "deepseek_api_key",
     "ai_provider",
     "mimo_api_key",
@@ -39,8 +34,6 @@ ASSIGNMENT_CAPACITY_DEFAULTS = {
 }
 
 ASSIGNMENT_CAPACITY_MODES = {"configured_min"}
-
-HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def validate_capacity_settings(
@@ -78,6 +71,26 @@ def validate_config_value(key: str, value: str) -> tuple[str | None, str | None]
         if not 1 <= n <= 30:
             return None, "stale_days must be an integer between 1 and 30"
         return str(n), None
+    if key == "follow_up_window_minutes":
+        try:
+            n = int(value)
+        except ValueError:
+            return None, "follow_up_window_minutes must be an integer between 1 and 60"
+        if not 1 <= n <= 60:
+            return None, "follow_up_window_minutes must be an integer between 1 and 60"
+        return str(n), None
+    if key == "score_daily_call_target":
+        score_target_msg = (
+            "score_daily_call_target must be an integer between 1 and "
+            f"{SCORE_DAILY_CALL_TARGET_MAX}"
+        )
+        try:
+            n = int(value)
+        except ValueError:
+            return None, score_target_msg
+        if not 1 <= n <= SCORE_DAILY_CALL_TARGET_MAX:
+            return None, score_target_msg
+        return str(n), None
     if key in {
         "assignment_capacity_lookback_days",
         "assignment_capacity_observed_days",
@@ -100,38 +113,6 @@ def validate_config_value(key: str, value: str) -> tuple[str | None, str | None]
     if key == "assignment_capacity_insufficient_history":
         if value not in ASSIGNMENT_CAPACITY_MODES:
             return None, "assignment_capacity_insufficient_history must be configured_min"
-        return value, None
-    if key == "follow_up_window_minutes":
-        try:
-            n = int(value)
-        except ValueError:
-            return None, "follow_up_window_minutes must be an integer between 1 and 60"
-        if not 1 <= n <= 60:
-            return None, "follow_up_window_minutes must be an integer between 1 and 60"
-        return str(n), None
-    if key == "dial_max_per_24h":
-        try:
-            n = int(value)
-        except ValueError:
-            return None, "dial_max_per_24h must be an integer between 1 and 20"
-        if not 1 <= n <= 20:
-            return None, "dial_max_per_24h must be an integer between 1 and 20"
-        return str(n), None
-    if key == "score_daily_call_target":
-        score_target_msg = (
-            "score_daily_call_target must be an integer between 1 and "
-            f"{SCORE_DAILY_CALL_TARGET_MAX}"
-        )
-        try:
-            n = int(value)
-        except ValueError:
-            return None, score_target_msg
-        if not 1 <= n <= SCORE_DAILY_CALL_TARGET_MAX:
-            return None, score_target_msg
-        return str(n), None
-    if key in ("dial_window_start", "dial_window_end"):
-        if not HHMM_RE.match(value):
-            return None, f"{key} must be HH:MM (24h)"
         return value, None
     if key == "pushplus_token":
         if len(value) > 64:

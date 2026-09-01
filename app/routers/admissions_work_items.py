@@ -1,13 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.auth import ADMIN_PAGE_WORK_CENTER, get_current_user
 from app.database import get_db
 from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
+from app.expiry import build_last_activity_subquery
 from app.models import (
     CampusVisitResult,
     CampusVisitStatus,
@@ -17,18 +18,37 @@ from app.models import (
     HomeVisitResult,
     HomeVisitStatus,
     HomeVisitTask,
+    IntentLevel,
     SettlementStatus,
     Student,
+    StudentStatus,
     User,
 )
 from app.permissions import is_admin
 from app.routers.admissions import _page_payload, _require_admin_module
 from app.schemas import Response
+from app.status_policy import statuses_for_canonical
+from app.task_stats import TERMINAL_STUDENT_STATUSES
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
 
-WORK_ITEM_QUEUES = {"all", "home_visit", "campus_visit", "follow_up", "settlement", "help"}
-WORK_ITEM_QUEUE_ALIASES = {"follow": "follow_up", "visit": "campus_visit"}
+WORK_ITEM_QUEUES = {
+    "all",
+    "lead_contact",
+    "home_visit",
+    "campus_visit",
+    "follow_up",
+    "settlement",
+    "help",
+    "stale-a",
+}
+WORK_ITEM_QUEUE_ALIASES = {
+    "follow": "follow_up",
+    "visit": "campus_visit",
+    "lead": "lead_contact",
+    "initial_contact": "lead_contact",
+    "stale_a": "stale-a",
+}
 WORK_ITEM_PRIORITY_WEIGHT = {"high": 3, "normal": 2, "low": 1}
 ACTIVE_WORK_ITEM_STATUSES = {
     WorkItemStatus.open,
@@ -123,7 +143,130 @@ def _work_item(
         "action_label": action_label,
         "source_id": source_id,
         "created_at": str(created_at) if created_at else None,
+        "next_action": {
+            "kind": {
+                "follow_up": WorkItemKind.scheduled_follow_up.value,
+                "settlement": WorkItemKind.enrollment_settlement.value,
+                "help": WorkItemKind.help_request.value,
+            }.get(kind, kind),
+            "label": action_label,
+            "owner_id": agent_id,
+            "owner_name": agent_name,
+            "due_at": str(due_at) if due_at else None,
+            "priority": priority,
+            "target_url": target_url,
+            "source_id": source_id,
+            "reason": reason,
+        },
     }
+
+
+async def _build_lead_contact_work_items(
+    db: AsyncSession,
+    current_user: User,
+) -> list[dict]:
+    owner = aliased(User)
+    conditions = [
+        Student.status.in_(statuses_for_canonical(StudentStatus.not_contacted)),
+        WorkItem.kind == WorkItemKind.lead_contact,
+        WorkItem.source_type == "student",
+        WorkItem.source_id == Student.id,
+        WorkItem.status.in_(ACTIVE_WORK_ITEM_STATUSES),
+    ]
+    if not is_admin(current_user):
+        conditions.append(WorkItem.owner_agent_id == current_user.id)
+
+    result = await db.execute(
+        select(Student, WorkItem, owner)
+        .join(
+            WorkItem,
+            and_(
+                WorkItem.kind == WorkItemKind.lead_contact,
+                WorkItem.source_type == "student",
+                WorkItem.source_id == Student.id,
+            ),
+        )
+        .join(owner, owner.id == WorkItem.owner_agent_id)
+        .where(*conditions)
+        .order_by(Student.assigned_at.asc(), Student.created_at.asc(), Student.id.asc())
+    )
+    rows = []
+    for student, work_item, owner_user in result.all():
+        rows.append(
+            _work_item(
+                kind="lead_contact",
+                source_id=student.id,
+                queue="lead_contact",
+                priority=_work_priority(work_item.priority),
+                title=f"{student.name} 首次联系",
+                student_id=student.id,
+                student_name=student.name,
+                region=student.region,
+                school_name=student.school_name,
+                agent_id=work_item.owner_agent_id,
+                agent_name=owner_user.name,
+                due_at=work_item.due_at,
+                status=student.status.value,
+                reason="待首次联系",
+                target_url=f"/admin/leads/{student.id}",
+                action_label="开始首呼",
+                created_at=student.assigned_at or student.created_at,
+            )
+        )
+    return rows
+
+
+async def _build_stale_a_work_items(
+    db: AsyncSession,
+    current_user: User,
+    now: datetime,
+    days: int,
+) -> list[dict]:
+    last_activity = build_last_activity_subquery()
+    latest_activity_at = func.coalesce(
+        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
+    ).label("latest_activity_at")
+    conditions = [
+        Student.intent_level == IntentLevel.A,
+        Student.status.not_in(TERMINAL_STUDENT_STATUSES),
+        latest_activity_at < now - timedelta(days=days),
+    ]
+    if not is_admin(current_user):
+        conditions.append(Student.assigned_to == current_user.id)
+
+    result = await db.execute(
+        select(Student, User.name.label("agent_name"), latest_activity_at)
+        .outerjoin(User, User.id == Student.assigned_to)
+        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
+        .where(*conditions)
+        .order_by(latest_activity_at.asc(), Student.id.asc())
+    )
+    rows = []
+    for student, agent_name, raw_last_activity_at in result.all():
+        last_activity_at = _as_dt(raw_last_activity_at)
+        days_since = max((now - last_activity_at).days, 0) if last_activity_at else 0
+        rows.append(
+            _work_item(
+                kind="stale_a",
+                source_id=student.id,
+                queue="stale-a",
+                priority="high",
+                title=f"{student.name or '未命名学生'} A 级超时",
+                student_id=student.id,
+                student_name=student.name,
+                region=student.region,
+                school_name=student.school_name,
+                agent_id=student.assigned_to,
+                agent_name=agent_name or "",
+                due_at=last_activity_at,
+                status=student.status.value,
+                reason=f"{days_since}天未推进",
+                target_url=f"/admin/leads/{student.id}",
+                action_label="处理超时线索",
+                created_at=student.created_at,
+            )
+        )
+    return rows
 
 
 async def _build_home_visit_work_items(
@@ -444,9 +587,11 @@ async def list_work_items(
     queue: str = Query("all"),
     priority: str = Query(""),
     region: str = Query(""),
+    q: str = Query("", max_length=80),
     agent_id: int | None = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=200),
+    page_size: int = Query(50, ge=1, le=200),
+    stale_days: int = Query(3, ge=1, le=30),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -457,16 +602,15 @@ async def list_work_items(
 
     now = datetime.now()
     rows: list[dict] = []
-    if normalized_queue in {"all", "home_visit"}:
-        rows.extend(await _build_home_visit_work_items(db, current_user, now))
-    if normalized_queue in {"all", "campus_visit"}:
-        rows.extend(await _build_campus_visit_work_items(db, current_user, now))
-    if normalized_queue in {"all", "follow_up"}:
-        rows.extend(await _build_follow_up_work_items(db, current_user, now))
-    if normalized_queue in {"all", "settlement"}:
-        rows.extend(await _build_settlement_work_items(db, current_user))
-    if normalized_queue in {"all", "help"}:
-        rows.extend(await _build_help_work_items(db, current_user))
+    rows.extend(await _build_lead_contact_work_items(db, current_user))
+    rows.extend(await _build_home_visit_work_items(db, current_user, now))
+    rows.extend(await _build_campus_visit_work_items(db, current_user, now))
+    rows.extend(await _build_follow_up_work_items(db, current_user, now))
+    rows.extend(await _build_settlement_work_items(db, current_user))
+    rows.extend(await _build_help_work_items(db, current_user))
+    rows.extend(
+        await _build_stale_a_work_items(db, current_user, now, stale_days)
+    )
 
     if priority:
         rows = [row for row in rows if row["priority"] == priority]
@@ -474,6 +618,39 @@ async def list_work_items(
         rows = [row for row in rows if region in (row["region"] or "")]
     if agent_id is not None:
         rows = [row for row in rows if row["agent_id"] == agent_id]
+    query_text = q.strip().casefold()
+    if query_text:
+        searchable_fields = (
+            "title",
+            "student_name",
+            "region",
+            "school_name",
+            "agent_name",
+            "reason",
+            "status",
+            "source_id",
+        )
+        rows = [
+            row
+            for row in rows
+            if any(
+                query_text in str(row.get(field) or "").casefold()
+                for field in searchable_fields
+            )
+        ]
+
+    available_regions = sorted(
+        {row["region"] for row in rows if row.get("region")},
+        key=lambda value: value.casefold(),
+    )
+    queue_counts = {key: 0 for key in WORK_ITEM_QUEUES if key != "all"}
+    for row in rows:
+        if row["queue"] in queue_counts:
+            queue_counts[row["queue"]] += 1
+    queue_counts["all"] = len(rows)
+
+    if normalized_queue != "all":
+        rows = [row for row in rows if row["queue"] == normalized_queue]
 
     rows.sort(
         key=lambda row: (
@@ -484,4 +661,12 @@ async def list_work_items(
     )
     total = len(rows)
     start = (page - 1) * page_size
-    return Response.ok(_page_payload(total, page, page_size, rows[start : start + page_size]))
+    payload = _page_payload(total, page, page_size, rows[start : start + page_size])
+    payload.update(
+        {
+            "has_more": start + page_size < total,
+            "queue_counts": queue_counts,
+            "regions": available_regions,
+        }
+    )
+    return Response.ok(payload)

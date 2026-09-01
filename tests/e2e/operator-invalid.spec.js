@@ -81,9 +81,6 @@ test.describe('operator invalid result flow', () => {
         },
       });
     });
-    await page.route('**/api/calls/check**', async (route) => {
-      await route.fulfill({ json: { code: 0, data: { count: 0, can_call: true } } });
-    });
     await page.route('**/api/students/1001/detail', async (route) => {
       await route.fulfill({
         json: {

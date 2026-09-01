@@ -20,7 +20,6 @@ function successfulData(response, fallbackMessage) {
 export default function useAgentDial({
   state,
   actions,
-  current,
   students,
   toast,
   confirm,
@@ -28,8 +27,6 @@ export default function useAgentDial({
   updateIntentById,
   onFlowComplete,
 }) {
-  // 用 ref 缓存 lastFetchedId 防止重复请求
-  const lastFetchedIdRef = useRef(null);
   const dialCompletionRef = useRef(null);
   const finalizedFlowKeyRef = useRef(null);
   const dialingRef = useRef(new Set());
@@ -91,47 +88,12 @@ export default function useAgentDial({
     return true;
   }, [actions, completeDialOrNotify, onFlowComplete]);
 
-  // 加载拨号检查
-  const refreshDialCheck = useCallback(async (id) => {
-    try {
-      const r = await api.get('/calls/check', { params: { student_id: id, within_hours: 24 } });
-      if (r.data.code === 0) {
-        actions.setDialCheck(id, r.data.data);
-        return r.data.data;
-      }
-    } catch (e) { logger.error('拨号检查失败:', e); }
-    return null;
-  }, [actions]);
-
-  // 拨号检查 - 用 ref 防止重复请求
-  useEffect(() => {
-    const studentId = current?.id;
-    if (!studentId || studentId === lastFetchedIdRef.current) return;
-    lastFetchedIdRef.current = studentId;
-
-    api.get('/calls/check', { params: { student_id: studentId, within_hours: 24 } }).then((r) => {
-      if (r.data.code === 0) actions.setDialCheck(studentId, r.data.data);
-    }).catch((e) => logger.error('拨号检查失败:', e));
-  }, [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // 处理拨号
   const handleDial = useCallback(async (contactKey, id) => {
     const dialKey = `${id}:${contactKey}`;
     if (dialingRef.current.has(dialKey)) return;
     dialingRef.current.add(dialKey);
     try {
-      const check = await refreshDialCheck(id);
-      const count = check?.count ?? 0;
-      if (count >= 3) {
-        const ok = await confirm({
-          title: '拨号频次提醒',
-          message: `该学生 24h 内已被拨打 ${count} 次（来自任意坐席），确认继续？`,
-          confirmText: '仍要拨打',
-          tone: 'danger',
-        });
-        if (!ok) return;
-      }
-
       let phone = '';
       let dialLogId = null;
       const existingDial = readPendingDial();
@@ -151,7 +113,7 @@ export default function useAgentDial({
         }
       } catch (err) {
         if (err?.response?.status === 403) {
-          toast?.error(err.response.data?.detail || '当前不允许拨号');
+          toast?.error(err.response.data?.detail || '当前无权拨号');
           return;
         }
         toast?.error(err?.response?.data?.detail || '获取电话失败');
@@ -174,13 +136,12 @@ export default function useAgentDial({
       });
       window.location.href = `tel:${phone}`;
       actions.setLockedStudent(id);
-      refreshDialCheck(id);
     } finally {
       setTimeout(() => {
         dialingRef.current.delete(dialKey);
       }, 1500);
     }
-  }, [refreshDialCheck, students, actions, toast, confirm]);
+  }, [students, actions, toast]);
 
   // 处理拨号结果弹窗 - 状态选择
   const handleDialModalStatus = useCallback(async (s) => {
@@ -356,6 +317,5 @@ export default function useAgentDial({
     handleDialModalIntent,
     handleDialModalFollowUp,
     handleDialModalClose,
-    refreshDialCheck,
   };
 }

@@ -9,14 +9,6 @@ from sqlalchemy import select
 
 from app.domain_models import StudentAssignment, WorkItem, WorkItemKind, WorkItemStatus
 from app.models import OperationLog, Student
-from app.routers.students import _is_within_dial_window
-
-
-def test_dial_window_includes_end_minute_and_cross_midnight():
-    assert _is_within_dial_window(23 * 60 + 59, "00:00", "23:59")
-    assert _is_within_dial_window(23 * 60 + 30, "22:00", "01:00")
-    assert _is_within_dial_window(30, "22:00", "01:00")
-    assert not _is_within_dial_window(2 * 60, "22:00", "01:00")
 
 
 @pytest.mark.asyncio
@@ -848,7 +840,7 @@ class TestUpdateStudent:
     ):
         from sqlalchemy import select
 
-        from app.models import DialLog, Student, StudentStatus, SystemConfig
+        from app.models import DialLog, Student, StudentStatus
 
         student = Student(
             name="重复拨号学生",
@@ -857,8 +849,6 @@ class TestUpdateStudent:
             guardian_phone="13800138000",
         )
         db.add(student)
-        db.add(SystemConfig(key="dial_window_start", value="00:00"))
-        db.add(SystemConfig(key="dial_window_end", value="23:59"))
         await db.commit()
         await db.refresh(student)
 
@@ -893,7 +883,7 @@ class TestUpdateStudent:
     async def test_get_phone_reuses_recent_pending_dial_log(
         self, client, db, agent_user, agent_headers
     ):
-        from app.models import DialLog, Student, StudentStatus, SystemConfig
+        from app.models import DialLog, Student, StudentStatus
         from app.utils import utcnow
 
         student = Student(
@@ -903,8 +893,6 @@ class TestUpdateStudent:
             guardian_phone="13800138001",
         )
         db.add(student)
-        db.add(SystemConfig(key="dial_window_start", value="00:00"))
-        db.add(SystemConfig(key="dial_window_end", value="23:59"))
         await db.flush()
         pending = DialLog(
             student_id=student.id,
@@ -937,7 +925,7 @@ class TestUpdateStudent:
     async def test_get_phone_does_not_reuse_completed_dial_log(
         self, client, db, agent_user, agent_headers
     ):
-        from app.models import DialLog, Student, StudentStatus, SystemConfig
+        from app.models import DialLog, Student, StudentStatus
         from app.utils import utcnow
 
         student = Student(
@@ -947,8 +935,6 @@ class TestUpdateStudent:
             guardian_phone="13800138002",
         )
         db.add(student)
-        db.add(SystemConfig(key="dial_window_start", value="00:00"))
-        db.add(SystemConfig(key="dial_window_end", value="23:59"))
         await db.flush()
         completed = DialLog(
             student_id=student.id,
@@ -1016,8 +1002,19 @@ class TestUpdateStudent:
         assert resp.json()["data"]["stage"] == "有意向"
 
     async def test_update_stage_accepts_home_visit_stage(
-        self, client, admin_headers, sample_student
+        self, client, db, admin_headers, sample_student, agent_user
     ):
+        from app.models import HomeVisitStatus, HomeVisitTask
+
+        db.add(
+            HomeVisitTask(
+                student_id=sample_student.id,
+                creator_agent_id=agent_user.id,
+                status=HomeVisitStatus.pending,
+            )
+        )
+        await db.commit()
+
         resp = await client.put(
             f"/api/students/{sample_student.id}/stage",
             json={"stage": "待家访"},
@@ -1027,6 +1024,20 @@ class TestUpdateStudent:
         assert resp.status_code == 200
         assert resp.json()["code"] == 0
         assert resp.json()["data"]["stage"] == "待家访"
+
+    async def test_update_stage_rejects_home_visit_stage_without_task(
+        self, client, admin_headers, sample_student
+    ):
+        resp = await client.put(
+            f"/api/students/{sample_student.id}/stage",
+            json={"stage": "待家访"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "家访任务" in resp.json()["msg"]
+        assert resp.json()["data"] is None
 
     async def test_list_filter_accepts_home_visit_stage(self, client, db, admin_headers):
         from app.models import Student, StudentStage
@@ -1101,35 +1112,215 @@ class TestUpdateStudent:
         assert student.status == StudentStatus.enrolled
         assert student.stage == StudentStage.enrolled
 
-    async def test_update_stage_to_enrolled_writes_operation_log(
+    async def test_invalidate_enrollment_transitions_to_invalid_and_logs(
+        self, client, db, admin_headers
+    ):
+        from app.models import OperationLog, Student, StudentStage, StudentStatus
+
+        student = Student(
+            name="取消报名测试",
+            status=StudentStatus.enrolled,
+            stage=StudentStage.enrolled,
+            enrollment_substage="deposit_pending",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.post(
+            f"/api/students/{student.id}/invalidate-enrollment",
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+        await db.refresh(student)
+        assert student.status == StudentStatus.invalid
+        assert student.status_detail == "其他"
+        assert student.outcome_reason_code == "other"
+        assert student.stage == StudentStage.initial_contact
+        assert student.enrollment_substage is None
+        log = (
+            await db.execute(
+                select(OperationLog).where(
+                    OperationLog.target_student_id == student.id,
+                    OperationLog.action == "取消报名",
+                )
+            )
+        ).scalar_one()
+        assert log.old_status == "已报名"
+        assert log.new_status == "无效"
+
+    async def test_normal_admin_needs_enrolled_invalidate_permission(
+        self, client, db, normal_admin_headers
+    ):
+        from app.models import Student, StudentStage, StudentStatus
+
+        student = Student(
+            name="取消报名权限测试",
+            status=StudentStatus.enrolled,
+            stage=StudentStage.enrolled,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.post(
+            f"/api/students/{student.id}/invalidate-enrollment",
+            headers=normal_admin_headers,
+        )
+
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "无权执行该操作"
+
+    async def test_update_stage_to_enrolled_is_rejected_without_enrollment_record(
         self, client, db, admin_headers, sample_student
     ):
+        from app.models import EnrollmentRecord
+
         resp = await client.put(
             f"/api/students/{sample_student.id}/stage",
             json={"stage": "已报名"},
             headers=admin_headers,
         )
 
-        assert resp.json()["code"] == 0
-        assert resp.json()["data"]["stage"] == "已报名"
-        assert resp.json()["data"]["status"] == "已报名"
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "报名确认流程" in resp.json()["msg"]
+        await db.refresh(sample_student)
+        assert sample_student.stage.value == "初次联系"
+        assert sample_student.status.value == "未联系"
 
-        log = (
+        enrollment = (
             await db.execute(
-                select(OperationLog).where(
-                    OperationLog.target_student_id == sample_student.id,
-                    OperationLog.action == "修改状态",
+                select(EnrollmentRecord).where(
+                    EnrollmentRecord.student_id == sample_student.id,
                 )
             )
-        ).scalar_one()
-        assert log.old_status == "未联系"
-        assert log.new_status == "已报名"
-        assert "阶段 初次联系 → 已报名" in log.content
-        assert "状态 未联系 → 已报名" in log.content
+        ).scalar_one_or_none()
+        assert enrollment is None
+
+    async def test_agent_cannot_set_enrolled_status_via_generic_update(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, EnrollmentRecord, Student, StudentStatus
+
+        student = Student(
+            name="坐席报名保护",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            guardian_phone="13800138000",
+        )
+        db.add(student)
+        await db.flush()
+        db.add(DialLog(student_id=student.id, agent_id=agent_user.id))
+        await db.commit()
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "已报名"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "报名确认流程" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.status == StudentStatus.not_contacted
+        assert (
+            await db.execute(
+                select(EnrollmentRecord).where(EnrollmentRecord.student_id == student.id)
+            )
+        ).scalar_one_or_none() is None
+
+    async def test_agent_cannot_set_enrolled_stage_via_generic_stage_update(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import Student, StudentStage
+
+        student = Student(
+            name="坐席阶段保护",
+            assigned_to=agent_user.id,
+            stage=StudentStage.initial_contact,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}/stage",
+            json={"stage": "已报名"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "报名确认流程" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.stage == StudentStage.initial_contact
+
+    async def test_agent_cannot_reset_student_to_new_lead_status(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import DialLog, Student, StudentStatus
+
+        student = Student(
+            name="坐席新线索保护",
+            assigned_to=agent_user.id,
+            status=StudentStatus.contacted,
+            guardian_phone="13800138000",
+        )
+        db.add(student)
+        await db.flush()
+        db.add(DialLog(student_id=student.id, agent_id=agent_user.id))
+        await db.commit()
+
+        resp = await client.put(
+            f"/api/students/{student.id}",
+            json={"status": "新线索"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "管理员回收" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.status == StudentStatus.contacted
+
+    async def test_agent_cannot_reset_student_to_initial_stage(
+        self, client, db, agent_user, agent_headers
+    ):
+        from app.models import Student, StudentStage
+
+        student = Student(
+            name="坐席初始阶段保护",
+            assigned_to=agent_user.id,
+            stage=StudentStage.interested,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
+
+        resp = await client.put(
+            f"/api/students/{student.id}/stage",
+            json={"stage": "初次联系"},
+            headers=agent_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 1
+        assert "管理员回收" in resp.json()["msg"]
+        await db.refresh(student)
+        assert student.stage == StudentStage.interested
 
     async def test_set_enroll_info_writes_operation_log(
-        self, client, db, admin_headers, sample_student
+        self, client, db, admin_headers, sample_student, agent_user
     ):
+        from app.models import EnrollmentRecord
+
+        sample_student.assigned_to = agent_user.id
+        await db.commit()
+
         resp = await client.put(
             f"/api/students/{sample_student.id}/enroll",
             json={"program": "护理", "deposit": 500, "enrolled_at": "2026-06-30"},
@@ -1138,6 +1329,24 @@ class TestUpdateStudent:
 
         assert resp.json()["code"] == 0
         assert resp.json()["data"]["program"] == "护理"
+        record_id = resp.json()["data"]["record_id"]
+
+        record = await db.get(EnrollmentRecord, record_id)
+        assert record is not None
+        assert record.student_id == sample_student.id
+        assert record.enrolled_program == "护理"
+        assert record.amount == 500
+        settlement_item = (
+            await db.execute(
+                select(WorkItem).where(
+                    WorkItem.kind == WorkItemKind.enrollment_settlement,
+                    WorkItem.source_type == "enrollment",
+                    WorkItem.source_id == record_id,
+                )
+            )
+        ).scalar_one()
+        assert settlement_item.status == WorkItemStatus.open
+        assert settlement_item.owner_agent_id == agent_user.id
 
         log = (
             await db.execute(
@@ -1147,13 +1356,9 @@ class TestUpdateStudent:
                 )
             )
         ).scalar_one()
-        assert log.old_status == "未联系"
-        assert log.new_status == "已报名"
-        assert "状态 未联系 → 已报名" in log.content
-        assert "阶段 初次联系 → 已报名" in log.content
-        assert "报名日 - → 2026-06-30" in log.content
-        assert "专业 - → 护理" in log.content
-        assert "定金 - → 500.0" in log.content
+        assert "报名归属话务员" in log.content
+        assert "来源：管理员补录" in log.content
+        assert "专业：护理" in log.content
 
     async def test_update_invalid_stage(self, client, admin_headers, sample_student):
         """Historical bug: invalid stage crashed with 500. Now returns code=1."""

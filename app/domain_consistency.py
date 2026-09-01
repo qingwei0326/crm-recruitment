@@ -263,6 +263,10 @@ async def _source_projection_count(
     kind: WorkItemKind,
     source_type: str,
 ) -> int:
+    source_open = and_(
+        source_open,
+        Student.status.not_in(_TERMINAL_STATUSES),
+    )
     item = aliased(WorkItem)
     employment = aliased(AgentEmployment)
     owner_id = func.coalesce(

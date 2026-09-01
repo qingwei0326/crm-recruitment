@@ -187,7 +187,7 @@ while (($#)); do
   case "$1" in
     -o) output="$2"; shift 2 ;;
     --pinnedpubkey)
-      [[ "$2" == 'sha256//mn8PXhDLej6ELYJcxROMSkc1iV6PvaMA3q+epSmmDoc=' ]]
+      [[ "$2" == 'sha256//i4n8XF6M5x5JYT2kq2hcjjZc8KyYuz+CfoAH1YstJls=' ]]
       seen_pin=1
       shift 2
       ;;
@@ -260,10 +260,10 @@ if [[ "${1:-}" == -c && "${2:-}" == *"import alembic"* ]]; then
 fi
 if [[ "${1:-}" == -m && "${2:-}" == alembic ]]; then
   if [[ " $* " == *" heads "* ]]; then
-    echo '20260726_01 (head)'
+    echo '20260823_01 (head)'
     exit 0
   fi
-  if [[ " $* " == *" upgrade 20260726_01 "* ]]; then
+  if [[ " $* " == *" upgrade 20260823_01 "* ]]; then
     if [[ "${FAKE_MIGRATION_FAIL:-0}" == 1 ]]; then
       echo 'simulated migration failure' >&2
       exit 2
@@ -273,7 +273,7 @@ import sqlite3
 import sys
 
 with sqlite3.connect(sys.argv[1]) as connection:
-    connection.execute("update alembic_version set version_num = '20260726_01'")
+    connection.execute("update alembic_version set version_num = '20260823_01'")
     connection.execute(
         "create table personal_groups (id integer primary key, name text not null)"
     )
@@ -420,7 +420,7 @@ PY
 prepare_remote
 deploy
 assert_new_release_active
-[[ "$(db_revision "$REMOTE/crm.db")" == 20260726_01 ]]
+[[ "$(db_revision "$REMOTE/crm.db")" == 20260823_01 ]]
 [[ "$(cat "$STATE/migration-applies")" == 1 ]]
 [[ "$(cat "$STATE/repair-applies")" == 2 ]]
 [[ "$(stat -c %a "$(readlink "$REMOTE/.deploy/current")")" == 555 ]]
@@ -444,7 +444,7 @@ import sqlite3
 import sys
 
 with sqlite3.connect(sys.argv[1]) as connection:
-    connection.execute("update alembic_version set version_num = '20260726_01'")
+    connection.execute("update alembic_version set version_num = '20260823_01'")
     connection.execute(
         "create table personal_groups (id integer primary key, name text not null)"
     )
@@ -453,7 +453,7 @@ deploy
 assert_new_release_active
 [[ ! -f "$STATE/migration-applies" ]]
 already_current_backup="$(find "$FAKE_HOME/deploy-backups" -maxdepth 1 -type f -name 'crm-db-*.db' | head -n 1)"
-[[ "$(db_revision "$already_current_backup")" == 20260726_01 ]]
+[[ "$(db_revision "$already_current_backup")" == 20260823_01 ]]
 
 prepare_remote
 printf 'definitely-not-installed==9.9.9\r\n' >>"$REMOTE/requirements.txt"
@@ -480,7 +480,7 @@ if FAKE_REPAIR_FAIL=1 deploy >/dev/null 2>&1; then
   exit 1
 fi
 [[ ! -e "$REMOTE/.deploy/current" ]]
-[[ "$(db_revision "$REMOTE/crm.db")" == 20260726_01 ]]
+[[ "$(db_revision "$REMOTE/crm.db")" == 20260823_01 ]]
 [[ "$(find "$FAKE_HOME/deploy-backups" -maxdepth 1 -type f -name 'crm-db-*.db' | wc -l)" == 1 ]]
 assert_no_lock
 
@@ -535,7 +535,7 @@ rollback_target="$(readlink "$REMOTE/.deploy/current")"
 [[ "$rollback_target" == "$FAKE_HOME/deploy-backups/crm-code-"* ]]
 grep -q '# old runtime marker' "$REMOTE/app/admin_daily_ops.py"
 grep -q 'old frontend' "$REMOTE/frontend/dist/index.html"
-[[ "$(db_revision "$REMOTE/crm.db")" == 20260726_01 ]]
+[[ "$(db_revision "$REMOTE/crm.db")" == 20260823_01 ]]
 assert_no_lock
 
 echo 'safe Ubuntu deployment simulation passed: migration, backup ordering, owner repair, restart modes, guards, dependency check, duplicate protection, rollback'

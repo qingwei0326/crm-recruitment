@@ -8,73 +8,86 @@ export default function AgentSidebar({
   return (
     <>
       {isMobile && (
-        <div className="flex items-center justify-between px-4 h-14 border-b dark:border-gray-700">
-          <span className="font-semibold text-gray-800 dark:text-gray-100">菜单</span>
+        <div className="flex h-16 items-center justify-between border-b border-slate-800/90 px-5">
+          <div>
+            <div className="text-sm font-bold tracking-wide text-white">话务执行中心</div>
+            <div className="mt-0.5 text-[10px] font-medium text-slate-500">运营工作台</div>
+          </div>
           <button
             onClick={onCloseMenu}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            aria-label="关闭导航"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="h-5 w-5" />
           </button>
         </div>
       )}
-      <div className="p-3 space-y-1">
+      <div className="space-y-1 p-3">
+        <div className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
+          执行导航
+        </div>
         <button
           onClick={() => { onCloseMenu?.(); onTabChange('today'); }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
+          className={`group flex min-h-10 w-full items-center gap-3 rounded-lg border-l-2 px-3 text-sm font-medium transition ${
             viewTab === 'today'
-              ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+              ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm'
+              : 'border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-100'
           }`}
         >
-          <Target className="w-4 h-4" /> 待拨打
+          <Target className={`h-4 w-4 ${viewTab === 'today' ? 'text-emerald-100' : 'text-slate-500 group-hover:text-slate-200'}`} />
+          待拨打
         </button>
         <button
           onClick={() => { onCloseMenu?.(); onTabChange('handled'); }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
+          className={`group flex min-h-10 w-full items-center gap-3 rounded-lg border-l-2 px-3 text-sm font-medium transition ${
             viewTab === 'handled'
-              ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+              ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm'
+              : 'border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-100'
           }`}
         >
-          <CalendarClock className="w-4 h-4" /> 待处理
+          <CalendarClock className={`h-4 w-4 ${viewTab === 'handled' ? 'text-emerald-100' : 'text-slate-500 group-hover:text-slate-200'}`} />
+          待处理
         </button>
         <button
           onClick={() => { onCloseMenu?.(); onTabChange('following'); }}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm ${
+          className={`group flex min-h-10 w-full items-center gap-3 rounded-lg border-l-2 px-3 text-sm font-medium transition ${
             viewTab === 'following'
-              ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-medium'
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+              ? 'border-emerald-400 bg-emerald-600 text-white shadow-sm'
+              : 'border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-100'
           }`}
         >
-          <BarChart3 className="w-4 h-4" /> 跟进中
+          <BarChart3 className={`h-4 w-4 ${viewTab === 'following' ? 'text-emerald-100' : 'text-slate-500 group-hover:text-slate-200'}`} />
+          跟进中
         </button>
         <button
           onClick={() => { onCloseMenu?.(); onAddStudent(); }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+          className="group flex min-h-10 w-full items-center gap-3 rounded-lg border-l-2 border-transparent px-3 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
         >
-          <Plus className="w-4 h-4" /> 添加学生
+          <Plus className="h-4 w-4 text-slate-500 group-hover:text-slate-200" />
+          添加学生
         </button>
       </div>
-      <div className="mt-auto p-3 border-t dark:border-gray-700 space-y-1">
+      <div className="mt-auto space-y-1 border-t border-slate-800/90 bg-slate-950/60 p-4">
         <button
           onClick={onToggleTheme}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+          className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
         >
-          {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {dark ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}
           {dark ? '浅色模式' : '深色模式'}
         </button>
         <button
           onClick={() => { onCloseMenu?.(); onShowSettings(); }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+          className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
         >
-          <Settings className="w-4 h-4" /> 推送设置
+          <Settings className="h-4 w-4" />
+          推送设置
         </button>
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+          className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-xs font-medium text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-300"
         >
-          <LogOut className="w-4 h-4" /> 退出登录
+          <LogOut className="h-4 w-4" />
+          退出登录
         </button>
       </div>
     </>

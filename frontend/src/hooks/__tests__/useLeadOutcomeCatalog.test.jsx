@@ -39,7 +39,6 @@ describe('useLeadOutcomeCatalog', () => {
       'missed_call',
       'enrolled_elsewhere',
       'phone_invalid',
-      'enrolled',
     ]);
     expect(result.current.byCode.enrolled_elsewhere.reclaimable).toBe(false);
   });

@@ -19,6 +19,7 @@ from app.domain_models import (
     StudentAssignment,
 )
 from app.models import Student, User, UserRole
+from app.services.assignment_capacity_service import build_capacity_plan
 from app.services.work_item_service import (
     sync_assignment_source_work_items,
     sync_students_work_items,
@@ -52,6 +53,7 @@ async def apply_assignment_changes(
     batch_id: str,
     at: datetime | None = None,
     handover_batch_id: int | None = None,
+    capacity_override_reason: str | None = None,
 ) -> AssignmentResult:
     requested: dict[int, int | None] = {}
     for target in targets:
@@ -106,6 +108,33 @@ async def apply_assignment_changes(
     active_by_student = {
         assignment.student_id: assignment for assignment in active_assignments
     }
+    capacity_force_reason = ""
+
+    capacity_candidate_ids = [
+        student_id
+        for student_id in sorted(requested)
+        if requested[student_id] is not None
+        and active_by_student.get(student_id) is None
+        and students[student_id].assigned_to is None
+    ]
+    if capacity_candidate_ids:
+        capacity_plan = await build_capacity_plan(
+            db,
+            capacity_candidate_ids,
+            [requested[student_id] for student_id in capacity_candidate_ids],
+            at=now,
+        )
+        overflow_ids = capacity_plan.overflow_student_ids
+        if overflow_ids:
+            override_reason = (capacity_override_reason or "").strip()
+            if not override_reason:
+                raise DomainConflict(
+                    f"本次分配超过坐席今日可承载量，{len(overflow_ids)} 条线索应留在未分配池；"
+                    "如需强制分配，请填写原因"
+                )
+            if not getattr(operator, "is_super_admin", False):
+                raise DomainConflict("只有超级管理员可以强制超容量分配")
+            capacity_force_reason = override_reason
 
     if handover_batch_id is None:
         current_agent_ids = sorted(
@@ -181,6 +210,11 @@ async def apply_assignment_changes(
                 content=(
                     f"{current_agent_id or '未分配'} -> "
                     f"{target_agent_id or '未分配'}"
+                    + (
+                        f"；超容量强制原因：{capacity_force_reason}"
+                        if capacity_force_reason and current_agent_id is None
+                        else ""
+                    )
                 ),
                 old_status=assignment_state_label(current_agent_id),
                 new_status=assignment_state_label(target_agent_id),

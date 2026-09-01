@@ -9,7 +9,6 @@ import {
   CalendarClock,
   User as UserIcon,
   Loader2,
-  AlertTriangle,
   RefreshCw,
   Search,
   X,
@@ -19,13 +18,11 @@ import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import StatusBadge from '../../components/StatusBadge';
-import IntentLevelBadge from '../../components/IntentLevelBadge';
 import MobileDialResult from '../../components/MobileDialResult';
 import useTodayTasks from '../../hooks/useTodayTasks';
 import useDialFlow from '../../hooks/useDialFlow';
 import { useToast } from '../../components/Toast';
 import HelpModal from '../../components/HelpModal';
-import PhoneLink from '../../components/PhoneLink';
 import {
   PersonalGroupBadges,
   PersonalGroupBulkBar,
@@ -33,7 +30,6 @@ import {
   UNGROUPED_FILTER,
 } from '../../components/PersonalGroups';
 import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
-import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
 
 function StatCard({ label, value, color = 'blue' }) {
   const colorMap = {
@@ -62,8 +58,7 @@ function ProgressBar({ pct }) {
   );
 }
 
-export function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialing }) {
-  const overLimit = (dialCount ?? 0) >= dialMax;
+export function StudentRow({ s, onDial, onDetail, dialing, overdueOnly = false }) {
   const contacts = [
     {
       key: 'guardian',
@@ -76,18 +71,14 @@ export function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialin
       phone: s.guardian2_phone,
     },
   ].filter((contact) => contact.phone);
-  const nextAction = getStudentNextAction(s, contacts.length > 0);
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-3.5 min-[380px]:p-4 space-y-3">
       <button
         type="button"
         onClick={() => onDetail(s.id)}
-        className="w-full text-left grid grid-cols-[44px_minmax(0,1fr)_20px] gap-3"
+        className="w-full text-left grid grid-cols-[minmax(0,1fr)_20px] gap-3"
       >
-        <div className="shrink-0 w-11 h-11 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 flex items-center justify-center font-semibold text-lg">
-          {(s.name || '?').slice(0, 1)}
-        </div>
         <div className="flex-1 min-w-0">
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
             <span className="min-w-0 truncate text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -101,33 +92,18 @@ export function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialin
                 {s.status_detail}
               </span>
             )}
-            <IntentLevelBadge level={s.intent_level} />
+            {overdueOnly && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">
+                逾期未处理
+              </span>
+            )}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-            {s.school_name || '-'}
-            {s.region ? ` · ${s.region}` : ''}
+            来源片区：{s.school_name || s.region || '-'}
           </div>
         </div>
         <ChevronRight className="w-5 h-5 text-gray-300 dark:text-gray-600 shrink-0 mt-1" />
       </button>
-      <div className="ml-14">
-        <span
-          className={`inline-flex max-w-full items-center rounded-lg border px-2.5 py-1 text-xs font-medium leading-4 break-words ${NEXT_ACTION_TONE_CLASSES[nextAction.tone] || NEXT_ACTION_TONE_CLASSES.slate}`}
-        >
-          {nextAction.label}
-        </span>
-      </div>
-      {s.guardian_name && (
-        <div className="text-xs text-gray-400 -mt-1 ml-14 truncate flex items-center gap-1">
-          <span>{s.guardian_name}</span>
-          <PhoneLink
-            value={s.guardian_phone}
-            label={`拨打 ${s.name || '学生'} 监护人`}
-            onDial={() => onDial(s.id, 'guardian')}
-            className="text-xs"
-          />
-        </div>
-      )}
       <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
         {contacts.length > 0 ? (
           contacts.map((contact) => (
@@ -136,17 +112,11 @@ export function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialin
               type="button"
               disabled={dialing}
               onClick={() => onDial(s.id, contact.key)}
-              className={`inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition active:scale-95 ${
-                overLimit
-                  ? 'bg-red-600 text-white'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              } disabled:opacity-60`}
+              className="inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-60"
               aria-label={`拨打 ${s.name || '学生'} ${contact.label}`}
             >
               {dialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Phone className="w-5 h-5" />}
-              <span className="truncate">
-                {overLimit ? `已 ${dialCount} 次 · 仍拨` : `拨 ${contact.label}`}
-              </span>
+              <span className="truncate">拨 {contact.label}</span>
             </button>
           ))
         ) : (
@@ -160,12 +130,6 @@ export function StudentRow({ s, dialCount, dialMax = 3, onDial, onDetail, dialin
           </button>
         )}
       </div>
-      {overLimit && (
-        <div className="flex items-start gap-1.5 text-xs leading-5 text-red-600 dark:text-red-300">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>24h 内已拨打 {dialCount} 次，注意频次</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -207,14 +171,6 @@ const PENDING_STATUS_FILTERS = [
   { label: '已联系', value: '已联系' },
   { label: '未接', value: '未接' },
   { label: '待回访', value: '待回访' },
-];
-
-const PENDING_INTENT_FILTERS = [
-  { label: '全部意向', value: null },
-  { label: 'A', value: 'A' },
-  { label: 'B', value: 'B' },
-  { label: 'C', value: 'C' },
-  { label: '无', value: '无' },
 ];
 
 const PENDING_RESULT_FILTERS = [
@@ -343,7 +299,6 @@ function readPendingFilters(storageKey) {
     const saved = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
     return {
       selectedStatus: saved.selectedStatus || null,
-      selectedIntent: saved.selectedIntent || null,
       selectedResult: saved.selectedResult || null,
       selectedGroupId: saved.selectedGroupId || null,
       selectedRegion: saved.selectedRegion || null,
@@ -352,7 +307,6 @@ function readPendingFilters(storageKey) {
   } catch {
     return {
       selectedStatus: null,
-      selectedIntent: null,
       selectedResult: null,
       selectedGroupId: null,
       selectedRegion: null,
@@ -364,7 +318,6 @@ function readPendingFilters(storageKey) {
 function pendingFiltersFingerprint(filters) {
   return JSON.stringify({
     selectedStatus: filters.selectedStatus || null,
-    selectedIntent: filters.selectedIntent || null,
     selectedResult: filters.selectedResult || null,
     selectedGroupId: filters.selectedGroupId || null,
     selectedRegion: filters.selectedRegion || null,
@@ -407,7 +360,6 @@ export function PendingList() {
   const [total, setTotal] = useState(restoredView?.total || 0);
   const [listTotal, setListTotal] = useState(restoredView?.listTotal || 0);
   const [selectedStatus, setSelectedStatus] = useState(restoredFilters.selectedStatus);
-  const [selectedIntent, setSelectedIntent] = useState(restoredFilters.selectedIntent);
   const [selectedResult, setSelectedResult] = useState(restoredFilters.selectedResult);
   const [selectedGroupId, setSelectedGroupId] = useState(restoredFilters.selectedGroupId);
   const [selectedRegion, setSelectedRegion] = useState(restoredFilters.selectedRegion);
@@ -431,18 +383,17 @@ export function PendingList() {
   useEffect(() => {
     sessionStorage.setItem(storageKey, JSON.stringify({
       selectedStatus,
-      selectedIntent,
       selectedResult,
       selectedGroupId,
       selectedRegion,
       pendingSearch,
     }));
-  }, [storageKey, selectedStatus, selectedIntent, selectedResult, selectedGroupId, selectedRegion, pendingSearch]);
+  }, [storageKey, selectedStatus, selectedResult, selectedGroupId, selectedRegion, pendingSearch]);
 
   useEffect(() => {
     setSelectionMode(false);
     setSelectedStudentIds([]);
-  }, [selectedStatus, selectedIntent, selectedResult, selectedGroupId, selectedRegion, pendingSearch]);
+  }, [selectedStatus, selectedResult, selectedGroupId, selectedRegion, pendingSearch]);
 
   useEffect(() => {
     const handleGroupChange = (event) => {
@@ -459,7 +410,6 @@ export function PendingList() {
   useEffect(() => {
     const fingerprint = pendingFiltersFingerprint({
       selectedStatus,
-      selectedIntent,
       selectedResult,
       selectedGroupId,
       selectedRegion,
@@ -482,7 +432,6 @@ export function PendingList() {
         : 100,
     };
     if (selectedStatus) params.status = selectedStatus;
-    if (selectedIntent) params.intent_level = selectedIntent;
     if (selectedResult) params.status_detail = selectedResult;
     if (selectedGroupId === UNGROUPED_FILTER) params.ungrouped = true;
     else if (selectedGroupId) params.personal_group_id = selectedGroupId;
@@ -510,7 +459,7 @@ export function PendingList() {
       .finally(() => {
         if (requestId === pendingRequestSeqRef.current) setLoading(false);
       });
-  }, [storageKey, selectedStatus, selectedIntent, selectedResult, selectedGroupId, selectedRegion, pendingSearch, groupRevision]);
+  }, [storageKey, selectedStatus, selectedResult, selectedGroupId, selectedRegion, pendingSearch, groupRevision]);
 
   useLayoutEffect(() => {
     if (restoreScrollRef.current === null || items.length === 0) return undefined;
@@ -528,7 +477,6 @@ export function PendingList() {
     setLoadingMore(true);
     const params = { limit: 100, offset: items.length };
     if (selectedStatus) params.status = selectedStatus;
-    if (selectedIntent) params.intent_level = selectedIntent;
     if (selectedResult) params.status_detail = selectedResult;
     if (selectedGroupId === UNGROUPED_FILTER) params.ungrouped = true;
     else if (selectedGroupId) params.personal_group_id = selectedGroupId;
@@ -619,7 +567,6 @@ export function PendingList() {
     sessionStorage.setItem(pendingListViewStorageKey(storageKey), JSON.stringify({
       fingerprint: pendingFiltersFingerprint({
         selectedStatus,
-        selectedIntent,
         selectedResult,
         selectedGroupId,
         selectedRegion,
@@ -690,22 +637,6 @@ export function PendingList() {
             </button>
           );
         })}
-      </div>
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {PENDING_INTENT_FILTERS.map((filter) => (
-          <button
-            key={filter.value || 'all-intent'}
-            type="button"
-            onClick={() => setSelectedIntent(selectedIntent === filter.value ? null : filter.value)}
-            className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-medium transition ${
-              selectedIntent === filter.value
-                ? 'bg-blue-600 text-white'
-                : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-2">
         {PENDING_RESULT_FILTERS.map((filter) => (
@@ -835,10 +766,9 @@ export function PendingList() {
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 <StatusBadge status={it.status} />
-                <IntentLevelBadge level={it.intent_level} />
               </div>
               <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-                {it.school_name || ''}{it.region ? ` · ${it.region}` : ''}
+                来源片区：{it.school_name || it.region || '-'}
               </div>
               <PersonalGroupBadges groups={it.personal_groups} className="mt-2" />
               {it.notes && (
@@ -993,19 +923,29 @@ export default function MobileHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { students, stats, schools, loading, error, refetch, search, setSearch, selectedSchool, setSelectedSchool, loadMore, hasMore } = useTodayTasks();
-  const { dial, checkDup } = useDialFlow();
-  const [dialCountMap, setDialCountMap] = useState({});
+  const {
+    students,
+    stats,
+    taskProgress,
+    overdueOnly,
+    setOverdueOnly,
+    pendingCount,
+    overdueCount,
+    schools,
+    loading,
+    error,
+    refetch,
+    search,
+    setSearch,
+    selectedSchool,
+    setSelectedSchool,
+    loadMore,
+    hasMore,
+  } = useTodayTasks();
+  const { dial } = useDialFlow();
   const [dialingId, setDialingId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState('tasks');
-  const [dialMax, setDialMax] = useState(3);
-
-  useEffect(() => {
-    api.get('/students/agent/settings')
-      .then(r => { if (r.data?.data?.dial_max_per_24h) setDialMax(r.data.data.dial_max_per_24h); })
-      .catch((e) => logger.error('加载拨号设置失败:', e));
-  }, []);
 
   // 学校分组：后端 SQL 聚合的全量结果（不受列表上限影响）
   const schoolGroups = schools;
@@ -1013,6 +953,15 @@ export default function MobileHome() {
   // 列表已由服务端按学校过滤，stats 也是服务端按学校聚合的
   const filteredStudents = students;
   const filteredStats = stats;
+  const progressStats = taskProgress || filteredStats || {};
+  const progressed = (Number(progressStats.done) || 0) + (Number(progressStats.follow_up) || 0);
+  const allQueueCount = pendingCount == null
+    ? Number(progressStats.pending ?? filteredStats.total) || 0
+    : pendingCount;
+  const schoolQueueCount = schoolGroups.reduce(
+    (sum, group) => sum + (Number(group.count) || 0),
+    0,
+  );
 
   // 从 URL ?tab= 驱动当前标签。依赖 location.search：TabBar 用 <Link> 切换 URL 时
   // （同路由、不重新挂载）也能重新解析，否则点底部标签视图不会切换。
@@ -1028,8 +977,6 @@ export default function MobileHome() {
     try {
       const s = students.find((x) => x.id === id);
       await dial(id, { contactKey, studentName: s?.name });
-      const dc = await checkDup(id);
-      if (dc) setDialCountMap((prev) => ({ ...prev, [id]: dc.count ?? 0 }));
     } finally {
       setDialingId(null);
     }
@@ -1074,24 +1021,54 @@ export default function MobileHome() {
             <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                  待拨打进度
+                  今日任务进度
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {filteredStats.progress_pct ?? 0}%
+                  {progressStats.progress_pct ?? 0}%
                 </div>
               </div>
-              <ProgressBar pct={filteredStats.progress_pct} />
+              <ProgressBar pct={progressStats.progress_pct} />
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                已推进 {progressed} / {progressStats.total ?? 0} 项任务
+              </div>
               <div className="flex gap-2">
-                <StatCard label="总数" value={filteredStats.total ?? 0} color="gray" />
-                <StatCard label="已联系" value={filteredStats.done ?? 0} color="green" />
-                <StatCard label="待回访" value={filteredStats.follow_up ?? 0} color="amber" />
-                <StatCard label="未联系" value={filteredStats.pending ?? 0} color="blue" />
+                <StatCard label="总任务" value={progressStats.total ?? 0} color="gray" />
+                <StatCard label="已推进" value={progressed} color="green" />
+                <StatCard label="待回访" value={progressStats.follow_up ?? 0} color="amber" />
+                <StatCard label="待首次联系" value={progressStats.pending ?? 0} color="blue" />
               </div>
             </div>
 
-            {/* 学校筛选标签 */}
-            {schoolGroups.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-2">
+            {/* 任务队列与学校筛选 */}
+            <div className="space-y-2">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setOverdueOnly(false)}
+                  aria-pressed={!overdueOnly}
+                  className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-semibold transition ${
+                    !overdueOnly
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
+                  }`}
+                >
+                  待拨打 {allQueueCount}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverdueOnly(!overdueOnly)}
+                  aria-pressed={overdueOnly}
+                  className={`shrink-0 min-h-9 px-3 py-2 rounded-full text-xs font-semibold transition ${
+                    overdueOnly
+                      ? 'bg-red-600 text-white'
+                      : 'bg-white dark:bg-gray-700 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-900/60'
+                  }`}
+                >
+                  逾期未处理 {Number(overdueCount) || 0}
+                </button>
+              </div>
+              {schoolGroups.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto pb-2">
                 <button
                   type="button"
                   onClick={() => setSelectedSchool(null)}
@@ -1101,7 +1078,7 @@ export default function MobileHome() {
                       : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border dark:border-gray-600'
                   }`}
                 >
-                  全部 {students.length}
+                  全部 {schoolQueueCount || allQueueCount}
                 </button>
                 {schoolGroups.map((g) => (
                   <button
@@ -1117,8 +1094,9 @@ export default function MobileHome() {
                     {g.name} {g.count}
                   </button>
                 ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
 
             {/* 搜索框 */}
             <div className="relative">
@@ -1152,7 +1130,7 @@ export default function MobileHome() {
               <div className="text-center text-sm text-red-500 py-10">{error}</div>
             ) : filteredStudents.length === 0 ? (
               <div className="text-center text-sm text-gray-400 py-12">
-                {selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}
+                {overdueOnly ? '暂无逾期未处理任务' : selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}
               </div>
             ) : (
               <div className="space-y-3">
@@ -1160,11 +1138,10 @@ export default function MobileHome() {
                   <StudentRow
                     key={s.id}
                     s={s}
-                    dialCount={dialCountMap[s.id]}
-                    dialMax={dialMax}
                     dialing={dialingId === s.id}
                     onDial={handleDial}
                     onDetail={handleDetail}
+                    overdueOnly={overdueOnly}
                   />
                 ))}
                 {hasMore && !selectedSchool && (

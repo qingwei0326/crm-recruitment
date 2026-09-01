@@ -16,6 +16,7 @@ from app.status_policy import (
     statuses_for_canonical,
 )
 from app.task_stats import (
+    ACTIVE_TASK_STATUSES,
     AGENT_HANDLED_TASK_STATUSES,
     AGENT_TODAY_TASK_STATUSES,
     TERMINAL_STUDENT_STATUSES,
@@ -154,6 +155,8 @@ async def today_tasks(
     offset: int = Query(0, ge=0),
     search: str = Query(None),
     school_name: str = Query(None),
+    intent_level: str = Query(None),
+    overdue: bool = Query(False),
     personal_group_id: int | None = Query(None),
     ungrouped: bool = Query(False),
     db: AsyncSession = Depends(get_db),
@@ -164,6 +167,13 @@ async def today_tasks(
     stats_where = (
         Student.assigned_to == current_user.id,
         Student.status.in_(AGENT_TODAY_TASK_STATUSES),
+    )
+    # The dial list only contains uncontacted students, but the progress card
+    # needs the complete active workflow pool so completed work is not lost
+    # when a student leaves the dial queue.
+    progress_where = (
+        Student.assigned_to == current_user.id,
+        Student.status.in_(ACTIVE_TASK_STATUSES),
     )
     # 列表范围：同上
     base_where = (
@@ -179,9 +189,23 @@ async def today_tasks(
     )
     if group_filter is not None:
         stats_where = (*stats_where, group_filter)
+        progress_where = (*progress_where, group_filter)
         base_where = (*base_where, group_filter)
 
+    intent_filter = None
+    if intent_level and intent_level.strip():
+        try:
+            intent_filter = Student.intent_level == IntentLevel(intent_level.strip())
+        except ValueError:
+            raise HTTPException(status_code=422, detail="意向等级无效")
+
+    filtered_stats_where = list(stats_where)
+    if intent_filter is not None:
+        filtered_stats_where.append(intent_filter)
+
     filters = list(base_where)
+    if intent_filter is not None:
+        filters.append(intent_filter)
     # search 条件单独留存，便于学校分组聚合复用（学校分组必须排除 school_name 过滤，
     # 否则一旦选中某学校，分组结果只剩该校，前端学校切换条就塌缩成单个，无法切换）。
     search_pred = None
@@ -192,18 +216,53 @@ async def today_tasks(
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
 
+    # 逾期定义为：分配时间早于北京时间今天零点，且仍在未联系任务池中。
+    # overdue_count 始终按当前搜索/学校/意向筛选计算，方便前端展示准确的队列数量。
+    pending_filters = list(filters)
+    today_start = today_cst_as_utc()
+    overdue_predicates = [
+        Student.assigned_at.is_not(None),
+        Student.assigned_at < today_start,
+    ]
+    overdue_filters = [*filters, *overdue_predicates]
+    overdue_count = (
+        await db.execute(select(func.count(Student.id)).where(*overdue_filters))
+    ).scalar_one() or 0
+    if overdue:
+        filters.extend(overdue_predicates)
+
     # 统计走 SQL 聚合：基于 stats_where（该话务员全部学生），与列表截断无关
     counts_r = await db.execute(
-        select(Student.status, func.count()).where(*stats_where).group_by(Student.status)
+        select(Student.status, func.count())
+        .where(*filtered_stats_where)
+        .group_by(Student.status)
     )
     counts = {status: cnt for status, cnt in counts_r.all()}
     stats = build_task_stats(counts, total_statuses=AGENT_TODAY_TASK_STATUSES)
 
+    progress_counts_r = await db.execute(
+        select(Student.status, func.count()).where(*progress_where).group_by(Student.status)
+    )
+    progress_counts = {status: cnt for status, cnt in progress_counts_r.all()}
+    task_progress = build_task_stats(progress_counts)
+
+    intent_counts_r = await db.execute(
+        select(Student.intent_level, func.count())
+        .where(*stats_where)
+        .group_by(Student.intent_level)
+    )
+    intent_counts = {"A": 0, "B": 0, "C": 0, "无": 0}
+    for level, count in intent_counts_r.all():
+        key = level.value if hasattr(level, "value") else str(level)
+        intent_counts[key] = int(count or 0)
+
     # 学校分组走 SQL 聚合：基于 stats_where（全部学生），排除 school_name 过滤，
     # 保证前端学校切换标签始终是全部学校（不受当前选中学校影响）。
-    school_group_filters = list(stats_where)
+    school_group_filters = list(filtered_stats_where)
     if search_pred is not None:
         school_group_filters.append(search_pred)
+    if overdue:
+        school_group_filters.extend(overdue_predicates)
     schools_r = await db.execute(
         select(Student.school_name, func.count())
         .where(*school_group_filters)
@@ -215,17 +274,35 @@ async def today_tasks(
         reverse=True,
     )
 
-    result = await db.execute(
-        select(Student)
-        .where(*filters)
-        .order_by(
+    list_total = (
+        await db.execute(select(func.count(Student.id)).where(*filters))
+    ).scalar_one() or 0
+    pending_count = list_total
+    if overdue:
+        pending_count = (
+            await db.execute(select(func.count(Student.id)).where(*pending_filters))
+        ).scalar_one() or 0
+
+    order_by_clauses = (
+        [
+            Student.assigned_at.asc(),
+            Student.updated_at.asc(),
+            Student.id.asc(),
+        ]
+        if overdue
+        else [
             _intent_priority_expr(),
             _today_status_priority_expr(),
             Student.assigned_at.is_(None),
             Student.assigned_at.asc(),
             Student.updated_at.asc(),
             Student.id.asc(),
-        )
+        ]
+    )
+    result = await db.execute(
+        select(Student)
+        .where(*filters)
+        .order_by(*order_by_clauses)
         .offset(offset)
         .limit(limit)
     )
@@ -235,7 +312,7 @@ async def today_tasks(
         current_user.id,
         [student.id for student in students],
     )
-    truncated = stats["total"] > len(students) + offset
+    truncated = list_total > len(students) + offset
 
     now = utcnow()
 
@@ -249,7 +326,13 @@ async def today_tasks(
         {
             "total": stats["total"],
             "stats": stats,
+            "task_progress": task_progress,
+            "intent_counts": intent_counts,
             "schools": schools,
+            "list_total": int(list_total),
+            "pending_count": int(pending_count),
+            "overdue_count": int(overdue_count),
+            "overdue": overdue,
             "truncated": truncated,
             "list": [
                 {
@@ -273,6 +356,7 @@ async def today_tasks(
                     "expired_at": str(s.expired_at) if s.expired_at else None,
                     "assigned_at": str(s.assigned_at) if s.assigned_at else None,
                     "days_since_assigned": _days_since(s.assigned_at),
+                    "is_overdue": bool(s.assigned_at and s.assigned_at < today_start),
                     "updated_at": str(s.updated_at),
                     "personal_groups": groups_by_student.get(s.id, []),
                 }

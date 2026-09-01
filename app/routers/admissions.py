@@ -31,14 +31,18 @@ from app.permissions import is_admin
 from app.pushplus import (
     notify_home_visit_created_background as notify_home_visit_created_background,  # noqa: F401
 )
-from app.schemas import (
-    EnrollmentCreate,
+from app.schemas import EnrollmentCreate
+from app.services.enrollment_finance_service import (
+    apply_finance_values,
+    create_finance_values,
+    finance_payload,
 )
 from app.services.work_item_service import (
     enrollment_settlement_is_open,
     sync_source_work_item,
     sync_student_work_items,
 )
+from app.stage_policy import STAGE_RANK, normalize_stage
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
@@ -124,24 +128,8 @@ ADMIN_CAMPUS_VISIT_RESULT_FIELDS = {
     "next_follow_up_at",
     "result_notes",
 }
-STAGE_RANK = {
-    StudentStage.initial_contact: 0,
-    StudentStage.interested: 1,
-    StudentStage.materials_sent: 2,
-    StudentStage.home_visit_pending: 3,
-    StudentStage.home_visit_scheduled: 4,
-    StudentStage.home_visit_completed: 5,
-    StudentStage.campus_visit_pending: 6,
-    StudentStage.campus_visit_scheduled: 7,
-    StudentStage.campus_visit_arrived: 8,
-    StudentStage.visit_scheduled: 7,
-    StudentStage.visited: 8,
-    StudentStage.enrolled: 9,
-}
-
-
 def _advance_student_stage(student: Student, stage: StudentStage) -> None:
-    if STAGE_RANK.get(stage, 0) > STAGE_RANK.get(student.stage, 0):
+    if STAGE_RANK[normalize_stage(stage)] > STAGE_RANK[normalize_stage(student.stage)]:
         student.stage = stage
 
 
@@ -309,6 +297,7 @@ def _enrollment_payload(record: EnrollmentRecord) -> dict:
         "enrolled_program": record.enrolled_program,
         "enrolled_at": str(record.enrolled_at),
         "amount": record.amount,
+        **finance_payload(record),
         "created_at": str(record.created_at),
         "updated_at": str(record.updated_at),
     }
@@ -609,6 +598,7 @@ async def _create_enrollment_record(
     if attribution_method == AttributionMethod.manual and not body.attribution_reason.strip():
         raise HTTPException(status_code=400, detail="手动指定报名归属必须填写原因")
 
+    finance_values = create_finance_values(body)
     enrolled_at = body.enrolled_at or func.now()
     record = EnrollmentRecord(
         student_id=student.id,
@@ -633,9 +623,11 @@ async def _create_enrollment_record(
         settlement_status=SettlementStatus.unsettled,
         settlement_notes=body.settlement_notes,
     )
+    apply_finance_values(record, finance_values, legacy_amount=body.amount)
     _mark_student_enrolled(student, body.enrolled_at)
     student.program = record.enrolled_program
-    student.deposit = body.amount if body.amount is not None else student.deposit
+    if body.student_paid_amount is not None or body.amount is not None:
+        student.deposit = finance_values["student_paid_amount"]
     db.add(record)
     db.add(
         make_operation_log(

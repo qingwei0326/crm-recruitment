@@ -46,6 +46,23 @@ const admissionsWorkItems = [
     target_url: '/admin/home-visits',
     source_id: 101,
   },
+  {
+    id: 'stale_a:601',
+    kind: 'stale_a',
+    queue: 'stale-a',
+    priority: 'high',
+    title: '周八 A 级超时',
+    student_id: 601,
+    student_name: '周八',
+    region: '云霄',
+    school_name: '云霄一中',
+    agent_name: '吴坐席',
+    due_at: '2026-06-29T08:30:00',
+    status: '跟进中',
+    reason: '4天未推进',
+    target_url: '/admin/leads/601',
+    source_id: 601,
+  },
 ];
 
 function ok(data) {
@@ -105,12 +122,29 @@ async function mockAdminApis(page) {
       return;
     }
     if (path === '/admissions/work-items') {
+      const requestedQueue = url.searchParams.get('queue') || 'all';
+      const rows = requestedQueue === 'all'
+        ? admissionsWorkItems
+        : admissionsWorkItems.filter((item) => item.queue === requestedQueue);
+      const pageSize = Number(url.searchParams.get('page_size') || 50);
       await route.fulfill({
         json: ok({
-          total: admissionsWorkItems.length,
+          total: rows.length,
           page: 1,
-          page_size: 100,
-          list: admissionsWorkItems,
+          page_size: pageSize,
+          has_more: false,
+          queue_counts: {
+            all: admissionsWorkItems.length,
+            lead_contact: 0,
+            home_visit: 1,
+            campus_visit: 0,
+            follow_up: 0,
+            settlement: 0,
+            help: 0,
+            'stale-a': 1,
+          },
+          regions: ['龙海', '云霄'],
+          list: rows,
         }),
       });
       return;

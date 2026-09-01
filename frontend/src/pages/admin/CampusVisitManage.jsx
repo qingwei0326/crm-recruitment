@@ -67,6 +67,12 @@ export default function CampusVisitManage() {
             next[item.id] = {
               enrolled_program: item.intent_program || '',
               amount: '',
+              tuition_list_amount: '',
+              student_subsidy_amount: '',
+              student_paid_amount: '',
+              external_subsidy_amount: '',
+              commission_base_amount: '',
+              commission_subsidy_amount: '',
             };
           }
         });
@@ -124,6 +130,18 @@ export default function CampusVisitManage() {
     if (form.amount !== '' && form.amount != null) {
       payload.amount = Number(form.amount);
     }
+    [
+      'tuition_list_amount',
+      'student_subsidy_amount',
+      'student_paid_amount',
+      'external_subsidy_amount',
+      'commission_base_amount',
+      'commission_subsidy_amount',
+    ].forEach((field) => {
+      if (form[field] !== '' && form[field] != null) {
+        payload[field] = Number(form[field]);
+      }
+    });
     setSavingKey(`enroll-${item.id}`);
     try {
       await api.post('/admissions/enrollments', payload);
@@ -315,6 +333,28 @@ export default function CampusVisitManage() {
                                   className="h-9 rounded-lg border border-gray-200 px-2 dark:border-gray-700 dark:bg-gray-900"
                                   placeholder="金额"
                                 />
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {[
+                                    ['tuition_list_amount', '标准学费'],
+                                    ['student_subsidy_amount', '学费补贴'],
+                                    ['student_paid_amount', '学生实付'],
+                                    ['external_subsidy_amount', '外部补贴'],
+                                    ['commission_base_amount', '基础佣金'],
+                                    ['commission_subsidy_amount', '佣金补贴'],
+                                  ].map(([field, label]) => (
+                                    <input
+                                      key={field}
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      aria-label={`${label} ${item.id}`}
+                                      value={enrollmentForm[field] || ''}
+                                      onChange={(event) => updateEnrollmentForm(item.id, { [field]: event.target.value })}
+                                      className="h-9 rounded-lg border border-gray-200 px-2 dark:border-gray-700 dark:bg-gray-900"
+                                      placeholder={label}
+                                    />
+                                  ))}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => createEnrollment(item)}

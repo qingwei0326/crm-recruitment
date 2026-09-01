@@ -120,7 +120,7 @@ test.describe('admin mobile dashboard', () => {
     await expect(page.getByRole('heading', { name: '移动管理' })).toBeVisible();
     await expect(page.getByText('今日有事项需要处理')).toBeVisible();
     await expect(page.getByText('今日呼出')).toBeVisible();
-    await expect(page.getByText('有效 9 · 未记录 3')).toBeVisible();
+    await expect(page.getByText('已完成 9 · 待完成 3')).toBeVisible();
     await expect(page.getByText('今日新增 A')).toBeVisible();
     await expect(page.getByText('今日评级进入 A')).toBeVisible();
     await expect(page.getByText('可分配有效线索')).toBeVisible();
@@ -128,7 +128,7 @@ test.describe('admin mobile dashboard', () => {
     await expect(page.getByText('逾期回访')).toBeVisible();
     await expect(page.getByText('无电话数据')).toBeVisible();
     await expect(page.getByText('2 条线索没有可拨电话')).toBeVisible();
-    await expect(page.getByText('今日 3 通，本月占比 25%')).toBeVisible();
+    await expect(page.getByText('今日 3 通 · 本月 0 通')).toBeVisible();
     await expect(page.getByText('蒲安琪')).toBeVisible();
     await expect(page.getByText('先补齐通话记录并处理待回访')).toBeVisible();
   });

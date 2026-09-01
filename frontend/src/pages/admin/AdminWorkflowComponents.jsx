@@ -57,7 +57,7 @@ export function InsightStrip({ items }) {
 
 export function QueueRow({ title, meta, detail, detailParts = [], tone = 'gray', to, action }) {
   return (
-    <div className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
+    <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

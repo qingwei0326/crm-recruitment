@@ -10,7 +10,10 @@ def backup_items(backup_dir: str = BACKUP_DIR) -> list[dict]:
     items = []
     ext = _get_backup_extension()
     for fname in os.listdir(backup_dir):
-        if not (fname.startswith("crm_") and fname.endswith(ext)):
+        if not (
+            fname.startswith("crm_")
+            and (fname.endswith(ext) or fname.endswith(f"{ext}.enc"))
+        ):
             continue
         fpath = os.path.join(backup_dir, fname)
         try:

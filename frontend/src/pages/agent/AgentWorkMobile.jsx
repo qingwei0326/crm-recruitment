@@ -277,7 +277,7 @@ export default function AgentWorkMobile({
                       </div>
                     )}
                     <div className="mb-2.5 flex items-center gap-1">
-                      {STAGES.map((s, i) => {
+                      {STAGES.filter((s) => s !== '已报名').map((s, i) => {
                         const idx = STAGES.indexOf(current.stage);
                         return <button key={s} onClick={() => updateStage(current.id, s)} className={`flex-1 h-1.5 rounded-full transition-all ${i <= idx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'} ${s === current.stage ? 'ring-2 ring-blue-300' : ''}`} title={stageLabel(s)} />;
                       })}

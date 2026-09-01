@@ -15,8 +15,8 @@ $ReleaseName = "production-$Version"
 $ReleaseDir = Join-Path $ReleaseRoot $ReleaseName
 $ZipPath = Join-Path $ReleaseRoot "$ReleaseName.zip"
 $ZipHashPath = "$ZipPath.sha256"
-$DatabaseUpgradeFromRevision = "20260714_01"
-$ExpectedDatabaseRevision = "20260726_01"
+$DatabaseUpgradeFromRevision = "20260726_01"
+$ExpectedDatabaseRevision = "20260823_01"
 
 function Copy-ReleaseTree {
     param(
@@ -53,7 +53,9 @@ function Copy-ReleaseFile {
 }
 
 function Get-ProjectPython {
-    $isWindowsHost = $env:OS -eq "Windows_NT"
+    $isWindowsHost = $IsWindows -or (
+        [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+    )
     $candidates = if ($isWindowsHost) {
         @(
             (Join-Path $Root ".venv-win\Scripts\python.exe"),
@@ -96,7 +98,7 @@ foreach ($requiredDir in @("app", "alembic", "frontend\dist")) {
 foreach ($requiredFile in @(
     "alembic.ini",
     "alembic\env.py",
-    "alembic\versions\${ExpectedDatabaseRevision}_personal_groups.py",
+    "alembic\versions\${ExpectedDatabaseRevision}_enrollment_finance.py",
     "frontend\dist\index.html"
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $Root $requiredFile) -PathType Leaf)) {

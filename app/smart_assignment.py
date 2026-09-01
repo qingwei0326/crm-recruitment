@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import DialLog, FollowUp, OperationLog, Student, StudentStatus, User, UserRole
+from app.services.assignment_capacity_service import build_capacity_plan
 from app.status_policy import statuses_for_canonical
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
 from app.utils import today_cst_as_utc, utcnow
@@ -220,6 +221,7 @@ def _allocate_counts(
     agent_rows: list[dict],
     candidate_count: int,
     per_agent_limit: int,
+    capacity_by_agent: dict[int, int] | None = None,
 ) -> dict[int, int]:
     if not agent_rows or candidate_count <= 0:
         return {}
@@ -235,7 +237,12 @@ def _allocate_counts(
         if remaining <= 0:
             break
         agent_id = int(row["agent_id"])
-        capacity = per_agent_limit - counts[agent_id]
+        agent_capacity = (
+            capacity_by_agent.get(agent_id, per_agent_limit)
+            if capacity_by_agent is not None
+            else per_agent_limit
+        )
+        capacity = min(per_agent_limit, agent_capacity) - counts[agent_id]
         needed = max(target_active - int(row["active_tasks"]), 0)
         amount = min(capacity, needed, remaining)
         if amount > 0:
@@ -250,7 +257,12 @@ def _allocate_counts(
         changed = False
         for row in ordered:
             agent_id = int(row["agent_id"])
-            if counts[agent_id] >= per_agent_limit:
+            agent_capacity = (
+                capacity_by_agent.get(agent_id, per_agent_limit)
+                if capacity_by_agent is not None
+                else per_agent_limit
+            )
+            if counts[agent_id] >= min(per_agent_limit, agent_capacity):
                 continue
             counts[agent_id] += 1
             remaining -= 1
@@ -308,7 +320,7 @@ def _plan_payload(
     if candidate_count == 0:
         warnings.append("没有符合条件的待分配线索")
     if agent_rows and candidate_count > planned:
-        warnings.append("坐席单次上限不足，仍有线索未纳入本次计划")
+        warnings.append("坐席动态容量或单次上限不足，仍有线索留在未分配池")
 
     return {
         "params": {
@@ -335,7 +347,24 @@ async def build_smart_assignment_plan(
     pool = await _pool_payload(db, params)
     candidate_ids = await _candidate_student_ids(db, params)
     agent_rows = await _agent_rows(db)
-    counts = _allocate_counts(agent_rows, len(candidate_ids), params.per_agent_limit)
+    capacity_by_agent: dict[int, int] | None = None
+    if candidate_ids and agent_rows:
+        capacity_plan = await build_capacity_plan(
+            db,
+            candidate_ids,
+            [int(row["agent_id"]) for row in agent_rows],
+        )
+        if capacity_plan.agents:
+            capacity_by_agent = {
+                snapshot.agent_id: snapshot.releasable_today
+                for snapshot in capacity_plan.agents
+            }
+    counts = _allocate_counts(
+        agent_rows,
+        len(candidate_ids),
+        params.per_agent_limit,
+        capacity_by_agent,
+    )
 
     for row in agent_rows:
         row["suggested_count"] = counts.get(int(row["agent_id"]), 0)

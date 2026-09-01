@@ -71,6 +71,69 @@ describe('useTodayTasks', () => {
     expect(api.get).toHaveBeenCalledWith('/tasks/today', { params: { limit: 30, offset: 0 } });
   });
 
+  it('requests the server-side A-level queue when priority mode is enabled', async () => {
+    api.get.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          list: [{ id: 7, name: 'A级学生' }],
+          total: 1,
+          list_total: 1,
+          stats: { total: 1, pending: 1 },
+          task_progress: { total: 4, done: 2, pending: 1, follow_up: 1, progress_pct: 75 },
+          intent_counts: { A: 1, B: 0, C: 0, '无': 0 },
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useTodayTasks());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.setIntentLevel('A');
+    });
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/today', {
+        params: { limit: 30, offset: 0, intent_level: 'A' },
+      });
+    }, { timeout: 1000 });
+    expect(result.current.taskProgress.progress_pct).toBe(75);
+    expect(result.current.intentCounts.A).toBe(1);
+  });
+
+  it('loads the overdue queue and exposes its count', async () => {
+    api.get.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          list: [{ id: 9, name: '逾期学生' }],
+          list_total: 1,
+          pending_count: 4,
+          overdue_count: 1,
+          stats: { total: 1, pending: 1 },
+        },
+      },
+    });
+
+    const { result } = renderHook(() => useTodayTasks());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.setOverdueOnly(true);
+    });
+
+    await waitFor(() => {
+      expect(api.get).toHaveBeenLastCalledWith('/tasks/today', {
+        params: { limit: 30, offset: 0, overdue: true },
+      });
+    }, { timeout: 1000 });
+    expect(result.current.overdueOnly).toBe(true);
+    expect(result.current.pendingCount).toBe(4);
+    expect(result.current.overdueCount).toBe(1);
+    expect(result.current.students).toEqual([{ id: 9, name: '逾期学生' }]);
+  });
+
   it('sets error when API returns non-zero code', async () => {
     api.get.mockResolvedValue({
       data: { code: 1, msg: 'Server error occurred' },

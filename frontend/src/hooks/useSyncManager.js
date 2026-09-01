@@ -37,11 +37,9 @@ export default function useSyncManager(onSyncComplete) {
         });
         break;
       case 'add_call':
-        await api.post('/calls/analyze', {
-          student_id: payload.studentId,
-          transcript: payload.transcript,
-          duration_seconds: payload.duration,
-        });
+        // 旧版本曾把转录文本提交给 AI。新流程由拨号结果弹窗记录结构化结果，
+        // 历史离线队列无法可靠还原，因此只消费旧操作，绝不再次发送转录内容。
+        console.warn('[Sync] Ignoring legacy AI call operation:', operation.id);
         break;
       case 'add_followup':
         await api.post('/follow-ups', {

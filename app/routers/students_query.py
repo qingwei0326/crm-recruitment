@@ -29,6 +29,7 @@ from app.routers.students import (
     _student_payload,
 )
 from app.schemas import Response
+from app.services.next_action_service import build_next_action_map
 from app.status_policy import canonical_student_status, statuses_for_canonical
 from app.task_stats import (
     ACTIVE_TASK_STATUSES,
@@ -162,13 +163,20 @@ async def list_students(
     )
     result = await db.execute(query)
     students = result.scalars().all()
+    next_action_map = await build_next_action_map(db, students)
 
     return Response.ok(
         {
             "total": total,
             "page": page,
             "page_size": page_size,
-            "list": [_student_payload(s) for s in students],
+            "list": [
+                {
+                    **_student_payload(student),
+                    "next_action": next_action_map.get(student.id),
+                }
+                for student in students
+            ],
         }
     )
 
@@ -214,7 +222,9 @@ async def enrolled_students(
     ]
 
     deposit_query = apply_student_scope(
-        select(func.sum(Student.deposit)).where(Student.status == StudentStatus.enrolled),
+        select(func.sum(EnrollmentRecord.student_paid_amount))
+        .join(Student, Student.id == EnrollmentRecord.student_id)
+        .where(Student.status == StudentStatus.enrolled),
         current_user,
     )
     deposit_total = await db.execute(deposit_query)
@@ -331,6 +341,7 @@ async def get_student_detail(
 
     # 学生基本信息
     payload = _student_payload(student)
+    payload["next_action"] = (await build_next_action_map(db, [student])).get(student.id)
     payload["enrollment_substage"] = (
         str(student.enrollment_substage) if student.enrollment_substage else None
     )
@@ -571,4 +582,6 @@ async def get_student(
     db.add(log)
     await db.commit()
 
-    return Response.ok(_student_payload(student))
+    payload = _student_payload(student)
+    payload["next_action"] = (await build_next_action_map(db, [student])).get(student.id)
+    return Response.ok(payload)

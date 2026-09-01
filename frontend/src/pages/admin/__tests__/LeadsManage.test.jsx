@@ -75,6 +75,17 @@ describe('LeadsManage privacy', () => {
             status: '未联系',
             stage: studentStageMock,
             intent_level: '无',
+            next_action: {
+              kind: 'lead_contact',
+              label: '开始首呼',
+              owner_id: 2,
+              owner_name: '陈老师',
+              due_at: null,
+              priority: 'normal',
+              target_url: '/admin/leads/10',
+              source_id: 10,
+              reason: '待首次联系',
+            },
           },
         ];
         if (params?.status === '已报名') {
@@ -134,6 +145,7 @@ describe('LeadsManage privacy', () => {
               status: '未联系',
               stage: studentStageMock,
               intent_level: '无',
+              assigned_to: 2,
             },
           },
         });
@@ -257,6 +269,19 @@ describe('LeadsManage privacy', () => {
     expect(screen.getByRole('button', { name: /归属：陈老师/ })).toBeInTheDocument();
   });
 
+  it('shows the projected next action and owner in the lead list', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
+        <LeadsManage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('开始首呼')).toBeInTheDocument();
+    const nextAction = screen.getByTestId('next-action');
+    expect(within(nextAction).getByText('开始首呼')).toBeInTheDocument();
+    expect(within(nextAction).getByText(/陈老师/)).toBeInTheDocument();
+  });
+
   it('applies dashboard lead filters from the URL', async () => {
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads?assignment=unassigned&active=1&intent=A&today_a=1&missing_phone=1']}>
@@ -331,6 +356,51 @@ describe('LeadsManage privacy', () => {
     });
     expect(within(rowStageSelect).getByRole('option', { name: '家访完成' })).toBeInTheDocument();
     expect(within(rowStageSelect).getByRole('option', { name: '已到校参观' })).toBeInTheDocument();
+    expect(within(rowStageSelect).queryByRole('option', { name: '已报名' })).not.toBeInTheDocument();
+
+    const rowStatusSelect = screen.getAllByRole('combobox', {
+      name: '设置 脱敏学生 状态',
+    })[0];
+    expect(within(rowStatusSelect).queryByRole('option', { name: '已报名' })).not.toBeInTheDocument();
+  });
+
+  it('opens formal enrollment confirmation instead of editing status directly', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
+        <LeadsManage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText('脱敏学生'));
+    fireEvent.click(await screen.findByRole('button', { name: '确认报名' }));
+    fireEvent.change(screen.getByLabelText('报名专业'), { target: { value: '护理' } });
+    fireEvent.change(screen.getByLabelText('报名金额'), { target: { value: '500' } });
+    fireEvent.change(screen.getByLabelText('报名日期'), { target: { value: '2026-08-23' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认登记报名' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/admissions/enrollments', {
+        student_id: 10,
+        source: '管理员补录',
+        enrolled_program: '护理',
+        amount: 500,
+        enrolled_at: '2026-08-23T00:00:00',
+      });
+    });
+    expect(api.put).not.toHaveBeenCalledWith('/students/10', { status: '已报名' });
+  });
+
+  it('does not offer enrolled as a create-time status or stage', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
+        <LeadsManage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '新建学生' }));
+
+    expect(within(screen.getByRole('combobox', { name: '新建学生状态' })).queryByRole('option', { name: '已报名' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('combobox', { name: '新建学生跟进阶段' })).queryByRole('option', { name: '已报名' })).not.toBeInTheDocument();
   });
 
   it('creates a campus visit task from the expanded admin student row', async () => {

@@ -14,7 +14,6 @@ import api from '../../api';
 import { completePendingDial } from '../../dialSession';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from '../../components/StatusBadge';
-import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import StudentTimeline from '../../components/StudentTimeline';
 import { PersonalGroupMembershipEditor } from '../../components/PersonalGroups';
@@ -30,7 +29,6 @@ import {
   STAGES,
   stageLabel,
 } from '../../labels';
-const INTENT_LEVELS = ['A', 'B', 'C', '无'];
 const VISIT_STATUSES = ['待确认', '已确认', '已完成', '已取消'];
 
 function normalizeDateTimeLocal(value) {
@@ -205,6 +203,126 @@ function DateTimeSheet({
   );
 }
 
+const WORKFLOW_EDIT_TABS = [
+  { key: 'result', label: '处理结果' },
+  { key: 'stage', label: '跟进阶段' },
+];
+
+function WorkflowEditSheet({
+  open,
+  onClose,
+  student,
+  outcomeResults,
+  stageOptions = STAGES,
+  activeTab,
+  onTabChange,
+  onStatusChange,
+  onStageChange,
+  saving,
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="编辑跟进状态"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[88dvh] overflow-y-auto overscroll-contain"
+        onClick={(e) => e.stopPropagation()}
+        aria-busy={saving}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              编辑跟进状态
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              选择后立即保存，拨号后的结果仍按通话流程处理
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 p-1 shrink-0"
+            aria-label="关闭编辑跟进状态"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 dark:bg-gray-800 p-1" role="tablist" aria-label="跟进状态编辑项">
+          {WORKFLOW_EDIT_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              onClick={() => onTabChange(tab.key)}
+              className={`min-h-[42px] rounded-lg px-2 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'bg-white text-blue-700 shadow-sm dark:bg-gray-700 dark:text-blue-300'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'result' && (
+          <div role="group" aria-label="处理结果" className="space-y-3">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              联系状态：<StatusBadge status={student?.status} />
+              {student?.status_detail && (
+                <span className="ml-1">· {student.status_detail}</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {outcomeResults.map((outcome) => (
+                <button
+                  key={outcome.code}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onStatusChange(outcome)}
+                  className={`min-h-[50px] rounded-xl px-2 text-sm font-medium leading-5 whitespace-normal text-white ${outcome.className} disabled:opacity-60`}
+                >
+                  {outcome.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'stage' && (
+          <div role="group" aria-label="跟进阶段" className="space-y-3">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              当前阶段：{stageLabel(student?.stage) || '未设置'}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {stageOptions.map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  disabled={saving || student?.stage === stage}
+                  onClick={() => onStageChange(stage)}
+                  className={`min-h-[44px] rounded-xl border px-2 text-sm font-medium leading-5 whitespace-normal ${
+                    student?.stage === stage
+                      ? 'bg-teal-600 text-white border-teal-600'
+                      : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
+                  } disabled:opacity-80`}
+                >
+                  {stageLabel(stage)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 export default function MobileStudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -225,6 +343,8 @@ export default function MobileStudentDetail() {
   const [editFollowUp, setEditFollowUp] = useState(null);
   const [editVisit, setEditVisit] = useState(null);
   const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [workflowEditorOpen, setWorkflowEditorOpen] = useState(false);
+  const [workflowEditorTab, setWorkflowEditorTab] = useState('result');
   const [busyDelete, setBusyDelete] = useState(false);
   const [dialing, setDialing] = useState(false);
   const [toast, setToast] = useState('');
@@ -232,6 +352,12 @@ export default function MobileStudentDetail() {
 
   const isAdmin = user?.role === 'admin';
   const canModify = (item) => isAdmin || item?.agent_id === user?.id;
+  const mobileOutcomeResults = isAdmin
+    ? outcomeResults
+    : outcomeResults.filter((outcome) => outcome.code !== 'new_lead');
+  const mobileStageOptions = isAdmin
+    ? STAGES
+    : STAGES.filter((stage) => stage !== '初次联系');
 
   const loadDetail = useCallback(() => {
     const requestId = ++detailRequestSeqRef.current;
@@ -262,7 +388,6 @@ export default function MobileStudentDetail() {
   const notes = data?.notes || [];
   const followUps = data?.follow_ups || [];
   const visits = data?.visits || [];
-  const intentTimeline = data?.intent_timeline || [];
 
   const showToast = (m) => {
     setToast(m);
@@ -373,15 +498,14 @@ export default function MobileStudentDetail() {
   };
 
   const handleUpdateStudentStatus = async (outcome) => {
-    const status = outcome.label;
-    if (!student) return;
+    if (!student) return false;
     if (outcome.code === 'enrolled') {
       const ok = await confirm({
         title: '确认报名',
         message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
         confirmText: '确认报名',
       });
-      if (!ok) return;
+      if (!ok) return false;
     }
     const saved = await runWorkflowUpdate(
       () => api.put(`/students/${student.id}`, payloadForOperatorResult(outcome)),
@@ -396,29 +520,21 @@ export default function MobileStudentDetail() {
         });
       },
     );
-    if (!saved) return;
+    if (!saved) return false;
     try {
       await completePendingDial(student.id);
     } catch {
       showToast('状态已保存，通话记录待同步');
     }
+    return true;
   };
 
   const handleUpdateStudentStage = (stage) => {
-    if (!student || student.stage === stage) return;
-    runWorkflowUpdate(
+    if (!student || student.stage === stage) return Promise.resolve(false);
+    return runWorkflowUpdate(
       () => api.put(`/students/${student.id}/stage`, { stage }),
       '阶段已更新',
       () => patchStudent({ stage, status: stage === '已报名' ? '已报名' : student.status }),
-    );
-  };
-
-  const handleUpdateIntent = (intent_level) => {
-    if (!student || student.intent_level === intent_level) return;
-    runWorkflowUpdate(
-      () => api.put(`/students/${student.id}`, { intent_level }),
-      '意向等级已更新',
-      () => patchStudent({ intent_level }),
     );
   };
 
@@ -659,6 +775,11 @@ export default function MobileStudentDetail() {
     );
   };
 
+  const openWorkflowEditor = (tab = 'result') => {
+    setWorkflowEditorTab(tab);
+    setWorkflowEditorOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-[calc(env(safe-area-inset-bottom)+88px)]">
       <header className="sticky top-0 z-20 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-3 py-3 flex items-center gap-2">
@@ -674,82 +795,62 @@ export default function MobileStudentDetail() {
             {student.name}
           </h1>
           <StatusBadge status={student.status} />
-          <IntentLevelBadge level={student.intent_level} />
         </div>
       </header>
 
       <div className="p-3 space-y-3">
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
-          <StudentInfoCard student={student} onDial={handleDial} />
+          <StudentInfoCard
+            student={student}
+            onDial={handleDial}
+            showIntent={false}
+            showRegion={false}
+            showScore={student.score !== null && student.score !== undefined && student.score !== ''}
+            scoreLabel="预估成绩（家长口述）"
+            schoolLabel="来源片区"
+            compactContacts
+          />
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
           <PersonalGroupMembershipEditor studentId={student.id} />
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-4">
-          <div>
-            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-              处理结果
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                当前跟进
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                拨号后会在结果弹窗里继续处理
+              </div>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2" role="group" aria-label="处理结果">
-              {outcomeResults.map((outcome) => (
-                <button
-                  key={outcome.code}
-                  type="button"
-                  disabled={workflowSaving}
-                  onClick={() => handleUpdateStudentStatus(outcome)}
-                  className={`min-h-[56px] rounded-lg px-1 text-sm font-medium leading-5 whitespace-normal text-white ${outcome.className} disabled:opacity-60`}
-                >
-                  {outcome.label}
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => openWorkflowEditor()}
+              className="shrink-0 inline-flex items-center gap-1.5 min-h-[40px] rounded-lg border border-blue-200 px-3 text-sm font-medium text-blue-600 dark:border-blue-800 dark:text-blue-300 active:scale-95"
+            >
+              <Pencil className="w-4 h-4" />
+              编辑状态
+            </button>
           </div>
 
-          <div>
-            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-              跟进阶段
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="min-w-0 rounded-xl bg-gray-50 dark:bg-gray-700/50 p-3">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">联系状态</div>
+              <StatusBadge status={student.status} />
+              {student.status_detail && (
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 truncate" title={student.status_detail}>
+                  {student.status_detail}
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {STAGES.map((stage) => (
-                <button
-                  key={stage}
-                  type="button"
-                  disabled={workflowSaving || student.stage === stage}
-                  onClick={() => handleUpdateStudentStage(stage)}
-                  className={`min-h-[40px] rounded-lg border text-sm font-medium ${
-                    student.stage === stage
-                      ? 'bg-teal-600 text-white border-teal-600'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
-                  } disabled:opacity-80`}
-                >
-                  {stageLabel(stage)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-              意向等级
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {INTENT_LEVELS.map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  disabled={workflowSaving || (student.intent_level || '无') === level}
-                  onClick={() => handleUpdateIntent(level)}
-                  className={`min-h-[40px] rounded-lg border text-sm font-medium ${
-                    (student.intent_level || '无') === level
-                      ? 'bg-amber-500 text-white border-amber-500'
-                      : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
-                  } disabled:opacity-80`}
-                >
-                  {level === '无' ? '无' : `${level} 级`}
-                </button>
-              ))}
+            <div className="min-w-0 rounded-xl bg-gray-50 dark:bg-gray-700/50 p-3">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">跟进阶段</div>
+              <div className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-5 break-words">
+                {stageLabel(student.stage) || '未设置'}
+              </div>
             </div>
           </div>
         </div>
@@ -765,7 +866,6 @@ export default function MobileStudentDetail() {
             notes={notes}
             followUps={followUps}
             visits={visits}
-            intentTimeline={intentTimeline}
             renderNoteActions={renderNoteActions}
             renderFollowUpActions={renderFollowUpActions}
             renderVisitActions={renderVisitActions}
@@ -797,13 +897,6 @@ export default function MobileStudentDetail() {
           className="px-4 min-h-[52px] rounded-xl border border-teal-300 dark:border-teal-700 text-teal-700 dark:text-teal-300 text-sm font-medium active:scale-95"
         >
           到访
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate(`/mobile/call/${student.id}`)}
-          className="px-4 min-h-[52px] rounded-xl bg-purple-600 text-white text-sm font-medium active:scale-95"
-        >
-          填通话
         </button>
       </div>
 
@@ -850,6 +943,19 @@ export default function MobileStudentDetail() {
         label="到访时间"
         submitText="保存到访"
         initialValue={editVisit?.scheduled_date || editVisit?.visit_date || ''}
+      />
+
+      <WorkflowEditSheet
+        open={workflowEditorOpen}
+        onClose={() => setWorkflowEditorOpen(false)}
+        student={student}
+        outcomeResults={mobileOutcomeResults}
+        stageOptions={mobileStageOptions}
+        activeTab={workflowEditorTab}
+        onTabChange={setWorkflowEditorTab}
+        onStatusChange={handleUpdateStudentStatus}
+        onStageChange={handleUpdateStudentStage}
+        saving={workflowSaving}
       />
 
       {/* 打完电话返回后弹“选择处理结果”，更新联系状况 */}

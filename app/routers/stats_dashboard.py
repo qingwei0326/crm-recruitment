@@ -6,9 +6,10 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ADMIN_PAGE_REPORT_CENTER, require_admin, require_page_permission
-from app.database import get_db
+from app.database import async_session, get_db
 from app.models import (
     DialLog,
+    EnrollmentRecord,
     IntentLevel,
     OperationLog,
     Student,
@@ -161,15 +162,20 @@ async def dashboard_summary(
     ).scalar() or 0
 
     # 已报名汇总
-    enrolled_r = await db.execute(
+    enrolled_total = (
+        await db.execute(
+            select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
+        )
+    ).scalar() or 0
+    enrolled_finance = await db.execute(
         select(
-            func.count(Student.id),
-            func.coalesce(func.sum(Student.deposit), 0),
-        ).where(Student.status == StudentStatus.enrolled)
+            func.coalesce(func.sum(EnrollmentRecord.student_paid_amount), 0),
+            func.coalesce(func.sum(EnrollmentRecord.school_received_amount), 0),
+            func.coalesce(func.sum(EnrollmentRecord.commission_due_amount), 0),
+        )
     )
-    enrolled_row = enrolled_r.one()
-    enrolled_total = enrolled_row[0] or 0
-    enrolled_deposit = int(enrolled_row[1] or 0)
+    enrolled_finance_row = enrolled_finance.one()
+    enrolled_deposit = int(enrolled_finance_row[0] or 0)
 
     return Response.ok(
         {
@@ -181,21 +187,23 @@ async def dashboard_summary(
             "today_a": today_a,
             "enrolled_total": enrolled_total,
             "enrolled_deposit": enrolled_deposit,
+            "enrolled_school_received": float(enrolled_finance_row[1] or 0),
+            "enrolled_commission_due": float(enrolled_finance_row[2] or 0),
         }
     )
 
 
 @router.get("/dashboard-all")
 async def dashboard_all(
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """聚合仪表盘全部数据，单次请求替代多个独立接口。"""
+    """聚合仪表盘核心只读数据，供首页减少首屏统计请求。"""
     today = today_cst_as_utc()
 
     # ---- 定义各子查询协程 ----
 
-    async def _summary():
+    async def _summary(session: AsyncSession):
+        db = session
         total_students = (await db.execute(select(func.count(Student.id)))).scalar() or 0
         contacted = (
             await db.execute(
@@ -212,23 +220,32 @@ async def dashboard_all(
         today_calls = (
             await db.execute(select(func.count(DialLog.id)).where(DialLog.dialed_at >= today))
         ).scalar() or 0
-        enrolled_r = await db.execute(
+        enrolled_total = (
+            await db.execute(
+                select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
+            )
+        ).scalar() or 0
+        enrolled_finance = await db.execute(
             select(
-                func.count(Student.id),
-                func.coalesce(func.sum(Student.deposit), 0),
-            ).where(Student.status == StudentStatus.enrolled)
+                func.coalesce(func.sum(EnrollmentRecord.student_paid_amount), 0),
+                func.coalesce(func.sum(EnrollmentRecord.school_received_amount), 0),
+                func.coalesce(func.sum(EnrollmentRecord.commission_due_amount), 0),
+            )
         )
-        enrolled_row = enrolled_r.one()
+        enrolled_finance_row = enrolled_finance.one()
         return {
             "total_students": total_students,
             "contacted": contacted,
             "a_level": a_level,
             "today_calls": today_calls,
-            "enrolled_total": enrolled_row[0] or 0,
-            "enrolled_deposit": int(enrolled_row[1] or 0),
+            "enrolled_total": enrolled_total,
+            "enrolled_deposit": int(enrolled_finance_row[0] or 0),
+            "enrolled_school_received": float(enrolled_finance_row[1] or 0),
+            "enrolled_commission_due": float(enrolled_finance_row[2] or 0),
         }
 
-    async def _sources():
+    async def _sources(session: AsyncSession):
+        db = session
         rows = await db.execute(
             select(
                 Student.region,
@@ -260,7 +277,8 @@ async def dashboard_all(
             for region, total, contacted, a_count in rows.all()
         ]
 
-    async def _stages():
+    async def _stages(session: AsyncSession):
+        db = session
         result = await db.execute(
             select(Student.stage, func.count(Student.id))
             .where(Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)))
@@ -281,7 +299,8 @@ async def dashboard_all(
         by_stage["未分配"] = unassigned
         return by_stage
 
-    async def _funnel():
+    async def _funnel(session: AsyncSession):
+        db = session
         total = (await db.execute(select(func.count(Student.id)))).scalar() or 0
         assigned = (
             await db.execute(select(func.count(Student.id)).where(Student.assigned_to.is_not(None)))
@@ -327,13 +346,15 @@ async def dashboard_all(
             {"name": "无效线索", "value": invalid},
         ]
 
-    async def _notify_fails():
+    async def _notify_fails(session: AsyncSession):
+        db = session
         result = await db.execute(
             select(func.count(OperationLog.id)).where(OperationLog.action == "通知失败")
         )
         return result.scalar() or 0
 
-    async def _visits_summary():
+    async def _visits_summary(session: AsyncSession):
+        db = session
         type_result = await db.execute(
             select(Visit.visit_type, func.count(Visit.id)).group_by(Visit.visit_type)
         )
@@ -353,9 +374,18 @@ async def dashboard_all(
 
         return {"by_type": by_type, "by_status": by_status, "by_region": by_region}
 
-    # ---- 并发执行所有查询 ----
+    async def _run_in_session(operation):
+        async with async_session() as session:
+            return await operation(session)
+
+    # AsyncSession 不能被多个协程共享；每个只读聚合分支使用独立 session。
     summary, sources, stages, funnel, notify_fails, visits = await asyncio.gather(
-        _summary(), _sources(), _stages(), _funnel(), _notify_fails(), _visits_summary()
+        _run_in_session(_summary),
+        _run_in_session(_sources),
+        _run_in_session(_stages),
+        _run_in_session(_funnel),
+        _run_in_session(_notify_fails),
+        _run_in_session(_visits_summary),
     )
 
     return Response.ok(

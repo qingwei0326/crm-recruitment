@@ -61,10 +61,35 @@ import {
   Trash2,
   Download,
   ChevronDown,
+  CheckCircle2,
   Edit3,
   ExternalLink,
   Wand2,
 } from 'lucide-react';
+
+const EDITABLE_STATUS_OPTS = STATUS_OPTS.filter((status) => status && status !== '已报名');
+const EDITABLE_STAGE_OPTS = STAGES.filter((stage) => stage !== '已报名');
+
+function NextActionSummary({ action, showEmpty = false }) {
+  if (!action) {
+    return showEmpty ? <span className="text-xs text-gray-400">当前无待办</span> : <span className="text-xs text-gray-400">-</span>;
+  }
+  const urgent = action.priority === 'high';
+  const labelTone = urgent
+    ? 'text-red-700 dark:text-red-300'
+    : action.kind === 'missing_next_action'
+    ? 'text-amber-700 dark:text-amber-300'
+    : 'text-blue-700 dark:text-blue-300';
+  return (
+    <div className="min-w-0" data-testid="next-action">
+      <div className={`truncate text-xs font-semibold ${labelTone}`}>{action.label || '待处理'}</div>
+      <div className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
+        {action.owner_name || '待分配'}
+        {action.due_at ? ` · ${formatDateTime(action.due_at)}` : ''}
+      </div>
+    </div>
+  );
+}
 
 
 export default function LeadsManage() {
@@ -80,9 +105,16 @@ export default function LeadsManage() {
   const canCreateStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentCreate);
   const canEditStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentEdit);
   const canDeleteStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentDelete);
+  const canInvalidateEnrolled = canPerformAdminOperation(
+    user,
+    ADMIN_OPERATION_PERMISSIONS.enrolledInvalidate,
+  );
   const canImportStudents = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentImport);
   const canAssignStudents = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentAssign);
   const canViewStudentPhone = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentPhone);
+  const canCreateEnrollment =
+    canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.enrollmentSettlement)
+    && canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.enrollmentCreate);
   const canManageHomeVisits = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.homeVisits);
   const canManageCampusVisits = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.campusVisits);
 
@@ -130,6 +162,7 @@ export default function LeadsManage() {
 
   // Assign
   const [assignAgentId, setAssignAgentId] = useState('');
+  const [assignOverrideReason, setAssignOverrideReason] = useState('');
 
   // School assign
   const [showSchoolAssign, setShowSchoolAssign] = useState(false);
@@ -147,6 +180,19 @@ export default function LeadsManage() {
   const [followUpDate, setFollowUpDate] = useState({});
   const [homeSubmittingId, setHomeSubmittingId] = useState(null);
   const [campusSubmittingId, setCampusSubmittingId] = useState(null);
+  const [enrollmentStudent, setEnrollmentStudent] = useState(null);
+  const [enrollmentForm, setEnrollmentForm] = useState({
+    enrolled_program: '',
+    amount: '',
+    tuition_list_amount: '',
+    student_subsidy_amount: '',
+    student_paid_amount: '',
+    external_subsidy_amount: '',
+    commission_base_amount: '',
+    commission_subsidy_amount: '',
+    enrolled_at: '',
+  });
+  const [enrollmentSubmitting, setEnrollmentSubmitting] = useState(false);
 
   // Edit modal
   const [editStudent, setEditStudent] = useState(null);
@@ -449,8 +495,13 @@ export default function LeadsManage() {
       confirmText: '确认分配',
     });
     if (!ok) return;
-    await api.post('/students/assign', { student_ids: [...selected], agent_id: parseInt(assignAgentId) });
+    const payload = { student_ids: [...selected], agent_id: parseInt(assignAgentId) };
+    if (user?.is_super_admin && assignOverrideReason.trim()) {
+      payload.override_reason = assignOverrideReason.trim();
+    }
+    await api.post('/students/assign', payload);
     setShowAssign(false);
+    setAssignOverrideReason('');
     fetchStudents(page);
     refreshExpand();
   };
@@ -476,7 +527,8 @@ export default function LeadsManage() {
           const detail = (d.distribution || [])
             .map((x) => `${x.name} +${x.count}`)
             .join('、');
-          toast?.success(`已自动分配 ${d.total_assigned} 名：${detail}`);
+          const overflow = d.overflow_count ? `，${d.overflow_count} 名留在未分配池` : '';
+          toast?.success(`已自动分配 ${d.total_assigned} 名${overflow}：${detail}`);
           fetchStudents(page);
           refreshExpand();
         }
@@ -532,7 +584,10 @@ export default function LeadsManage() {
       agent_ids: schoolAssignAgents,
     });
     if (res.data.code === 0) {
-      toast?.success(`分发完成：${res.data.data.total_assigned} 名学生`);
+      const overflow = res.data.data.overflow_count
+        ? `，${res.data.data.overflow_count} 名留在未分配池`
+        : '';
+      toast?.success(`分发完成：${res.data.data.total_assigned} 名学生${overflow}`);
       setShowSchoolAssign(false);
       fetchStudents(page);
       refreshExpand();
@@ -593,6 +648,27 @@ export default function LeadsManage() {
     });
     if (!ok) return;
     handleDelete(student.id);
+  };
+
+  const requestInvalidateEnrolled = async (student) => {
+    if (!canInvalidateEnrolled || student.status !== '已报名') return;
+    const ok = await confirm({
+      title: '确认取消报名',
+      message:
+        `将「${student.name || `学生 ${student.id}`}」的状态从“已报名”改为“无效”。\n` +
+        '学生档案、历史记录和原话务员归属会保留；无效原因记为“其他”。',
+      confirmText: '取消报名并转无效',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/students/${student.id}/invalidate-enrollment`);
+      toast?.success('已取消报名并转为无效');
+      if (expandedId === student.id) setExpandedId(null);
+      fetchStudents(page);
+    } catch (e) {
+      toast?.error('取消报名失败: ' + getApiErrorMessage(e));
+    }
   };
 
   const addNote = async (id) => {
@@ -684,16 +760,72 @@ export default function LeadsManage() {
     }
   };
 
-  const handleEnroll = async (id) => {
-    const data = expandCache[id]?.student;
-    if (!data) return;
-    await api.put(`/students/${id}/enroll`, {
-      program: data.program || '',
-      deposit: data.deposit || null,
-      enrolled_at: data.enrolled_at || '',
+  const openEnrollmentConfirm = (student) => {
+    if (!canCreateEnrollment || student.status === '已报名' || student.stage === '已报名') return;
+    setEnrollmentStudent(student);
+    setEnrollmentForm({
+      enrolled_program: student.program || '',
+      amount: student.deposit ?? '',
+      tuition_list_amount: '',
+      student_subsidy_amount: '',
+      student_paid_amount: '',
+      external_subsidy_amount: '',
+      commission_base_amount: '',
+      commission_subsidy_amount: '',
+      enrolled_at: student.enrolled_at || '',
     });
-    refreshExpand();
-    fetchStudents(page);
+  };
+
+  const closeEnrollmentConfirm = () => {
+    if (enrollmentSubmitting) return;
+    setEnrollmentStudent(null);
+  };
+
+  const handleEnroll = async () => {
+    if (!enrollmentStudent || enrollmentSubmitting) return;
+    if (!enrollmentStudent.assigned_to) {
+      toast?.error('该学生尚未分配坐席，请先分配后再登记报名');
+      return;
+    }
+    const payload = {
+      student_id: enrollmentStudent.id,
+      source: '管理员补录',
+      enrolled_program: enrollmentForm.enrolled_program.trim(),
+    };
+    if (enrollmentForm.amount !== '' && enrollmentForm.amount != null) {
+      payload.amount = Number(enrollmentForm.amount);
+    }
+    [
+      'tuition_list_amount',
+      'student_subsidy_amount',
+      'student_paid_amount',
+      'external_subsidy_amount',
+      'commission_base_amount',
+      'commission_subsidy_amount',
+    ].forEach((field) => {
+      if (enrollmentForm[field] !== '' && enrollmentForm[field] != null) {
+        payload[field] = Number(enrollmentForm[field]);
+      }
+    });
+    if (enrollmentForm.enrolled_at) {
+      payload.enrolled_at = `${enrollmentForm.enrolled_at}T00:00:00`;
+    }
+    setEnrollmentSubmitting(true);
+    try {
+      const response = await api.post('/admissions/enrollments', payload);
+      if (response.data.code !== 0) {
+        toast?.error(response.data.msg || '报名登记失败');
+        return;
+      }
+      toast?.success('已登记报名并生成结算依据');
+      setEnrollmentStudent(null);
+      fetchStudents(page);
+      refreshExpand();
+    } catch (e) {
+      toast?.error('报名登记失败: ' + getApiErrorMessage(e));
+    } finally {
+      setEnrollmentSubmitting(false);
+    }
   };
 
   const toggleNeedHelp = async (id) => {
@@ -792,6 +924,7 @@ export default function LeadsManage() {
     }
     const s = data.student;
     const notes = data.notes || [];
+    const isEnrolled = s.status === '已报名' || s.stage === '已报名';
 
     return (
       <tr className="bg-slate-50 dark:bg-gray-800 expand-row">
@@ -873,17 +1006,17 @@ export default function LeadsManage() {
                 <div className="flex gap-1">
                   {STAGES.map((st, i) => {
                     const curIdx = STAGES.indexOf(s.stage);
-                    const active = i <= curIdx && s.stage !== '已报名';
+                    const editable = st !== '已报名';
                     return (
                       <button
                         key={st}
-                        onClick={() => quickStage(s.id, st)}
-                        disabled={!canEditStudent}
+                        onClick={() => editable && quickStage(s.id, st)}
+                        disabled={!canEditStudent || isEnrolled || !editable}
                         title={st}
                         className={`flex-1 h-2 rounded-full transition-colors ${
                           i <= curIdx ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-600'
                         } ${st === s.stage ? 'ring-2 ring-blue-300' : ''} ${
-                          canEditStudent ? '' : 'cursor-not-allowed opacity-60'
+                          canEditStudent && !isEnrolled && editable ? '' : 'cursor-not-allowed opacity-60'
                         }`}
                       />
                     );
@@ -939,17 +1072,23 @@ export default function LeadsManage() {
                 {/* Status */}
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">状态</label>
-                  <select
-                    aria-label={`设置 ${s.name || '学生'} 状态`}
-                    value={s.status}
-                    onChange={(e) => quickStatus(s.id, e.target.value)}
-                    disabled={!canEditStudent}
-                    className={`${inputCls} text-xs`}
-                  >
-                    {STATUS_OPTS.filter(Boolean).map((o) => (
-                      <option key={o} value={o}>{statusLabel(o)}</option>
-                    ))}
-                  </select>
+                  {isEnrolled ? (
+                    <div className="flex min-h-10 items-center rounded-lg bg-green-50 px-3 text-sm font-medium text-green-700 dark:bg-green-900/20 dark:text-green-300">
+                      已报名
+                    </div>
+                  ) : (
+                    <select
+                      aria-label={`设置 ${s.name || '学生'} 状态`}
+                      value={s.status}
+                      onChange={(e) => quickStatus(s.id, e.target.value)}
+                      disabled={!canEditStudent}
+                      className={`${inputCls} text-xs`}
+                    >
+                      {EDITABLE_STATUS_OPTS.map((o) => (
+                        <option key={o} value={o}>{statusLabel(o)}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Intent */}
@@ -1067,6 +1206,26 @@ export default function LeadsManage() {
                   </button>
                 )}
 
+                {canCreateEnrollment && !isEnrolled && (
+                  <button
+                    type="button"
+                    onClick={() => openEnrollmentConfirm(s)}
+                    className="flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs text-white hover:bg-green-700"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    确认报名
+                  </button>
+                )}
+
+                {canInvalidateEnrolled && s.status === '已报名' && (
+                  <button
+                    onClick={() => requestInvalidateEnrolled(s)}
+                    className="flex items-center gap-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    取消报名
+                  </button>
+                )}
                 {canDeleteStudent && (
                   <button
                     onClick={() => requestDelete(s)}
@@ -1119,6 +1278,7 @@ export default function LeadsManage() {
   // ── Row rendering ──
   const renderRow = (l) => {
     const isExpanded = expandedId === l.id;
+    const isEnrolled = l.status === '已报名' || l.stage === '已报名';
     return (
       <Fragment key={l.id}>
         <tr
@@ -1177,47 +1337,57 @@ export default function LeadsManage() {
             )}
           </td>
           <td className="px-2 py-2.5 hidden lg:table-cell">
-            <select
-              aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
-              value={l.stage}
-              onChange={(e) => {
-                e.stopPropagation();
-                quickStage(l.id, e.target.value);
-              }}
-              onClick={(e) => e.stopPropagation()}
-              disabled={!canEditStudent}
-              className="min-h-9 text-xs px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 cursor-pointer"
-            >
-              {STAGES.map((st) => (
-                <option key={st} value={st}>{stageLabel(st)}</option>
-              ))}
-            </select>
+            {isEnrolled ? (
+              <span className="inline-flex min-h-9 items-center rounded-lg bg-green-100 px-2 py-1.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                已报名
+              </span>
+            ) : (
+              <select
+                aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
+                value={l.stage}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  quickStage(l.id, e.target.value);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                disabled={!canEditStudent}
+                className="min-h-9 text-xs px-2 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 border-0 cursor-pointer"
+              >
+                {EDITABLE_STAGE_OPTS.map((st) => (
+                  <option key={st} value={st}>{stageLabel(st)}</option>
+                ))}
+              </select>
+            )}
           </td>
           <td className="px-2 py-2.5">
             <div className="flex flex-col items-start gap-1">
-              <select
-                aria-label={`设置 ${l.name || '学生'} 状态`}
-              value={l.status}
-              onChange={(e) => {
-                e.stopPropagation();
-                quickStatus(l.id, e.target.value);
-              }}
-              onClick={(e) => e.stopPropagation()}
-              disabled={!canEditStudent}
-              className={`min-h-9 text-xs px-2 py-1.5 rounded-lg border-0 cursor-pointer ${
-                  l.status === '已报名'
-                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700'
-                    : l.status === '未联系'
-                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-600'
-                    : l.status === '无效'
-                    ? 'bg-gray-200 text-gray-400'
-                    : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700'
-                }`}
-              >
-                {STATUS_OPTS.filter(Boolean).map((st) => (
-                  <option key={st} value={st}>{statusLabel(st)}</option>
-                ))}
-              </select>
+              {isEnrolled ? (
+                <span className="inline-flex min-h-9 items-center rounded-lg bg-green-100 px-2 py-1.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                  已报名
+                </span>
+              ) : (
+                <select
+                  aria-label={`设置 ${l.name || '学生'} 状态`}
+                  value={l.status}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    quickStatus(l.id, e.target.value);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  disabled={!canEditStudent}
+                  className={`min-h-9 text-xs px-2 py-1.5 rounded-lg border-0 cursor-pointer ${
+                    l.status === '未联系'
+                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-600'
+                      : l.status === '无效'
+                      ? 'bg-gray-200 text-gray-400'
+                      : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700'
+                  }`}
+                >
+                  {EDITABLE_STATUS_OPTS.map((st) => (
+                    <option key={st} value={st}>{statusLabel(st)}</option>
+                  ))}
+                </select>
+              )}
               {l.status_detail && (
                 <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
                   {l.status === '无效' ? `原因：${l.status_detail}` : l.status_detail}
@@ -1241,6 +1411,9 @@ export default function LeadsManage() {
             ) : (
               '-'
             )}
+          </td>
+          <td className="px-2 py-2.5 hidden md:table-cell max-w-48">
+            <NextActionSummary action={l.next_action} />
           </td>
           <td className="px-1 py-2.5 w-4">
             {canDeleteStudent && (
@@ -1333,6 +1506,10 @@ export default function LeadsManage() {
                 </span>
               )}
             </div>
+            <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 dark:bg-gray-900/60">
+              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">下一步</div>
+              <NextActionSummary action={l.next_action} showEmpty />
+            </div>
           </button>
         </div>
 
@@ -1357,28 +1534,36 @@ export default function LeadsManage() {
         {isExpanded && (
           <div className="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
             <div className="grid grid-cols-2 gap-2">
-              <select
-                aria-label={`设置 ${l.name || '学生'} 状态`}
-                value={l.status}
-                onChange={(e) => quickStatus(l.id, e.target.value)}
-                disabled={!canEditStudent}
-                className={`${inputCls} text-sm`}
-              >
-                {STATUS_OPTS.filter(Boolean).map((st) => (
-                  <option key={st} value={st}>{statusLabel(st)}</option>
-                ))}
-              </select>
-              <select
-                aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
-                value={l.stage}
-                onChange={(e) => quickStage(l.id, e.target.value)}
-                disabled={!canEditStudent}
-                className={`${inputCls} text-sm`}
-              >
-                {STAGES.map((st) => (
-                  <option key={st} value={st}>{stageLabel(st)}</option>
-                ))}
-              </select>
+              {l.status === '已报名' || l.stage === '已报名' ? (
+                <div className="col-span-2 flex min-h-10 items-center rounded-lg bg-green-50 px-3 text-sm font-medium text-green-700 dark:bg-green-900/20 dark:text-green-300">
+                  已报名
+                </div>
+              ) : (
+                <>
+                  <select
+                    aria-label={`设置 ${l.name || '学生'} 状态`}
+                    value={l.status}
+                    onChange={(e) => quickStatus(l.id, e.target.value)}
+                    disabled={!canEditStudent}
+                    className={`${inputCls} text-sm`}
+                  >
+                    {EDITABLE_STATUS_OPTS.map((st) => (
+                      <option key={st} value={st}>{statusLabel(st)}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label={`设置 ${l.name || '学生'} 跟进阶段`}
+                    value={l.stage}
+                    onChange={(e) => quickStage(l.id, e.target.value)}
+                    disabled={!canEditStudent}
+                    className={`${inputCls} text-sm`}
+                  >
+                    {EDITABLE_STAGE_OPTS.map((st) => (
+                      <option key={st} value={st}>{stageLabel(st)}</option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
             <div className="mt-2 flex gap-2">
               <input
@@ -1467,9 +1652,9 @@ export default function LeadsManage() {
       {/* ── Mobile sidebar overlay ── */}
       {/* ── Sidebar ── */}
       {/* ── Main ── */}
-      <main className="flex-1 min-w-0">
+      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
         <header
-          className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 pb-2 flex items-end justify-between"
+          className="sticky top-0 z-10 flex items-end justify-between border-b border-slate-200/90 bg-white/95 px-4 pb-2 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95"
           style={{
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
             minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
@@ -1489,13 +1674,21 @@ export default function LeadsManage() {
               <Menu className="w-5 h-5" />
             </button>
           )}
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">学生管理</h2>
+          <div className="min-w-0">
+            <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
+              招生运营 / 线索资产
+            </div>
+            <h2 className="truncate text-lg font-bold leading-5 text-slate-900 dark:text-gray-100">学生管理</h2>
+          </div>
           </div>
           <div className="flex min-h-10 items-center gap-1.5">
             {canAssignStudents && selected.size > 0 && (
               <button
                 type="button"
-                onClick={() => setShowAssign(true)}
+                onClick={() => {
+                  setAssignOverrideReason('');
+                  setShowAssign(true);
+                }}
                 className="flex min-h-10 items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
                 aria-label={`分配已选 ${selected.size} 个学生`}
                 title="分配已选学生"
@@ -1842,19 +2035,20 @@ export default function LeadsManage() {
                       <th className="px-2 py-3 font-medium hidden lg:table-cell">阶段</th>
                       <th className="px-2 py-3 font-medium">状态</th>
                       <th className="px-2 py-3 font-medium hidden sm:table-cell">意向</th>
+                      <th className="px-2 py-3 font-medium hidden md:table-cell">下一步</th>
                       <th className="px-1 py-3 font-medium w-4"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y dark:divide-gray-700">
                     {loading ? (
                       <tr>
-                        <td colSpan={8} className="text-center py-12">
+                        <td colSpan={9} className="text-center py-12">
                           <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                         </td>
                       </tr>
                     ) : students.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center py-12 text-gray-400">
+                        <td colSpan={9} className="text-center py-12 text-gray-400">
                           暂无数据
                         </td>
                       </tr>
@@ -1993,7 +2187,7 @@ export default function LeadsManage() {
               <div>
                 <label className="block text-sm mb-1">状态</label>
                 <select aria-label="新建学生状态" value={newStudent.status} onChange={(e) => setNewStudent({ ...newStudent, status: e.target.value })} className={inputCls}>
-                  {STATUS_OPTS.map((o) => <option key={o} value={o}>{o ? statusLabel(o) : '默认'}</option>)}
+                  {STATUS_OPTS.filter((o) => o !== '已报名').map((o) => <option key={o} value={o}>{o ? statusLabel(o) : '默认'}</option>)}
                 </select>
               </div>
               <div>
@@ -2006,7 +2200,7 @@ export default function LeadsManage() {
                 <label className="block text-sm mb-1">跟进阶段</label>
                 <select aria-label="新建学生跟进阶段" value={newStudent.stage} onChange={(e) => setNewStudent({ ...newStudent, stage: e.target.value })} className={inputCls}>
                   <option value="">默认</option>
-                  {STAGES.map((o) => <option key={o} value={o}>{stageLabel(o)}</option>)}
+                  {EDITABLE_STAGE_OPTS.map((o) => <option key={o} value={o}>{stageLabel(o)}</option>)}
                 </select>
               </div>
               <div>
@@ -2061,6 +2255,20 @@ export default function LeadsManage() {
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                 确认后会把已选学生分配给「{selectedAgent?.name || '未选择'}」，原坐席将不再处理这些线索。
               </div>
+              {user?.is_super_admin && (
+                <label className="block text-sm text-gray-700 dark:text-gray-200">
+                  超容量强制分配原因（可选）
+                  <textarea
+                    aria-label="超容量强制分配原因"
+                    value={assignOverrideReason}
+                    onChange={(e) => setAssignOverrideReason(e.target.value)}
+                    maxLength={200}
+                    rows={2}
+                    placeholder="仅在确需突破今日容量时填写"
+                    className={`${inputCls} mt-1 resize-none`}
+                  />
+                </label>
+              )}
               {selectedEnrolledStudents.length > 0 && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300">
                   已选中 {selectedEnrolledStudents.length} 名已报名学生，不能重新分配：
@@ -2111,6 +2319,119 @@ export default function LeadsManage() {
                 </div>
               ))}
               <button onClick={handleEditSave} className="w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enrollment Confirmation Modal */}
+      {enrollmentStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeEnrollmentConfirm}>
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">正式报名确认</h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  确认后会生成报名记录和结算依据。
+                </p>
+              </div>
+              <button type="button" onClick={closeEnrollmentConfirm} disabled={enrollmentSubmitting} aria-label="关闭报名确认">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mb-4 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-900/40">
+              <div className="font-medium text-gray-900 dark:text-gray-100">{enrollmentStudent.name}</div>
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                当前负责人：{enrollmentStudent.assigned_to ? '已分配' : '未分配'}
+              </div>
+            </div>
+            {!enrollmentStudent.assigned_to && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                请先给学生分配坐席，再进行报名确认。
+              </div>
+            )}
+            <div className="space-y-3">
+              <label className="block text-sm">
+                报名专业
+                <input
+                  aria-label="报名专业"
+                  value={enrollmentForm.enrolled_program}
+                  onChange={(e) => setEnrollmentForm((prev) => ({ ...prev, enrolled_program: e.target.value }))}
+                  className={`${inputCls} mt-1`}
+                  placeholder="可选"
+                />
+              </label>
+              <label className="block text-sm">
+                报名金额
+                <input
+                  aria-label="报名金额"
+                  type="number"
+                  min="0"
+                  value={enrollmentForm.amount}
+                  onChange={(e) => setEnrollmentForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  className={`${inputCls} mt-1`}
+                  placeholder="可选"
+                />
+              </label>
+              <div className="border-t pt-3 text-xs font-medium text-gray-500 dark:border-gray-700">
+                财务构成（可在报名结算页补充）
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ['tuition_list_amount', '标准学费'],
+                  ['student_subsidy_amount', '学费补贴'],
+                  ['student_paid_amount', '学生实付'],
+                  ['external_subsidy_amount', '外部补贴'],
+                  ['commission_base_amount', '基础佣金'],
+                  ['commission_subsidy_amount', '佣金补贴'],
+                ].map(([field, label]) => (
+                  <label key={field} className="block text-sm">
+                    {label}
+                    <input
+                      aria-label={label}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={enrollmentForm[field]}
+                      onChange={(e) => setEnrollmentForm((prev) => ({ ...prev, [field]: e.target.value }))}
+                      className={`${inputCls} mt-1`}
+                      placeholder="可选"
+                    />
+                  </label>
+                ))}
+              </div>
+              <label className="block text-sm">
+                报名日期
+                <input
+                  aria-label="报名日期"
+                  type="date"
+                  value={enrollmentForm.enrolled_at}
+                  onChange={(e) => setEnrollmentForm((prev) => ({ ...prev, enrolled_at: e.target.value }))}
+                  className={`${inputCls} mt-1`}
+                />
+              </label>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeEnrollmentConfirm}
+                  disabled={enrollmentSubmitting}
+                  className="min-h-10 flex-1 rounded-lg border border-gray-200 px-3 text-sm text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEnroll}
+                  disabled={enrollmentSubmitting || !enrollmentStudent.assigned_to}
+                  className="inline-flex min-h-10 flex-1 items-center justify-center gap-1 rounded-lg bg-green-600 px-3 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {enrollmentSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  确认登记报名
+                </button>
+              </div>
             </div>
           </div>
         </div>

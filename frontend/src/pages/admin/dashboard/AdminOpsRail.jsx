@@ -261,7 +261,7 @@ export default function AdminOpsRail({
   className = '',
 }) {
   return (
-    <aside className={`flex flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${className}`}>
+    <aside className={`flex flex-col overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${className}`}>
       <div className="shrink-0 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <h2 className="text-sm font-semibold text-gray-950 dark:text-white">运营与流转控制台</h2>
         <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">从线索分配到风险闭环，保持同屏决策。</p>

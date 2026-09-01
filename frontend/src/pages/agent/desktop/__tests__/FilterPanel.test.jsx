@@ -27,6 +27,7 @@ const defaultProps = {
   scoreRange: { min: '', max: '' },
   onScoreRangeChange: vi.fn(),
   totalCount: 5,
+  intentCounts: { A: 2, B: 1, C: 1, '无': 1 },
 };
 
 describe('FilterPanel', () => {
@@ -38,7 +39,7 @@ describe('FilterPanel', () => {
     expect(screen.getByRole('button', { name: /全部学校 5/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /学校A3/ })).toBeInTheDocument();
     expect(screen.getByText('当前结果')).toBeInTheDocument();
-    expect(screen.getAllByText('5')).toHaveLength(2);
+    expect(screen.getAllByText('5')).toHaveLength(3);
   });
 
   it('changes search and school filters from the primary controls', () => {
@@ -59,6 +60,17 @@ describe('FilterPanel', () => {
 
     expect(onSearchChange).toHaveBeenCalledWith('林同学');
     expect(onSchoolChange).toHaveBeenCalledWith('学校A');
+  });
+
+  it('opens the A-level priority queue from the primary controls', () => {
+    const onIntentChange = vi.fn();
+    render(<FilterPanel {...defaultProps} onIntentChange={onIntentChange} />);
+
+    const priorityButton = screen.getByRole('button', { name: /A级优先 2/ });
+    fireEvent.click(priorityButton);
+
+    expect(onIntentChange).toHaveBeenCalledWith('A');
+    expect(priorityButton).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('changes stage, intent, and status filters from the advanced panel', () => {
