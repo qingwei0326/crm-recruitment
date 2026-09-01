@@ -1,7 +1,8 @@
-from datetime import date
+from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -14,10 +15,18 @@ from app.auth import (
     user_has_page_permission,
 )
 from app.database import get_db
-from app.models import EnrollmentSubStage, Student, StudentStage, StudentStatus, User
+from app.models import (
+    EnrollmentRecord,
+    EnrollmentSubStage,
+    Student,
+    StudentStage,
+    StudentStatus,
+    User,
+)
 from app.permissions import get_accessible_student, get_student_or_404, is_admin
-from app.schemas import EnrollInfo, Response, StageUpdate
+from app.schemas import EnrollInfo, EnrollmentCreate, Response, StageUpdate
 from app.services.work_item_service import sync_student_work_items
+from app.stage_policy import normalize_stage, validate_stage_transition
 from app.status_policy import canonical_status_value, canonical_student_status
 from app.utils import make_operation_log
 
@@ -126,20 +135,22 @@ async def update_stage(
     old_status = student.status
 
     try:
-        new_stage = _enum_or_error(StudentStage, body.stage, "阶段")
+        requested_stage = normalize_stage(body.stage)
+        if not is_admin(current_user) and requested_stage == StudentStage.initial_contact:
+            return Response.error(
+                code=1,
+                msg="话务员不能重置为新线索，请联系管理员回收并重新分配",
+            )
+        new_stage = await validate_stage_transition(
+            db,
+            student,
+            requested_stage,
+        )
     except ValueError as e:
         return Response.error(msg=str(e))
     if _is_enrolled_student(student) and new_stage != StudentStage.enrolled:
         return Response.error(code=1, msg="已报名学生不能通过普通编辑改回非报名状态")
     student.stage = new_stage
-
-    # Auto-update status when stage is "已报名"
-    if new_stage == StudentStage.enrolled:
-        student.status = StudentStatus.enrolled
-        student.status_detail = ""
-        student.outcome_reason_code = None
-        if not student.enrolled_at:
-            student.enrolled_at = date.today()
 
     stage_changed = old_stage != student.stage
     status_changed = old_status != student.status
@@ -185,50 +196,58 @@ async def set_enroll_info(
         raise HTTPException(status_code=403, detail="无权访问该管理模块")
     _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
     student = await get_student_or_404(db, student_id)
-    old_status = student.status
-    old_stage = student.stage
-    old_enrolled_at = student.enrolled_at
-    old_program = student.program
-    old_deposit = student.deposit
-
-    student.enrolled_at = body.enrolled_at or date.today()
-    student.program = body.program
-    student.deposit = body.deposit
-    student.status = StudentStatus.enrolled
-    student.status_detail = ""
-    student.outcome_reason_code = None
-    student.stage = StudentStage.enrolled
-    if student.enrollment_substage is None:
-        student.enrollment_substage = EnrollmentSubStage.deposit_pending
-
-    parts = [
-        f"状态 {canonical_status_value(old_status)} → {canonical_status_value(student.status)}",
-        f"阶段 {old_stage} → {student.stage}",
-        f"报名日 {old_enrolled_at or '-'} → {student.enrolled_at}",
-    ]
-    if old_program != student.program:
-        parts.append(f"专业 {old_program or '-'} → {student.program or '-'}")
-    if old_deposit != student.deposit:
-        old_deposit_text = old_deposit if old_deposit is not None else "-"
-        new_deposit_text = student.deposit if student.deposit is not None else "-"
-        parts.append(f"定金 {old_deposit_text} → {new_deposit_text}")
-    db.add(
-        make_operation_log(
-            current_user,
-            student.id,
-            student.case_no or "",
-            "报名登记",
-            content="; ".join(parts),
-            old_status=canonical_status_value(old_status),
-            new_status=canonical_status_value(student.status),
+    existing = (
+        await db.execute(
+            select(EnrollmentRecord)
+            .where(EnrollmentRecord.student_id == student.id)
+            .order_by(EnrollmentRecord.created_at.asc(), EnrollmentRecord.id.asc())
         )
+    ).scalars().first()
+    enrolled_at = datetime.combine(body.enrolled_at or date.today(), time.min)
+
+    # Keep the legacy admin form, but route it through the formal enrollment
+    # record flow so it cannot create an enrolled student without settlement data.
+    from app.routers.admissions import (
+        _create_enrollment_record,
+        _sync_enrollment_work_item,
     )
 
-    await sync_student_work_items(db, student, current_user)
+    record = await _create_enrollment_record(
+        db,
+        EnrollmentCreate(
+            student_id=student.id,
+            source="管理员补录",
+            enrolled_program=body.program,
+            enrolled_at=enrolled_at,
+            amount=body.deposit,
+        ),
+        student,
+        current_user,
+        allow_existing=True,
+    )
+    if existing is not None:
+        record.enrolled_at = enrolled_at
+        record.enrolled_program = body.program
+        record.amount = body.deposit
+        student.enrolled_at = body.enrolled_at or date.today()
+        student.program = body.program
+        student.deposit = body.deposit
+        db.add(
+            make_operation_log(
+                current_user,
+                student.id,
+                student.case_no or "",
+                "修改报名登记",
+                content=f"报名记录 #{record.id}：更新报名日期、专业和定金",
+            )
+        )
+        await _sync_enrollment_work_item(db, record, student, current_user)
+
     await db.commit()
     await db.refresh(student)
     return Response.ok(
         {
+            "record_id": record.id,
             "enrolled_at": str(student.enrolled_at),
             "program": student.program,
             "deposit": student.deposit,

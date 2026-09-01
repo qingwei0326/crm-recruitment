@@ -15,6 +15,7 @@ from app.auth import (
 from app.database import get_db
 from app.models import OperationLog, Student, User, UserRole
 from app.schemas import Response
+from app.services.assignment_capacity_service import build_capacity_plan
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.task_stats import ASSIGNABLE_STUDENT_STATUSES
 from app.utils import (
@@ -152,8 +153,8 @@ async def distribute_by_schools(
 
     now = utcnow()
     batch_id = make_batch_id("school-distribute")
-    distribution: dict[str, int] = {}
-    assigned_by_student_id: dict[int, int] = {}
+    target_agent_ids: list[int]
+    agent_name_by_id: dict[int, str]
 
     if body.mode == "manual":
         if body.agent_id is None:
@@ -166,9 +167,8 @@ async def distribute_by_schools(
         agent = agent_result.scalar_one_or_none()
         if not agent:
             return Response.error(code=1, msg="话务员不存在或已禁用")
-        for s in students:
-            assigned_by_student_id[s.id] = agent.id
-        distribution[agent.name] = len(students)
+        target_agent_ids = [agent.id]
+        agent_name_by_id = {agent.id: agent.name}
     else:
         agent_result = await db.execute(
             select(User).where(User.is_active, User.role == UserRole.agent).order_by(User.id)
@@ -177,34 +177,26 @@ async def distribute_by_schools(
         if not agents:
             return Response.error(code=1, msg="没有可用的话务员")
 
-        load_r = await db.execute(
-            select(Student.assigned_to, func.count(Student.id))
-            .where(
-                Student.assigned_to.in_([a.id for a in agents]),
-                Student.status.in_(ASSIGNABLE_STUDENT_STATUSES),
-            )
-            .group_by(Student.assigned_to)
-        )
-        load = {aid: cnt for aid, cnt in load_r.all()}
-        for agent in agents:
-            load.setdefault(agent.id, 0)
-            distribution[agent.name] = 0
-        agent_map = {agent.id: agent for agent in agents}
+        target_agent_ids = [agent.id for agent in agents]
+        agent_name_by_id = {agent.id: agent.name for agent in agents}
 
-        for s in sorted(students, key=lambda item: item.id):
-            agent_id = min(load, key=load.get)
-            assigned_by_student_id[s.id] = agent_id
-            load[agent_id] += 1
-            distribution[agent_map[agent_id].name] += 1
+    plan = await build_capacity_plan(
+        db,
+        [student.id for student in students],
+        target_agent_ids,
+        at=now,
+    )
+    distribution = {
+        agent_name_by_id[agent_id]: len(student_ids)
+        for agent_id, student_ids in plan.assignments_by_agent.items()
+    }
 
     await apply_assignment_changes(
         db,
         [
-            AssignmentTarget(
-                student_id=student.id,
-                agent_id=assigned_by_student_id[student.id],
-            )
-            for student in students
+            AssignmentTarget(student_id=student_id, agent_id=agent_id)
+            for agent_id, student_ids in plan.assignments_by_agent.items()
+            for student_id in student_ids
         ],
         operator=current_user,
         reason="school_assignment",
@@ -217,7 +209,10 @@ async def distribute_by_schools(
             target_student_id=None,
             case_no="",
             action="多学校分发汇总",
-            content=(f"多学校分发，共 {len(students)} 名；学校：{'、'.join(body.school_names)}"),
+            content=(
+                f"多学校分发 {plan.planned_count} 名，超容量留池 {plan.overflow_count} 名；"
+                f"学校：{'、'.join(body.school_names)}"
+            ),
             batch_id=batch_id,
         )
     )
@@ -225,7 +220,8 @@ async def distribute_by_schools(
     await db.commit()
     return Response.ok(
         {
-            "distributed_count": len(students),
+            "distributed_count": plan.planned_count,
+            "overflow_count": plan.overflow_count,
             "distribution": distribution,
             "schools": body.school_names,
             "batch_id": batch_id,

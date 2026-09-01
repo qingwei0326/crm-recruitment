@@ -117,7 +117,7 @@ describe('MobileStudentDetail follow-up workflow', () => {
     api.delete.mockResolvedValue({ data: { code: 0, data: {} } });
   });
 
-  it('lets agents update status, stage, and intent directly from the mobile detail page', async () => {
+  it('lets agents update status and stage from the mobile detail page', async () => {
     sessionStorage.setItem('pendingDial', JSON.stringify({
       studentId: 42,
       studentName: '张三',
@@ -127,8 +127,10 @@ describe('MobileStudentDetail follow-up workflow', () => {
     renderPage();
 
     await screen.findByText('完整时间线');
+    fireEvent.click(screen.getByRole('button', { name: '编辑状态' }));
+    const editor = screen.getByRole('dialog', { name: '编辑跟进状态' });
 
-    fireEvent.click(screen.getByRole('button', { name: '非常有意向' }));
+    fireEvent.click(within(editor).getByRole('button', { name: '非常有意向' }));
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42', { status: '非常有意向' });
     });
@@ -142,25 +144,39 @@ describe('MobileStudentDetail follow-up workflow', () => {
       });
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '意向跟进' }));
+    fireEvent.click(within(editor).getByRole('tab', { name: '跟进阶段' }));
+    fireEvent.click(within(editor).getByRole('button', { name: '意向跟进' }));
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42/stage', { stage: '有意向' });
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'A 级' }));
-    await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith('/students/42', { intent_level: 'A' });
-    });
+  });
+
+  it('does not show intent level controls on the mobile detail page', async () => {
+    renderPage();
+
+    await screen.findByText('完整时间线');
+    expect(screen.queryByText('意向等级')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑状态' }));
+    const editor = screen.getByRole('dialog', { name: '编辑跟进状态' });
+    expect(within(editor).queryByRole('tab', { name: '意向等级' })).not.toBeInTheDocument();
+    expect(within(editor).queryByRole('button', { name: 'A 级' })).not.toBeInTheDocument();
+    expect(within(editor).queryByRole('button', { name: 'B 级' })).not.toBeInTheDocument();
+    expect(within(editor).queryByRole('button', { name: 'C 级' })).not.toBeInTheDocument();
+    expect(within(editor).queryByRole('button', { name: '初次联系' })).not.toBeInTheDocument();
   });
 
   it('shows the required operator result buttons on the mobile detail page', async () => {
     renderPage();
 
     await screen.findByText('完整时间线');
-    const resultButtons = screen.getByRole('group', { name: '处理结果' });
+    expect(screen.queryByRole('group', { name: '处理结果' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '编辑状态' }));
+    const resultButtons = within(screen.getByRole('dialog', { name: '编辑跟进状态' }))
+      .getByRole('group', { name: '处理结果' });
 
     [
-      '新线索',
       '非常有意向',
       '意向了解加微',
       '等待志愿',
@@ -170,17 +186,18 @@ describe('MobileStudentDetail follow-up workflow', () => {
       '无意向',
       '孩子不想读',
       '已报名其他学校',
-      '已报名',
     ].forEach((label) => {
       expect(within(resultButtons).getByRole('button', { name: label })).toBeInTheDocument();
     });
+    expect(within(resultButtons).queryByRole('button', { name: '新线索' })).not.toBeInTheDocument();
   });
 
   it('saves fixed invalid results with invalid reason from the mobile detail page', async () => {
     renderPage();
 
     await screen.findByText('完整时间线');
-    fireEvent.click(screen.getByRole('button', { name: '空号' }));
+    fireEvent.click(screen.getByRole('button', { name: '编辑状态' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '编辑跟进状态' })).getByRole('button', { name: '空号' }));
 
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42', {
@@ -194,7 +211,8 @@ describe('MobileStudentDetail follow-up workflow', () => {
     renderPage();
 
     await screen.findByText('完整时间线');
-    fireEvent.click(screen.getByRole('button', { name: '已报名其他学校' }));
+    fireEvent.click(screen.getByRole('button', { name: '编辑状态' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '编辑跟进状态' })).getByRole('button', { name: '已报名其他学校' }));
 
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42', {
@@ -218,7 +236,8 @@ describe('MobileStudentDetail follow-up workflow', () => {
     renderPage();
 
     await screen.findByText('完整时间线');
-    fireEvent.click(screen.getByRole('button', { name: '空号' }));
+    fireEvent.click(screen.getByRole('button', { name: '编辑状态' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: '编辑跟进状态' })).getByRole('button', { name: '空号' }));
 
     expect(await screen.findByText('状态已保存，通话记录待同步')).toBeInTheDocument();
     expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(

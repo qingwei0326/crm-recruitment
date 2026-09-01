@@ -4,7 +4,7 @@ This module is deliberately read-only. It calculates a stable plan from the
 current database state; assignment writers are migrated in a later task.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 
@@ -131,8 +131,14 @@ async def build_capacity_plan(
     target_agent_ids: Sequence[int],
     *,
     at: datetime | None = None,
+    preferred_agent_ids_by_student: Mapping[int, Sequence[int]] | None = None,
 ) -> CapacityPlan:
-    """Build a stable, capacity-limited, read-only assignment plan."""
+    """Build a stable, capacity-limited, read-only assignment plan.
+
+    ``preferred_agent_ids_by_student`` lets region-aware callers keep their
+    existing matching rule while still falling back to any available target
+    when a preferred agent has no remaining capacity.
+    """
     settings = await load_capacity_settings(db)
     current_at = _as_utc_naive(at or utcnow())
     today_start = _business_day_start(current_at)
@@ -285,21 +291,45 @@ async def build_capacity_plan(
     }
     assignments: dict[int, list[int]] = {}
     overflow: list[int] = []
-    round_robin_ids = list(remaining_capacity)
+    round_robin_ids = [snapshot.agent_id for snapshot in snapshots]
     pointer = 0
     for student in candidate_rows:
+        preferred_ids = tuple(
+            int(agent_id)
+            for agent_id in (preferred_agent_ids_by_student or {}).get(student.id, ())
+        )
+        preferred_available = [
+            agent_id
+            for agent_id in preferred_ids
+            if agent_id in remaining_capacity and remaining_capacity[agent_id] > 0
+        ]
+        if preferred_available:
+            agent_id = max(
+                preferred_available,
+                key=lambda item: (remaining_capacity[item], -item),
+            )
+        else:
+            available_ids = [
+                agent_id
+                for agent_id in round_robin_ids
+                if remaining_capacity.get(agent_id, 0) > 0
+            ]
+            if not available_ids:
+                overflow.append(student.id)
+                continue
+            agent_id = next(
+                round_robin_ids[(pointer + offset) % len(round_robin_ids)]
+                for offset in range(len(round_robin_ids))
+                if round_robin_ids[(pointer + offset) % len(round_robin_ids)]
+                in available_ids
+            )
+
         if not round_robin_ids:
             overflow.append(student.id)
             continue
-        agent_id = round_robin_ids[pointer]
         assignments.setdefault(agent_id, []).append(student.id)
         remaining_capacity[agent_id] -= 1
-        if remaining_capacity[agent_id] <= 0:
-            round_robin_ids.pop(pointer)
-            if round_robin_ids:
-                pointer %= len(round_robin_ids)
-        else:
-            pointer = (pointer + 1) % len(round_robin_ids)
+        pointer = (round_robin_ids.index(agent_id) + 1) % len(round_robin_ids)
 
     frozen_assignments = {agent_id: tuple(ids) for agent_id, ids in assignments.items()}
     return CapacityPlan(

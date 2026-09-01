@@ -7,7 +7,6 @@ import {
   Download,
   Eye,
   EyeOff,
-  Phone,
   RefreshCw,
   Save,
   Sparkles,
@@ -119,11 +118,6 @@ export default function SystemSettings() {
   const [customModel, setCustomModel] = useState('');
   const [tokenMessage, setTokenMessage] = useState(null);
   const [savingToken, setSavingToken] = useState(false);
-  const [dialWindowStart, setDialWindowStart] = useState('08:00');
-  const [dialWindowEnd, setDialWindowEnd] = useState('21:00');
-  const [dialMaxPer24h, setDialMaxPer24h] = useState('3');
-  const [dialMessage, setDialMessage] = useState(null);
-  const [savingDial, setSavingDial] = useState(false);
   const [scoreDailyCallTarget, setScoreDailyCallTarget] = useState('30');
   const [scoreMessage, setScoreMessage] = useState(null);
   const [savingScore, setSavingScore] = useState(false);
@@ -231,9 +225,6 @@ export default function SystemSettings() {
       setCustomKeyDirty(false);
       setCustomBase(cfg.ai_custom_base || '');
       setCustomModel(cfg.ai_custom_model || '');
-      setDialWindowStart(cfg.dial_window_start || '08:00');
-      setDialWindowEnd(cfg.dial_window_end || '21:00');
-      setDialMaxPer24h(cfg.dial_max_per_24h || '3');
       setScoreDailyCallTarget(cfg.score_daily_call_target || '30');
     } finally {
       setLoading(false);
@@ -317,23 +308,6 @@ export default function SystemSettings() {
     }
   };
 
-  const saveDial = async () => {
-    setDialMessage(null);
-    setSavingDial(true);
-    try {
-      await Promise.all([
-        api.put('/admin/config', { key: 'dial_window_start', value: String(dialWindowStart) }),
-        api.put('/admin/config', { key: 'dial_window_end', value: String(dialWindowEnd) }),
-        api.put('/admin/config', { key: 'dial_max_per_24h', value: String(dialMaxPer24h) }),
-      ]);
-      setDialMessage({ type: 'success', text: '已保存' });
-    } catch (err) {
-      setDialMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
-    } finally {
-      setSavingDial(false);
-    }
-  };
-
   const todayRecording = recordingCounts(dataQuality?.calls?.today);
   const monthRecording = recordingCounts(dataQuality?.calls?.month);
   const monthAverageDuration = Number(
@@ -363,7 +337,6 @@ export default function SystemSettings() {
             <a href="#data-quality" aria-label="跳转到数据质量" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">质量</a>
             <a href="#push-settings" aria-label="跳转到推送配置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">推送</a>
             <a href="#ai-settings" aria-label="跳转到 AI 分析" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">AI</a>
-            <a href="#dial-settings" aria-label="跳转到拨号设置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">拨号</a>
             <a href="#score-settings" aria-label="跳转到评分设置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">评分</a>
             <a href="#backup-settings" aria-label="跳转到数据备份" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">备份</a>
           </nav>
@@ -820,62 +793,6 @@ export default function SystemSettings() {
           </div>
 
           <AssistantSettings />
-
-          <div id="dial-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">
-              <Phone className="w-5 h-5 text-green-600 dark:text-green-400" />
-              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">拨号设置</h1>
-            </div>
-            <div className="p-4 lg:p-6">
-              <SettingRow label="拨号窗口开始">
-                <label className="sr-only" htmlFor="dial-window-start">拨号窗口开始</label>
-                <input
-                  id="dial-window-start"
-                  type="time"
-                  className={inputCls}
-                  value={dialWindowStart}
-                  onChange={(e) => setDialWindowStart(e.target.value)}
-                />
-              </SettingRow>
-              <SettingRow label="拨号窗口结束">
-                <label className="sr-only" htmlFor="dial-window-end">拨号窗口结束</label>
-                <input
-                  id="dial-window-end"
-                  type="time"
-                  className={inputCls}
-                  value={dialWindowEnd}
-                  onChange={(e) => setDialWindowEnd(e.target.value)}
-                />
-              </SettingRow>
-              <SettingRow label="24 小时内最多拨打次数">
-                <label className="sr-only" htmlFor="dial-max-per-24h">24 小时内最多拨打次数</label>
-                <input
-                  id="dial-max-per-24h"
-                  type="number"
-                  min="1"
-                  max="20"
-                  className={inputCls}
-                  value={dialMaxPer24h}
-                  onChange={(e) => setDialMaxPer24h(e.target.value)}
-                />
-              </SettingRow>
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  仅允许在窗口时段内拨打；同一学生 24h 内被任意坐席拨打超过该次数将被拦截。
-                </div>
-                <button
-                  type="button"
-                  onClick={saveDial}
-                  disabled={savingDial || loading}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-                >
-                  <Save className="w-4 h-4" />
-                  保存
-                </button>
-              </div>
-              <RowMessage state={dialMessage} />
-            </div>
-          </div>
 
           <div id="score-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">

@@ -2,14 +2,24 @@ import { CalendarClock, CheckCircle2, Clock3, Target } from 'lucide-react';
 
 const STAT_ITEMS = [
   { key: 'total', label: '总任务', icon: Target, tone: 'text-blue-600 dark:text-blue-400' },
-  { key: 'done', label: '已完成', icon: CheckCircle2, tone: 'text-emerald-600 dark:text-emerald-400' },
-  { key: 'pending', label: '待联系', icon: Clock3, tone: 'text-amber-600 dark:text-amber-400' },
+  { key: 'progressed', label: '已推进', icon: CheckCircle2, tone: 'text-emerald-600 dark:text-emerald-400' },
+  { key: 'pending', label: '待首次联系', icon: Clock3, tone: 'text-amber-600 dark:text-amber-400' },
   { key: 'follow_up', label: '待回访', icon: CalendarClock, tone: 'text-indigo-600 dark:text-indigo-400' },
 ];
 
-export default function StatsBar({ stats, variant = 'full' }) {
+function normalizeStats(stats) {
   const safeStats = stats || {};
-  const progress = Math.min(Math.max(Number(safeStats.progress_pct) || 0, 0), 100);
+  return {
+    ...safeStats,
+    progressed: (Number(safeStats.done) || 0) + (Number(safeStats.follow_up) || 0),
+  };
+}
+
+export default function StatsBar({ stats, progressStats, variant = 'full' }) {
+  const safeStats = normalizeStats(progressStats || stats);
+  const safeProgressStats = safeStats;
+  const progress = Math.min(Math.max(Number(safeProgressStats.progress_pct) || 0, 0), 100);
+  const progressed = safeProgressStats.progressed;
 
   if (variant === 'compact') {
     return (
@@ -29,7 +39,7 @@ export default function StatsBar({ stats, variant = 'full' }) {
       <div className="flex items-center gap-5">
         <div className="min-w-[230px] max-w-sm flex-1">
           <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-gray-500 dark:text-gray-400">
-            <span>今日完成进度</span>
+            <span>今日任务进度</span>
             <span className="font-bold tabular-nums text-blue-600 dark:text-blue-400">{progress}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
@@ -37,6 +47,9 @@ export default function StatsBar({ stats, variant = 'full' }) {
               className="h-full rounded-full bg-blue-600 transition-[width] duration-500"
               style={{ width: `${progress}%` }}
             />
+          </div>
+          <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+            已推进 {progressed} / {safeProgressStats.total} 项任务
           </div>
         </div>
 

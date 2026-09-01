@@ -150,10 +150,6 @@ async function installAdmissionsMocks(page) {
       await route.fulfill({ json: ok({ stale_unconcat: [] }) });
       return;
     }
-    if (path === '/students/agent/settings') {
-      await route.fulfill({ json: ok({ dial_max_per_24h: 3 }) });
-      return;
-    }
     if (path === '/tasks/today') {
       await route.fulfill({
         json: ok({

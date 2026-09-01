@@ -25,7 +25,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 7, 14, 1, 0, 0)
 
 
-def _database(tmp_path: Path, revision: str = "20260726_01") -> tuple[Path, int, int]:
+def _database(
+    tmp_path: Path,
+    revision: str = "20260726_01",
+    include_terminal_source_item: bool = False,
+) -> tuple[Path, int, int]:
     database = tmp_path / "work-item-owner-repair.db"
     engine = create_engine(f"sqlite:///{database.as_posix()}")
     Base.metadata.create_all(engine)
@@ -96,6 +100,47 @@ def _database(tmp_path: Path, revision: str = "20260726_01") -> tuple[Path, int,
                 ),
             ]
         )
+        if include_terminal_source_item:
+            terminal_owner = User(
+                username="repair-offboarded",
+                hashed_password="test",
+                role=UserRole.agent,
+                name="Repair Offboarded",
+                is_active=False,
+            )
+            session.add(terminal_owner)
+            session.flush()
+            session.add(
+                AgentEmployment(
+                    user_id=terminal_owner.id,
+                    status=EmploymentStatus.offboarded,
+                )
+            )
+            terminal_student = Student(
+                name="Terminal Repair Student",
+                assigned_to=None,
+                status=StudentStatus.enrolled,
+            )
+            session.add(terminal_student)
+            session.flush()
+            terminal_follow_up = FollowUp(
+                student_id=terminal_student.id,
+                agent_id=terminal_owner.id,
+                follow_up_date=NOW + timedelta(days=1),
+            )
+            session.add(terminal_follow_up)
+            session.flush()
+            session.add(
+                WorkItem(
+                    student_id=terminal_student.id,
+                    kind=WorkItemKind.scheduled_follow_up,
+                    status=WorkItemStatus.open,
+                    owner_agent_id=terminal_owner.id,
+                    creator_user_id=terminal_owner.id,
+                    source_type="follow_up",
+                    source_id=terminal_follow_up.id,
+                )
+            )
         session.commit()
         student_id = student.id
         target_id = target.id
@@ -175,6 +220,30 @@ def test_apply_repairs_owner_and_is_idempotent(tmp_path):
             (student_id,),
         ).fetchone()
     assert row == (target_id, "open", 2)
+
+
+def test_apply_cancels_terminal_student_source_items(tmp_path):
+    database, _student_id, _target_id = _database(
+        tmp_path,
+        include_terminal_source_item=True,
+    )
+
+    result = _run_cli(database, apply=True)
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["changed"] == 2
+    assert report["after"]["ok"] is True
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            """
+            select wi.status, wi.owner_agent_id
+            from work_items wi
+            join students s on s.id = wi.student_id
+            where s.name = 'Terminal Repair Student'
+            """
+        ).fetchone()
+    assert row == ("cancelled", None)
 
 
 def test_cli_rejects_unexpected_revision_without_writing(tmp_path):

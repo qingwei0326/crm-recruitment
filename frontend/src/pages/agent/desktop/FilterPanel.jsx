@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, Flame, Search, SlidersHorizontal, X } from 'lucide-react';
 import { STAGES } from '../../../labels';
 
 const STATUS_OPTIONS = ['未联系', '已联系', '未接', '待回访', '已报名', '无效'];
@@ -20,13 +20,23 @@ export default function FilterPanel({
   searchQuery,
   onSearchChange,
   totalCount,
+  queueTotal,
+  intentCounts = {},
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const hasScoreFilter = scoreRange.min !== '' || scoreRange.max !== '';
   const hasAdvancedFilters = selectedStage || selectedIntent || selectedStatus || hasScoreFilter;
   const hasFilters = searchQuery || selectedSchool || hasAdvancedFilters;
   const groupedCount = schoolGroups.reduce((sum, group) => sum + (Number(group.count) || 0), 0);
-  const allCount = Math.max(students.length, groupedCount, Number(totalCount) || 0);
+  const allCount = Math.max(
+    students.length,
+    groupedCount,
+    Number(totalCount) || 0,
+    Number(queueTotal) || 0,
+  );
+  const aCount = Number.isFinite(Number(intentCounts.A))
+    ? Number(intentCounts.A)
+    : students.filter((student) => student.intent_level === 'A').length;
 
   const clearFilters = () => {
     onSearchChange?.('');
@@ -86,6 +96,33 @@ export default function FilterPanel({
       </div>
 
       <div className="flex items-center gap-2 overflow-x-auto px-4 pb-3 scroll-thin" aria-label="学校筛选">
+        <div className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800/60" aria-label="任务队列">
+          <button
+            type="button"
+            onClick={() => onIntentChange?.(null)}
+            aria-pressed={!selectedIntent}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition ${
+              !selectedIntent
+                ? 'bg-white text-blue-700 shadow-sm dark:bg-gray-900 dark:text-blue-300'
+                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100'
+            }`}
+          >
+            全部任务 <span className="tabular-nums opacity-70">{allCount}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onIntentChange?.(selectedIntent === 'A' ? null : 'A')}
+            aria-pressed={selectedIntent === 'A'}
+            className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition ${
+              selectedIntent === 'A'
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30'
+            }`}
+          >
+            <Flame className="h-3.5 w-3.5" />
+            A级优先 <span className="tabular-nums opacity-80">{aCount}</span>
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => onSchoolChange(null)}

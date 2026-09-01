@@ -105,10 +105,6 @@ async function installSmokeApi(page, initialUser = null) {
       });
       return;
     }
-    if (path === '/students/agent/settings') {
-      await route.fulfill({ json: ok({ dial_max_per_24h: 3 }) });
-      return;
-    }
     if (path === '/students' || path === '/students/enrolled') {
       await route.fulfill({ json: ok(pagePayload(path === '/students' ? [student] : [])) });
       return;

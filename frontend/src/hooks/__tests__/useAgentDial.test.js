@@ -25,7 +25,6 @@ const baseArgs = (overrides = {}) => ({
   },
   actions: {
     setDialModal: vi.fn(),
-    setDialCheck: vi.fn(),
     setLockedStudent: vi.fn(),
     setCurrentIdx: vi.fn(),
     removeStudentFromQueue: vi.fn(),
@@ -113,9 +112,6 @@ describe('useAgentDial', () => {
   it('ignores duplicate dial clicks while the first request is still pending', async () => {
     let resolvePhone;
     api.get.mockImplementation((url) => {
-      if (url === '/calls/check') {
-        return Promise.resolve({ data: { code: 0, data: { count: 0 } } });
-      }
       if (url === '/students/phone/42') {
         return new Promise((resolve) => {
           resolvePhone = resolve;

@@ -8,12 +8,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
+    ADMIN_OP_ENROLLED_INVALIDATE,
     ADMIN_OP_STUDENT_CREATE,
     ADMIN_OP_STUDENT_DELETE,
     ADMIN_OP_STUDENT_EDIT,
     ADMIN_PAGE_LEADS_MANAGE,
     get_current_user,
-    require_agent,
     require_operation_permission,
     user_has_operation_permission,
     user_has_page_permission,
@@ -40,13 +40,11 @@ from app.permissions import (
 )
 from app.pushplus import notify_a_level_change_background
 from app.region_extractor import extract_region
-from app.routers.students_phone import (
-    _is_within_dial_window as _is_within_dial_window,  # noqa: F401
-)
 from app.schemas import Response, StudentCreate, StudentUpdate
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.services.lead_outcome_service import apply_outcome_reason
 from app.services.work_item_service import sync_student_work_items
+from app.stage_policy import normalize_stage, validate_stage_transition
 from app.status_policy import (
     canonical_status_value,
     canonical_student_status,
@@ -219,6 +217,9 @@ def _student_payload(student: Student) -> dict:
         "assigned_at": str(student.assigned_at) if student.assigned_at else None,
         "created_at": str(student.created_at),
         "updated_at": str(student.updated_at),
+        # Filled by the student list/detail read models. Keep the key on all
+        # student payloads so clients can consume one stable contract.
+        "next_action": None,
     }
     return payload
 
@@ -288,11 +289,17 @@ async def create_student(
                 intent_level = _enum_or_error(IntentLevel, body.intent_level, "意向等级")
             except ValueError as e:
                 return Response.error(code=1, msg=str(e))
-        if body.stage:
-            try:
-                stage = _enum_or_error(StudentStage, body.stage, "阶段")
-            except ValueError as e:
-                return Response.error(code=1, msg=str(e))
+    if body.stage:
+        try:
+            stage = _enum_or_error(StudentStage, body.stage, "阶段")
+        except ValueError as e:
+            return Response.error(code=1, msg=str(e))
+
+        if stage == StudentStage.enrolled:
+            return Response.error(code=1, msg="已报名必须通过正式报名确认流程登记")
+
+    if canonical_student_status(status) == StudentStatus.enrolled:
+        return Response.error(code=1, msg="已报名必须通过正式报名确认流程登记")
 
     assigned_to = body.assigned_to if is_admin(current_user) else current_user.id
     if assigned_to:
@@ -382,6 +389,40 @@ async def update_student(
     invalid_reason = (raw.pop("invalid_reason", None) or "").strip()
     if not raw:
         return Response.ok(_student_payload(student))
+
+    if "status" in raw and raw["status"] is not None:
+        try:
+            if (
+                not is_admin(current_user)
+                and canonical_student_status(raw["status"]) == StudentStatus.not_contacted
+            ):
+                return Response.error(
+                    code=1,
+                    msg="话务员不能重置为新线索，请联系管理员回收并重新分配",
+                )
+            if canonical_student_status(raw["status"]) == StudentStatus.enrolled:
+                return Response.error(
+                    code=1,
+                    msg="已报名必须通过正式报名确认流程登记",
+                )
+        except ValueError as e:
+            return Response.error(code=1, msg=str(e))
+
+    if "stage" in raw and raw["stage"] is not None:
+        try:
+            requested_stage = normalize_stage(raw["stage"])
+            if not is_admin(current_user) and requested_stage == StudentStage.initial_contact:
+                return Response.error(
+                    code=1,
+                    msg="话务员不能重置为新线索，请联系管理员回收并重新分配",
+                )
+            raw["stage"] = await validate_stage_transition(
+                db,
+                student,
+                requested_stage,
+            )
+        except ValueError as e:
+            return Response.error(code=1, msg=str(e))
 
     allowed_fields = (
         ADMIN_STUDENT_UPDATE_FIELDS if is_admin(current_user) else AGENT_STUDENT_UPDATE_FIELDS
@@ -564,6 +605,54 @@ async def toggle_need_help(
     return Response.ok({"need_help": student.need_help})
 
 
+@router.post("/{student_id}/invalidate-enrollment")
+async def invalidate_enrollment(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_ENROLLED_INVALIDATE)),
+):
+    """取消正式报名状态，保留学生档案和历史记录并转为无效。"""
+    student = await get_student_or_404(db, student_id)
+    if canonical_student_status(student.status) != StudentStatus.enrolled:
+        return Response.error(code=1, msg="只有已报名学生可以取消报名")
+
+    old_stage = student.stage
+    old_assigned_to = student.assigned_to
+    student.status = StudentStatus.invalid
+    student.stage = StudentStage.initial_contact
+    student.enrollment_substage = None
+    await apply_outcome_reason(db, student, "其他")
+
+    db.add(
+        make_operation_log(
+            current_user,
+            student.id,
+            student.case_no or "",
+            "取消报名",
+            content=(
+                f"取消学生 {student.name} 的正式报名状态，转为无效；"
+                f"阶段 {old_stage} → {student.stage}；"
+                f"原话务员 {old_assigned_to or '未分配'}"
+            ),
+            old_status=canonical_status_value(StudentStatus.enrolled) or "已报名",
+            new_status=canonical_status_value(StudentStatus.invalid) or "无效",
+            note_content="其他",
+        )
+    )
+    await sync_student_work_items(db, student, current_user)
+    await db.commit()
+    await db.refresh(student)
+    return Response.ok(
+        {
+            "id": student.id,
+            "status": canonical_status_value(student.status),
+            "status_detail": student.status_detail,
+            "assigned_to": student.assigned_to,
+        },
+        msg="已取消报名并转为无效",
+    )
+
+
 @router.delete("/{student_id}")
 async def delete_student(
     student_id: int,
@@ -585,19 +674,3 @@ async def delete_student(
     await db.delete(student)
     await db.commit()
     return Response.ok(msg="删除成功")
-
-
-@router.get("/agent/settings")
-async def agent_settings(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_agent),
-):
-    """返回话务员端需要的非敏感系统配置。"""
-    from app.routers.admin import get_config_value
-
-    dial_max_str = await get_config_value(db, "dial_max_per_24h", "3")
-    try:
-        dial_max = max(1, int(dial_max_str))
-    except (ValueError, TypeError):
-        dial_max = 3
-    return Response.ok({"dial_max_per_24h": dial_max})

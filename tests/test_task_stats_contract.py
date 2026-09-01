@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
 from app.models import FollowUp, IntentLevel, Student, StudentStatus
 from app.task_stats import build_task_stats
-from app.utils import utcnow
+from app.utils import today_cst_as_utc, utcnow
 
 
 class TestTaskStatsContract:
@@ -73,6 +73,14 @@ class TestAdminAgentTaskStats:
             "follow_up": 0,
             "progress_pct": 0.0,
         }
+        assert today_data["task_progress"] == {
+            "total": 4,
+            "done": 1,
+            "pending": 2,
+            "follow_up": 1,
+            "progress_pct": 50.0,
+        }
+        assert today_data["intent_counts"] == {"A": 0, "B": 0, "C": 0, "无": 2}
         assert {item["status"] for item in today_data["list"]} == {"未联系"}
 
         list_resp = await client.get("/api/admin/agents", headers=admin_headers)
@@ -429,6 +437,61 @@ class TestAdminAgentTaskStats:
         names = [item["name"] for item in resp.json()["data"]["list"]]
 
         assert names[:4] == ["A意向", "B意向", "普通更久", "普通最新"]
+
+        a_resp = await client.get(
+            "/api/tasks/today?intent_level=A&limit=10",
+            headers=agent_headers,
+        )
+        a_data = a_resp.json()["data"]
+        assert a_data["list_total"] == 1
+        assert [item["name"] for item in a_data["list"]] == ["A意向"]
+        assert a_data["intent_counts"]["A"] == 1
+
+    async def test_agent_today_tasks_can_filter_overdue_uncontacted_students(
+        self, client, db, agent_headers, agent_user
+    ):
+        today_start = today_cst_as_utc()
+        students = [
+            Student(
+                name="昨日未处理",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                assigned_at=today_start - timedelta(hours=2),
+                updated_at=today_start - timedelta(hours=2),
+            ),
+            Student(
+                name="今日任务",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                assigned_at=today_start + timedelta(hours=1),
+                updated_at=today_start + timedelta(hours=1),
+            ),
+            Student(
+                name="未记录分配时间",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+            ),
+        ]
+        db.add_all(students)
+        await db.commit()
+
+        all_resp = await client.get("/api/tasks/today?limit=10", headers=agent_headers)
+        all_data = all_resp.json()["data"]
+        assert all_data["list_total"] == 3
+        assert all_data["pending_count"] == 3
+        assert all_data["overdue_count"] == 1
+
+        overdue_resp = await client.get(
+            "/api/tasks/today?overdue=true&limit=10",
+            headers=agent_headers,
+        )
+        overdue_data = overdue_resp.json()["data"]
+        assert overdue_data["overdue"] is True
+        assert overdue_data["list_total"] == 1
+        assert overdue_data["pending_count"] == 3
+        assert overdue_data["overdue_count"] == 1
+        assert [item["name"] for item in overdue_data["list"]] == ["昨日未处理"]
+        assert overdue_data["list"][0]["is_overdue"] is True
 
     async def test_agent_handled_tasks_prioritize_due_follow_up_and_intent(
         self, client, db, agent_headers, agent_user

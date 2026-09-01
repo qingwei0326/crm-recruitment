@@ -314,9 +314,9 @@ export default function LeadGovernance() {
 
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
         <header
-          className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex justify-between ${
+          className={`sticky top-0 z-10 flex justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 ${
             isMobile ? 'items-end pb-2' : 'h-14 items-center'
           }`}
           style={
@@ -339,7 +339,12 @@ export default function LeadGovernance() {
                 <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
             )}
-            <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">线索治理</h1>
+            <div className="min-w-0">
+              <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
+                招生运营 / 数据风控
+              </div>
+              <h1 className="truncate text-lg font-bold leading-5 text-slate-900 dark:text-gray-100">线索治理</h1>
+            </div>
           </div>
           <button
             type="button"

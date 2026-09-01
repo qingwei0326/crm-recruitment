@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -13,7 +13,7 @@ from app.auth import (
 )
 from app.database import get_db
 from app.dial_recording import DIAL_RECORDING_COMPLETED, DIAL_RECORDING_PENDING
-from app.models import DialLog, SystemConfig, User
+from app.models import DialLog, User
 from app.permissions import get_accessible_student, get_student_or_404, is_admin
 from app.schemas import Response
 from app.utils import make_operation_log, utcnow
@@ -26,35 +26,7 @@ def _require_admin_operation(current_user: User, permission: str) -> None:
         raise HTTPException(status_code=403, detail="无权执行该操作")
 
 
-_CST = timezone(timedelta(hours=8))
 DIAL_PENDING_REUSE_SECONDS = 2 * 60
-
-
-async def _get_system_config(db: AsyncSession, key: str, default: str = "") -> str:
-    result = await db.execute(select(SystemConfig.value).where(SystemConfig.key == key))
-    value = result.scalar_one_or_none()
-    return (value or "").strip() or default
-
-
-def _parse_hhmm(value: str) -> tuple[int, int]:
-    try:
-        hh, mm = value.split(":")
-        return int(hh), int(mm)
-    except (ValueError, AttributeError):
-        return 0, 0
-
-
-def _minutes_since_midnight(value: str) -> int:
-    hh, mm = _parse_hhmm(value)
-    return max(0, min(23, hh)) * 60 + max(0, min(59, mm))
-
-
-def _is_within_dial_window(current_minutes: int, window_start: str, window_end: str) -> bool:
-    start_minutes = _minutes_since_midnight(window_start)
-    end_minutes = _minutes_since_midnight(window_end)
-    if start_minutes <= end_minutes:
-        return start_minutes <= current_minutes <= end_minutes
-    return current_minutes >= start_minutes or current_minutes <= end_minutes
 
 
 @router.get("/phone/{student_id}")
@@ -67,24 +39,7 @@ async def get_student_phone(
     student = await get_accessible_student(db, student_id, current_user)
     _require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
 
-    # 1. 拨号窗口校验
-    window_start = await _get_system_config(db, "dial_window_start", "08:00")
-    window_end = await _get_system_config(db, "dial_window_end", "21:00")
-    max_per_24h_str = await _get_system_config(db, "dial_max_per_24h", "3")
-    try:
-        max_per_24h = int(max_per_24h_str)
-    except ValueError:
-        max_per_24h = 3
-
-    now_cst = datetime.now(_CST)
-    cur_minutes = now_cst.hour * 60 + now_cst.minute
-    if not _is_within_dial_window(cur_minutes, window_start, window_end):
-        raise HTTPException(
-            status_code=403,
-            detail=f"当前为禁拨时段（拨号窗口 {window_start}-{window_end}）",
-        )
-
-    # 2. 新客户端传回精确会话 ID；旧客户端在两分钟内复用 pending 会话。
+    # 新客户端传回精确会话 ID；旧客户端在两分钟内复用 pending 会话。
     if dial_log_id is not None:
         reusable_r = await db.execute(
             select(DialLog).where(
@@ -121,22 +76,7 @@ async def get_student_phone(
             }
         )
 
-    # 3. 24h 防撞号校验（全局，任何坐席）
-    since = utcnow() - timedelta(hours=24)
-    count_r = await db.execute(
-        select(func.count(DialLog.id)).where(
-            DialLog.student_id == student.id,
-            DialLog.dialed_at >= since,
-        )
-    )
-    count_24h = count_r.scalar() or 0
-    if count_24h >= max_per_24h:
-        raise HTTPException(
-            status_code=403,
-            detail=f"该学生 24h 内已被拨打 {count_24h} 次，达到上限 {max_per_24h}",
-        )
-
-    # 4. 通过校验，写 DialLog 并记录操作日志
+    # 写 DialLog 并记录操作日志
     dial_log = DialLog(
         student_id=student.id,
         agent_id=current_user.id,

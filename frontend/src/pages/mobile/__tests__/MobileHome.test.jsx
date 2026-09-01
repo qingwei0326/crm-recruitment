@@ -62,22 +62,18 @@ describe('MobileHome PendingList', () => {
     });
   });
 
-  it('requests pending items by intent level', async () => {
+  it('does not expose intent-level filters in the mobile pending queue', async () => {
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <PendingList />
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('button', { name: '全部意向' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'B' }));
-
-    await waitFor(() => {
-      expect(api.get).toHaveBeenLastCalledWith('/tasks/handled', {
-        params: { limit: 100, intent_level: 'B' },
-      });
-    });
+    await screen.findByRole('button', { name: '全部 3' });
+    expect(screen.queryByRole('button', { name: '全部意向' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'A' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'B' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
   });
 
   it('requests pending items by waiting-volunteer result', async () => {
@@ -355,7 +351,6 @@ describe('MobileHome PendingList', () => {
 
     await screen.findByRole('button', { name: '长泰县 2' });
     fireEvent.click(screen.getByRole('button', { name: '待回访 1' }));
-    fireEvent.click(screen.getByRole('button', { name: 'B' }));
     fireEvent.click(screen.getByRole('button', { name: '等待志愿' }));
     fireEvent.click(screen.getByRole('button', { name: '长泰县 2' }));
     fireEvent.change(screen.getByPlaceholderText('搜索姓名或手机号尾号'), {
@@ -367,7 +362,6 @@ describe('MobileHome PendingList', () => {
         params: {
           limit: 100,
           status: '待回访',
-          intent_level: 'B',
           status_detail: '等待志愿',
           region: '长泰县',
           search: '林',
@@ -389,7 +383,6 @@ describe('MobileHome PendingList', () => {
         params: {
           limit: 100,
           status: '待回访',
-          intent_level: 'B',
           status_detail: '等待志愿',
           region: '长泰县',
           search: '林',
@@ -455,7 +448,7 @@ describe('MobileHome StudentRow next action', () => {
     expect(getStudentNextAction({ ...baseStudent, status: '已联系', stage: '预约参观', intent_level: 'B' }, true).label).toBe('下一步：确认到访安排');
   });
 
-  it('shows the next action on the mobile student card', () => {
+  it('keeps the task card focused on the primary dial action', () => {
     const onDetail = vi.fn();
     const onDial = vi.fn();
 
@@ -472,7 +465,9 @@ describe('MobileHome StudentRow next action', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('下一步：再次呼出或设回访')).toBeInTheDocument();
+    expect(screen.queryByText('下一步：再次呼出或设回访')).not.toBeInTheDocument();
+    expect(screen.queryByText('13800000000')).not.toBeInTheDocument();
+    expect(screen.queryByText('无')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '拨打 张三 张妈妈' }));
     expect(onDial).toHaveBeenCalledWith(42, 'guardian');
   });
@@ -491,7 +486,7 @@ describe('MobileHome StudentRow next action', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('无电话数据')).toBeInTheDocument();
+    expect(screen.queryByText('无电话数据')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '无电话' })).toBeDisabled();
   });
 });

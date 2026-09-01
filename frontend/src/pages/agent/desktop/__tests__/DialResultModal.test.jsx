@@ -13,7 +13,6 @@ const results = [
   { code: 'no_intent', label: '无意向', className: 'bg-slate-600' },
   { code: 'child_declined', label: '孩子不想读', className: 'bg-zinc-600' },
   { code: 'enrolled_elsewhere', label: '已报名其他学校', className: 'bg-rose-600' },
-  { code: 'enrolled', label: '已报名', className: 'bg-green-600' },
 ];
 
 vi.mock('../../../../hooks/useLeadOutcomeCatalog', () => ({

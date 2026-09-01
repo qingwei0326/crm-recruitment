@@ -205,26 +205,6 @@ class TestCallEndpoints:
         assert resp.status_code == 404
         assert resp.json()["detail"] == "学生不存在"
 
-    async def test_check_today_call(self, client, db, admin_headers, admin_user, sample_student):
-        db.add(
-            DialLog(
-                student_id=sample_student.id,
-                agent_id=admin_user.id,
-                dialed_at=utcnow() - timedelta(minutes=5),
-            )
-        )
-        await db.commit()
-
-        resp = await client.get(
-            f"/api/calls/check?student_id={sample_student.id}",
-            headers=admin_headers,
-        )
-        body = resp.json()
-
-        assert body["code"] == 0
-        assert body["data"]["count"] == 1
-        assert body["data"]["already_called"] is True
-
     async def test_update_dial_duration_updates_latest_user_dial_log(
         self, client, db, admin_headers, admin_user, sample_student
     ):
@@ -341,10 +321,6 @@ class TestCallEndpoints:
 
         assert resp.json()["code"] == 1
 
-    async def test_check_today_call_unknown_student(self, client, admin_headers):
-        resp = await client.get("/api/calls/check?student_id=99999", headers=admin_headers)
-        assert resp.status_code == 404
-
     async def test_agent_analyze_unassigned_student_forbidden(
         self, client, agent_headers, sample_student
     ):
@@ -394,10 +370,6 @@ class TestCallEndpoints:
     async def test_agent_list_calls_scoped(self, client, agent_headers, agent_user):
         resp = await client.get(f"/api/calls?agent_id={agent_user.id + 999}", headers=agent_headers)
         assert resp.status_code == 403
-
-    async def test_check_today_call_missing_param(self, client, admin_headers):
-        resp = await client.get("/api/calls/check", headers=admin_headers)
-        assert resp.status_code == 422
 
 
 @pytest.mark.asyncio

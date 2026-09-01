@@ -22,6 +22,26 @@ import {
 } from '../../adminPermissions';
 
 const SETTLEMENT_STATUSES = ['未结算', '已结算', '暂缓', '争议'];
+const FINANCE_FIELDS = [
+  'tuition_list_amount',
+  'student_subsidy_amount',
+  'student_paid_amount',
+  'external_subsidy_amount',
+  'commission_base_amount',
+  'commission_subsidy_amount',
+  'commission_adjustment_amount',
+  'commission_paid_amount',
+];
+const FINANCE_LABELS = {
+  tuition_list_amount: '标准学费',
+  student_subsidy_amount: '学费补贴',
+  student_paid_amount: '学生实付',
+  external_subsidy_amount: '外部补贴',
+  commission_base_amount: '基础佣金',
+  commission_subsidy_amount: '佣金补贴',
+  commission_adjustment_amount: '佣金调整',
+  commission_paid_amount: '已发佣金',
+};
 const CONFIDENCE_LABELS = {
   high: '高',
   medium: '中',
@@ -95,6 +115,20 @@ function SummaryCards({ rows }) {
               <div className="text-gray-500">争议</div>
             </div>
           </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 border-t pt-3 text-center text-xs dark:border-gray-700">
+            <div>
+              <div className="font-semibold text-blue-600">{money(item.commission_due_total)}</div>
+              <div className="text-gray-500">应结佣金</div>
+            </div>
+            <div>
+              <div className="font-semibold text-emerald-600">{money(item.commission_paid_total)}</div>
+              <div className="text-gray-500">已发佣金</div>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-700 dark:text-gray-200">{money(item.school_received_total)}</div>
+              <div className="text-gray-500">学校到账</div>
+            </div>
+          </div>
         </div>
       ))}
     </div>
@@ -112,6 +146,14 @@ function csvEscape(value) {
   const text = String(value ?? '');
   if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
   return text;
+}
+
+function money(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function numericValue(value) {
+  return value === '' || value == null ? 0 : Number(value);
 }
 
 function downloadCsv(filename, rows) {
@@ -173,6 +215,8 @@ function EnrollmentSettlementContent({ embedded = false }) {
               settlement_notes: item.settlement_notes || '',
               attributed_agent_id: item.attributed_agent_id || '',
               attribution_reason: '',
+              ...Object.fromEntries(FINANCE_FIELDS.map((field) => [field, item[field] ?? ''])),
+              finance_change_reason: '',
             };
           }
         });
@@ -211,6 +255,15 @@ function EnrollmentSettlementContent({ embedded = false }) {
     if (canEditSettlement) {
       payload.settlement_status = form.settlement_status || item.settlement_status;
       payload.settlement_notes = form.settlement_notes || undefined;
+      const changedFinanceFields = FINANCE_FIELDS.filter(
+        (field) => numericValue(form[field]) !== numericValue(item[field]),
+      );
+      changedFinanceFields.forEach((field) => {
+        payload[field] = numericValue(form[field]);
+      });
+      if (changedFinanceFields.length > 0) {
+        payload.finance_change_reason = form.finance_change_reason || '';
+      }
     }
     if (
       canEditAttribution
@@ -259,7 +312,10 @@ function EnrollmentSettlementContent({ embedded = false }) {
           '学校',
           '报名时间',
           '专业',
-          '金额',
+          '学生实付',
+          '学校到账',
+          '应结佣金',
+          '已发佣金',
           '结算状态',
           '归属话务员',
           '归属方式',
@@ -274,7 +330,10 @@ function EnrollmentSettlementContent({ embedded = false }) {
           item.school_name || '',
           item.enrolled_at || '',
           item.enrolled_program || '',
-          item.amount ?? '',
+          item.student_paid_amount ?? item.amount ?? '',
+          item.school_received_amount ?? '',
+          item.commission_due_amount ?? '',
+          item.commission_paid_amount ?? '',
           item.settlement_status || '',
           item.attributed_agent_name || '',
           item.attribution_method || '',
@@ -373,7 +432,8 @@ function EnrollmentSettlementContent({ embedded = false }) {
           <div className="flex flex-wrap items-center gap-3">
             <div className="font-semibold">结算批次 {batchPreview.batch_id}</div>
             <div>记录 {batchPreview.record_count || 0} 条</div>
-            <div>金额 {Number(batchPreview.amount_total || 0).toFixed(2)}</div>
+            <div>应结佣金 {money(batchPreview.commission_due_total)}</div>
+            <div>学校到账 {money(batchPreview.school_received_total)}</div>
             <div className="text-xs opacity-80">已按当前筛选导出 CSV，并写入操作记录。</div>
           </div>
         </section>
@@ -412,7 +472,12 @@ function EnrollmentSettlementContent({ embedded = false }) {
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                         <div>{item.enrolled_program || '-'}</div>
                         <div className="mt-1 text-xs text-gray-500">{formatDateTime(item.enrolled_at)}</div>
-                        <div className="mt-1 text-xs text-gray-500">金额 {item.amount ?? '-'}</div>
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <span>学生实付 {money(item.student_paid_amount ?? item.amount)}</span>
+                          <span>学校到账 {money(item.school_received_amount)}</span>
+                          <span>应结佣金 {money(item.commission_due_amount)}</span>
+                          <span>已发佣金 {money(item.commission_paid_amount)}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                         <div>{item.attributed_agent_name || '-'}</div>
@@ -534,6 +599,34 @@ function EnrollmentSettlementContent({ embedded = false }) {
                             </button>
                           )}
                         </div>
+                        {canEditSettlement && (
+                          <div className="mt-3 grid gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4 dark:border-gray-700">
+                            {FINANCE_FIELDS.map((field) => (
+                              <label key={field} className="text-xs text-gray-500">
+                                {FINANCE_LABELS[field]}
+                                <input
+                                  aria-label={`${FINANCE_LABELS[field]} ${item.id}`}
+                                  type="number"
+                                  step="0.01"
+                                  min={field === 'commission_adjustment_amount' ? undefined : '0'}
+                                  value={form[field] ?? ''}
+                                  onChange={(event) => updateForm(item.id, { [field]: event.target.value })}
+                                  className="mt-1 h-9 w-full rounded-lg border border-gray-200 bg-white px-2 dark:border-gray-700 dark:bg-gray-900"
+                                />
+                              </label>
+                            ))}
+                            <label className="text-xs text-gray-500 sm:col-span-2 lg:col-span-4">
+                              金额调整原因
+                              <input
+                                aria-label={`金额调整原因 ${item.id}`}
+                                value={form.finance_change_reason || ''}
+                                onChange={(event) => updateForm(item.id, { finance_change_reason: event.target.value })}
+                                className="mt-1 h-9 w-full rounded-lg border border-gray-200 bg-white px-2 dark:border-gray-700 dark:bg-gray-900"
+                                placeholder="修改金额时必填"
+                              />
+                            </label>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

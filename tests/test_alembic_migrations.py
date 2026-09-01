@@ -292,7 +292,7 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20260726_01"
+        assert revision == "20260823_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()

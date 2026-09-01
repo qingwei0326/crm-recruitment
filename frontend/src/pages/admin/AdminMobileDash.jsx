@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   BarChart3,
+  CalendarDays,
   CheckCircle2,
   Clock3,
   Eye,
   Gauge,
+  Globe2,
   HelpCircle,
   ListFilter,
   Loader2,
@@ -72,12 +74,14 @@ function todayRecordingCounts(metrics = {}) {
 
 function MetricCard({ icon: Icon, label, value, detail, tone = 'gray', to }) {
   const body = (
-    <div className={`min-h-[112px] rounded-xl border p-3 ${metricTone[tone] || metricTone.gray}`}>
+    <div className={`group min-h-[116px] rounded-2xl border p-4 shadow-sm transition hover:shadow-md ${metricTone[tone] || metricTone.gray}`}>
       <div className="flex min-w-0 items-start justify-between gap-2">
-        <div className="min-w-0 break-words text-xs font-medium leading-4 opacity-80">{label}</div>
-        <Icon className="h-4 w-4 shrink-0 opacity-80" />
+        <div className="min-w-0 break-words text-xs font-semibold leading-4 opacity-80">{label}</div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/70 dark:bg-gray-900/40">
+          <Icon className="h-4 w-4 opacity-80" />
+        </div>
       </div>
-      <div className="mt-3 truncate text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="mt-3 truncate text-2xl font-black tabular-nums">{value}</div>
       {detail && <div className="mt-1 break-words text-xs leading-4 opacity-75">{detail}</div>}
     </div>
   );
@@ -150,6 +154,38 @@ function AgentRow({ item }) {
   );
 }
 
+function MobileGlobalOverview({ summary, enrolledTotal, loading }) {
+  const cells = [
+    ['全盘线索', summary?.total_students, '当前全部学生'],
+    ['已联系学生', summary?.contacted, '排除未联系与无效'],
+    ['A级意向', summary?.a_level, '当前重点跟进'],
+    ['已报名', enrolledTotal, '当前确认报名'],
+  ];
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
+        <div>
+          <h2 className="text-xs font-bold tracking-wide text-gray-900 dark:text-gray-100">全局数据总览</h2>
+          <p className="mt-0.5 text-[10px] text-gray-400">全库实时口径</p>
+        </div>
+        <Globe2 className="h-4 w-4 text-blue-500" />
+      </div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 dark:divide-gray-700">
+        {cells.map(([label, value, detail]) => (
+          <div key={label} className="min-w-0 px-4 py-3">
+            <div className="truncate text-[10px] font-medium text-gray-500 dark:text-gray-400">{label}</div>
+            <div className="mt-1 text-lg font-black tabular-nums text-gray-950 dark:text-white">
+              {loading ? '-' : n(value).toLocaleString()}
+            </div>
+            <div className="mt-0.5 truncate text-[10px] text-gray-400">{detail}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function AdminMobileDash() {
   const { dark, toggle } = useTheme();
   const { user } = useAuth();
@@ -157,6 +193,7 @@ export default function AdminMobileDash() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [scope, setScope] = useState('today');
   const [summary, setSummary] = useState(null);
   const [quality, setQuality] = useState(null);
   const [opsHealth, setOpsHealth] = useState(null);
@@ -170,7 +207,7 @@ export default function AdminMobileDash() {
 
   const closeSidebar = () => setSidebarOpen(false);
 
-  const load = async ({ silent = false } = {}) => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
@@ -192,13 +229,13 @@ export default function AdminMobileDash() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [canViewScorePreview, toast]);
 
   useEffect(() => {
     load();
-  }, [canViewScorePreview]);
+  }, [load]);
 
-  const scoreItems = scorePreview.items || [];
+  const scoreItems = useMemo(() => scorePreview.items || [], [scorePreview.items]);
   const attentionAgents = useMemo(
     () => scoreItems.filter((item) => ['risk', 'watch'].includes(item.level)),
     [scoreItems],
@@ -226,6 +263,10 @@ export default function AdminMobileDash() {
   const monthRecording = recordingCounts(month);
   const todayA = n(summary?.today_a);
   const availableUnassigned = n(summary?.available_unassigned ?? students.unassigned_active);
+  const totalStudents = n(summary?.total_students);
+  const contactedStudents = n(summary?.contacted);
+  const aLevelTotal = n(summary?.a_level);
+  const enrolledTotal = n(summary?.enrolled_total);
   const hasCritical =
     n(followUps.overdue_follow_ups) > 0 ||
     n(students.missing_phone_tasks) > 0 ||
@@ -235,7 +276,7 @@ export default function AdminMobileDash() {
 
   return (
     <AdminLayout isMobile sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
         <PageHeader
           title="移动管理"
           isMobile
@@ -271,6 +312,41 @@ export default function AdminMobileDash() {
         </PageHeader>
 
         <div className="space-y-4 px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
+          <section className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-gray-950 dark:text-white">移动指挥中心</div>
+                <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                  {scope === 'today' ? '今日执行、异常和坐席状态集中查看。' : '全库资产、联系覆盖和招生沉淀集中查看。'}
+                </p>
+              </div>
+              <div
+                role="group"
+                aria-label="移动管理数据范围"
+                className="flex shrink-0 items-center gap-0.5 rounded-xl border border-blue-100 bg-white/80 p-1 dark:border-blue-900/60 dark:bg-gray-800/80"
+              >
+                <button
+                  type="button"
+                  aria-pressed={scope === 'today'}
+                  onClick={() => setScope('today')}
+                  className={`inline-flex min-h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition ${scope === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                >
+                  <CalendarDays className="h-3 w-3" />
+                  今日
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={scope === 'all'}
+                  onClick={() => setScope('all')}
+                  className={`inline-flex min-h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition ${scope === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                >
+                  <Globe2 className="h-3 w-3" />
+                  全局
+                </button>
+              </div>
+            </div>
+          </section>
+
           <section className={`rounded-2xl border px-4 py-4 ${hasCritical ? metricTone.amber : metricTone.green}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -286,39 +362,52 @@ export default function AdminMobileDash() {
           </section>
 
           <section className="grid grid-cols-2 gap-3">
-            <MetricCard
-              icon={Phone}
-              label="今日呼出"
-              value={loading ? '-' : totalCalls}
-              detail={`已完成 ${todayRecording.completed} · 待完成 ${todayRecording.pending}`}
-              tone={todayRecording.pending > 0 ? 'amber' : 'blue'}
-              to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
-            />
-            <MetricCard
-              icon={TrendingUp}
-              label="今日新增 A"
-              value={loading ? '-' : todayA}
-              detail="今日评级进入 A"
-              tone={todayA > 0 ? 'green' : 'gray'}
-              to={canViewLeadsManage ? dashboardLeadUrls.todayA : ''}
-            />
-            <MetricCard
-              icon={Users}
-              label="可分配有效线索"
-              value={loading ? '-' : availableUnassigned}
-              detail="未分配且仍需跟进"
-              tone={availableUnassigned > 0 ? 'amber' : 'green'}
-              to={canViewLeadsManage ? dashboardLeadUrls.availableUnassigned : ''}
-            />
-            <MetricCard
-              icon={Gauge}
-              label="需关注坐席"
-              value={loading ? '-' : attentionAgents.length}
-              detail={`共 ${scoreItems.length} 名话务员`}
-              tone={attentionAgents.length > 0 ? 'amber' : 'green'}
-              to={canViewScorePreview ? '/admin/score-preview?filter=attention' : ''}
-            />
+            {scope === 'today' ? (
+              <>
+                <MetricCard
+                  icon={Phone}
+                  label="今日呼出"
+                  value={loading ? '-' : totalCalls}
+                  detail={`已完成 ${todayRecording.completed} · 待完成 ${todayRecording.pending}`}
+                  tone={todayRecording.pending > 0 ? 'amber' : 'blue'}
+                  to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
+                />
+                <MetricCard
+                  icon={TrendingUp}
+                  label="今日新增 A"
+                  value={loading ? '-' : todayA}
+                  detail="今日评级进入 A"
+                  tone={todayA > 0 ? 'green' : 'gray'}
+                  to={canViewLeadsManage ? dashboardLeadUrls.todayA : ''}
+                />
+                <MetricCard
+                  icon={Users}
+                  label="可分配有效线索"
+                  value={loading ? '-' : availableUnassigned}
+                  detail="未分配且仍需跟进"
+                  tone={availableUnassigned > 0 ? 'amber' : 'green'}
+                  to={canViewLeadsManage ? dashboardLeadUrls.availableUnassigned : ''}
+                />
+                <MetricCard
+                  icon={Gauge}
+                  label="需关注坐席"
+                  value={loading ? '-' : attentionAgents.length}
+                  detail={`共 ${scoreItems.length} 名话务员`}
+                  tone={attentionAgents.length > 0 ? 'amber' : 'green'}
+                  to={canViewScorePreview ? '/admin/score-preview?filter=attention' : ''}
+                />
+              </>
+            ) : (
+              <>
+                <MetricCard icon={Users} label="总线索量" value={loading ? '-' : totalStudents} detail="当前全库学生" tone="blue" to={canViewLeadsManage ? '/admin/leads' : ''} />
+                <MetricCard icon={Phone} label="已联系学生" value={loading ? '-' : contactedStudents} detail="排除未联系与无效" tone="green" />
+                <MetricCard icon={TrendingUp} label="A级意向" value={loading ? '-' : aLevelTotal} detail="当前重点跟进" tone="amber" to={canViewLeadsManage ? dashboardLeadUrls.allA : ''} />
+                <MetricCard icon={CheckCircle2} label="已报名" value={loading ? '-' : enrolledTotal} detail="当前确认报名" tone="green" to={canViewLeadsManage ? '/admin/leads?stage=已报名' : ''} />
+              </>
+            )}
           </section>
+
+          <MobileGlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} />
 
           <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="mb-3 flex items-center justify-between">

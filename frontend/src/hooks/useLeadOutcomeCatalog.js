@@ -23,7 +23,7 @@ export default function useLeadOutcomeCatalog() {
   return {
     ...query,
     catalog,
-    results: catalog.filter((item) => item.operatorVisible),
+    results: catalog.filter((item) => item.operatorVisible && item.agentVisible !== false),
     byCode: outcomeCatalogByCode(catalog),
   };
 }

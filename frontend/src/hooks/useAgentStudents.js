@@ -87,7 +87,9 @@ export default function useAgentStudents({ state, actions, toast }) {
 
   const fetchToday = useCallback(async () => {
     try {
-      const res = await api.get('/tasks/today');
+      const res = selectedIntent === 'A'
+        ? await api.get('/tasks/today', { params: { intent_level: 'A', limit: 200 } })
+        : await api.get('/tasks/today');
       if (res.data.code === 0) {
         const list = res.data.data.list || [];
         const previousCurrentId = currentStudentIdRef.current;
@@ -95,6 +97,16 @@ export default function useAgentStudents({ state, actions, toast }) {
         projectedStudentsRef.current = new Map(list.map((student) => [student.id, { ...student }]));
         actions.setStudents(list);
         actions.setStats(res.data.data.stats || {});
+        actions.setTaskProgress?.(
+          res.data.data.task_progress || res.data.data.progress || res.data.data.stats || {},
+        );
+        actions.setIntentCounts?.({
+          A: 0,
+          B: 0,
+          C: 0,
+          '无': 0,
+          ...(res.data.data.intent_counts || {}),
+        });
         actions.setSchoolGroups(res.data.data.schools || []);
         actions.setCurrentIdx((index) => {
           const preservedIndex = list.findIndex(
@@ -107,7 +119,7 @@ export default function useAgentStudents({ state, actions, toast }) {
     } catch {
       toast?.error('加载待拨打任务失败');
     }
-  }, [actions, toast]);
+  }, [actions, selectedIntent, toast]);
 
   useEffect(() => {
     fetchToday();
@@ -303,12 +315,8 @@ export default function useAgentStudents({ state, actions, toast }) {
   const updateStatus = useCallback(async (id, result) => {
     const status = typeof result === 'string' ? result : result.label || result.status;
     if ((typeof result === 'object' && result.code === 'enrolled') || status === '已报名') {
-      const accepted = await confirm({
-        title: '确认报名',
-        message: '确认将此学生标记为已报名？阶段也会同步更新为已报名。',
-        confirmText: '确认报名',
-      });
-      if (!accepted) return false;
+      toast?.error('已报名必须由管理员在报名确认流程登记');
+      return false;
     }
 
     const optimisticFields = {
@@ -337,6 +345,10 @@ export default function useAgentStudents({ state, actions, toast }) {
   }, [executeOptimisticUpdate]);
 
   const updateStage = useCallback((id, stage) => {
+    if (stage === '已报名') {
+      toast?.error('已报名必须由管理员在报名确认流程登记');
+      return Promise.resolve(false);
+    }
     return executeOptimisticUpdate({
       id,
       optimisticFields: {
@@ -397,6 +409,8 @@ export default function useAgentStudents({ state, actions, toast }) {
     filteredStudents,
     sortedStudents,
     filteredStats,
+    taskProgress: state.taskProgress,
+    intentCounts: state.intentCounts,
     current,
     fetchToday,
     updateStatus,

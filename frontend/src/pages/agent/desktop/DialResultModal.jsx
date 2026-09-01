@@ -14,7 +14,6 @@ const MOBILE_COMMON_OUTCOME_CODES = [
   'interested_wechat',
   'no_intent',
   'phone_invalid',
-  'enrolled',
 ];
 
 // 默认回访时间：明天上午 9 点，格式与 <input type="datetime-local"> 一致

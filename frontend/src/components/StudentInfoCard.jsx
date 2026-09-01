@@ -5,9 +5,9 @@ import PhoneLink from './PhoneLink';
 import { stageLabel } from '../labels';
 import { formatDateTime, formatDate } from '../utils';
 
-function Field({ label, children }) {
+function Field({ label, children, className = '' }) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700">
+    <div className={`bg-white dark:bg-gray-800 rounded-lg px-3 py-2 border dark:border-gray-700 ${className}`}>
       <div className="text-xs text-gray-400">{label}</div>
       <div className="text-sm font-medium text-gray-800 dark:text-gray-200 break-all">
         {children == null || children === '' ? '-' : children}
@@ -16,7 +16,16 @@ function Field({ label, children }) {
   );
 }
 
-export default memo(function StudentInfoCard({ student, onDial }) {
+export default memo(function StudentInfoCard({
+  student,
+  onDial,
+  showIntent = true,
+  showRegion = true,
+  showScore = true,
+  scoreLabel = '成绩',
+  schoolLabel = '学校',
+  compactContacts = false,
+}) {
   if (!student) return null;
   const phone = (raw, masked) => {
     const value = raw || masked;
@@ -33,7 +42,7 @@ export default memo(function StudentInfoCard({ student, onDial }) {
             {student.status === '无效' ? `原因：${student.status_detail}` : student.status_detail}
           </span>
         )}
-        <IntentLevelBadge level={student.intent_level} />
+        {showIntent && <IntentLevelBadge level={student.intent_level} />}
         {student.stage && (
           <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
             {stageLabel(student.stage)}
@@ -41,27 +50,58 @@ export default memo(function StudentInfoCard({ student, onDial }) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-        <Field label="地域">{student.region}</Field>
-        <Field label="学校">{student.school_name}</Field>
-        <Field label="成绩">{student.score != null ? student.score : '-'}</Field>
-        <Field label="监护人">{student.guardian_name}</Field>
-        <Field label="监护人电话">
-          <PhoneLink
-            value={phone(student.guardian_phone_raw, student.guardian_phone)}
-            label="拨打监护人电话"
-            onDial={onDial ? () => onDial('guardian') : undefined}
-          />
+      <div className={compactContacts ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2'}>
+        {showRegion && <Field label="地域">{student.region}</Field>}
+        <Field label={schoolLabel} className={compactContacts ? 'col-span-2' : ''}>
+          {student.school_name}
         </Field>
-        <Field label="监护人2">{student.guardian2_name}</Field>
-        <Field label="监护人2电话">
-          <PhoneLink
-            value={phone(student.guardian2_phone_raw, student.guardian2_phone)}
-            label="拨打监护人2电话"
-            onDial={onDial ? () => onDial('guardian2') : undefined}
-          />
+        {showScore && (
+          <Field label={scoreLabel} className={compactContacts ? 'col-span-2' : ''}>
+            {student.score != null ? student.score : '-'}
+          </Field>
+        )}
+        {compactContacts ? (
+          <>
+            <Field label="监护人">{student.guardian_name}</Field>
+            <Field label="监护人电话">
+              <PhoneLink
+                value={phone(student.guardian_phone_raw, student.guardian_phone)}
+                label="拨打监护人电话"
+                onDial={onDial ? () => onDial('guardian') : undefined}
+              />
+            </Field>
+            <Field label="监护人2">{student.guardian2_name}</Field>
+            <Field label="监护人2电话">
+              <PhoneLink
+                value={phone(student.guardian2_phone_raw, student.guardian2_phone)}
+                label="拨打监护人2电话"
+                onDial={onDial ? () => onDial('guardian2') : undefined}
+              />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="监护人">{student.guardian_name}</Field>
+            <Field label="监护人电话">
+              <PhoneLink
+                value={phone(student.guardian_phone_raw, student.guardian_phone)}
+                label="拨打监护人电话"
+                onDial={onDial ? () => onDial('guardian') : undefined}
+              />
+            </Field>
+            <Field label="监护人2">{student.guardian2_name}</Field>
+            <Field label="监护人2电话">
+              <PhoneLink
+                value={phone(student.guardian2_phone_raw, student.guardian2_phone)}
+                label="拨打监护人2电话"
+                onDial={onDial ? () => onDial('guardian2') : undefined}
+              />
+            </Field>
+          </>
+        )}
+        <Field label="分配时间" className={compactContacts ? 'col-span-2' : ''}>
+          {formatDateTime(student.assigned_at)}
         </Field>
-        <Field label="分配时间">{formatDateTime(student.assigned_at)}</Field>
       </div>
 
       {student.status === '已报名' && (

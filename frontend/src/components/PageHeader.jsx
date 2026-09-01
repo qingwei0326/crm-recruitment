@@ -18,7 +18,7 @@ export default function PageHeader({
 }) {
   return (
     <header
-      className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex items-end justify-between pb-2"
+      className="sticky top-0 z-10 flex items-end justify-between border-b border-slate-200/90 bg-white/95 px-4 pb-2 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95"
       style={
         useSafeArea && isMobile
           ? {
@@ -32,15 +32,20 @@ export default function PageHeader({
         {isMobile && (
           <button
             type="button"
-            className="min-w-10 min-h-10 p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600"
+            className="-ml-2 min-h-10 min-w-10 rounded-lg p-2 hover:bg-slate-100 active:bg-slate-200 dark:hover:bg-gray-700 dark:active:bg-gray-600"
             onClick={onMenuClick}
             aria-label="打开导航"
             style={{ touchAction: 'manipulation' }}
           >
-            <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+            <Menu className="h-5 w-5 text-slate-600 dark:text-gray-300" />
           </button>
         )}
-        <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{title}</h1>
+        <div className="min-w-0">
+          <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
+            招生运营 / 管理后台
+          </div>
+          <h1 className="truncate text-lg font-bold leading-5 text-slate-900 dark:text-gray-100">{title}</h1>
+        </div>
       </div>
       {children && (
         <div

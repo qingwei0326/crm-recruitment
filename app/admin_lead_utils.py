@@ -18,9 +18,6 @@ INVALID_REASON_LABELS = {
 ALLOWED_CONFIG_KEYS = {
     "pushplus_token",
     "stale_days",
-    "dial_window_start",
-    "dial_window_end",
-    "dial_max_per_24h",
     "deepseek_api_key",
     "ai_provider",
     "mimo_api_key",

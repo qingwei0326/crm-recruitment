@@ -27,6 +27,7 @@ const AgentWork = lazy(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazy(() => import('./pages/admin/AgentManage'));
 const HandoverCenter = lazy(() => import('./pages/admin/HandoverCenter'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
+const SeasonArchive = lazy(() => import('./pages/admin/SeasonArchive'));
 const InvalidStudentReclaim = lazy(() => import('./pages/admin/InvalidStudentReclaim'));
 const ReportCenter = lazy(() => import('./pages/admin/ReportCenter'));
 const DistributeBySchools = lazy(() => import('./pages/admin/DistributeBySchools'));
@@ -37,7 +38,6 @@ const EnrollmentSettlement = lazy(() => import('./pages/admin/EnrollmentSettleme
 const AdminAssistant = lazy(() => import('./pages/admin/AdminAssistant'));
 const MobileHome = lazy(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazy(() => import('./pages/mobile/MobileStudentDetail'));
-const MobileCallForm = lazy(() => import('./pages/mobile/MobileCallForm'));
 
 function LoadingScreen() {
   return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>;
@@ -134,6 +134,14 @@ export default function App() {
           element={
             <Protected role="admin">
               <RouteError><AdminDash /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
+          path="/admin/dashboard"
+          element={
+            <Protected role="admin">
+              <Navigate to="/admin" replace />
             </Protected>
           }
         />
@@ -282,6 +290,14 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/season-archive"
+          element={
+            <Protected role="admin" superAdmin>
+              <RouteError><SeasonArchive /></RouteError>
+            </Protected>
+          }
+        />
+        <Route
           path="/admin/invalid-reclaim"
           element={
             <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.invalidReclaim}>
@@ -358,14 +374,6 @@ export default function App() {
           element={
             <Protected role="agent">
               <RouteError><MobileStudentDetail /></RouteError>
-            </Protected>
-          }
-        />
-        <Route
-          path="/mobile/call/:id"
-          element={
-            <Protected role="agent">
-              <RouteError><MobileCallForm /></RouteError>
             </Protected>
           }
         />

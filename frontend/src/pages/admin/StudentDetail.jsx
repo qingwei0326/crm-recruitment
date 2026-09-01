@@ -39,6 +39,31 @@ const TABS = [
 const INTENT_TO_NUM = { A: 3, B: 2, C: 1, 无: 0 };
 const NUM_TO_INTENT = { 3: 'A', 2: 'B', 1: 'C', 0: '无' };
 
+function NextActionCard({ action }) {
+  const urgent = action?.priority === 'high';
+  return (
+    <div className={`rounded-lg border p-3 ${urgent
+      ? 'border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-900/20'
+      : 'border-blue-200 bg-blue-50 dark:border-blue-900/60 dark:bg-blue-900/20'}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        下一步动作
+      </div>
+      <div className={`mt-1 text-sm font-semibold ${urgent ? 'text-red-700 dark:text-red-300' : 'text-blue-700 dark:text-blue-300'}`}>
+        {action?.label || '当前无待办'}
+      </div>
+      {action && (
+        <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+          负责人：{action.owner_name || '待分配'}
+          {action.due_at ? ` · 截止：${formatDateTime(action.due_at)}` : ''}
+        </div>
+      )}
+      {action?.reason && (
+        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{action.reason}</div>
+      )}
+    </div>
+  );
+}
+
 export default function StudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -215,6 +240,7 @@ export default function StudentDetail() {
         {tab === 'info' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6 space-y-4">
             <StudentInfoCard student={student} onDial={handleDial} />
+            <NextActionCard action={student.next_action} />
             <AdmissionsFlowStrip
               student={student}
               calls={calls}

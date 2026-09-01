@@ -2,12 +2,16 @@ import AdminSidebar from './AdminSidebar';
 
 export default function AdminLayout({ isMobile, sidebarOpen, onClose, children }) {
   return (
-    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
+    <div className="flex min-h-screen bg-slate-100 dark:bg-gray-950">
       {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-[1px]"
+          onClick={onClose}
+          aria-hidden="true"
+        />
       )}
       <aside
-        className={`${isMobile ? 'fixed inset-y-0 left-0 z-50 shadow-2xl transform transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} w-60 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col`}
+        className={`${isMobile ? 'fixed inset-y-0 left-0 z-50 w-72 max-w-[86vw] shadow-2xl transition-transform ' + (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : 'relative'} flex shrink-0 flex-col bg-slate-950 text-white ${isMobile ? '' : 'w-64'}`}
       >
         <AdminSidebar onClose={onClose} />
       </aside>

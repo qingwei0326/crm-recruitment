@@ -4,38 +4,11 @@ from typing import Literal
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-_VALID_STATUSES = {
-    "新线索",
-    "未联系",
-    "已联系",
-    "待回访",
-    "已完成",
-    "无效",
-    "已报名",
-    "拒绝接听",
-    "非常有意向",
-    "意向了解加微",
-    "等待志愿",
-    "未接",
-    "高分段",
-    "无意向",
-    "孩子不想读",
-}
-_VALID_INTENT_LEVELS = {"A", "B", "C", "无"}
-_VALID_STAGES = {
-    "初次联系",
-    "有意向",
-    "已送资料",
-    "待家访",
-    "家访已安排",
-    "家访完成",
-    "待到校参观",
-    "到校参观已安排",
-    "已到校参观",
-    "预约参观",
-    "已来访",
-    "已报名",
-}
+from app.models import IntentLevel, StudentStage, StudentStatus
+
+_VALID_STATUSES = {status.value for status in StudentStatus}
+_VALID_INTENT_LEVELS = {level.value for level in IntentLevel}
+_VALID_STAGES = {stage.value for stage in StudentStage}
 
 
 class Response:
@@ -304,6 +277,13 @@ class EnrollmentCreate(BaseModel):
     enrolled_program: str = Field(default="", max_length=128)
     enrolled_at: datetime | None = None
     amount: float | None = Field(default=None, ge=0)
+    tuition_list_amount: float | None = Field(default=None, ge=0)
+    student_subsidy_amount: float | None = Field(default=None, ge=0)
+    student_paid_amount: float | None = Field(default=None, ge=0)
+    external_subsidy_amount: float | None = Field(default=None, ge=0)
+    commission_base_amount: float | None = Field(default=None, ge=0)
+    commission_subsidy_amount: float | None = Field(default=None, ge=0)
+    commission_adjustment_amount: float | None = None
     settlement_notes: str = ""
 
 
@@ -312,6 +292,15 @@ class EnrollmentUpdate(BaseModel):
     attribution_reason: str | None = None
     settlement_status: Literal["未结算", "已结算", "暂缓", "争议"] | None = None
     settlement_notes: str | None = None
+    tuition_list_amount: float | None = Field(default=None, ge=0)
+    student_subsidy_amount: float | None = Field(default=None, ge=0)
+    student_paid_amount: float | None = Field(default=None, ge=0)
+    external_subsidy_amount: float | None = Field(default=None, ge=0)
+    commission_base_amount: float | None = Field(default=None, ge=0)
+    commission_subsidy_amount: float | None = Field(default=None, ge=0)
+    commission_adjustment_amount: float | None = None
+    commission_paid_amount: float | None = Field(default=None, ge=0)
+    finance_change_reason: str | None = None
 
 
 # ── Student Response (API payload) ─────────────────────────
@@ -349,5 +338,6 @@ class StudentResponse(BaseModel):
     updated_at: str = ""
     guardian_phone_raw: str | None = None
     guardian2_phone_raw: str | None = None
+    next_action: dict | None = None
 
     model_config = {"from_attributes": True}

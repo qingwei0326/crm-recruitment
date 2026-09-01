@@ -50,6 +50,15 @@ async def test_report_stats_allow_report_page_permission(
 
 
 @pytest.mark.asyncio
+async def test_dashboard_all_uses_safe_read_sessions(client, admin_headers):
+    response = await client.get("/api/stats/dashboard-all", headers=admin_headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert set(data) == {"summary", "sources", "stages", "funnel", "notify_fails", "visits"}
+
+
+@pytest.mark.asyncio
 async def test_trend_uses_agent_ids_and_cst_days(
     client, admin_headers, db, admin_user, agent_user
 ):

@@ -59,18 +59,3 @@ export function useStudentNotes(studentId) {
     enabled: !!studentId,
   });
 }
-
-/**
- * 获取拨号检查
- */
-export function useDialCheck(studentId) {
-  return useQuery({
-    queryKey: ['dialCheck', studentId],
-    queryFn: async () => {
-      const res = await api.get('/calls/check', { params: { student_id: studentId, within_hours: 24 } });
-      return res.data.code === 0 ? res.data.data : null;
-    },
-    enabled: !!studentId,
-    staleTime: 30_000,
-  });
-}

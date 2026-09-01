@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.domain_models import AgentEmployment, EmploymentStatus, StudentAssignment
-from app.models import DialLog, FollowUp, OperationLog, Student, StudentStatus, User
+from app.models import DialLog, FollowUp, OperationLog, Student, StudentStatus, SystemConfig, User
 from app.smart_assignment import SmartAssignParams, build_smart_assignment_plan
 from app.utils import today_cst_as_utc, utcnow
 
@@ -135,6 +135,35 @@ async def test_smart_assign_preview_respects_filters_and_agent_limit(db):
     assert plan.payload["pool"]["eligible_total"] == 2
     assert plan.payload["plan"]["planned"] == 2
     assert all(row["suggested_count"] <= 1 for row in plan.payload["agents"])
+
+
+@pytest.mark.asyncio
+async def test_smart_assign_preview_respects_dynamic_daily_capacity(db):
+    first = _agent("capacity_first", "容量坐席一")
+    second = _agent("capacity_second", "容量坐席二")
+    db.add_all([first, second])
+    await db.flush()
+    db.add_all(
+        [
+            AgentEmployment(user_id=first.id, status=EmploymentStatus.active),
+            AgentEmployment(user_id=second.id, status=EmploymentStatus.active),
+            SystemConfig(key="assignment_capacity_min", value="1"),
+            SystemConfig(key="assignment_capacity_max", value="1"),
+            SystemConfig(key="assignment_capacity_observed_days", value="1"),
+            _student("容量候选一", guardian_phone="13930000001"),
+            _student("容量候选二", guardian_phone="13930000002"),
+            _student("容量候选三", guardian_phone="13930000003"),
+        ]
+    )
+    await db.commit()
+
+    plan = await build_smart_assignment_plan(
+        db,
+        SmartAssignParams(limit=3, per_agent_limit=10),
+    )
+
+    assert plan.payload["plan"]["planned"] == 2
+    assert sum(row["suggested_count"] for row in plan.payload["agents"]) == 2
 
 
 @pytest.mark.asyncio

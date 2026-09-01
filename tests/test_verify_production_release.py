@@ -13,6 +13,7 @@ PAYLOAD = {
     "alembic/versions/20260711_03_backfill_domain_core.py": b"base migration",
     "alembic/versions/20260714_01_assistant_core.py": b"assistant migration",
     "alembic/versions/20260726_01_personal_groups.py": b"personal groups migration",
+    "alembic/versions/20260823_01_enrollment_finance.py": b"enrollment finance migration",
     "app/config.py": b"config",
     "app/main.py": b"app",
     "app/database.py": b"database",
@@ -56,7 +57,7 @@ def prepare_release(root):
     manifest = {
         "version": "test-release",
         "database_upgrade_from_revision": "20260714_01",
-        "expected_database_revision": "20260726_01",
+        "expected_database_revision": "20260823_01",
         "runtime_file_count": len(entries),
         "runtime_bytes": sum(item["bytes"] for item in entries),
         "requirements_sha256": next(
@@ -270,11 +271,11 @@ def test_verify_production_release_rejects_missing_css_url_asset(tmp_path):
 def test_verify_production_release_rejects_missing_target_migration(tmp_path):
     prepare_release(tmp_path)
     migration = (
-        tmp_path / "alembic" / "versions" / "20260726_01_personal_groups.py"
+        tmp_path / "alembic" / "versions" / "20260823_01_enrollment_finance.py"
     )
     migration.unlink()
 
-    with pytest.raises(ValueError, match="missing=.*20260726_01_personal_groups.py"):
+    with pytest.raises(ValueError, match="missing=.*20260823_01_enrollment_finance.py"):
         verify_production_release(tmp_path)
 
 

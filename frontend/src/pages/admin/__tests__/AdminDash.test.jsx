@@ -86,6 +86,24 @@ function mockDashboardApis() {
     if (url === '/admin/daily-ops') {
       return Promise.resolve({ data: { data: mockDailyOpsData } });
     }
+    if (url === '/stats/dashboard-all') {
+      return Promise.resolve({
+        data: {
+          data: {
+            summary: {
+              available_unassigned: 7,
+              today_a: 2,
+              today_calls: 18,
+              enrolled_total: 0,
+            },
+            sources: mockSourceStats,
+            stages: mockStageStats,
+            funnel: mockFunnelData,
+            visits: null,
+          },
+        },
+      });
+    }
     if (url === '/stats/sources') {
       return Promise.resolve({ data: { data: mockSourceStats } });
     }
@@ -184,6 +202,29 @@ describe('AdminDash responsive entry', () => {
       'href',
       '/admin/leads?intent=A&today_a=1',
     );
+  });
+
+  it('switches the desktop KPI scope without changing the data API contract', async () => {
+    mockIsMobile.mockReturnValue(false);
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <AdminDash />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('link', { name: /今日呼出/ });
+    fireEvent.click(screen.getByRole('button', { name: /全局总览/ }));
+
+    expect(screen.getByRole('link', { name: /总线索量/ })).toHaveAttribute('href', '/admin/leads');
+    expect(screen.getByText('全局数据总览')).toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/stats/dashboard-all');
+    expect(api.get).not.toHaveBeenCalledWith('/stats/sources');
+    expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard-summary');
+    expect(api.get).not.toHaveBeenCalledWith('/visits/summary');
+    expect(api.get).not.toHaveBeenCalledWith('/stats/stages');
+    expect(api.get).not.toHaveBeenCalledWith('/stats/funnel');
+    expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard', expect.anything());
   });
 
   it('stacks dashboard modules on compact desktops and uses a 7/5 wide-screen grid', async () => {
@@ -316,11 +357,8 @@ describe('AdminDash responsive entry', () => {
     const normalGet = api.get.getMockImplementation();
     api.get.mockImplementation((url, config) => {
       if (url === '/admin/daily-ops') return Promise.reject(new Error('daily ops down'));
-      if (url === '/stats/stages') {
-        return Promise.resolve({ data: { code: 1, msg: 'stage aggregation failed' } });
-      }
-      if (url === '/stats/dashboard-summary') {
-        return Promise.resolve({ data: { code: 1, msg: 'summary failed' } });
+      if (url === '/stats/dashboard-all') {
+        return Promise.resolve({ data: { code: 1, msg: 'dashboard aggregation failed' } });
       }
       if (url === '/admin/stale-a') return Promise.reject(new Error('stale queue down'));
       return normalGet(url, config);
@@ -339,11 +377,11 @@ describe('AdminDash responsive entry', () => {
     expect(screen.queryByText('今日运营闭环暂无待处理事项')).not.toBeInTheDocument();
     expect(screen.queryByText('今日暂无待处理风险项')).not.toBeInTheDocument();
 
-    const stageCallsBeforeRetry = api.get.mock.calls.filter(([url]) => url === '/stats/stages').length;
+    const coreCallsBeforeRetry = api.get.mock.calls.filter(([url]) => url === '/stats/dashboard-all').length;
     fireEvent.click(screen.getByRole('button', { name: '重试阶段分布' }));
     await waitFor(() => {
-      const stageCalls = api.get.mock.calls.filter(([url]) => url === '/stats/stages').length;
-      expect(stageCalls).toBeGreaterThan(stageCallsBeforeRetry);
+      const coreCalls = api.get.mock.calls.filter(([url]) => url === '/stats/dashboard-all').length;
+      expect(coreCalls).toBeGreaterThan(coreCallsBeforeRetry);
     });
   });
 

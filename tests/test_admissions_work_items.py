@@ -221,6 +221,93 @@ async def test_admin_work_items_include_all_admissions_queues(
     assert ("help", student.id) in keys
     assert rows[0]["kind"] in {"settlement", "home_visit", "campus_visit"}
     assert all(row["target_url"].startswith("/admin/") for row in rows)
+    assert body["data"]["queue_counts"]["home_visit"] == 2
+    assert body["data"]["queue_counts"]["campus_visit"] == 2
+    assert body["data"]["queue_counts"]["follow_up"] == 1
+    assert body["data"]["queue_counts"]["settlement"] == 1
+    assert body["data"]["queue_counts"]["help"] == 1
+    assert body["data"]["has_more"] is False
+
+
+@pytest.mark.asyncio
+async def test_work_items_expose_lead_contact_queue_and_pagination(
+    client, db, admin_headers, admin_user
+):
+    agent = await _agent(db, "lead-contact-agent", "首呼坐席")
+    students = [
+        Student(
+            name=f"待首呼{i}",
+            region="长泰县",
+            guardian_phone=f"1380013800{i}",
+            school_name="长泰二中",
+            assigned_to=agent.id,
+            assigned_at=datetime.now() - timedelta(hours=i + 1),
+            status=StudentStatus.not_contacted,
+            stage=StudentStage.initial_contact,
+            intent_level=IntentLevel.none,
+        )
+        for i in range(2)
+    ]
+    db.add_all(students)
+    await db.flush()
+    for student in students:
+        await sync_student_work_items(db, student, admin_user)
+    await db.commit()
+
+    resp = await client.get(
+        "/api/admissions/work-items?queue=lead_contact&page=1&page_size=1",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["total"] == 2
+    assert data["has_more"] is True
+    assert data["queue_counts"]["all"] == 2
+    assert data["queue_counts"]["lead_contact"] == 2
+    assert len(data["list"]) == 1
+    assert data["list"][0]["kind"] == "lead_contact"
+    assert data["list"][0]["queue"] == "lead_contact"
+
+    second_page = await client.get(
+        "/api/admissions/work-items?queue=lead_contact&page=2&page_size=1",
+        headers=admin_headers,
+    )
+    second_data = second_page.json()["data"]
+    assert second_data["total"] == 2
+    assert second_data["has_more"] is False
+    assert len(second_data["list"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_work_items_expose_stale_a_queue(client, db, admin_headers):
+    agent = await _agent(db, "stale-work-agent", "超时坐席")
+    student = Student(
+        name="超时 A 学生",
+        region="云霄县",
+        guardian_phone="13800138111",
+        school_name="云霄一中",
+        assigned_to=agent.id,
+        assigned_at=datetime.now() - timedelta(days=5),
+        status=StudentStatus.pending_visit,
+        stage=StudentStage.interested,
+        intent_level=IntentLevel.A,
+    )
+    db.add(student)
+    await db.commit()
+
+    resp = await client.get(
+        "/api/admissions/work-items?queue=stale-a",
+        headers=admin_headers,
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["total"] == 1
+    assert data["queue_counts"]["stale-a"] == 1
+    assert data["list"][0]["kind"] == "stale_a"
+    assert data["list"][0]["student_id"] == student.id
+    assert data["list"][0]["reason"] == "5天未推进"
 
 
 @pytest.mark.asyncio

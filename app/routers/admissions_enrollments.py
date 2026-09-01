@@ -35,6 +35,12 @@ from app.routers.admissions import (
     _sync_enrollment_work_item,
 )
 from app.schemas import EnrollmentCreate, EnrollmentUpdate, Response
+from app.services.enrollment_finance_service import (
+    FINANCE_FIELDS,
+    apply_finance_values,
+    finance_payload,
+    merge_finance_values,
+)
 from app.utils import make_batch_id, make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
@@ -93,6 +99,9 @@ async def enrollment_summary(
             EnrollmentRecord.attributed_agent_id,
             User.name,
             func.count(EnrollmentRecord.id),
+            func.coalesce(func.sum(EnrollmentRecord.commission_due_amount), 0),
+            func.coalesce(func.sum(EnrollmentRecord.commission_paid_amount), 0),
+            func.coalesce(func.sum(EnrollmentRecord.school_received_amount), 0),
             func.sum(
                 case(
                     (EnrollmentRecord.settlement_status == SettlementStatus.unsettled, 1),
@@ -127,6 +136,9 @@ async def enrollment_summary(
         agent_id,
         agent_name,
         total,
+        commission_due_total,
+        commission_paid_total,
+        school_received_total,
         unsettled,
         settled,
         postponed,
@@ -137,6 +149,9 @@ async def enrollment_summary(
                 "attributed_agent_id": agent_id,
                 "attributed_agent_name": agent_name,
                 "total": total or 0,
+                "commission_due_total": float(commission_due_total or 0),
+                "commission_paid_total": float(commission_paid_total or 0),
+                "school_received_total": float(school_received_total or 0),
                 "unsettled": unsettled or 0,
                 "settled": settled or 0,
                 "postponed": postponed or 0,
@@ -208,6 +223,10 @@ async def settlement_batch_preview(
     result = await db.execute(query)
     rows = [_enrollment_payload(record) for record in result.scalars().unique().all()]
     amount_total = sum(float(row["amount"] or 0) for row in rows)
+    student_paid_total = sum(float(row["student_paid_amount"] or 0) for row in rows)
+    commission_due_total = sum(float(row["commission_due_amount"] or 0) for row in rows)
+    commission_paid_total = sum(float(row["commission_paid_amount"] or 0) for row in rows)
+    school_received_total = sum(float(row["school_received_amount"] or 0) for row in rows)
     agent_counts: dict[str, int] = {}
     for row in rows:
         name = row["attributed_agent_name"] or f"话务员 #{row['attributed_agent_id']}"
@@ -221,7 +240,10 @@ async def settlement_batch_preview(
             case_no="",
             action="生成结算批次",
             content=(
-                f"批次 {batch_id}：{len(rows)} 条；状态 {status or '全部'}；金额 {amount_total:.2f}"
+                f"批次 {batch_id}：{len(rows)} 条；状态 {status or '全部'}；"
+                f"学生实付 {student_paid_total:.2f}；"
+                f"学校到账 {school_received_total:.2f}；"
+                f"应结佣金 {commission_due_total:.2f}"
             ),
             old_status=str(len(rows)),
             new_status=status or "全部",
@@ -234,6 +256,10 @@ async def settlement_batch_preview(
             "batch_id": batch_id,
             "record_count": len(rows),
             "amount_total": amount_total,
+            "student_paid_total": student_paid_total,
+            "commission_due_total": commission_due_total,
+            "commission_paid_total": commission_paid_total,
+            "school_received_total": school_received_total,
             "agent_counts": agent_counts,
             "filters": {
                 "status": status,
@@ -277,14 +303,27 @@ async def update_enrollment(
         raise HTTPException(status_code=403, detail="只有管理员可以修改报名结算")
     _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
     changed_fields = body.model_fields_set
+    finance_changed_fields = set(changed_fields) & set(FINANCE_FIELDS)
     if "attributed_agent_id" in changed_fields:
         _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_ATTRIBUTION)
-    if {"settlement_status", "settlement_notes"} & changed_fields:
+    if {"settlement_status", "settlement_notes"} & changed_fields or finance_changed_fields:
         _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
 
     record = await _get_enrollment_or_404(db, record_id)
     old_agent_id = record.attributed_agent_id
     old_settlement = record.settlement_status
+    old_finance = finance_payload(record)
+
+    if finance_changed_fields:
+        if record.settlement_status == SettlementStatus.settled:
+            raise HTTPException(status_code=409, detail="已结算报名不能直接修改金额")
+        reason = (body.finance_change_reason or "").strip()
+        if not reason:
+            raise HTTPException(status_code=400, detail="修改报名金额必须填写原因")
+        try:
+            apply_finance_values(record, merge_finance_values(record, body))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if "attributed_agent_id" in changed_fields and body.attributed_agent_id is not None:
         reason = (body.attribution_reason or "").strip()
@@ -296,10 +335,28 @@ async def update_enrollment(
 
     if "settlement_status" in changed_fields and body.settlement_status is not None:
         record.settlement_status = SettlementStatus(body.settlement_status)
+        if (
+            record.settlement_status == SettlementStatus.settled
+            and "commission_paid_amount" not in finance_changed_fields
+            and record.commission_paid_amount == 0
+        ):
+            record.commission_paid_amount = record.commission_due_amount
     if "settlement_notes" in changed_fields and body.settlement_notes is not None:
         record.settlement_notes = body.settlement_notes
 
-    if old_agent_id != record.attributed_agent_id or old_settlement != record.settlement_status:
+    if (
+        old_agent_id != record.attributed_agent_id
+        or old_settlement != record.settlement_status
+        or finance_changed_fields
+    ):
+        finance_change = ""
+        if finance_changed_fields:
+            finance_change = (
+                f"金额变更：应结佣金 {old_finance['commission_due_amount']:.2f}→"
+                f"{record.commission_due_amount:.2f}；学校到账 "
+                f"{old_finance['school_received_amount']:.2f}→"
+                f"{record.school_received_amount:.2f}；"
+            )
         db.add(
             make_operation_log(
                 current_user,
@@ -309,9 +366,14 @@ async def update_enrollment(
                 content=(
                     f"报名 #{record.id}: 归属 {old_agent_id}→{record.attributed_agent_id}; "
                     f"结算 {old_settlement.value if old_settlement else ''}"
-                    f"→{record.settlement_status.value if record.settlement_status else ''}"
+                    f"→{record.settlement_status.value if record.settlement_status else ''}; "
+                    f"应结佣金 {record.commission_due_amount:.2f}；"
+                    f"已付佣金 {record.commission_paid_amount:.2f}；"
+                    f"{finance_change}"
                 ),
-                note_content=record.attribution_reason,
+                note_content=(
+                    body.finance_change_reason or record.attribution_reason
+                ),
             )
         )
 

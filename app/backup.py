@@ -160,16 +160,17 @@ def _backup_postgresql():
     _upload_remote(dest)
 
     _prune_old_backups()
+    return dest
 
 
 def _backup_sqlite():
     """Hot-copy DB via SQLite backup API. Keeps last MAX_BACKUPS files."""
     if not DB_PATH or DB_PATH == ":memory:":
         logger.warning("Skipping backup: in-memory or empty database path")
-        return
+        return None
     if not os.path.isfile(DB_PATH):
         logger.warning(f"Database not found: {DB_PATH}")
-        return
+        return None
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
@@ -201,7 +202,7 @@ def _backup_sqlite():
         src.close()
 
     if not os.path.isfile(dest):
-        return
+        return None
 
     logger.info(f"Backup created: {dest}")
 
@@ -220,13 +221,18 @@ def _backup_sqlite():
     _upload_remote(dest)
 
     _prune_old_backups()
+    return dest
 
 
 def _prune_old_backups():
     """保留最近 MAX_BACKUPS 个备份文件，删除更早的。"""
     ext = _get_backup_extension()
     files = sorted(
-        [f for f in os.listdir(BACKUP_DIR) if f.startswith("crm_") and f.endswith(ext)],
+        [
+            f
+            for f in os.listdir(BACKUP_DIR)
+            if f.startswith("crm_") and (f.endswith(ext) or f.endswith(f"{ext}.enc"))
+        ],
         reverse=True,
     )
     for old in files[MAX_BACKUPS:]:
@@ -240,14 +246,13 @@ def _prune_old_backups():
 def do_backup():
     """根据数据库引擎选择备份方式。"""
     if DB_ENGINE == "postgresql":
-        _backup_postgresql()
-    else:
-        _backup_sqlite()
+        return _backup_postgresql()
+    return _backup_sqlite()
 
 
 async def do_backup_async():
     """Async wrapper for do_backup using thread pool to avoid blocking the event loop."""
-    await asyncio.to_thread(do_backup)
+    return await asyncio.to_thread(do_backup)
 
 
 async def backup_scheduler():

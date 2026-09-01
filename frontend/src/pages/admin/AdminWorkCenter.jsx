@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
+  MapPin,
   Moon,
   RefreshCw,
+  Search,
   Sun,
 } from 'lucide-react';
 import api from '../../api';
@@ -16,39 +20,34 @@ import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
 import { QueueRow } from './AdminWorkflowComponents';
 
-function dataList(res) {
+const PAGE_SIZE = 50;
+
+function pageData(res) {
   const data = res?.data?.data;
-  if (Array.isArray(data)) return data;
-  return data?.list || [];
+  const list = Array.isArray(data) ? data : data?.list || [];
+  const totalValue = Number(data?.total);
+  const pageValue = Number(data?.page);
+  const pageSizeValue = Number(data?.page_size);
+  const total = Number.isFinite(totalValue) ? totalValue : list.length;
+  const page = Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1;
+  const pageSize = Number.isFinite(pageSizeValue) && pageSizeValue > 0 ? pageSizeValue : PAGE_SIZE;
+  return {
+    list,
+    total,
+    page,
+    pageSize,
+    hasMore: data?.has_more ?? page * pageSize < total,
+    queueCounts: data?.queue_counts || {},
+    regions: Array.isArray(data?.regions) ? data.regions : [],
+  };
 }
 
 function normalizeQueue(value) {
   if (value === 'follow') return 'follow_up';
   if (value === 'visit') return 'campus_visit';
+  if (value === 'lead' || value === 'initial_contact') return 'lead_contact';
+  if (value === 'stale_a') return 'stale-a';
   return value || 'all';
-}
-
-function staleAWorkItems(students) {
-  return dataList(students).map((student) => {
-    const daysSince = Number(student.days_since || 0);
-    return {
-      id: `stale-a:${student.id}`,
-      kind: 'stale_a',
-      queue: 'stale-a',
-      priority: 'high',
-      title: `${student.name || '未命名学生'} A 级超时`,
-      student_id: student.id,
-      student_name: student.name,
-      region: student.region,
-      school_name: student.school_name,
-      agent_id: student.assigned_to,
-      agent_name: student.agent_name,
-      due_at: student.last_activity_at,
-      status: student.status,
-      reason: `${Number.isFinite(daysSince) ? daysSince : 0}天未推进`,
-      target_url: `/admin/leads/${student.id}`,
-    };
-  });
 }
 
 function EmptyState({ text }) {
@@ -59,6 +58,7 @@ function toneFor(item) {
   if (item.priority === 'high') return 'red';
   if (item.priority === 'low') return 'gray';
   if (item.queue === 'stale-a') return 'red';
+  if (item.queue === 'lead_contact') return 'blue';
   if (item.queue === 'campus_visit') return 'blue';
   if (item.queue === 'settlement') return item.status === '争议' ? 'red' : 'amber';
   if (item.queue === 'help') return 'red';
@@ -76,47 +76,62 @@ export default function AdminWorkCenter() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [queueCounts, setQueueCounts] = useState({});
+  const [availableRegions, setAvailableRegions] = useState([]);
   const [savingKey, setSavingKey] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [regionFilter, setRegionFilter] = useState('all');
   const [searchParams, setSearchParams] = useSearchParams();
   const queue = normalizeQueue(searchParams.get('queue'));
   const closeSidebar = () => setSidebarOpen(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [workResult, staleAResult] = await Promise.allSettled([
-        api.get('/admissions/work-items', {
-          params: { queue: 'all', page_size: 100 },
-        }),
-        api.get('/admin/stale-a', { params: { days: 3 } }),
-      ]);
-      if (workResult.status === 'rejected') {
-        throw workResult.reason;
-      }
-      if (staleAResult.status === 'rejected') {
-        toast?.error(getApiErrorMessage(staleAResult.reason));
-      }
-      setItems([
-        ...dataList(workResult.value),
-        ...(staleAResult.status === 'fulfilled' ? staleAWorkItems(staleAResult.value) : []),
-      ]);
+      const params = { queue, page, page_size: PAGE_SIZE };
+      if (searchQuery.trim()) params.q = searchQuery.trim();
+      if (regionFilter !== 'all') params.region = regionFilter;
+      const payload = pageData(await api.get('/admissions/work-items', { params }));
+      setItems(payload.list);
+      setTotal(payload.total);
+      setHasMore(Boolean(payload.hasMore));
+      setQueueCounts(payload.queueCounts);
+      setAvailableRegions(payload.regions);
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, queue, regionFilter, searchQuery, toast]);
 
   useEffect(() => {
     load();
-  }, [queue]);
+  }, [load]);
+
+  const removeItem = (itemQueue, predicate) => {
+    setItems((prev) => prev.filter((item) => !predicate(item)));
+    setTotal((prev) => Math.max(prev - 1, 0));
+    setQueueCounts((prev) => {
+      const next = { ...prev };
+      if (Number.isFinite(Number(next[itemQueue]))) {
+        next[itemQueue] = Math.max(Number(next[itemQueue]) - 1, 0);
+      }
+      if (Number.isFinite(Number(next.all))) {
+        next.all = Math.max(Number(next.all) - 1, 0);
+      }
+      return next;
+    });
+  };
 
   const completeHelp = async (studentId) => {
     const key = `help-${studentId}`;
     setSavingKey(key);
     try {
       await api.put(`/students/${studentId}`, { need_help: false });
-      setItems((prev) => prev.filter((item) => !(item.kind === 'help' && item.student_id === studentId)));
+      removeItem('help', (item) => item.kind === 'help' && item.student_id === studentId);
       toast?.success('已处理求助');
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
@@ -130,7 +145,7 @@ export default function AdminWorkCenter() {
     setSavingKey(key);
     try {
       await api.put(`/follow-ups/${followUpId}`, { is_completed: true });
-      setItems((prev) => prev.filter((item) => !(item.kind === 'follow_up' && item.source_id === followUpId)));
+      removeItem('follow_up', (item) => item.kind === 'follow_up' && item.source_id === followUpId);
       toast?.success('已完成回访');
     } catch (error) {
       toast?.error(getApiErrorMessage(error));
@@ -139,16 +154,41 @@ export default function AdminWorkCenter() {
     }
   };
 
-  const queueTabs = useMemo(() => ([
-    { key: 'all', label: '全部', count: items.length },
-    { key: 'home_visit', label: '家访', count: items.filter((item) => item.queue === 'home_visit').length },
-    { key: 'campus_visit', label: '到校', count: items.filter((item) => item.queue === 'campus_visit').length },
-    { key: 'follow_up', label: '回访', count: items.filter((item) => item.queue === 'follow_up').length },
-    { key: 'settlement', label: '结算', count: items.filter((item) => item.queue === 'settlement').length },
-    { key: 'help', label: '求助', count: items.filter((item) => item.queue === 'help').length },
-    { key: 'stale-a', label: 'A超时', count: items.filter((item) => item.queue === 'stale-a').length },
-  ]), [items]);
-  const visibleItems = queue === 'all' ? items : items.filter((item) => item.queue === queue);
+  const queueTabs = useMemo(() => {
+    const countFor = (key) => {
+      const value = Number(queueCounts[key]);
+      if (Number.isFinite(value)) return value;
+      return key === queue ? total : 0;
+    };
+    return [
+      { key: 'all', label: '全部', count: countFor('all') },
+      { key: 'lead_contact', label: '待首呼', count: countFor('lead_contact') },
+      { key: 'home_visit', label: '家访', count: countFor('home_visit') },
+      { key: 'campus_visit', label: '到校', count: countFor('campus_visit') },
+      { key: 'follow_up', label: '回访', count: countFor('follow_up') },
+      { key: 'settlement', label: '结算', count: countFor('settlement') },
+      { key: 'help', label: '求助', count: countFor('help') },
+      { key: 'stale-a', label: 'A超时', count: countFor('stale-a') },
+    ];
+  }, [queue, queueCounts, total]);
+  const visibleItems = useMemo(() => {
+    let next = queue === 'all' ? items : items.filter((item) => item.queue === queue);
+    if (regionFilter !== 'all') {
+      next = next.filter((item) => item.region === regionFilter);
+    }
+    const query = searchQuery.trim().toLowerCase();
+    if (query) {
+      next = next.filter((item) => [
+        item.title,
+        item.student_name,
+        item.region,
+        item.school_name,
+        item.agent_name,
+        item.reason,
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
+    }
+    return next;
+  }, [items, queue, regionFilter, searchQuery]);
 
   const actionFor = (item) => {
     if (item.kind === 'help') {
@@ -182,7 +222,7 @@ export default function AdminWorkCenter() {
 
   return (
     <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
         <PageHeader
           title="工作中心"
           isMobile={isMobile}
@@ -208,25 +248,37 @@ export default function AdminWorkCenter() {
           </button>
         </PageHeader>
 
-        <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
-          <section className="rounded-xl border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="lg:mr-auto">
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">处理队列</h2>
-                <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                  家访、到校、回访、结算和求助统一进入待办，优先处理高优先级和超期事项。
+        <div className="mx-auto w-full max-w-[1500px] space-y-5 p-4 lg:p-6">
+          <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+              <div className="min-w-0 lg:mr-auto">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-blue-600" aria-hidden="true" />
+                  <h2 className="text-sm font-bold text-gray-950 dark:text-gray-100">管理员处置队列</h2>
+                </div>
+                <div className="mt-1 max-w-2xl text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  待首呼、家访、到校、回访、结算和求助统一进入待办，优先处理高优先级和超期事项。
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex shrink-0 items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <span className="font-semibold text-gray-900 dark:text-gray-100">{total}</span>
+                <span>项待处理</span>
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              <div className="flex min-w-max gap-2">
                 {queueTabs.map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
-                    onClick={() => setSearchParams(tab.key === 'all' ? {} : { queue: tab.key })}
-                    className={`rounded-lg border px-3 py-1.5 text-sm ${
+                    onClick={() => {
+                      setPage(1);
+                      setSearchParams(tab.key === 'all' ? {} : { queue: tab.key });
+                    }}
+                    className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
                       queue === tab.key
-                        ? 'border-blue-600 bg-blue-600 text-white'
-                        : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700'
+                        ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                     }`}
                   >
                     {tab.label} {tab.count}
@@ -236,12 +288,48 @@ export default function AdminWorkCenter() {
             </div>
           </section>
 
-          <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+          <section className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex flex-col gap-3 border-b border-gray-100 p-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-gray-950 dark:text-gray-100">
                 {queueTabs.find((tab) => tab.key === queue)?.label || '全部'}待办
-              </h2>
-              <span className="text-xs text-gray-500">{visibleItems.length}</span>
+                </h2>
+                <p className="mt-0.5 text-[11px] text-gray-400">支持按学生、学校、区域和坐席快速定位</p>
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <label className="relative min-w-0 sm:w-64">
+                  <span className="sr-only">搜索待办</span>
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setPage(1);
+                      setSearchQuery(event.target.value);
+                    }}
+                    placeholder="搜索学生、学校或坐席"
+                    className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  />
+                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                </label>
+                {availableRegions.length > 0 && (
+                  <label className="flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+                    <MapPin className="h-3.5 w-3.5" />
+                    <span className="sr-only">区域筛选</span>
+                    <select
+                      value={regionFilter}
+                      onChange={(event) => {
+                        setPage(1);
+                        setRegionFilter(event.target.value);
+                      }}
+                      aria-label="区域筛选"
+                      className="max-w-[120px] bg-transparent font-medium text-gray-700 outline-none dark:text-gray-200"
+                    >
+                      <option value="all">全部区域</option>
+                      {availableRegions.map((region) => <option key={region} value={region}>{region}</option>)}
+                    </select>
+                  </label>
+                )}
+              </div>
             </div>
             {loading ? (
               <EmptyState text="加载中..." />
@@ -249,23 +337,57 @@ export default function AdminWorkCenter() {
               <EmptyState text="暂无待办" />
             ) : (
               <div className="space-y-2 p-3">
-                {visibleItems.map((item) => (
-                  <QueueRow
-                    key={item.id}
-                    title={item.title || item.student_name || `待办 #${item.source_id}`}
-                    meta={item.reason || item.status || '-'}
-                    detailParts={compactParts([
-                      item.agent_name || '未知坐席',
-                      item.region,
-                      item.school_name,
-                      formatDateTime(item.due_at),
-                      item.status,
-                    ])}
-                    tone={toneFor(item)}
-                    to={item.target_url}
-                    action={actionFor(item)}
-                  />
-                ))}
+                {visibleItems.map((item) => {
+                  const nextActionLabel = item.next_action?.label || item.action_label;
+                  const meta = nextActionLabel || item.reason || item.status || '-';
+                  return (
+                    <QueueRow
+                      key={item.id}
+                      title={item.title || item.student_name || `待办 #${item.source_id}`}
+                      meta={meta}
+                      detailParts={compactParts([
+                        item.next_action?.owner_name || item.agent_name || '未知坐席',
+                        item.region,
+                        item.school_name,
+                        formatDateTime(item.next_action?.due_at || item.due_at),
+                        item.status,
+                        item.reason !== meta ? item.reason : null,
+                      ])}
+                      tone={toneFor(item)}
+                      to={item.target_url}
+                      action={actionFor(item)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+            {!loading && (total > PAGE_SIZE || page > 1) && (
+              <div className="flex flex-col gap-2 border-t border-gray-100 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  第 {page} 页，共 {Math.max(Math.ceil(total / PAGE_SIZE), 1)} 页 · {total} 项
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="上一页"
+                    onClick={() => setPage((current) => Math.max(current - 1, 1))}
+                    disabled={page <= 1 || loading}
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-gray-200 px-2.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    上一页
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="下一页"
+                    onClick={() => setPage((current) => current + 1)}
+                    disabled={!hasMore || loading}
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-gray-200 px-2.5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700"
+                  >
+                    下一页
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             )}
           </section>

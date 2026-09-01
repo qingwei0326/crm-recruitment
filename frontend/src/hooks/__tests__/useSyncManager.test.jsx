@@ -8,7 +8,7 @@ const pendingOps = [
   {
     id: 2,
     type: 'add_call',
-    payload: { studentId: 10, transcript: '想了解学校', duration: 90 },
+    payload: { studentId: 10, duration: 90 },
   },
 ];
 const markSynced = vi.fn();
@@ -53,7 +53,7 @@ describe('useSyncManager', () => {
     api.put.mockResolvedValue({ data: { code: 0, data: {} } });
   });
 
-  it('syncs notes and calls to existing backend endpoints', async () => {
+  it('syncs notes and ignores legacy AI call operations', async () => {
     render(<SyncHarness />);
 
     await waitFor(() => expect(markSynced).toHaveBeenCalledTimes(2));
@@ -61,10 +61,7 @@ describe('useSyncManager', () => {
       student_id: 10,
       content: '备注',
     });
-    expect(api.post).toHaveBeenCalledWith('/calls/analyze', {
-      student_id: 10,
-      transcript: '想了解学校',
-      duration_seconds: 90,
-    });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post).not.toHaveBeenCalledWith('/calls/analyze', expect.anything());
   });
 });

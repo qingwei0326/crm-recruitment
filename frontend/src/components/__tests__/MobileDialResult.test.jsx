@@ -80,7 +80,7 @@ describe('recordCallResult', () => {
   });
 
   it.each(['意向了解加微', '等待志愿'])(
-    'records call duration once when %s flow saves follow-up',
+    'records call duration once when %s flow saves follow-up without intent level',
     async (resultLabel) => {
     sessionStorage.setItem(
       'pendingDial',
@@ -94,8 +94,11 @@ describe('recordCallResult', () => {
 
     renderDialResult();
 
+    fireEvent.click(await screen.findByRole('button', { name: /^已接通/ }));
     fireEvent.click(await screen.findByRole('button', { name: resultLabel }));
-    fireEvent.click(await screen.findByRole('button', { name: 'A' }));
+    expect(screen.queryByRole('button', { name: 'A' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'B' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'C' })).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: '保存回访提醒' }));
 
     await waitFor(() => {
@@ -113,6 +116,44 @@ describe('recordCallResult', () => {
     });
   });
 
+  it('requires a next dial time after a missed call', async () => {
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 60000,
+      }),
+    );
+
+    renderDialResult();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^未接/ }));
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/42', { status: '未接' });
+    });
+    expect(await screen.findByText('安排下一次重拨，任务不会沉底')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'A' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '不记录，关闭' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('未接需要先安排下一次重拨');
+
+    fireEvent.click(screen.getByRole('button', { name: '10分钟后' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存下一次重拨' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/follow-ups', expect.objectContaining({
+        student_id: 42,
+        follow_up_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00$/),
+      }));
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('张三')).not.toBeInTheDocument();
+    });
+  });
+
   it('saves fixed invalid results as invalid reasons', async () => {
     sessionStorage.setItem(
       'pendingDial',
@@ -126,7 +167,8 @@ describe('recordCallResult', () => {
 
     renderDialResult();
 
-    fireEvent.click(await screen.findByRole('button', { name: '空号' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
 
     await waitFor(() => {
       expect(api.put).toHaveBeenCalledWith('/students/42', {
@@ -148,6 +190,7 @@ describe('recordCallResult', () => {
     );
 
     renderDialResult();
+    fireEvent.click(await screen.findByRole('button', { name: /^已接通/ }));
     fireEvent.click(await screen.findByRole('button', { name: '已报名其他学校' }));
 
     await waitFor(() => {
@@ -176,7 +219,8 @@ describe('recordCallResult', () => {
 
     renderDialResult();
 
-    const button = await screen.findByRole('button', { name: '空号' });
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    const button = await screen.findByRole('button', { name: '确认空号/停机' });
     fireEvent.click(button);
     fireEvent.click(button);
 
@@ -206,11 +250,12 @@ describe('recordCallResult', () => {
 
     renderDialResult();
 
-    fireEvent.click(await screen.findByRole('button', { name: '空号' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('处理结果保存失败，请重试');
     expect(screen.getByText('张三')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '空号' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: '确认空号/停机' })).not.toBeDisabled();
   });
 
   it('treats an HTTP 200 response with a non-zero business code as a failed status save', async () => {
@@ -232,7 +277,8 @@ describe('recordCallResult', () => {
     );
 
     renderDialResult({ onUpdated });
-    fireEvent.click(await screen.findByRole('button', { name: '空号' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('处理结果保存失败，请重试');
     expect(screen.getByText('张三')).toBeInTheDocument();
@@ -261,7 +307,8 @@ describe('recordCallResult', () => {
     fireEvent.change(await screen.findByPlaceholderText('添加备注（可选）'), {
       target: { value: '  明天下午回电  ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: '空号' }));
+    fireEvent.click(screen.getByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '处理结果已保存，备注保存失败：备注写入失败',
@@ -328,7 +375,8 @@ describe('recordCallResult', () => {
     );
 
     renderDialResult();
-    fireEvent.click(await screen.findByRole('button', { name: '空号' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('处理结果已保存，通话记录同步失败，请重试');
     expect(JSON.parse(sessionStorage.getItem('pendingDial'))).toEqual(
