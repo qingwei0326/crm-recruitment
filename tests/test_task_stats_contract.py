@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
-from app.models import FollowUp, IntentLevel, Student, StudentStatus
+from app.models import Call, FollowUp, IntentLevel, Student, StudentStatus
 from app.task_stats import build_task_stats
 from app.utils import today_cst_as_utc, utcnow
 
@@ -31,6 +31,48 @@ class TestTaskStatsContract:
 
 @pytest.mark.asyncio
 class TestAdminAgentTaskStats:
+    async def test_agent_today_summary_exposes_help_and_unique_completed_counts(
+        self, client, db, agent_headers, agent_user
+    ):
+        today_start = today_cst_as_utc()
+        needs_help = Student(
+            name="需要主管协助",
+            assigned_to=agent_user.id,
+            status=StudentStatus.not_contacted,
+            need_help=True,
+        )
+        completed_today = Student(
+            name="今日已拨打",
+            assigned_to=agent_user.id,
+            status=StudentStatus.contacted,
+        )
+        db.add_all([needs_help, completed_today])
+        await db.flush()
+        db.add_all([
+            Call(
+                student_id=completed_today.id,
+                agent_id=agent_user.id,
+                created_at=today_start + timedelta(hours=1),
+            ),
+            Call(
+                student_id=completed_today.id,
+                agent_id=agent_user.id,
+                created_at=today_start + timedelta(hours=2),
+            ),
+            Call(
+                student_id=needs_help.id,
+                agent_id=agent_user.id,
+                created_at=today_start - timedelta(hours=1),
+            ),
+        ])
+        await db.commit()
+
+        response = await client.get("/api/tasks/today", headers=agent_headers)
+        data = response.json()["data"]
+
+        assert data["help_count"] == 1
+        assert data["today_completed_count"] == 1
+
     async def test_agent_today_tasks_only_show_not_contacted_students(
         self, client, db, admin_headers, agent_headers, agent_user
     ):

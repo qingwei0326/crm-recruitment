@@ -63,6 +63,41 @@ export const FALLBACK_OPERATOR_OUTCOMES = FALLBACK_OUTCOME_CATALOG.filter(
   (item) => item.operatorVisible && item.agentVisible !== false,
 );
 
+const CONNECTED_FOLLOW_UP_CODES = new Set([
+  'very_interested',
+  'interested_wechat',
+  'waiting_volunteer',
+]);
+
+const CONNECTED_CONCLUSION_CODES = new Set([
+  'high_score',
+  'no_intent',
+  'child_declined',
+  'enrolled_elsewhere',
+  'enrolled',
+]);
+
+const HIDDEN_AFTER_CONTACT_CODES = new Set(['missed_call', 'phone_invalid']);
+
+/**
+ * Split the catalog into the groups used after the operator confirms that a
+ * call was connected. Keeping this beside the catalog prevents each UI from
+ * inventing a slightly different interpretation of the same result codes.
+ */
+export function getOperatorOutcomeGroups(outcomes = []) {
+  const visible = outcomes.filter((item) => item?.code !== 'new_lead');
+  return {
+    connectedFollowUp: visible.filter((item) => CONNECTED_FOLLOW_UP_CODES.has(item.code)),
+    connectedConclusion: visible.filter((item) => CONNECTED_CONCLUSION_CODES.has(item.code)),
+    moreResults: visible.filter(
+      (item) => !HIDDEN_AFTER_CONTACT_CODES.has(item.code)
+        && !CONNECTED_FOLLOW_UP_CODES.has(item.code)
+        && !CONNECTED_CONCLUSION_CODES.has(item.code),
+    ),
+    phoneInvalid: visible.find((item) => item.code === 'phone_invalid') || null,
+  };
+}
+
 const fallbackByCode = Object.fromEntries(
   FALLBACK_OUTCOME_CATALOG.map((item) => [item.code, item]),
 );

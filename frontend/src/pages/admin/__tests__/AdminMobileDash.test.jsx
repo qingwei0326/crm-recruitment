@@ -185,6 +185,7 @@ describe('AdminMobileDash', () => {
     expect(screen.getByText('先补齐通话记录并处理待回访')).toBeInTheDocument();
     expect(screen.getByText('A 级线索')).toBeInTheDocument();
     expect(screen.getByText('当前 8 条重点线索')).toBeInTheDocument();
+    expect(screen.queryByText('全局数据总览')).not.toBeInTheDocument();
   });
 
   it('routes mobile lead metrics to matching filtered lead lists', async () => {

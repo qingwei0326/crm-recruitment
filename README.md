@@ -85,7 +85,7 @@
 - **IP 限流** — 跨进程共享的登录频率限制，支持 Cloudflare Tunnel（读取 CF-Connecting-IP）
 - **运行时配置** — 跟进提醒窗口等参数可通过管理后台实时调整
 - **离线提示与同步队列** — 前端缓存任务数据，离线操作恢复连接后自动同步
-- **一键部署脚本** — Windows `start.ps1` / `deploy.ps1`，Ubuntu `deploy-linux.sh` + systemd/nginx
+- **容器化部署** — 生产服务器由 Docker 托管，隧道和服务编排以服务器侧配置为准
 
 ---
 
@@ -97,14 +97,14 @@
 - Python 3.10+
 - Node.js 18+
 
-### 一键启动
+### 本地启动
 
 ```powershell
-# 双击 start.bat，或在终端运行：
-.\start.ps1
+# 后端（需先配置 SECRET_KEY）
+uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-启动后访问 `http://127.0.0.1:8000` 即可进入系统。`start.ps1` 会先 `vite build` 出前端静态产物，再由 FastAPI 在 8000 端口一并托管。
+启动后访问 `http://127.0.0.1:8000`。前端开发可按下面的“开发模式”启动 Vite。
 
 ### 手动启动（生产模式）
 
@@ -157,26 +157,13 @@ $destination = ".\backups\server-audit\working\crm_domain_{0}.db" -f (
 ```
 
 命令会复制、预检、升级到 `20260714_01`，再校验源文件 SHA-256、旧表行数、
-`quick_check`、外键和领域一致性。需要让开发服务读取该副本时，先运行 `stop.ps1`，
+`quick_check`、外键和领域一致性。需要让开发服务读取该副本时，先停止本地应用进程，
 为根目录 `crm.db` 创建时间戳备份并核对哈希，再设置
 `$env:DATABASE_PATH=(Resolve-Path $destination).Path`；不得把工作副本写回服务器。
 
 ### 部署
 
-```powershell
-# Windows
-.\deploy.ps1
-.\deploy.ps1 -DryRun
-.\deploy.ps1 -NoBuild
-```
-
-```bash
-# Ubuntu
-sudo bash deploy-linux.sh
-bash tunnel.sh status
-```
-
-更多迁移、nginx、systemd、穿透隧道配置见 `DEPLOY.md` 和 `DEPLOY-LINUX.md`。生产环境请复制 `.env.example` 为 `.env` 后填入 `SECRET_KEY`、AI Key 和 CORS 配置，不要提交 `.env` 或隧道 token。
+生产服务器由 Docker 托管。请按服务器侧 Docker 编排执行更新、迁移、健康检查和回滚；本仓库不再提供宿主机启动脚本。生产环境请复制 `.env.example` 为 `.env` 后填入 `SECRET_KEY`、AI Key 和 CORS 配置，不要提交 `.env` 或隧道 token。
 
 ---
 
@@ -259,7 +246,7 @@ bash tunnel.sh status
 - 回访提醒通过 PushPlus 推送；话务员配置个人 Token 时优先推送个人 Token，否则使用系统配置。
 - 管理端删除、回收、重复手机号清理、分配回滚、账号离职和系统设置修改都会写入操作记录，建议通过批次号复核。
 - 招生季归档的导出准备和最终清理也会写入操作记录；最终清理只保留一条汇总审计，学生级历史操作记录随本季学生数据一起清除。
-- Ubuntu 生产部署先用 `scripts/prepare-production-release.ps1` 冻结应用、前端和完整 Alembic 链，再由 `scripts/safe-ubuntu-deploy.sh` 部署。脚本锁定运行中 SQLite 的真实路径，先生成并校验快照，再使用候选版本执行受控增量迁移，最后通过单一 `.deploy/current` 指针切换代码；失败时自动回滚代码，但不会自动倒灌数据库快照或降级已经成功的加法迁移。
+- 生产发布前使用 `scripts/prepare-production-release.ps1` 生成并校验应用发布包；服务器侧再由 Docker 编排完成镜像更新、数据库迁移、健康检查和回滚。
 
 ---
 
@@ -278,7 +265,7 @@ bash tunnel.sh status
 | **图表** | Recharts |
 | **HTTP 客户端** | Axios |
 | **AI 分析** | DeepSeek API + 本地关键词兜底 |
-| **进程管理** | PowerShell 脚本、systemd、nginx、Cloudflare Tunnel / SakuraFrp |
+| **进程管理** | Docker、Cloudflare Tunnel / SakuraFrp |
 
 ---
 
@@ -329,14 +316,8 @@ D:\招生系统\
 │   │   └── main.jsx            # 入口文件
 │   └── package.json
 ├── backups/                    # 自动备份目录
-├── start.ps1 / start.bat       # 一键启动（构建前端 + 启动后端）
-├── stop.ps1 / stop.bat         # 停止服务
-├── deploy.ps1 / deploy.bat     # Windows 部署
-├── deploy-linux.sh             # Ubuntu 一键部署
 ├── tunnel.sh                   # Linux 穿透隧道管理
-├── install-startup.ps1         # 注册开机自启
-├── uninstall-startup.ps1       # 卸载开机自启
-├── deploy-update.ps1           # 部署更新脚本
+├── archive/legacy-host-deploy/ # 已归档的宿主机部署脚本
 ├── init_db.py                  # 数据库初始化脚本
 └── README.md                   # 本文件
 ```
@@ -362,7 +343,7 @@ AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启�
 <details>
 <summary><strong>数据存储在哪里？</strong></summary>
 
-数据库文件是仓库根目录的 `crm.db`（SQLite，路径由 `start.ps1` 中的 `DATABASE_PATH` 指定）。备份文件在 `backups/` 目录，每日自动轮换。管理员也可以手动触发备份。
+数据库文件是仓库根目录的 `crm.db`（SQLite，路径由 `DATABASE_PATH` 环境变量指定）。备份文件在 `backups/` 目录，每日自动轮换。管理员也可以手动触发备份。
 
 </details>
 

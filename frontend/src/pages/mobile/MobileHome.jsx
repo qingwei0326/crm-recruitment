@@ -30,19 +30,29 @@ import {
   UNGROUPED_FILTER,
 } from '../../components/PersonalGroups';
 import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
+import { ContentSkeleton, EmptyState, ErrorState } from '../../components/AsyncState';
 
-function StatCard({ label, value, color = 'blue' }) {
+function StatCard({ label, value, color = 'blue', onClick, hint }) {
   const colorMap = {
     blue: 'text-blue-600 dark:text-blue-300',
     green: 'text-green-600 dark:text-green-300',
     amber: 'text-amber-600 dark:text-amber-300',
     gray: 'text-gray-700 dark:text-gray-200',
   };
+  const Component = onClick ? 'button' : 'div';
   return (
-    <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 px-3 py-3 text-center">
-      <div className={`text-xl font-bold ${colorMap[color] || colorMap.gray}`}>{value}</div>
-      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{label}</div>
-    </div>
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</div>
+        {onClick ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600" /> : null}
+      </div>
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${colorMap[color] || colorMap.gray}`}>{value}</div>
+      {hint ? <div className="mt-1 truncate text-[11px] text-slate-400 dark:text-slate-500">{hint}</div> : null}
+    </Component>
   );
 }
 
@@ -692,27 +702,36 @@ export function PendingList() {
 
   if (loading) {
     return (
-      <div>
+      <div className="space-y-3">
         {filters}
-        <div className="flex justify-center py-10">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-        </div>
+        <ContentSkeleton rows={3} compact />
       </div>
     );
   }
   if (error) {
     return (
-      <div>
+      <div className="space-y-3">
         {filters}
-        <div className="text-center text-sm text-red-500 py-10">{error}</div>
+        <ErrorState message={error} onRetry={() => setGroupRevision((current) => current + 1)} />
       </div>
     );
   }
   if (items.length === 0) {
     return (
-      <div>
+      <div className="space-y-3">
         {filters}
-        <div className="text-center text-sm text-gray-400 py-10">暂无待处理</div>
+        <EmptyState
+          title="暂无待处理任务"
+          description="当前筛选条件下没有需要继续跟进的学生。"
+          actionLabel="清除筛选"
+          onAction={() => {
+            setSelectedStatus(null);
+            setSelectedResult(null);
+            setSelectedGroupId(null);
+            setSelectedRegion(null);
+            setPendingSearch('');
+          }}
+        />
       </div>
     );
   }
@@ -931,6 +950,8 @@ export default function MobileHome() {
     setOverdueOnly,
     pendingCount,
     overdueCount,
+    helpCount,
+    todayCompletedCount,
     schools,
     loading,
     error,
@@ -1031,11 +1052,26 @@ export default function MobileHome() {
               <div className="text-[11px] text-gray-400 dark:text-gray-500">
                 已推进 {progressed} / {progressStats.total ?? 0} 项任务
               </div>
-              <div className="flex gap-2">
-                <StatCard label="总任务" value={progressStats.total ?? 0} color="gray" />
-                <StatCard label="已推进" value={progressed} color="green" />
-                <StatCard label="待回访" value={progressStats.follow_up ?? 0} color="amber" />
-                <StatCard label="待首次联系" value={progressStats.pending ?? 0} color="blue" />
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard
+                  label="待首呼"
+                  value={progressStats.pending ?? allQueueCount}
+                  color="blue"
+                  hint="进入待拨打队列"
+                  onClick={() => {
+                    setOverdueOnly(false);
+                    navigate('/mobile');
+                  }}
+                />
+                <StatCard
+                  label="待回访"
+                  value={progressStats.follow_up ?? 0}
+                  color="amber"
+                  hint="继续推进已联系学生"
+                  onClick={() => navigate('/mobile?tab=pending')}
+                />
+                <StatCard label="需协助" value={helpCount} color="amber" hint="已向主管发起协助" />
+                <StatCard label="今日完成" value={todayCompletedCount} color="green" hint="今日已拨打学生" />
               </div>
             </div>
 
@@ -1123,15 +1159,21 @@ export default function MobileHome() {
 
             {/* Student list */}
             {loading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-              </div>
+              <ContentSkeleton rows={3} compact />
             ) : error ? (
-              <div className="text-center text-sm text-red-500 py-10">{error}</div>
+              <ErrorState message={error} onRetry={() => refetch(search, selectedSchool)} />
             ) : filteredStudents.length === 0 ? (
-              <div className="text-center text-sm text-gray-400 py-12">
-                {overdueOnly ? '暂无逾期未处理任务' : selectedSchool ? '该学校暂无待拨打任务' : '暂无待拨打任务'}
-              </div>
+              <EmptyState
+                title={overdueOnly ? '没有逾期任务' : selectedSchool ? '该学校暂无待首呼' : '待首呼已清空'}
+                description={overdueOnly ? '当前没有逾期未处理学生。' : '很好，当前筛选范围内没有需要首次拨打的学生。'}
+                actionLabel={(overdueOnly || selectedSchool || search) ? '查看全部待首呼' : '刷新任务'}
+                onAction={() => {
+                  setOverdueOnly(false);
+                  setSelectedSchool(null);
+                  setSearch('');
+                  refetch('', null);
+                }}
+              />
             ) : (
               <div className="space-y-3">
                 {filteredStudents.map((s) => (

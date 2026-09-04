@@ -246,6 +246,23 @@ async def today_tasks(
     progress_counts = {status: cnt for status, cnt in progress_counts_r.all()}
     task_progress = build_task_stats(progress_counts)
 
+    help_count = (
+        await db.execute(
+            select(func.count(Student.id)).where(
+                *progress_where,
+                Student.need_help.is_(True),
+            )
+        )
+    ).scalar_one() or 0
+    today_completed_count = (
+        await db.execute(
+            select(func.count(func.distinct(Call.student_id))).where(
+                Call.agent_id == current_user.id,
+                Call.created_at >= today_start,
+            )
+        )
+    ).scalar_one() or 0
+
     intent_counts_r = await db.execute(
         select(Student.intent_level, func.count())
         .where(*stats_where)
@@ -332,6 +349,8 @@ async def today_tasks(
             "list_total": int(list_total),
             "pending_count": int(pending_count),
             "overdue_count": int(overdue_count),
+            "help_count": int(help_count),
+            "today_completed_count": int(today_completed_count),
             "overdue": overdue,
             "truncated": truncated,
             "list": [

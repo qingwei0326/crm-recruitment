@@ -12,12 +12,16 @@ import { completePendingDial, readPendingDial } from '../dialSession';
 import logger from '../utils/logger';
 import { getApiErrorMessage, unwrapApiResponse } from '../utils';
 import { useConfirm } from './ConfirmDialog';
-import { isFixedInvalidReason, payloadForOperatorResult } from '../operatorResultPolicy';
-import { FALLBACK_OPERATOR_OUTCOMES } from '../domain/outcomeCatalog';
+import { payloadForOperatorResult } from '../operatorResultPolicy';
+import { getOperatorOutcomeGroups } from '../domain/outcomeCatalog';
 import useLeadOutcomeCatalog from '../hooks/useLeadOutcomeCatalog';
+import { displayStatusForOperatorResult } from '../labels';
 import {
-  displayStatusForOperatorResult,
-} from '../labels';
+  dateTimeAfterDays,
+  defaultFollowUpDate,
+  defaultMissedFollowUpDate,
+  laterTodayOrTomorrowDate,
+} from '../utils/dateTime';
 
 /**
  * 手机端"打完电话选结果"底部弹窗。
@@ -36,7 +40,7 @@ const CONTACT_CHOICES = [
   {
     key: 'connected',
     label: '已接通',
-    hint: '进入意向判断',
+    hint: '选择沟通结果',
     className: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
   },
   {
@@ -49,67 +53,24 @@ const CONTACT_CHOICES = [
     key: 'invalid',
     label: '号码无效',
     hint: '空号或停机',
+    colSpan: 2,
     className: 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300',
   },
 ];
 
-const CONNECTED_INTENT_CODES = new Set([
-  'very_interested',
-  'interested_wechat',
-  'waiting_volunteer',
-]);
-
-const CONNECTED_RESULT_CODES = new Set([
-  'high_score',
-  'no_intent',
-  'child_declined',
-  'enrolled_elsewhere',
-  'enrolled',
-]);
-
-const HIDDEN_RESULT_CODES = new Set(['missed_call', 'phone_invalid']);
-
-function toDateTimeLocalValue(d) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-// 默认回访时间：明天上午 9 点，<input type="datetime-local"> 格式
-function defaultFollowUp() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return toDateTimeLocalValue(d);
-}
-
-// 未接默认安排 10 分钟后重拨，避免“点了未接”就无声结束。
-function defaultMissedFollowUp() {
-  const d = new Date(Date.now() + 10 * 60 * 1000);
-  d.setSeconds(0, 0);
-  return toDateTimeLocalValue(d);
-}
-
-function laterTodayOrTomorrow() {
-  const now = new Date();
-  const d = new Date(now);
-  d.setHours(17, 30, 0, 0);
-  if (d <= now) {
-    d.setDate(d.getDate() + 1);
-    d.setHours(9, 0, 0, 0);
-  }
-  return toDateTimeLocalValue(d);
-}
-
-// 统一后的处理结果。无效原因类按钮直接写入对应原因，避免话务员重复备注。
-function statusButton(outcome) {
-  return {
-    ...outcome,
-    cls: outcome.className,
-    invalidDetail: isFixedInvalidReason(outcome),
-  };
-}
-
-export const STATUS_BUTTONS = FALLBACK_OPERATOR_OUTCOMES.map(statusButton);
+const FOLLOW_UP_PRESETS = {
+  missed: [
+    { label: '10分钟后', getValue: defaultMissedFollowUpDate },
+    { label: '今天晚些时候', getValue: laterTodayOrTomorrowDate },
+    { label: '明天上午', getValue: () => dateTimeAfterDays(1) },
+  ],
+  intent: [
+    { label: '明天上午', getValue: () => dateTimeAfterDays(1) },
+    { label: '后天上午', getValue: () => dateTimeAfterDays(2) },
+    { label: '3天后', getValue: () => dateTimeAfterDays(3) },
+    { label: '1周后', getValue: () => dateTimeAfterDays(7) },
+  ],
+};
 
 /**
  * 手机端“打完电话选结果”底部弹窗。
@@ -127,15 +88,19 @@ export default function MobileDialResult({ onUpdated }) {
   const confirm = useConfirm();
   const { results } = useLeadOutcomeCatalog();
   // 新线索是管理员回收/重新分配后的初始状态，话务员不能在拨号结果里再次选回。
-  const statusButtons = results
-    .map(statusButton)
-    .filter((button) => button.code !== 'new_lead');
+  const statusButtons = results.filter((button) => button.code !== 'new_lead');
+  const {
+    connectedFollowUp: connectedIntentButtons,
+    connectedConclusion: connectedResultButtons,
+    moreResults: moreResultButtons,
+    phoneInvalid: phoneInvalidButton,
+  } = getOperatorOutcomeGroups(statusButtons);
   const [pending, setPending] = useState(null); // { studentId, studentName, dialStartedAt }
   const [resultStep, setResultStep] = useState('contact'); // contact | connected | invalid
   const [showMoreResults, setShowMoreResults] = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpMode, setFollowUpMode] = useState(null); // intent | missed
-  const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
+  const [followUpDate, setFollowUpDate] = useState(defaultFollowUpDate);
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState('');
   const [completionPending, setCompletionPending] = useState(false);
@@ -154,7 +119,7 @@ export default function MobileDialResult({ onUpdated }) {
       setShowMoreResults(false);
       setShowFollowUp(false);
       setFollowUpMode(null);
-      setFollowUpDate(defaultFollowUp());
+      setFollowUpDate(defaultFollowUpDate());
       setSubmitting(false);
       setErrorText('');
       setCompletionPending(false);
@@ -298,7 +263,7 @@ export default function MobileDialResult({ onUpdated }) {
 
       if (options.followUpMode === 'missed') {
         setFollowUpMode('missed');
-        setFollowUpDate(defaultMissedFollowUp());
+        setFollowUpDate(defaultMissedFollowUpDate());
         setShowFollowUp(true);
         endSubmit();
         return;
@@ -307,7 +272,7 @@ export default function MobileDialResult({ onUpdated }) {
       // 需要继续跟进的结果直接进入回访时间，不再插入 A/B/C 意向等级步骤。
       if (['interested_wechat', 'waiting_volunteer'].includes(btn.code)) {
         setFollowUpMode('intent');
-        setFollowUpDate(defaultFollowUp());
+        setFollowUpDate(defaultFollowUpDate());
         setShowFollowUp(true);
         endSubmit();
         return;
@@ -366,16 +331,6 @@ export default function MobileDialResult({ onUpdated }) {
     }
   };
 
-  const connectedIntentButtons = statusButtons.filter((button) =>
-    CONNECTED_INTENT_CODES.has(button.code));
-  const connectedResultButtons = statusButtons.filter((button) =>
-    CONNECTED_RESULT_CODES.has(button.code));
-  const moreResultButtons = statusButtons.filter((button) =>
-    !HIDDEN_RESULT_CODES.has(button.code)
-    && !CONNECTED_INTENT_CODES.has(button.code)
-    && !CONNECTED_RESULT_CODES.has(button.code));
-  const phoneInvalidButton = statusButtons.find((button) => button.code === 'phone_invalid');
-
   const headerMessage = submitting
     ? '保存中，请稍候'
     : showFollowUp
@@ -389,6 +344,9 @@ export default function MobileDialResult({ onUpdated }) {
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={handleClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-dial-result-title"
         className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[92dvh] overflow-y-auto overscroll-contain"
         onClick={(e) => e.stopPropagation()}
         aria-busy={submitting}
@@ -400,14 +358,16 @@ export default function MobileDialResult({ onUpdated }) {
             </div>
             <div className="min-w-0">
               <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                {pending.studentName || '本次通话'}
+                <span id="mobile-dial-result-title">
+                  {pending.studentName || '本次通话'}
+                </span>
               </div>
               <div className="text-xs text-gray-500">
                 {headerMessage}
               </div>
             </div>
           </div>
-          <button onClick={handleClose} className="text-gray-400 p-1 -mr-1 shrink-0" aria-label="不记录，关闭">
+          <button type="button" onClick={handleClose} className="text-gray-400 p-1 -mr-1 shrink-0" aria-label="不记录，关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -430,6 +390,11 @@ export default function MobileDialResult({ onUpdated }) {
 
         {showFollowUp ? (
           <div className="space-y-3">
+            {followUpMode === 'intent' && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                已加家长微信后，请直接在微信备注学生情况；系统这里只安排下次回访，不用重复写备注。
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
               <CalendarClock className="w-4 h-4" />
               {followUpMode === 'missed'
@@ -438,48 +403,12 @@ export default function MobileDialResult({ onUpdated }) {
             </div>
             {/* 快捷时间 */}
             <div className="flex gap-2 flex-wrap">
-              {(followUpMode === 'missed'
-                ? [
-                  { label: '10分钟后', value: defaultMissedFollowUp },
-                  { label: '今天晚些时候', value: laterTodayOrTomorrow },
-                  { label: '明天上午', value: () => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + 1);
-                    d.setHours(9, 0, 0, 0);
-                    return toDateTimeLocalValue(d);
-                  } },
-                ]
-                : [
-                  { label: '明天上午', value: () => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + 1);
-                    d.setHours(9, 0, 0, 0);
-                    return toDateTimeLocalValue(d);
-                  } },
-                  { label: '后天上午', value: () => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + 2);
-                    d.setHours(9, 0, 0, 0);
-                    return toDateTimeLocalValue(d);
-                  } },
-                  { label: '3天后', value: () => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + 3);
-                    d.setHours(9, 0, 0, 0);
-                    return toDateTimeLocalValue(d);
-                  } },
-                  { label: '1周后', value: () => {
-                    const d = new Date();
-                    d.setDate(d.getDate() + 7);
-                    d.setHours(9, 0, 0, 0);
-                    return toDateTimeLocalValue(d);
-                  } },
-                ]).map((q) => (
+              {(FOLLOW_UP_PRESETS[followUpMode] || []).map((q) => (
                 <button
                   key={q.label}
                   type="button"
                   disabled={submitting || completionPending}
-                  onClick={() => setFollowUpDate(q.value())}
+                  onClick={() => setFollowUpDate(q.getValue())}
                   className="px-3 py-1.5 min-h-[44px] rounded-lg text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 active:scale-95 disabled:opacity-60 flex items-center justify-center"
                 >
                   {q.label}
@@ -547,7 +476,7 @@ export default function MobileDialResult({ onUpdated }) {
                       type="button"
                       onClick={() => pickContact(choice.key)}
                       disabled={submitting || completionPending}
-                      className={`min-h-[70px] rounded-xl border px-3 text-left active:scale-95 disabled:opacity-60 ${choice.className}`}
+                      className={`${choice.colSpan ? 'col-span-2' : ''} min-h-[70px] rounded-xl border px-3 text-left active:scale-95 disabled:opacity-60 ${choice.className}`}
                     >
                       <div className="text-base font-semibold">{choice.label}</div>
                       <div className="mt-1 text-xs opacity-75">{choice.hint}</div>
@@ -566,6 +495,10 @@ export default function MobileDialResult({ onUpdated }) {
                   <div className="text-xs text-gray-500 mt-1">
                     先选最符合的一项，需要回访时再设置时间
                   </div>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                  首次沟通先记录客观结果，不要求判断 A/B/C。加微信后直接在微信里备注，避免两边重复填写。
                 </div>
 
                 {connectedIntentButtons.length > 0 && (
@@ -665,18 +598,19 @@ export default function MobileDialResult({ onUpdated }) {
               </div>
             )}
 
-            {/* 备注输入 */}
-            <div className="relative">
-              <MessageSquare className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
-              <textarea
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="添加备注（可选）"
-                rows={2}
-                disabled={submitting || completionPending}
-                className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-base bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
+            {resultStep === 'invalid' && (
+              <div className="relative">
+                <MessageSquare className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="号码情况说明（可选）"
+                  rows={2}
+                  disabled={submitting || completionPending}
+                  className="w-full pl-7 pr-3 py-2 border dark:border-gray-600 rounded-lg text-base bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 resize-none outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
           </>
         )}
       </div>

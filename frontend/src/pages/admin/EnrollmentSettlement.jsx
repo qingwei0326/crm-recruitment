@@ -12,6 +12,7 @@ import {
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { useToast } from '../../components/Toast';
 import useIsMobile from '../../hooks/useIsMobile';
 import { useAuth } from '../../context/AuthContext';
@@ -649,8 +650,8 @@ export default function EnrollmentSettlement({ embedded = false }) {
   }
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="报名结算"
           isMobile={isMobile}

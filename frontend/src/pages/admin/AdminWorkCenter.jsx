@@ -16,6 +16,12 @@ import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import {
+  AdminPageContainer,
+  AdminPageIntro,
+  AdminSurface,
+  adminPageMainClass,
+} from '../../components/admin/AdminPagePrimitives';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
 import { QueueRow } from './AdminWorkflowComponents';
@@ -221,8 +227,8 @@ export default function AdminWorkCenter() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="工作中心"
           isMobile={isMobile}
@@ -248,23 +254,12 @@ export default function AdminWorkCenter() {
           </button>
         </PageHeader>
 
-        <div className="mx-auto w-full max-w-[1500px] space-y-5 p-4 lg:p-6">
-          <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-              <div className="min-w-0 lg:mr-auto">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-blue-600" aria-hidden="true" />
-                  <h2 className="text-sm font-bold text-gray-950 dark:text-gray-100">管理员处置队列</h2>
-                </div>
-                <div className="mt-1 max-w-2xl text-xs leading-5 text-gray-500 dark:text-gray-400">
-                  待首呼、家访、到校、回访、结算和求助统一进入待办，优先处理高优先级和超期事项。
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">{total}</span>
-                <span>项待处理</span>
-              </div>
-            </div>
+        <AdminPageContainer>
+          <AdminPageIntro
+            title="管理员处置队列"
+            description="待首呼、家访、到校、回访、结算和求助统一进入待办，优先处理高优先级和超期事项。"
+            meta={<><span className="font-semibold text-slate-900 dark:text-slate-100">{total}</span> 项待处理</>}
+          >
             <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
               <div className="flex min-w-max gap-2">
                 {queueTabs.map((tab) => (
@@ -286,9 +281,9 @@ export default function AdminWorkCenter() {
                 ))}
               </div>
             </div>
-          </section>
+          </AdminPageIntro>
 
-          <section className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <AdminSurface className="overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-gray-100 p-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-sm font-bold text-gray-950 dark:text-gray-100">
@@ -390,8 +385,8 @@ export default function AdminWorkCenter() {
                 </div>
               </div>
             )}
-          </section>
-        </div>
+          </AdminSurface>
+        </AdminPageContainer>
       </main>
     </AdminLayout>
   );

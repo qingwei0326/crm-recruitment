@@ -227,7 +227,7 @@ describe('AdminDash responsive entry', () => {
     expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard', expect.anything());
   });
 
-  it('stacks dashboard modules on compact desktops and uses a 7/5 wide-screen grid', async () => {
+  it('renders the command-board hierarchy on desktop', async () => {
     mockIsMobile.mockReturnValue(false);
 
     render(
@@ -236,12 +236,29 @@ describe('AdminDash responsive entry', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText('各阶段线索实时沉淀与工作进展');
+    await screen.findByText('优先处理');
     expect(screen.getByTestId('admin-dashboard-scroll')).toHaveClass('h-screen', 'overflow-y-auto');
-    const columns = screen.getByTestId('admin-dashboard-columns');
-    expect(columns).toHaveClass('grid-cols-1', 'lg:grid-cols-12');
-    expect(columns.children[0]).toHaveClass('w-full', 'lg:col-span-7');
-    expect(columns.children[1]).toHaveClass('w-full', 'lg:col-span-5');
+    expect(screen.getByText('运营闭环')).toBeInTheDocument();
+    expect(screen.getByText('坐席工作状态')).toBeInTheDocument();
+    expect(screen.getByText('分配池与容量')).toBeInTheDocument();
+    expect(screen.getByText('阶段分布')).toBeInTheDocument();
+    expect(screen.getByText('最近异常')).toBeInTheDocument();
+  });
+
+  it('keeps global overview out of the daily execution view', async () => {
+    mockIsMobile.mockReturnValue(false);
+
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <AdminDash />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('今日运营闭环');
+    expect(screen.queryByText('全局数据总览')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /全局总览/ }));
+    expect(screen.getByText('全局数据总览')).toBeInTheDocument();
   });
 
   it('keeps the desktop todo area focused on actual risk items', async () => {
@@ -303,7 +320,7 @@ describe('AdminDash responsive entry', () => {
     expect(await screen.findByText('家访待处理')).toBeInTheDocument();
     expect(screen.getByText('王坐席')).toBeInTheDocument();
     expect(screen.getByText('2项 · 3天')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /查看/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^查看$/ })).toHaveAttribute(
       'href',
       '/admin/work-center?queue=home_visit',
     );

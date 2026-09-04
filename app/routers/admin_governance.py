@@ -453,6 +453,9 @@ async def data_quality(
             func.count(Student.id)
             .filter(Student.status.in_(ACTIVE_TASK_STATUSES), Student.assigned_to.is_(None))
             .label("unassigned_active"),
+            func.count(Student.id)
+            .filter(Student.status == StudentStatus.not_contacted, Student.assigned_to.is_not(None))
+            .label("assigned_uncontacted"),
         )
     )
     student_quality = student_quality_r.one()
@@ -535,6 +538,7 @@ async def data_quality(
             "students": {
                 "missing_phone_tasks": int(getattr(student_quality, "missing_phone_tasks") or 0),
                 "unassigned_active": int(getattr(student_quality, "unassigned_active") or 0),
+                "assigned_uncontacted": int(getattr(student_quality, "assigned_uncontacted") or 0),
                 "invalid_total": invalid_total,
                 "invalid_reasons": invalid_reasons,
             },

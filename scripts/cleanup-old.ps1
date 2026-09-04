@@ -35,7 +35,7 @@ Write-Host "模式：$(if ($Apply) { '真正删除' } else { '预览（dry-run�
 # 提示：服务跑着时删 log 可能因句柄占用失败
 if (Test-Path (Join-Path $Root "backend.pid")) {
     Write-Host "检测到 backend.pid，服务可能在运行。" -ForegroundColor Yellow
-    Write-Host "建议先 stop.bat 停服务，跑完清理再 start.ps1。" -ForegroundColor Yellow
+    Write-Host "建议先停止 Docker 容器，跑完清理再启动服务。" -ForegroundColor Yellow
 }
 Write-Host ""
 
@@ -63,7 +63,7 @@ function Add-Target {
 }
 
 # ── 1) 运行日志（服务运行时默认保留）──
-# 注：不动 *.pid —— stop.ps1 靠它找进程。建议先 stop.bat 再删当前日志。
+# 注：不动 *.pid —— 旧宿主机启动脚本可能仍依赖它们。Docker 部署请在容器侧管理日志。
 if ($RemoveRuntimeLogs) {
     foreach ($name in @(
         "backend_out.log","backend_err.log",

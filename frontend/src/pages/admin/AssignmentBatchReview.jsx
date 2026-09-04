@@ -9,6 +9,7 @@ import {
   Users,
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -105,8 +106,9 @@ export default function AssignmentBatchReview() {
       isMobile={isMobile}
       sidebarOpen={sidebarOpen}
       onClose={() => setSidebarOpen(false)}
+      compactSidebar={!isMobile}
     >
-      <main className="flex-1 min-w-0">
+      <main className={adminPageMainClass}>
         <PageHeader
           title="分配批次复盘"
           isMobile={isMobile}

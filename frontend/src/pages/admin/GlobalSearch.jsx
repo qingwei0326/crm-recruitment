@@ -3,15 +3,13 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   ClipboardList,
   Loader2,
-  Menu,
-  Moon,
   Search,
-  Sun,
   UserRoundSearch,
 } from 'lucide-react';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
-import { useTheme } from '../../context/ThemeContext';
+import PageHeader from '../../components/PageHeader';
+import { AdminPageContainer, adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import useIsMobile from '../../hooks/useIsMobile';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { stageLabel, statusBadgeClass } from '../../labels';
@@ -140,7 +138,6 @@ function OperationLogResult({ log }) {
 }
 
 export default function GlobalSearch() {
-  const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -199,45 +196,11 @@ export default function GlobalSearch() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
-      <main className="flex-1 min-w-0">
-        <header
-          className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex justify-between ${
-            isMobile ? 'items-end pb-2' : 'h-14 items-center'
-          }`}
-          style={
-            isMobile
-              ? {
-                  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-                  minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-                }
-              : undefined
-          }
-        >
-          <div className="flex min-h-10 items-center gap-3">
-            {isMobile && (
-              <button
-                className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-                aria-label="打开导航"
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-              全局搜索
-            </h2>
-          </div>
-          <button
-            onClick={toggle}
-            className="inline-flex min-w-10 min-h-10 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-            aria-label={dark ? '亮色模式' : '暗色模式'}
-          >
-            {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
-          </button>
-        </header>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
+        <PageHeader title="全局搜索" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)} />
 
-        <div className="p-4 lg:p-6 space-y-4">
+        <AdminPageContainer>
           <form
             onSubmit={submit}
             className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4"
@@ -307,7 +270,7 @@ export default function GlobalSearch() {
               </section>
             </div>
           )}
-        </div>
+        </AdminPageContainer>
       </main>
     </AdminLayout>
   );

@@ -304,10 +304,10 @@ describe('recordCallResult', () => {
     );
 
     renderDialResult();
-    fireEvent.change(await screen.findByPlaceholderText('添加备注（可选）'), {
+    fireEvent.click(screen.getByRole('button', { name: /^号码无效/ }));
+    fireEvent.change(await screen.findByPlaceholderText('号码情况说明（可选）'), {
       target: { value: '  明天下午回电  ' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /^号码无效/ }));
     fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(

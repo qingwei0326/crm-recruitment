@@ -21,6 +21,7 @@ export default function useTodayTasks() {
   const [schools, setSchools] = useState([]);
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [selectedSchool, setSelectedSchool] = useState(null);
@@ -28,6 +29,8 @@ export default function useTodayTasks() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [pendingCount, setPendingCount] = useState(null);
   const [overdueCount, setOverdueCount] = useState(0);
+  const [helpCount, setHelpCount] = useState(0);
+  const [todayCompletedCount, setTodayCompletedCount] = useState(0);
   const [taskProgress, setTaskProgress] = useState({
     total: 0,
     done: 0,
@@ -36,6 +39,7 @@ export default function useTodayTasks() {
     progress_pct: 0,
   });
   const [intentCounts, setIntentCounts] = useState({ A: 0, B: 0, C: 0, '无': 0 });
+  const requestSeqRef = useRef(0);
 
   const fetchTasks = useCallback(async (
     searchQuery = '',
@@ -43,6 +47,7 @@ export default function useTodayTasks() {
     intentFilter = null,
     overdueFilter = false,
   ) => {
+    const requestId = ++requestSeqRef.current;
     setLoading(true);
     setError('');
     try {
@@ -52,6 +57,7 @@ export default function useTodayTasks() {
       if (intentFilter) params.intent_level = intentFilter;
       if (overdueFilter) params.overdue = true;
       const res = await api.get('/tasks/today', { params });
+      if (requestId !== requestSeqRef.current) return;
       if (res.data.code === 0) {
         const payload = res.data.data || {};
         setStudents(payload.list || []);
@@ -62,6 +68,8 @@ export default function useTodayTasks() {
           payload.pending_count == null ? null : Number(payload.pending_count) || 0,
         );
         setOverdueCount(Number(payload.overdue_count) || 0);
+        setHelpCount(Number(payload.help_count) || 0);
+        setTodayCompletedCount(Number(payload.today_completed_count) || 0);
         setIntentCounts({
           A: 0,
           B: 0,
@@ -75,11 +83,12 @@ export default function useTodayTasks() {
         setError(res.data.msg || '加载失败');
       }
     } catch (e) {
+      if (requestId !== requestSeqRef.current) return;
       setError(
         e?.response?.data?.detail || e?.response?.data?.msg || e?.message || '加载失败',
       );
     } finally {
-      setLoading(false);
+      if (requestId === requestSeqRef.current) setLoading(false);
     }
   }, []);
 
@@ -99,22 +108,34 @@ export default function useTodayTasks() {
   }, [search, selectedSchool, intentLevel, overdueOnly, fetchTasks]);
 
   const loadMore = useCallback(async () => {
+    if (loadingMore || students.length >= total) return;
+    const requestId = ++requestSeqRef.current;
+    const offset = students.length;
+    setLoadingMore(true);
     try {
-      const params = { limit: PAGE_SIZE, offset: students.length };
+      const params = { limit: PAGE_SIZE, offset };
       if (search.trim()) params.search = search.trim();
       if (selectedSchool) params.school_name = selectedSchool;
       if (intentLevel) params.intent_level = intentLevel;
       if (overdueOnly) params.overdue = true;
       const res = await api.get('/tasks/today', { params });
+      if (requestId !== requestSeqRef.current) return;
       if (res.data.code === 0) {
         const payload = res.data.data || {};
-        setStudents(prev => [...prev, ...(payload.list || [])]);
-        setTotal(payload.list_total ?? payload.total ?? 0);
+        setStudents((prev) => {
+          const seen = new Set(prev.map((student) => student.id));
+          return [...prev, ...(payload.list || []).filter((student) => !seen.has(student.id))];
+        });
+        if (payload.list_total != null || payload.total != null) {
+          setTotal(payload.list_total ?? payload.total ?? 0);
+        }
       }
     } catch {
       // silently fail — existing list is still valid
+    } finally {
+      if (requestId === requestSeqRef.current) setLoadingMore(false);
     }
-  }, [students.length, search, selectedSchool, intentLevel, overdueOnly]);
+  }, [loadingMore, students.length, search, selectedSchool, intentLevel, overdueOnly, total]);
 
   const hasMore = students.length < total;
   const refetch = useCallback((searchQuery, schoolFilter, intentFilter) => {
@@ -145,7 +166,10 @@ export default function useTodayTasks() {
     setOverdueOnly,
     pendingCount,
     overdueCount,
+    helpCount,
+    todayCompletedCount,
     loadMore,
+    loadingMore,
     hasMore,
     total,
   };

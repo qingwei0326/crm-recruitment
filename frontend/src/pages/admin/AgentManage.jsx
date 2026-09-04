@@ -6,6 +6,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import { AdminPageContainer, adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
@@ -597,8 +598,8 @@ export default function AgentManage() {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="账号管理"
           isMobile={isMobile}
@@ -633,7 +634,7 @@ export default function AgentManage() {
           )}
         </PageHeader>
 
-        <div className="mx-auto w-full max-w-[1600px] p-3 sm:p-4 lg:p-6">
+        <AdminPageContainer className="max-w-[1600px]">
           <div className="grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)] lg:gap-6">
             {/* Agent list — on mobile, show as full-width when no agent selected, hidden when viewing tasks */}
             <div className={`${isMobile && selectedAgent ? 'hidden' : ''} lg:sticky lg:top-[4.75rem] lg:self-start`}>
@@ -1203,7 +1204,7 @@ export default function AgentManage() {
               ) : null}
             </div>
           </div>
-        </div>
+        </AdminPageContainer>
       </main>
 
       {recycleAgent && (

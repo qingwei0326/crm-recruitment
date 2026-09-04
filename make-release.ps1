@@ -29,6 +29,7 @@ $ExcludeDirs = @(
     "backups",
     "data",
     "docs",
+    "archive",
     "releases",
     "test-results",
     "tests"
@@ -38,9 +39,9 @@ if (-not $IncludeDeps) {
     $ExcludeDirs += @(".pydeps", "node_modules")
 }
 
-# Keep generic start/deploy scripts in the release package:
-# start/stop, deploy/deploy-update/deploy-linux, make-release, and startup task helpers.
-# Only retired watchdog scripts and machine-local runtime/tunnel config are excluded below.
+# The production runtime is container-managed on the server. Keep the release
+# package focused on application code and runtime-safe maintenance utilities;
+# retired host-process launchers live under archive/ and are excluded below.
 $ExcludeFiles = @(
     "crm.db",
     ".secret_key",

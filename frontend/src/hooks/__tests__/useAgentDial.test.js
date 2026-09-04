@@ -363,7 +363,7 @@ describe('useAgentDial', () => {
     );
   });
 
-  it('routes waiting-volunteer results through intent and follow-up steps', async () => {
+  it('completes a first-call result without forcing an intent rating', async () => {
     const statusModal = {
       studentId: 42,
       studentName: '张三',
@@ -384,26 +384,10 @@ describe('useAgentDial', () => {
     expect(actions.setDialModal).toHaveBeenCalledWith({
       ...statusModal,
       status: '等待志愿',
-      showIntent: true,
-    });
-    statusHook.unmount();
-
-    const intentModal = { ...statusModal, status: '等待志愿', showIntent: true };
-    const intentActions = baseArgs().actions;
-    const intentHook = renderHook(() => useAgentDial(baseArgs({
-      state: { dial: { modal: intentModal } },
-      actions: intentActions,
-    })));
-
-    await act(async () => {
-      await intentHook.result.current.handleDialModalIntent('B');
-    });
-
-    expect(intentActions.setDialModal).toHaveBeenCalledWith({
-      ...intentModal,
       showIntent: false,
       showFollowUp: true,
     });
+    expect(actions.setDialModal).not.toHaveBeenCalledWith(expect.objectContaining({ showIntent: true }));
   });
 
   it('keeps the intent modal and lock when intent persistence reports failure', async () => {

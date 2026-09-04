@@ -16,6 +16,7 @@ import {
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import { AdminPageContainer, adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { useToast } from '../../components/Toast';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -362,8 +363,8 @@ export default function AgentScorePreview() {
   }, [data.items, filter, sortBy]);
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="评分预览"
           isMobile={isMobile}
@@ -389,7 +390,7 @@ export default function AgentScorePreview() {
           </button>
         </PageHeader>
 
-        <div className="w-full p-4 lg:p-6 space-y-4">
+        <AdminPageContainer className="max-w-[1600px]">
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
             <StatCell icon={Activity} label="话务员" value={summary.total} />
             <StatCell icon={AlertTriangle} label="需关注" value={summary.attention} />
@@ -576,7 +577,7 @@ export default function AgentScorePreview() {
               </div>
             )}
           </section>
-        </div>
+        </AdminPageContainer>
       </main>
     </AdminLayout>
   );

@@ -82,8 +82,6 @@ export default function AgentWork() {
     loadDetail,
     updateDetailField,
     addNote,
-    addFollowUp,
-    addVisit,
   } = useAgentDetail({ state, actions, students, toast });
 
   // 跟进管理

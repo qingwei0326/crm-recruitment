@@ -6,19 +6,17 @@ import {
   CheckCircle2,
   ListFilter,
   Loader2,
-  Menu,
   RefreshCcw,
   School,
   ShieldAlert,
-  Sun,
-  Moon,
   Users,
   Activity,
 } from 'lucide-react';
-import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
+import { AdminPageContainer, adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import api from '../../api';
 import { getApiErrorMessage, unwrapApiResponse } from '../../utils';
 import logger from '../../utils/logger';
@@ -123,7 +121,6 @@ function isPendingReview(item) {
 }
 
 export default function LeadGovernance() {
-  const { dark, toggle } = useTheme();
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const confirm = useConfirm();
@@ -313,50 +310,11 @@ export default function LeadGovernance() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
-        <header
-          className={`sticky top-0 z-10 flex justify-between border-b border-slate-200/90 bg-white/95 px-4 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 ${
-            isMobile ? 'items-end pb-2' : 'h-14 items-center'
-          }`}
-          style={
-            isMobile
-              ? {
-                  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-                  minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-                }
-              : undefined
-          }
-        >
-          <div className="flex min-h-10 items-center gap-3">
-            {isMobile && (
-              <button
-                type="button"
-                className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                onClick={() => setSidebarOpen(true)}
-                aria-label="打开导航"
-              >
-                <Menu className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            )}
-            <div className="min-w-0">
-              <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
-                招生运营 / 数据风控
-              </div>
-              <h1 className="truncate text-lg font-bold leading-5 text-slate-900 dark:text-gray-100">线索治理</h1>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={toggle}
-            className="inline-flex min-w-10 min-h-10 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-            aria-label={dark ? '亮色模式' : '暗色模式'}
-          >
-            {dark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-gray-500" />}
-          </button>
-        </header>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
+        <PageHeader title="线索治理" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)} />
 
-        <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
+        <AdminPageContainer className="max-w-6xl">
           {(loadingSignals || pendingHealthSignals.length > 0) && (
           <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -618,7 +576,7 @@ export default function LeadGovernance() {
               );
             })}
           </div>
-        </div>
+        </AdminPageContainer>
       </main>
     </AdminLayout>
   );
