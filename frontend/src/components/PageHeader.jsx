@@ -15,10 +15,11 @@ export default function PageHeader({
   children,
   actionsClassName = 'flex items-center gap-1',
   useSafeArea = true,
+  light = false,
 }) {
   return (
     <header
-      className="sticky top-0 z-10 flex items-end justify-between border-b border-slate-200/90 bg-white/95 px-4 pb-2 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95"
+      className={`sticky top-0 z-10 flex items-end justify-between border-b px-4 pb-2 backdrop-blur ${light ? 'border-slate-200/90 bg-white/95' : 'border-slate-200/90 bg-white/95 dark:border-gray-700 dark:bg-gray-800/95'}`}
       style={
         useSafeArea && isMobile
           ? {
@@ -37,14 +38,14 @@ export default function PageHeader({
             aria-label="打开导航"
             style={{ touchAction: 'manipulation' }}
           >
-            <Menu className="h-5 w-5 text-slate-600 dark:text-gray-300" />
+            <Menu className={`h-5 w-5 ${light ? 'text-slate-600' : 'text-slate-600 dark:text-gray-300'}`} />
           </button>
         )}
         <div className="min-w-0">
-          <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
+          <div className={`truncate text-[10px] font-bold uppercase tracking-[0.14em] ${light ? 'text-indigo-600' : 'text-indigo-600 dark:text-indigo-300'}`}>
             招生运营 / 管理后台
           </div>
-          <h1 className="truncate text-lg font-bold leading-5 text-slate-900 dark:text-gray-100">{title}</h1>
+          <h1 className={`truncate text-lg font-bold leading-5 ${light ? 'text-slate-900' : 'text-slate-900 dark:text-gray-100'}`}>{title}</h1>
         </div>
       </div>
       {children && (

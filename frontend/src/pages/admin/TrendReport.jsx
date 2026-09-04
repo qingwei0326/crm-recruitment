@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import {
@@ -394,8 +395,8 @@ export default function TrendReport({ embedded = false }) {
   if (embedded) return content;
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader title="趋势报表" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
           {canExportReport && (
             <button

@@ -6,6 +6,13 @@ import useIsMobile from '../../hooks/useIsMobile';
 import logger from '../../utils/logger';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
+import {
+  AdminPageContainer,
+  AdminPageIntro,
+  AdminSurface,
+  adminPageMainClass,
+} from '../../components/admin/AdminPagePrimitives';
 import { useToast } from '../../components/Toast';
 import { useConfirm } from '../../components/ConfirmDialog';
 import PhoneLink from '../../components/PhoneLink';
@@ -34,29 +41,21 @@ import {
   canPerformAdminOperation,
 } from '../../adminPermissions';
 import {
-  ArrowLeft,
   Search,
   ChevronLeft,
   ChevronRight,
   Upload,
-  Phone,
-  LogOut,
-  Menu,
   UserPlus,
   FileUp,
   X,
   CheckSquare,
   Square,
   Plus,
-  Clock,
   Loader2,
-  Calendar,
   Sun,
   Moon,
   Home as HomeIcon,
   MapPin,
-  BarChart3,
-  TrendingUp,
   AlertTriangle,
   Trash2,
   Download,
@@ -93,7 +92,7 @@ function NextActionSummary({ action, showEmpty = false }) {
 
 
 export default function LeadsManage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { dark, toggle } = useTheme();
   const isMobile = useIsMobile();
   const toast = useToast();
@@ -730,13 +729,6 @@ export default function LeadsManage() {
     } finally {
       setCampusSubmittingId(null);
     }
-  };
-
-  const updateField = async (id, field, value) => {
-    if (!canEditStudent) return;
-    await api.put(`/students/${id}`, { [field]: value });
-    fetchStudents(page);
-    refreshExpand();
   };
 
   const handleAssignAgent = async (id, agentId) => {
@@ -1648,40 +1640,14 @@ export default function LeadsManage() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      {/* ── Mobile sidebar overlay ── */}
-      {/* ── Sidebar ── */}
-      {/* ── Main ── */}
-      <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
-        <header
-          className="sticky top-0 z-10 flex items-end justify-between border-b border-slate-200/90 bg-white/95 px-4 pb-2 backdrop-blur dark:border-gray-700 dark:bg-gray-800/95"
-          style={{
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-            minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-          }}
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
+        <PageHeader
+          title="学生管理"
+          isMobile={isMobile}
+          onMenuClick={() => setSidebarOpen(true)}
+          actionsClassName="flex max-w-[72vw] items-center gap-1.5 overflow-x-auto scrollbar-none"
         >
-          <div className="flex min-h-10 items-center gap-3">
-          {isMobile && (
-            <button
-              className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSidebarOpen(true);
-              }}
-              aria-label="打开导航"
-              style={{ touchAction: 'manipulation' }}
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          )}
-          <div className="min-w-0">
-            <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600 dark:text-indigo-300">
-              招生运营 / 线索资产
-            </div>
-            <h2 className="truncate text-lg font-bold leading-5 text-slate-900 dark:text-gray-100">学生管理</h2>
-          </div>
-          </div>
-          <div className="flex min-h-10 items-center gap-1.5">
             {canAssignStudents && selected.size > 0 && (
               <button
                 type="button"
@@ -1689,7 +1655,7 @@ export default function LeadsManage() {
                   setAssignOverrideReason('');
                   setShowAssign(true);
                 }}
-                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium"
+                className="flex min-h-10 items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white"
                 aria-label={`分配已选 ${selected.size} 个学生`}
                 title="分配已选学生"
               >
@@ -1704,7 +1670,7 @@ export default function LeadsManage() {
                   setShowCreate(true);
                   setCreateErr('');
                 }}
-                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm"
+                className={`flex min-h-10 items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium ${selected.size > 0 ? 'border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200' : 'bg-blue-600 text-white'}`}
                 aria-label="新建学生"
                 title="新建学生"
               >
@@ -1720,7 +1686,7 @@ export default function LeadsManage() {
                   setImportResult(null);
                   setImportFile(null);
                 }}
-                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm"
+                className="flex min-h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 aria-label="导入学生"
                 title="导入学生"
               >
@@ -1732,7 +1698,7 @@ export default function LeadsManage() {
               <button
                 type="button"
                 onClick={handleRegionAssign}
-                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-sm"
+                className="flex min-h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 aria-label="按学校分发"
                 title="按学校分发"
               >
@@ -1745,7 +1711,7 @@ export default function LeadsManage() {
                 type="button"
                 onClick={handleAutoAssign}
                 disabled={autoAssigning}
-                className="flex min-h-10 items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50"
+                className="flex min-h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                 aria-label="自动均摊分配"
                 title="自动均摊分配"
               >
@@ -1762,12 +1728,16 @@ export default function LeadsManage() {
                 {dark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-500" />}
               </button>
             )}
-          </div>
-        </header>
+        </PageHeader>
 
-        <div className="w-full p-4 lg:p-6 space-y-4">
+        <AdminPageContainer>
+          <AdminPageIntro
+            title="线索资产与跟进"
+            description="集中完成线索查询、筛选、分配和阶段推进；点击统计卡片可直接进入对应线索范围。"
+            meta={<><span className="font-semibold text-slate-900 dark:text-slate-100">{total}</span> 条线索</>}
+          />
           {/* Search */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-3 lg:p-4 shadow-sm">
+          <AdminSurface className="p-3 lg:p-4">
             <form onSubmit={handleSearch} className="flex flex-col gap-3">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                 <div className="relative w-full xl:w-[26rem] xl:max-w-[32rem]">
@@ -1878,7 +1848,7 @@ export default function LeadsManage() {
                 </div>
               )}
             </form>
-          </div>
+          </AdminSurface>
 
           {/* Lead and stage stats */}
           {showGlobalStageStats && (
@@ -1976,7 +1946,7 @@ export default function LeadsManage() {
           )}
 
           {/* Student list */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
+          <AdminSurface className="overflow-hidden">
             {isMobile ? (
               <div className="bg-gray-50 p-3 dark:bg-gray-900">
                 <div className="mb-3 flex items-center justify-between text-sm">
@@ -2093,8 +2063,8 @@ export default function LeadsManage() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </AdminSurface>
+        </AdminPageContainer>
       </main>
 
       {/* ── Modals ── */}

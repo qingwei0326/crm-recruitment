@@ -167,6 +167,19 @@ describe('MobileStudentDetail follow-up workflow', () => {
     expect(within(editor).queryByRole('button', { name: '初次联系' })).not.toBeInTheDocument();
   });
 
+  it('keeps dial as the primary bottom action and groups secondary actions', async () => {
+    renderPage();
+
+    await screen.findByText('完整时间线');
+    expect(screen.getByRole('button', { name: '开始拨打' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const moreActions = screen.getByRole('dialog', { name: '学生更多操作' });
+    expect(within(moreActions).getByRole('button', { name: '写备注' })).toBeInTheDocument();
+    expect(within(moreActions).getByRole('button', { name: '登记到访' })).toBeInTheDocument();
+    expect(within(moreActions).getByRole('button', { name: '编辑状态' })).toBeInTheDocument();
+  });
+
   it('shows the required operator result buttons on the mobile detail page', async () => {
     renderPage();
 

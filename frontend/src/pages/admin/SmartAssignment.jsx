@@ -10,6 +10,7 @@ import {
   Sun,
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import PageHeader from '../../components/PageHeader';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -122,8 +123,8 @@ export default function SmartAssignment() {
   const warnings = preview?.warnings || [];
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader title="智能分配" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
           <button type="button" onClick={toggle} aria-label={dark ? '亮色模式' : '暗色模式'}>
             {dark ? (

@@ -111,27 +111,13 @@ function Assert-ReleasePackagePolicy {
 
     foreach ($script in @(
         "scripts\prepare-production-release.ps1",
-        "scripts\safe-ubuntu-deploy.sh",
         "scripts\sqlite_online_backup.py",
         "scripts\verify_production_release.py"
     )) {
         Assert-PathExists $script
     }
 
-    $includedScripts = @(
-        "start.ps1",
-        "start.bat",
-        "stop.ps1",
-        "stop.bat",
-        "deploy.ps1",
-        "deploy.bat",
-        "deploy-update.ps1",
-        "deploy-linux.sh",
-        "make-release.ps1",
-        "make-release.cmd",
-        "install-startup.ps1",
-        "uninstall-startup.ps1"
-    )
+    $includedScripts = @("make-release.ps1", "make-release.cmd")
     foreach ($script in $includedScripts) {
         Assert-PathExists $script
         if ($excludeFiles -contains $script) {
@@ -172,7 +158,7 @@ function Assert-ReleasePackagePolicy {
         }
     }
 
-    foreach ($dir in @("backups", "data", "releases", "tests")) {
+    foreach ($dir in @("archive", "backups", "data", "releases", "tests")) {
         if ($excludeDirs -notcontains $dir) {
             throw "Release package must exclude directory: $dir"
         }

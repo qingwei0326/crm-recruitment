@@ -1,4 +1,6 @@
-# Ubuntu 部署指南
+# Ubuntu 部署指南（历史参考）
+
+> 当前服务器由 Docker 托管，以下宿主机 Python、nginx、systemd 部署步骤不再作为生产入口。旧脚本已归档至 `archive/legacy-host-deploy/`；生产操作以服务器上的 Docker 编排和 `docs/server-ops.md` 为准。
 
 ## 一键部署
 

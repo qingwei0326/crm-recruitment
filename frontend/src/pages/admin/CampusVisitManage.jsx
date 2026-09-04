@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, MapPin, RefreshCw } from 'lucide-react';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import { AdminPageContainer, adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { useToast } from '../../components/Toast';
 import useIsMobile from '../../hooks/useIsMobile';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
@@ -155,8 +156,8 @@ export default function CampusVisitManage() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="到校参观"
           isMobile={isMobile}
@@ -174,7 +175,7 @@ export default function CampusVisitManage() {
           </button>
         </PageHeader>
 
-        <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4">
+        <AdminPageContainer className="max-w-7xl">
           <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
               <div className="lg:mr-auto">
@@ -376,7 +377,7 @@ export default function CampusVisitManage() {
               </div>
             )}
           </section>
-        </div>
+        </AdminPageContainer>
       </main>
     </AdminLayout>
   );

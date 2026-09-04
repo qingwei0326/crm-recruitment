@@ -32,6 +32,11 @@ import { useToast } from '../../components/Toast';
 import { formatDuration, getApiErrorMessage } from '../../utils';
 import { dashboardLeadUrls, leadFilterUrl } from './adminWorkflow';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from '../../adminPermissions';
+import {
+  DashboardCardPicker,
+  hasDashboardCardData,
+  useDashboardCardPreferences,
+} from './dashboard/DashboardCardPicker';
 
 const metricTone = {
   blue: 'border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-900/20 dark:text-blue-300',
@@ -274,6 +279,254 @@ export default function AdminMobileDash() {
     n(business.notification_failures_7d) > 0 ||
     (canViewScorePreview && attentionAgents.length > 0);
 
+  const metricCards = useMemo(() => {
+    if (scope === 'today') {
+      return [
+        {
+          key: 'today-calls',
+          icon: Phone,
+          label: '今日呼出',
+          value: totalCalls,
+          detail: `已完成 ${todayRecording.completed} · 待完成 ${todayRecording.pending}`,
+          tone: todayRecording.pending > 0 ? 'amber' : 'blue',
+          to: canViewReportCenter ? '/admin/report-center?tab=call-volume' : '',
+        },
+        {
+          key: 'today-a',
+          icon: TrendingUp,
+          label: '今日新增 A',
+          value: todayA,
+          detail: '今日评级进入 A',
+          tone: todayA > 0 ? 'green' : 'gray',
+          to: canViewLeadsManage ? dashboardLeadUrls.todayA : '',
+        },
+        {
+          key: 'available-unassigned',
+          icon: Users,
+          label: '可分配有效线索',
+          value: availableUnassigned,
+          detail: '未分配且仍需跟进',
+          tone: availableUnassigned > 0 ? 'amber' : 'green',
+          to: canViewLeadsManage ? dashboardLeadUrls.availableUnassigned : '',
+        },
+        {
+          key: 'attention-agents',
+          icon: Gauge,
+          label: '需关注坐席',
+          value: attentionAgents.length,
+          detail: `共 ${scoreItems.length} 名话务员`,
+          tone: attentionAgents.length > 0 ? 'amber' : 'green',
+          to: canViewScorePreview ? '/admin/score-preview?filter=attention' : '',
+        },
+        {
+          key: 'valid-calls',
+          icon: CheckCircle2,
+          label: '有效通话',
+          value: todayRecording.completed,
+          detail: '今日已完成记录',
+          tone: 'green',
+          to: canViewReportCenter ? '/admin/report-center?tab=call-volume' : '',
+          defaultVisible: false,
+        },
+        {
+          key: 'open-follow-ups',
+          icon: Clock3,
+          label: '待回访',
+          value: n(followUps.open_follow_ups),
+          detail: '未完成回访任务',
+          tone: 'amber',
+          to: canViewWorkCenter ? '/admin/work-center?queue=follow' : '',
+          defaultVisible: false,
+        },
+        {
+          key: 'today-new-leads',
+          icon: UserRound,
+          label: '今日新增线索',
+          value: n(summary?.today_new_leads),
+          detail: '今日进入系统的线索',
+          tone: 'blue',
+          to: canViewLeadsManage ? '/admin/leads?created_today=1' : '',
+          defaultVisible: false,
+        },
+        {
+          key: 'enrolled',
+          icon: CheckCircle2,
+          label: '已报名',
+          value: enrolledTotal,
+          detail: '当前确认报名',
+          tone: 'green',
+          to: canViewLeadsManage ? '/admin/leads?stage=已报名' : '',
+          defaultVisible: false,
+        },
+      ];
+    }
+    return [
+      {
+        key: 'total-students',
+        icon: Users,
+        label: '总线索量',
+        value: totalStudents,
+        detail: '当前全库学生',
+        tone: 'blue',
+        to: canViewLeadsManage ? '/admin/leads' : '',
+      },
+      {
+        key: 'contacted-students',
+        icon: Phone,
+        label: '已联系学生',
+        value: contactedStudents,
+        detail: '排除未联系与无效',
+        tone: 'green',
+      },
+      {
+        key: 'a-level',
+        icon: TrendingUp,
+        label: 'A级意向',
+        value: aLevelTotal,
+        detail: '当前重点跟进',
+        tone: 'amber',
+        to: canViewLeadsManage ? dashboardLeadUrls.allA : '',
+      },
+      {
+        key: 'global-enrolled',
+        icon: CheckCircle2,
+        label: '已报名',
+        value: enrolledTotal,
+        detail: '当前确认报名',
+        tone: 'green',
+        to: canViewLeadsManage ? '/admin/leads?stage=已报名' : '',
+      },
+      {
+        key: 'global-follow-ups',
+        icon: Clock3,
+        label: '待回访',
+        value: n(followUps.open_follow_ups),
+        detail: '未完成回访任务',
+        tone: 'amber',
+        to: canViewWorkCenter ? '/admin/work-center?queue=follow' : '',
+        defaultVisible: false,
+      },
+      {
+        key: 'global-unassigned',
+        icon: UserRound,
+        label: '可分配线索',
+        value: availableUnassigned,
+        detail: '未分配且仍需跟进',
+        tone: 'amber',
+        to: canViewLeadsManage ? dashboardLeadUrls.availableUnassigned : '',
+        defaultVisible: false,
+      },
+    ];
+  }, [
+    aLevelTotal,
+    attentionAgents.length,
+    availableUnassigned,
+    canViewLeadsManage,
+    canViewReportCenter,
+    canViewScorePreview,
+    canViewWorkCenter,
+    contactedStudents,
+    enrolledTotal,
+    followUps.open_follow_ups,
+    scoreItems.length,
+    scope,
+    summary?.today_new_leads,
+    todayA,
+    todayRecording.completed,
+    todayRecording.pending,
+    totalCalls,
+    totalStudents,
+  ]);
+  const metricPreferences = useDashboardCardPreferences({
+    cards: metricCards,
+    scope: `mobile-metrics-${scope}`,
+    userKey: user?.id || user?.username || 'admin',
+  });
+  const visibleMetricCards = metricPreferences.visibleCards.filter((card) => hasDashboardCardData({ ...card, loading, hideWhenEmpty: card.defaultVisible === false }));
+
+  const actionCards = useMemo(() => {
+    const cards = [
+      {
+        key: 'overdue-follow-ups',
+        icon: Clock3,
+        title: '逾期回访',
+        detail: `逾期 ${n(followUps.overdue_follow_ups)} 条 · 未完成 ${n(followUps.open_follow_ups)} 条`,
+        tone: n(followUps.overdue_follow_ups) > 0 ? 'red' : 'green',
+        to: canViewWorkCenter ? '/admin/work-center?queue=follow' : '',
+        value: n(followUps.overdue_follow_ups),
+      },
+      {
+        key: 'missing-phone',
+        icon: AlertTriangle,
+        title: '无电话数据',
+        detail: `${n(students.missing_phone_tasks)} 条线索没有可拨电话`,
+        tone: n(students.missing_phone_tasks) > 0 ? 'red' : 'green',
+        to: canViewLeadsManage ? dashboardLeadUrls.missingPhone : '',
+        value: n(students.missing_phone_tasks),
+      },
+      {
+        key: 'pending-dials',
+        icon: Clock3,
+        title: '待完成拨号',
+        detail: `今日 ${todayRecording.pending} 通 · 本月 ${monthRecording.pending} 通`,
+        tone: todayRecording.pending > 0 ? 'amber' : 'green',
+        to: canViewReportCenter ? '/admin/report-center?tab=call-volume' : '',
+        value: todayRecording.pending,
+      },
+      {
+        key: 'legacy-records',
+        icon: Clock3,
+        title: '历史未回填',
+        detail: `今日 ${todayRecording.legacy} 通 · 本月 ${monthRecording.legacy} 通`,
+        tone: 'gray',
+        to: canViewReportCenter ? '/admin/report-center?tab=call-volume' : '',
+        value: todayRecording.legacy + monthRecording.legacy,
+      },
+      {
+        key: 'invalid-leads',
+        icon: ListFilter,
+        title: '无效线索',
+        detail: `${n(students.invalid_total)} 条，查看无效原因和回收`,
+        tone: n(students.invalid_total) > 0 ? 'blue' : 'gray',
+        to: canViewLeadsManage ? leadFilterUrl({ status: '无效' }) : '',
+        value: n(students.invalid_total),
+      },
+    ];
+    if (canViewSystemSettings) {
+      cards.push({
+        key: 'system-health',
+        icon: Settings,
+        title: '系统运行',
+        detail: `通知失败 ${n(business.notification_failures_7d)} · 锁定账号 ${n(business.locked_users)}`,
+        tone: n(business.notification_failures_7d) > 0 || n(business.locked_users) > 0 ? 'amber' : 'green',
+        to: '/admin/settings',
+        value: n(business.notification_failures_7d) + n(business.locked_users),
+      });
+    }
+    return cards;
+  }, [
+    business.locked_users,
+    business.notification_failures_7d,
+    canViewLeadsManage,
+    canViewReportCenter,
+    canViewSystemSettings,
+    canViewWorkCenter,
+    followUps.open_follow_ups,
+    followUps.overdue_follow_ups,
+    monthRecording.legacy,
+    monthRecording.pending,
+    students.invalid_total,
+    students.missing_phone_tasks,
+    todayRecording.legacy,
+    todayRecording.pending,
+  ]);
+  const actionPreferences = useDashboardCardPreferences({
+    cards: actionCards,
+    scope: 'mobile-actions',
+    userKey: user?.id || user?.username || 'admin',
+  });
+  const visibleActionCards = actionPreferences.visibleCards.filter((card) => loading || card.value > 0);
+
   return (
     <AdminLayout isMobile sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className="min-w-0 flex-1 bg-slate-100 dark:bg-gray-950">
@@ -361,112 +614,67 @@ export default function AdminMobileDash() {
             </div>
           </section>
 
-          <section className="grid grid-cols-2 gap-3">
-            {scope === 'today' ? (
-              <>
-                <MetricCard
-                  icon={Phone}
-                  label="今日呼出"
-                  value={loading ? '-' : totalCalls}
-                  detail={`已完成 ${todayRecording.completed} · 待完成 ${todayRecording.pending}`}
-                  tone={todayRecording.pending > 0 ? 'amber' : 'blue'}
-                  to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
-                />
-                <MetricCard
-                  icon={TrendingUp}
-                  label="今日新增 A"
-                  value={loading ? '-' : todayA}
-                  detail="今日评级进入 A"
-                  tone={todayA > 0 ? 'green' : 'gray'}
-                  to={canViewLeadsManage ? dashboardLeadUrls.todayA : ''}
-                />
-                <MetricCard
-                  icon={Users}
-                  label="可分配有效线索"
-                  value={loading ? '-' : availableUnassigned}
-                  detail="未分配且仍需跟进"
-                  tone={availableUnassigned > 0 ? 'amber' : 'green'}
-                  to={canViewLeadsManage ? dashboardLeadUrls.availableUnassigned : ''}
-                />
-                <MetricCard
-                  icon={Gauge}
-                  label="需关注坐席"
-                  value={loading ? '-' : attentionAgents.length}
-                  detail={`共 ${scoreItems.length} 名话务员`}
-                  tone={attentionAgents.length > 0 ? 'amber' : 'green'}
-                  to={canViewScorePreview ? '/admin/score-preview?filter=attention' : ''}
-                />
-              </>
+          <section aria-label="核心指标">
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">核心指标</h2>
+                <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">无数据卡片会自动隐藏，可在更多中调整展示</div>
+              </div>
+              <DashboardCardPicker
+                cards={metricCards}
+                hiddenKeys={metricPreferences.hiddenKeys}
+                onToggle={metricPreferences.toggleCard}
+                onReset={metricPreferences.resetCards}
+              />
+            </div>
+            {visibleMetricCards.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-6 text-center text-xs text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-300">
+                暂无可展示指标
+              </div>
             ) : (
-              <>
-                <MetricCard icon={Users} label="总线索量" value={loading ? '-' : totalStudents} detail="当前全库学生" tone="blue" to={canViewLeadsManage ? '/admin/leads' : ''} />
-                <MetricCard icon={Phone} label="已联系学生" value={loading ? '-' : contactedStudents} detail="排除未联系与无效" tone="green" />
-                <MetricCard icon={TrendingUp} label="A级意向" value={loading ? '-' : aLevelTotal} detail="当前重点跟进" tone="amber" to={canViewLeadsManage ? dashboardLeadUrls.allA : ''} />
-                <MetricCard icon={CheckCircle2} label="已报名" value={loading ? '-' : enrolledTotal} detail="当前确认报名" tone="green" to={canViewLeadsManage ? '/admin/leads?stage=已报名' : ''} />
-              </>
+              <div className="grid grid-cols-2 gap-3">
+                {visibleMetricCards.map(({ key, ...card }) => (
+                  <MetricCard key={key} {...card} value={loading ? '-' : card.value} />
+                ))}
+              </div>
             )}
           </section>
 
-          <MobileGlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} />
+          {scope === 'all' && (
+            <MobileGlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} />
+          )}
 
           <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">异常处理</h2>
-                <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">手机端只保留高频处理入口</div>
+                <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">无异常时自动收起，可在更多中调整展示</div>
               </div>
-              {canViewSystemSettings && (
-                <Link to="/admin/settings" className="text-xs text-blue-600 dark:text-blue-300">
-                  数据质量
-                </Link>
-              )}
-            </div>
-            <div className="space-y-2">
-              <QuickAction
-                icon={Clock3}
-                title="逾期回访"
-                detail={`逾期 ${n(followUps.overdue_follow_ups)} 条 · 未完成 ${n(followUps.open_follow_ups)} 条`}
-                tone={n(followUps.overdue_follow_ups) > 0 ? 'red' : 'green'}
-                to={canViewWorkCenter ? '/admin/work-center?queue=follow' : ''}
-              />
-              <QuickAction
-                icon={AlertTriangle}
-                title="无电话数据"
-                detail={`${n(students.missing_phone_tasks)} 条线索没有可拨电话`}
-                tone={n(students.missing_phone_tasks) > 0 ? 'red' : 'green'}
-                to={canViewLeadsManage ? dashboardLeadUrls.missingPhone : ''}
-              />
-              <QuickAction
-                icon={Clock3}
-                title="待完成拨号"
-                detail={`今日 ${todayRecording.pending} 通 · 本月 ${monthRecording.pending} 通`}
-                tone={todayRecording.pending > 0 ? 'amber' : 'green'}
-                to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
-              />
-              <QuickAction
-                icon={Clock3}
-                title="历史未回填"
-                detail={`今日 ${todayRecording.legacy} 通 · 本月 ${monthRecording.legacy} 通`}
-                tone="gray"
-                to={canViewReportCenter ? '/admin/report-center?tab=call-volume' : ''}
-              />
-              <QuickAction
-                icon={ListFilter}
-                title="无效线索"
-                detail={`${n(students.invalid_total)} 条，查看无效原因和回收`}
-                tone={n(students.invalid_total) > 0 ? 'blue' : 'gray'}
-                to={canViewLeadsManage ? leadFilterUrl({ status: '无效' }) : ''}
-              />
-              {canViewSystemSettings && (
-                <QuickAction
-                  icon={Settings}
-                  title="系统运行"
-                  detail={`通知失败 ${n(business.notification_failures_7d)} · 锁定账号 ${n(business.locked_users)}`}
-                  tone={n(business.notification_failures_7d) > 0 || n(business.locked_users) > 0 ? 'amber' : 'green'}
-                  to="/admin/settings"
+              <div className="flex items-center gap-2">
+                <DashboardCardPicker
+                  cards={actionCards.map((card) => ({ ...card, label: card.title, hasData: card.value > 0 }))}
+                  hiddenKeys={actionPreferences.hiddenKeys}
+                  onToggle={actionPreferences.toggleCard}
+                  onReset={actionPreferences.resetCards}
                 />
-              )}
+                {canViewSystemSettings && (
+                  <Link to="/admin/settings" className="text-xs text-blue-600 dark:text-blue-300">
+                    数据质量
+                  </Link>
+                )}
+              </div>
             </div>
+            {visibleActionCards.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 px-3 py-5 text-center text-xs text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-300">
+                暂无需要处理的异常
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {visibleActionCards.map((card) => (
+                  <QuickAction key={card.key} icon={card.icon} title={card.title} detail={card.detail} tone={card.tone} to={card.to} />
+                ))}
+              </div>
+            )}
           </section>
 
           {canViewScorePreview && (

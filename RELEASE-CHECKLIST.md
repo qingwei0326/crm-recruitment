@@ -39,7 +39,7 @@
 - 新增或修改的业务行为有对应测试，至少覆盖后端接口或前端核心交互。
 - 前端构建后的 `frontend/dist` 已更新，但不提交到版本库。
 - `.env`、`.secret_key`、`crm.db`、`backups/`、`data/` 不进入发布包或代码仓库。
-- `watchdog.ps1`、`install-watchdog.ps1`、`uninstall-watchdog.ps1` 已废弃并删除；不要恢复 Windows 看门狗计划任务，运行守护交给 `start.ps1`/系统服务处理。
+- 旧宿主机启动、部署和进程管理脚本已归档；服务器运行由 Docker 托管，隧道由服务器侧服务托管。
 - `/api/stats/predictions` 旧预测接口已废弃；发布前确认没有重新暴露该接口或前端调用。
 - 离职/禁用人员不出现在分配类列表，只在账号历史管理场景可见。
 - 超管和普通管理员权限符合预期：普通管理员不能做账号管理、系统设置、破坏性操作。
@@ -89,13 +89,7 @@ npx playwright test tests/e2e/handover-center.spec.js tests/e2e/handover-real-wo
 
 先在 WSL 中执行纯本地预检，不连接服务器：
 
-```bash
-PREPARE_ONLY=1 \
-SOURCE_ROOT=/mnt/d/招生系统/releases/production-20260714-01 \
-bash scripts/safe-ubuntu-deploy.sh
-```
-
-同一版本号默认不能覆盖；只有明确废弃旧候选时才能使用 `-Force` 重建。获得明确生产变更授权后，去掉 `PREPARE_ONLY=1` 执行受控部署。脚本会依次：
+同一版本号默认不能覆盖；只有明确废弃旧候选时才能使用 `-Force` 重建。Docker 生产发布由服务器侧编排执行，本地只负责冻结发布包和完成校验。发布包校验会依次：
 
 1. 校验冻结目录内全部 SHA256、声明的起始/目标 revision，并确认候选 Alembic head 等于目标 revision；同时从 `index.html` 递归校验 JS/CSS 动态资产图，任一引用缺失都阻断发布。
 2. 获取远端部署锁，上传到独立版本目录，在远端再次校验精确文件集合，并把冻结版本收紧为目录 `0555`、文件 `0444`，阻止运行时字节码污染版本目录。
@@ -127,7 +121,7 @@ bash scripts/safe-ubuntu-deploy.sh
 
 发布包规则：
 
-- 保留通用启动/部署脚本：`start.ps1`、`start.bat`、`stop.ps1`、`stop.bat`、`deploy.ps1`、`deploy.bat`、`deploy-update.ps1`、`deploy-linux.sh`、`make-release.ps1`、`make-release.cmd`、`install-startup.ps1`、`uninstall-startup.ps1`。
+- 发布包只保留 `make-release.ps1`、`make-release.cmd` 及应用运行所需文件；旧宿主机脚本位于 `archive/legacy-host-deploy/`，不会进入发布包。
 - 排除运行时和本机配置：`.env`、`.env.linux`、`.secret_key`、`crm.db`、`*.db`、`*.log*`、`*.pid`、`backups/`、`data/`。
 - 排除隧道/本机网络配置：`cloudflared-config.yml`、`frpc.ini`、`nginx-crm.conf`、`forward.js`、`tunnel.sh`、`install-tunnel-task.ps1`、`start-tunnel.bat`。
 - 排除已废弃 watchdog 三脚本：`watchdog.ps1`、`install-watchdog.ps1`、`uninstall-watchdog.ps1`。

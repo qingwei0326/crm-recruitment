@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { BarChart3, MapPin, Phone, Receipt, Route, School, TrendingUp, Users } from 'lucide-react';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import PageHeader from '../../components/PageHeader';
 import useIsMobile from '../../hooks/useIsMobile';
 import AdmissionsReport from './AdmissionsReport';
@@ -72,8 +73,9 @@ export default function ReportCenter() {
       isMobile={isMobile}
       sidebarOpen={sidebarOpen}
       onClose={() => setSidebarOpen(false)}
+      compactSidebar={!isMobile}
     >
-      <main className="flex-1 min-w-0">
+      <main className={adminPageMainClass}>
         <PageHeader
           title="报表中心"
           isMobile={isMobile}

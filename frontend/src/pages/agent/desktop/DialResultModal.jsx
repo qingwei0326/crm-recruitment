@@ -7,6 +7,7 @@ import {
   PhoneCall,
 } from 'lucide-react';
 import useLeadOutcomeCatalog from '../../../hooks/useLeadOutcomeCatalog';
+import { defaultFollowUpDate } from '../../../utils/dateTime';
 
 const MOBILE_COMMON_OUTCOME_CODES = [
   'missed_call',
@@ -16,15 +17,6 @@ const MOBILE_COMMON_OUTCOME_CODES = [
   'phone_invalid',
 ];
 
-// 默认回访时间：明天上午 9 点，格式与 <input type="datetime-local"> 一致
-function defaultFollowUp() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function DialResultModal({
   dialModal,
   onStatusSelect,
@@ -33,7 +25,7 @@ export default function DialResultModal({
   onClose,
   mobile = false,
 }) {
-  const [followUpDate, setFollowUpDate] = useState(defaultFollowUp);
+  const [followUpDate, setFollowUpDate] = useState(defaultFollowUpDate);
   const [showMoreOutcomes, setShowMoreOutcomes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
@@ -41,7 +33,7 @@ export default function DialResultModal({
 
   const modalKey = `${dialModal?.studentId ?? ''}:${dialModal?.dialLogId ?? ''}`;
   useEffect(() => {
-    setFollowUpDate(defaultFollowUp());
+    setFollowUpDate(defaultFollowUpDate());
     setShowMoreOutcomes(false);
     submittingRef.current = false;
     setSubmitting(false);

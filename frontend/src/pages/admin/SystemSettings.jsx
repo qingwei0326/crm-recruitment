@@ -17,6 +17,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { formatDuration } from '../../utils';
 import { dashboardLeadUrls } from './adminWorkflow';
 import AssistantSettings from './settings/AssistantSettings';
@@ -315,8 +316,8 @@ export default function SystemSettings() {
   );
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="系统设置"
           isMobile={isMobile}

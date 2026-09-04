@@ -16,6 +16,7 @@ import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import PageHeader from '../../components/PageHeader';
 import { getApiErrorMessage } from '../../utils';
 
@@ -147,8 +148,9 @@ export default function SeasonArchive() {
       isMobile={isMobile}
       sidebarOpen={sidebarOpen}
       onClose={closeSidebar}
+      compactSidebar={!isMobile}
     >
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main className={adminPageMainClass}>
         <PageHeader
           title="招生季归档"
           isMobile={isMobile}

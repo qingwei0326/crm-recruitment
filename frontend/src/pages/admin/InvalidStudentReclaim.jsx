@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
@@ -337,8 +338,8 @@ export default function InvalidStudentReclaim() {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <header
           className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex justify-between ${
             isMobile ? 'items-end pb-2' : 'h-14 items-center'

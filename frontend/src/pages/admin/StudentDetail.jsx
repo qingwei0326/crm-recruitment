@@ -26,6 +26,14 @@ import IntentLevelBadge from '../../components/IntentLevelBadge';
 import StudentInfoCard from '../../components/StudentInfoCard';
 import StudentTimeline from '../../components/StudentTimeline';
 import AdmissionsFlowStrip from '../../components/admissions/AdmissionsFlowStrip';
+import AdminLayout from '../../components/AdminLayout';
+import PageHeader from '../../components/PageHeader';
+import {
+  AdminPageContainer,
+  AdminPageIntro,
+  AdminSurface,
+  adminPageMainClass,
+} from '../../components/admin/AdminPagePrimitives';
 import { formatDateTime, formatDuration, getApiErrorMessage } from '../../utils';
 
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
@@ -71,6 +79,7 @@ export default function StudentDetail() {
   const { dark } = useTheme();
   const isMobile = useIsMobile();
   const toast = useToast();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tab, setTab] = useState('info');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +110,7 @@ export default function StudentDetail() {
   const notes = data?.notes || [];
   const followUps = data?.follow_ups || [];
   const visits = data?.visits || [];
-  const intentTimeline = data?.intent_timeline || [];
+  const intentTimeline = useMemo(() => data?.intent_timeline || [], [data?.intent_timeline]);
   const admissionsTimeline = data?.admissions_timeline || [];
 
   const intentChartData = useMemo(() => {
@@ -176,49 +185,31 @@ export default function StudentDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header
-        className={`sticky top-0 z-10 bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 flex gap-3 ${
-          isMobile ? 'items-end pb-2' : 'h-14 items-center'
-        }`}
-        style={
-          isMobile
-            ? {
-                paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-                minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-              }
-            : undefined
-        }
-      >
-        <button
-          onClick={() => navigate(-1)}
-          className="inline-flex min-w-10 min-h-10 -ml-2 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-          aria-label="返回"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <Link
-          to="/admin/leads"
-          className="text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600"
-        >
-          学生管理
-        </Link>
-        <span className="text-gray-300 dark:text-gray-600">/</span>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100">{student.name}</h1>
-          <StatusBadge status={student.status} />
-          {student.status_detail && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
-              {student.status === '无效' ? `原因：${student.status_detail}` : student.status_detail}
-            </span>
-          )}
-          <IntentLevelBadge level={student.intent_level} />
-        </div>
-      </header>
+    <AdminLayout
+      isMobile={isMobile}
+      sidebarOpen={sidebarOpen}
+      onClose={() => setSidebarOpen(false)}
+      compactSidebar={!isMobile}
+    >
+      <main className={adminPageMainClass}>
+        <PageHeader title={student.name} isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
+          <Link
+            to="/admin/leads"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-blue-400"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            返回学生列表
+          </Link>
+        </PageHeader>
 
-      <div className="max-w-5xl mx-auto p-4 lg:p-6 space-y-4">
+        <AdminPageContainer className="max-w-[1200px]">
+          <AdminPageIntro
+            title={student.name}
+            description={[student.region, student.school_name, student.guardian_name && `监护人：${student.guardian_name}`].filter(Boolean).join(' · ') || '学生线索详情'}
+            meta={<div className="flex flex-wrap items-center gap-2"><StatusBadge status={student.status} /><IntentLevelBadge level={student.intent_level} /></div>}
+          />
         {/* Tabs */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-x-auto">
+        <AdminSurface className="overflow-x-auto">
           <div className="flex">
             {TABS.map((t) => (
               <button
@@ -234,11 +225,11 @@ export default function StudentDetail() {
               </button>
             ))}
           </div>
-        </div>
+        </AdminSurface>
 
         {/* Tab content */}
         {tab === 'info' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6 space-y-4">
+          <AdminSurface className="space-y-4 p-4 lg:p-6">
             <StudentInfoCard student={student} onDial={handleDial} />
             <NextActionCard action={student.next_action} />
             <AdmissionsFlowStrip
@@ -278,11 +269,11 @@ export default function StudentDetail() {
                 </div>
               </div>
             )}
-          </div>
+          </AdminSurface>
         )}
 
         {tab === 'timeline' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6">
+          <AdminSurface className="p-4 lg:p-6">
             <StudentTimeline
               student={student}
               calls={calls}
@@ -293,11 +284,11 @@ export default function StudentDetail() {
               admissionsTimeline={admissionsTimeline}
               emptyText="暂无记录"
             />
-          </div>
+          </AdminSurface>
         )}
 
         {tab === 'intent' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6 space-y-4">
+          <AdminSurface className="space-y-4 p-4 lg:p-6">
             <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
               意向变化趋势
             </div>
@@ -355,11 +346,11 @@ export default function StudentDetail() {
                 </div>
               </>
             )}
-          </div>
+          </AdminSurface>
         )}
 
         {tab === 'calls' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-6">
+          <AdminSurface className="p-4 lg:p-6">
             {calls.length === 0 ? (
               <div className="py-12 text-center text-gray-400 text-sm">暂无通话记录</div>
             ) : (
@@ -404,9 +395,10 @@ export default function StudentDetail() {
                 ))}
               </div>
             )}
-          </div>
+          </AdminSurface>
         )}
-      </div>
-    </div>
+        </AdminPageContainer>
+      </main>
+    </AdminLayout>
   );
 }

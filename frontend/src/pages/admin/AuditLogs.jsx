@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
+import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import PageHeader from '../../components/PageHeader';
 import { useToast } from '../../components/Toast';
 import useIsMobile from '../../hooks/useIsMobile';
@@ -299,8 +300,8 @@ export default function AuditLogs() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
-      <main className="flex-1 min-w-0">
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+      <main className={adminPageMainClass}>
         <PageHeader
           title="操作记录"
           isMobile={isMobile}

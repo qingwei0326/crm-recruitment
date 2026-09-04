@@ -1,4 +1,6 @@
-# 部署指南 v1.1
+# 部署指南
+
+> 当前服务器由 Docker 托管。本文件中的宿主机 Python/Windows 部署命令已废弃，仅作为历史参考保留；旧脚本已归档至 `archive/legacy-host-deploy/`。生产操作以服务器上的 Docker 编排和 `docs/server-ops.md` 为准。
 
 ## 一键部署
 

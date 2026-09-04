@@ -4,11 +4,11 @@ import {
   ChevronLeft,
   Phone,
   Loader2,
-  AlertTriangle,
   Sparkles,
   X,
   Pencil,
   Trash2,
+  MoreHorizontal,
 } from 'lucide-react';
 import api from '../../api';
 import { completePendingDial } from '../../dialSession';
@@ -21,8 +21,14 @@ import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { getApiErrorMessage } from '../../utils';
+import {
+  defaultVisitDate,
+  normalizeDateTimeLocal,
+  toApiDateTime,
+} from '../../utils/dateTime';
 import { payloadForOperatorResult } from '../../operatorResultPolicy';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
+import { ContentSkeleton, ErrorState } from '../../components/AsyncState';
 import {
   detailForOperatorResult,
   displayStatusForOperatorResult,
@@ -30,26 +36,6 @@ import {
   stageLabel,
 } from '../../labels';
 const VISIT_STATUSES = ['待确认', '已确认', '已完成', '已取消'];
-
-function normalizeDateTimeLocal(value) {
-  if (!value) return '';
-  const s = String(value).replace(' ', 'T');
-  return s.length >= 16 ? s.slice(0, 16) : s;
-}
-
-function toApiDateTime(value) {
-  if (!value) return '';
-  return value.length === 16 ? `${value}:00` : value;
-}
-
-// 默认到访时间：明天上午 10 点，<input type="datetime-local"> 格式
-function defaultVisitDate() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(10, 0, 0, 0);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 function VisitSheet({ open, onClose, onSubmit, submitting }) {
   const [visitType, setVisitType] = useState('来校参观');
@@ -347,6 +333,7 @@ export default function MobileStudentDetail() {
   const [workflowEditorTab, setWorkflowEditorTab] = useState('result');
   const [busyDelete, setBusyDelete] = useState(false);
   const [dialing, setDialing] = useState(false);
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
   const [toast, setToast] = useState('');
   const detailRequestSeqRef = useRef(0);
 
@@ -480,7 +467,7 @@ export default function MobileStudentDetail() {
       const r = await api.post('/visits', {
         student_id: Number(id),
         visit_type,
-        scheduled_date: scheduled_date.length === 16 ? scheduled_date + ':00' : scheduled_date,
+        scheduled_date: toApiDateTime(scheduled_date),
         notes,
       });
       if (r.data.code === 0) {
@@ -602,7 +589,6 @@ export default function MobileStudentDetail() {
 
   const handleDeleteNote = async (noteId) => {
     if (busyDelete) return;
-    // eslint-disable-next-line no-alert
     if (!window.confirm('确定删除这条备注吗？')) return;
     setBusyDelete(true);
     try {
@@ -622,7 +608,6 @@ export default function MobileStudentDetail() {
 
   const handleDeleteVisit = async (visitId) => {
     if (busyDelete) return;
-    // eslint-disable-next-line no-alert
     if (!window.confirm('确定删除这条到访记录吗？')) return;
     setBusyDelete(true);
     try {
@@ -642,7 +627,6 @@ export default function MobileStudentDetail() {
 
   const handleDeleteFollowUp = async (fuId) => {
     if (busyDelete) return;
-    // eslint-disable-next-line no-alert
     if (!window.confirm('确定删除这条回访计划吗？')) return;
     setBusyDelete(true);
     try {
@@ -662,22 +646,25 @@ export default function MobileStudentDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <Loader2 className="w-7 h-7 animate-spin text-blue-500" />
+      <div className="min-h-screen bg-gray-50 px-3 py-5 dark:bg-gray-900">
+        <ContentSkeleton rows={4} />
       </div>
     );
   }
 
   if (error || !student) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-gray-50 dark:bg-gray-900 px-4">
-        <AlertTriangle className="w-10 h-10 text-red-500" />
-        <div className="text-gray-600 dark:text-gray-300 text-center">{error || '未找到该学生'}</div>
+      <div className="min-h-screen flex flex-col items-stretch justify-center gap-3 bg-gray-50 dark:bg-gray-900 px-4">
+        <ErrorState
+          title={error ? '加载失败' : '未找到该学生'}
+          message={error || '该学生可能已被移除或你没有查看权限。'}
+          onRetry={loadDetail}
+        />
         <button
           onClick={() => navigate(-1)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm min-h-[44px]"
+          className="mx-auto min-h-[44px] rounded-xl px-4 text-sm font-medium text-gray-600 dark:text-gray-300"
         >
-          返回
+          返回上一页
         </button>
       </div>
     );
@@ -874,7 +861,7 @@ export default function MobileStudentDetail() {
       </div>
 
       {/* Bottom action bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t dark:border-gray-700 px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+8px)] flex gap-2">
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex gap-2 border-t border-slate-200 bg-white px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+8px)] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-800">
         <button
           type="button"
           onClick={handleDial}
@@ -882,23 +869,51 @@ export default function MobileStudentDetail() {
           className="flex-1 min-h-[52px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-base flex items-center justify-center gap-2 disabled:opacity-60 active:scale-95"
         >
           {dialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Phone className="w-5 h-5" />}
-          拨号
+          开始拨打
         </button>
         <button
           type="button"
-          onClick={() => setNoteOpen(true)}
-          className="px-4 min-h-[52px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95"
+          onClick={() => setMoreActionsOpen(true)}
+          className="inline-flex min-h-[52px] min-w-[72px] items-center justify-center gap-1 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 active:scale-95 dark:border-slate-600 dark:text-slate-200"
+          aria-label="更多操作"
         >
-          写备注
-        </button>
-        <button
-          type="button"
-          onClick={() => setVisitOpen(true)}
-          className="px-4 min-h-[52px] rounded-xl border border-teal-300 dark:border-teal-700 text-teal-700 dark:text-teal-300 text-sm font-medium active:scale-95"
-        >
-          到访
+          <MoreHorizontal className="h-5 w-5" />
+          更多
         </button>
       </div>
+
+      {moreActionsOpen && (
+        <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={() => setMoreActionsOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="学生更多操作"
+            className="w-full rounded-t-2xl bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl dark:bg-slate-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <div className="text-base font-semibold text-slate-900 dark:text-slate-100">更多操作</div>
+                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">不常用操作集中在这里</div>
+              </div>
+              <button type="button" onClick={() => setMoreActionsOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400" aria-label="关闭更多操作">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <button type="button" onClick={() => { setMoreActionsOpen(false); setNoteOpen(true); }} className="min-h-[72px] rounded-xl bg-slate-50 px-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                写备注
+              </button>
+              <button type="button" onClick={() => { setMoreActionsOpen(false); setVisitOpen(true); }} className="min-h-[72px] rounded-xl bg-teal-50 px-2 text-sm font-medium text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
+                登记到访
+              </button>
+              <button type="button" onClick={() => { setMoreActionsOpen(false); openWorkflowEditor(); }} className="min-h-[72px] rounded-xl bg-blue-50 px-2 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                编辑状态
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NoteSheet
         open={noteOpen}

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Wifi, WifiOff, CloudOff, Loader2 } from 'lucide-react';
+import { Wifi, WifiOff, Loader2 } from 'lucide-react';
 
 /**
  * 网络连接状态指示器
@@ -20,19 +20,21 @@ const ConnectionStatus = memo(function ConnectionStatus({
 
   return (
     <div
-      className={`fixed top-0 left-0 right-0 z-50 px-3 py-2 text-xs font-medium text-center transition-all duration-300 ${
+      role={isOnline ? 'status' : 'alert'}
+      aria-live={isOnline ? 'polite' : 'assertive'}
+      className={`fixed top-0 left-0 right-0 z-[90] px-3 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] text-center text-xs font-medium shadow-md transition-all duration-300 ${
         syncing
-          ? 'bg-amber-500 text-white'
+          ? 'bg-amber-500 text-amber-950 dark:text-white'
           : isOnline
             ? 'bg-green-500 text-white'
-            : 'bg-red-500 text-white'
+            : 'bg-red-600 text-white'
       } ${className}`}
     >
       <div className="flex items-center justify-center gap-2">
         {syncing ? (
           <>
             <Loader2 className="w-3 h-3 animate-spin" />
-            <span>正在同步离线数据...</span>
+            <span>正在同步离线数据…</span>
           </>
         ) : isOnline ? (
           <>
@@ -42,7 +44,7 @@ const ConnectionStatus = memo(function ConnectionStatus({
         ) : (
           <>
             <WifiOff className="w-3 h-3" />
-            <span>离线模式 - 数据将在恢复连接后同步</span>
+            <span>当前离线，操作将在恢复网络后同步</span>
           </>
         )}
       </div>

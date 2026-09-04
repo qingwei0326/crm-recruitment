@@ -5,8 +5,6 @@ import { getApiErrorMessage } from '../utils';
 import logger from '../utils/logger';
 import { resolveOperatorResult } from '../operatorResultPolicy';
 
-const INTENT_STEP_STATUSES = ['非常有意向', '意向了解加微', '等待志愿', '已联系', '待回访'];
-
 function successfulData(response, fallbackMessage) {
   if (response.data?.code !== undefined && response.data.code !== 0) {
     throw new Error(response.data.msg || fallbackMessage);
@@ -149,7 +147,6 @@ export default function useAgentDial({
     if (!modal) return;
 
     let { status, invalidReason } = resolveOperatorResult(s);
-    const needsIntentStep = INTENT_STEP_STATUSES.includes(status);
     let saved = false;
 
     if (invalidReason) {
@@ -220,15 +217,18 @@ export default function useAgentDial({
 
     if (!saved) return;
 
-    if (needsIntentStep) {
-      actions.setDialModal({ ...modal, status, showIntent: true });
-    } else {
-      await finalizeSavedDial(
-        modal,
-        '状态已保存，通话记录待同步，请重试',
-        { removeFromQueue: true },
-      );
+    // 首次拨打只记录结构化结果，不强制话务员立即判断 A/B/C。
+    // 加微信/等待志愿仍保留一个轻量回访时间，避免线索没有下一步。
+    if (['意向了解加微', '等待志愿'].includes(status)) {
+      actions.setDialModal({ ...modal, status, showIntent: false, showFollowUp: true });
+      return;
     }
+    // 详细意向在学生详情或后续跟进中补充，避免和微信备注形成双重录入。
+    await finalizeSavedDial(
+      modal,
+      '状态已保存，通话记录待同步，请重试',
+      { removeFromQueue: true },
+    );
   }, [state.dial.modal, actions, toast, prompt, confirm, finalizeSavedDial]);
 
   // 处理拨号结果弹窗 - 意向选择

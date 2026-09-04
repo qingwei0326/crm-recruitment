@@ -140,6 +140,24 @@ async def dashboard_summary(
         await db.execute(select(func.count(DialLog.id)).where(DialLog.dialed_at >= today))
     ).scalar() or 0
 
+    today_new_leads = (
+        await db.execute(
+            select(func.count(Student.id)).where(
+                Student.created_at >= today,
+                Student.created_at < tomorrow,
+            )
+        )
+    ).scalar() or 0
+
+    today_assigned_uncontacted = (
+        await db.execute(
+            select(func.count(Student.id)).where(
+                Student.assigned_to.is_not(None),
+                Student.status == StudentStatus.not_contacted,
+            )
+        )
+    ).scalar() or 0
+
     available_unassigned = (
         await db.execute(
             select(func.count(Student.id)).where(
@@ -183,6 +201,8 @@ async def dashboard_summary(
             "contacted": contacted,
             "a_level": a_level,
             "today_calls": today_calls,
+            "today_new_leads": today_new_leads,
+            "today_assigned_uncontacted": today_assigned_uncontacted,
             "available_unassigned": available_unassigned,
             "today_a": today_a,
             "enrolled_total": enrolled_total,
@@ -220,6 +240,23 @@ async def dashboard_all(
         today_calls = (
             await db.execute(select(func.count(DialLog.id)).where(DialLog.dialed_at >= today))
         ).scalar() or 0
+        tomorrow = today + timedelta(days=1)
+        today_new_leads = (
+            await db.execute(
+                select(func.count(Student.id)).where(
+                    Student.created_at >= today,
+                    Student.created_at < tomorrow,
+                )
+            )
+        ).scalar() or 0
+        today_assigned_uncontacted = (
+            await db.execute(
+                select(func.count(Student.id)).where(
+                    Student.assigned_to.is_not(None),
+                    Student.status == StudentStatus.not_contacted,
+                )
+            )
+        ).scalar() or 0
         enrolled_total = (
             await db.execute(
                 select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
@@ -238,6 +275,8 @@ async def dashboard_all(
             "contacted": contacted,
             "a_level": a_level,
             "today_calls": today_calls,
+            "today_new_leads": today_new_leads,
+            "today_assigned_uncontacted": today_assigned_uncontacted,
             "enrolled_total": enrolled_total,
             "enrolled_deposit": int(enrolled_finance_row[0] or 0),
             "enrolled_school_received": float(enrolled_finance_row[1] or 0),
