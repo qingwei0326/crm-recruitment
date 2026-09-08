@@ -961,6 +961,7 @@ export default function MobileHome() {
     selectedSchool,
     setSelectedSchool,
     loadMore,
+    loadingMore,
     hasMore,
   } = useTodayTasks();
   const { dial } = useDialFlow();
@@ -1186,12 +1187,13 @@ export default function MobileHome() {
                     overdueOnly={overdueOnly}
                   />
                 ))}
-                {hasMore && !selectedSchool && (
+                {hasMore && (
                   <button
                     onClick={loadMore}
+                    disabled={loadingMore}
                     className="w-full py-3 text-sm text-blue-600 dark:text-blue-400 text-center active:bg-gray-100 dark:active:bg-gray-700 rounded-xl"
                   >
-                    加载更多
+                    {loadingMore ? '加载中…' : '加载更多'}
                   </button>
                 )}
               </div>
