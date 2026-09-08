@@ -520,23 +520,28 @@ async def _resolve_enrollment_attribution(
     body: EnrollmentCreate,
     student: Student,
 ) -> tuple[int, AttributionMethod]:
-    if body.attributed_agent_id is not None:
-        return body.attributed_agent_id, AttributionMethod.manual
-
+    campus_visit = None
+    home_visit = None
     if body.campus_visit_task_id is not None:
         campus_visit = await _get_campus_visit_or_404(db, body.campus_visit_task_id)
         if campus_visit.student_id != student.id:
             raise HTTPException(status_code=400, detail="到校参观任务不属于该学生")
+    if body.home_visit_task_id is not None:
+        home_visit = await _get_home_visit_or_404(db, body.home_visit_task_id)
+        if home_visit.student_id != student.id:
+            raise HTTPException(status_code=400, detail="家访任务不属于该学生")
+
+    if body.attributed_agent_id is not None:
+        return body.attributed_agent_id, AttributionMethod.manual
+
+    if campus_visit is not None:
         if campus_visit.creator_user and campus_visit.creator_user.role == UserRole.agent:
             return campus_visit.creator_user_id, AttributionMethod.campus_visit_creator
         if student.assigned_to is not None:
             return student.assigned_to, AttributionMethod.current_agent
         raise HTTPException(status_code=400, detail="到校预约人不是话务员，请手动选择报名归属")
 
-    if body.home_visit_task_id is not None:
-        home_visit = await _get_home_visit_or_404(db, body.home_visit_task_id)
-        if home_visit.student_id != student.id:
-            raise HTTPException(status_code=400, detail="家访任务不属于该学生")
+    if home_visit is not None:
         return home_visit.creator_agent_id, AttributionMethod.home_visit_creator
 
     if student.assigned_to is not None:
@@ -598,7 +603,10 @@ async def _create_enrollment_record(
     if attribution_method == AttributionMethod.manual and not body.attribution_reason.strip():
         raise HTTPException(status_code=400, detail="手动指定报名归属必须填写原因")
 
-    finance_values = create_finance_values(body)
+    try:
+        finance_values = create_finance_values(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     enrolled_at = body.enrolled_at or func.now()
     record = EnrollmentRecord(
         student_id=student.id,

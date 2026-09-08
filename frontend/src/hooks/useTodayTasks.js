@@ -40,6 +40,7 @@ export default function useTodayTasks() {
   });
   const [intentCounts, setIntentCounts] = useState({ A: 0, B: 0, C: 0, '无': 0 });
   const requestSeqRef = useRef(0);
+  const requestInFlightRef = useRef(false);
 
   const fetchTasks = useCallback(async (
     searchQuery = '',
@@ -48,6 +49,8 @@ export default function useTodayTasks() {
     overdueFilter = false,
   ) => {
     const requestId = ++requestSeqRef.current;
+    requestInFlightRef.current = true;
+    setLoadingMore(false);
     setLoading(true);
     setError('');
     try {
@@ -88,7 +91,10 @@ export default function useTodayTasks() {
         e?.response?.data?.detail || e?.response?.data?.msg || e?.message || '加载失败',
       );
     } finally {
-      if (requestId === requestSeqRef.current) setLoading(false);
+      if (requestId === requestSeqRef.current) {
+        requestInFlightRef.current = false;
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -108,8 +114,9 @@ export default function useTodayTasks() {
   }, [search, selectedSchool, intentLevel, overdueOnly, fetchTasks]);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || students.length >= total) return;
+    if (requestInFlightRef.current || students.length >= total) return;
     const requestId = ++requestSeqRef.current;
+    requestInFlightRef.current = true;
     const offset = students.length;
     setLoadingMore(true);
     try {
@@ -133,9 +140,12 @@ export default function useTodayTasks() {
     } catch {
       // silently fail — existing list is still valid
     } finally {
-      if (requestId === requestSeqRef.current) setLoadingMore(false);
+      if (requestId === requestSeqRef.current) {
+        requestInFlightRef.current = false;
+        setLoadingMore(false);
+      }
     }
-  }, [loadingMore, students.length, search, selectedSchool, intentLevel, overdueOnly, total]);
+  }, [students.length, search, selectedSchool, intentLevel, overdueOnly, total]);
 
   const hasMore = students.length < total;
   const refetch = useCallback((searchQuery, schoolFilter, intentFilter) => {

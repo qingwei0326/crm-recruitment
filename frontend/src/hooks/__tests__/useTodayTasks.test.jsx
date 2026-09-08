@@ -15,6 +15,34 @@ vi.mock('../../api', () => ({
 import api from '../../api';
 
 describe('useTodayTasks', () => {
+  it('can paginate again after refresh supersedes an unfinished page request', async () => {
+    const page = (id) => ({ data: { code: 0, data: {
+      list: [{ id }], list_total: 100,
+    } } });
+    let finishMore;
+    let finishRefresh;
+    api.get.mockReset();
+    api.get.mockResolvedValueOnce(page(1))
+      .mockImplementationOnce(() => new Promise(resolve => { finishMore = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; }))
+      .mockResolvedValueOnce(page(3));
+    const { result } = renderHook(() => useTodayTasks());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let morePromise;
+    act(() => { morePromise = result.current.loadMore(); });
+    let refreshPromise;
+    act(() => { refreshPromise = result.current.refetch(); });
+    await act(async () => { await result.current.loadMore(); });
+    expect(api.get).toHaveBeenCalledTimes(3);
+    await act(async () => { finishRefresh(page(2)); await refreshPromise; });
+    await act(async () => { finishMore(page(99)); await morePromise; });
+    expect(result.current.students).toEqual([{ id: 2 }]);
+    expect(result.current.loadingMore).toBe(false);
+    await act(async () => { await result.current.loadMore(); });
+    expect(result.current.students).toEqual([{ id: 2 }, { id: 3 }]);
+    expect(result.current.loadingMore).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
