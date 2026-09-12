@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PendingList, StudentRow } from '../MobileHome';
 import { getStudentNextAction } from '../../../utils/studentNextAction';
@@ -260,6 +260,50 @@ describe('MobileHome PendingList', () => {
     expect(api.get).toHaveBeenCalledWith('/tasks/handled', {
       params: { limit: 100, offset: 1 },
     });
+  });
+
+  it('resets pagination when a filter refresh supersedes a pending page request', async () => {
+    let finishMore;
+    const payload = (id, name) => ({
+      data: {
+        code: 0,
+        data: {
+          total: 201,
+          list_total: 201,
+          counts: { 已联系: 201 },
+          regions: [],
+          list: [{ id, name, status: '已联系' }],
+        },
+      },
+    });
+    api.get.mockImplementation((url, options = {}) => {
+      if (url === '/personal-groups') {
+        return Promise.resolve({ data: { code: 0, data: [] } });
+      }
+      if (options.params?.offset) {
+        return new Promise((resolve) => { finishMore = resolve; });
+      }
+      return Promise.resolve(options.params?.search
+        ? payload(2, '筛选后的学生')
+        : payload(1, '原来的学生'));
+    });
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PendingList />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('原来的学生');
+    fireEvent.click(screen.getByRole('button', { name: '加载更多（剩余200）' }));
+    expect(finishMore).toBeTypeOf('function');
+    fireEvent.change(screen.getByPlaceholderText('搜索姓名或手机号尾号'), {
+      target: { value: '筛选' },
+    });
+
+    await screen.findByText('筛选后的学生');
+    await act(async () => { finishMore(payload(3, '旧分页学生')); });
+    expect(screen.queryByText('旧分页学生')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '加载更多（剩余200）' })).not.toBeDisabled();
   });
 
   it('restores loaded pages and scroll position after returning from a student detail', async () => {

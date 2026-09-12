@@ -433,6 +433,9 @@ export function PendingList() {
       setItems([]);
       sessionStorage.removeItem(pendingListViewStorageKey(storageKey));
     }
+    // Any filter refresh supersedes a pending page request. Reset the button
+    // immediately; the stale request will be ignored by requestId below.
+    setLoadingMore(false);
     const requestId = ++pendingRequestSeqRef.current;
     setLoading(itemsRef.current.length === 0);
     setError('');
