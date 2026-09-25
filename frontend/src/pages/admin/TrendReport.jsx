@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
@@ -104,9 +105,10 @@ export default function TrendReport({ embedded = false }) {
       .finally(() => setLoading(false));
   };
 
+  const fetchTrendRef = useLatestRef(fetchTrend);
   useEffect(() => {
-    fetchTrend();
-  }, []);
+    fetchTrendRef.current();
+  }, [fetchTrendRef]);
 
   const handleRangeChange = (r) => {
     setRange(r);

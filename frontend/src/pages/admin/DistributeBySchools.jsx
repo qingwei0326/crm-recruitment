@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import useIsMobile from '../../hooks/useIsMobile';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
@@ -113,7 +114,12 @@ export default function DistributeBySchools() {
     }
   };
 
-  useEffect(() => { fetchGroups(); fetchAgents(); }, []);
+  const fetchGroupsRef = useLatestRef(fetchGroups);
+  const fetchAgentsRef = useLatestRef(fetchAgents);
+  useEffect(() => {
+    fetchGroupsRef.current();
+    fetchAgentsRef.current();
+  }, [fetchGroupsRef, fetchAgentsRef]);
 
   const regionGroups = useMemo(() => buildRegionGroups(schoolGroups), [schoolGroups]);
 

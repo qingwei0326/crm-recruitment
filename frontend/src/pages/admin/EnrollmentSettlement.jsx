@@ -9,6 +9,7 @@ import {
   RefreshCw,
   UsersRound,
 } from 'lucide-react';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
@@ -230,9 +231,10 @@ function EnrollmentSettlementContent({ embedded = false }) {
     }
   };
 
+  const loadRef = useLatestRef(load);
   useEffect(() => {
-    load();
-  }, []);
+    loadRef.current();
+  }, [loadRef]);
 
   const filteredRows = useMemo(() => filterRows(rows, filters), [rows, filters]);
 

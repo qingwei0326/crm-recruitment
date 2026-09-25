@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import useLatestRef from '../../hooks/useLatestRef';
 import {
   Activity,
   AlertTriangle,
@@ -287,6 +288,7 @@ export default function AgentScorePreview() {
     }
   };
 
+  const loadRef = useLatestRef(load);
   useEffect(() => {
     let cancelled = false;
     api
@@ -298,13 +300,13 @@ export default function AgentScorePreview() {
           Math.max(1, Number(res.data.data?.score_daily_call_target || 30) || 30),
         );
         setDailyCallTarget(target);
-        load(target);
+        loadRef.current(target);
       })
-      .catch(() => load(30));
+      .catch(() => loadRef.current(30));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadRef]);
 
   useEffect(() => {
     const next = searchParams.get('filter') || 'all';

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import useIsMobile from '../../hooks/useIsMobile';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
@@ -98,10 +99,11 @@ export default function CallVolumeQuery({ embedded = false }) {
       .finally(() => setLoading(false));
   };
 
+  const fetchLogsRef = useLatestRef(fetchLogs);
   useEffect(() => {
-    fetchLogs(1);
+    fetchLogsRef.current(1);
     setPage(1);
-  }, []);
+  }, [fetchLogsRef]);
 
   const toggleAgent = (id) => {
     setSelectedAgents((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, MapPin, RefreshCw } from 'lucide-react';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
@@ -86,9 +87,10 @@ export default function CampusVisitManage() {
     }
   };
 
+  const loadRef = useLatestRef(load);
   useEffect(() => {
-    load();
-  }, []);
+    loadRef.current();
+  }, [loadRef]);
 
   const filteredRows = useMemo(() => filterRows(rows, filters), [rows, filters]);
 

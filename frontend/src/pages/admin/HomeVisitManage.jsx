@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarPlus, Home, Loader2, RefreshCw, Search } from 'lucide-react';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
@@ -103,9 +104,10 @@ export default function HomeVisitManage() {
     }
   };
 
+  const loadRef = useLatestRef(load);
   useEffect(() => {
-    load();
-  }, []);
+    loadRef.current();
+  }, [loadRef]);
 
   const filteredRows = useMemo(() => filterRows(rows, filters), [rows, filters]);
 

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import api from '../api';
 import { getApiErrorMessage } from '../utils';
-import { useConfirm } from '../components/ConfirmDialog';
 import {
   detailForOperatorResult,
   displayStatusForOperatorResult,
@@ -19,7 +18,6 @@ function compactPatch(fields = {}) {
  * 管理学生列表数据、筛选和列表内快捷修改。
  */
 export default function useAgentStudents({ state, actions, toast }) {
-  const confirm = useConfirm();
   const { students, filters, sortConfig, currentIdx } = state;
   const {
     searchQuery,
@@ -332,7 +330,7 @@ export default function useAgentStudents({ state, actions, toast }) {
       errorPrefix: '更新状态失败',
       removeFromQueueOnSuccess: !['未联系', '新线索'].includes(optimisticFields.status),
     });
-  }, [confirm, executeOptimisticUpdate]);
+  }, [executeOptimisticUpdate, toast]);
 
   const updateIntentById = useCallback((id, level) => {
     return executeOptimisticUpdate({
@@ -360,7 +358,7 @@ export default function useAgentStudents({ state, actions, toast }) {
       errorPrefix: '更新阶段失败',
       removeFromQueueOnSuccess: stage === '已报名',
     });
-  }, [executeOptimisticUpdate]);
+  }, [executeOptimisticUpdate, toast]);
 
   const updateScore = useCallback((id, score) => {
     return executeOptimisticUpdate({

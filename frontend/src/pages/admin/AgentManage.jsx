@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
+import useLatestRef from '../../hooks/useLatestRef';
 import api from '../../api';
 import AdminLayout from '../../components/AdminLayout';
 import PageHeader from '../../components/PageHeader';
@@ -185,9 +186,10 @@ export default function AgentManage() {
       .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
   };
+  const fetchAgentsRef = useLatestRef(fetchAgents);
   useEffect(() => {
-    fetchAgents();
-  }, []);
+    fetchAgentsRef.current();
+  }, [fetchAgentsRef]);
 
   useEffect(() => {
     if (!recycleAllCheckboxRef.current) return;

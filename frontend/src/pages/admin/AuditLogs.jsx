@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import useLatestRef from '../../hooks/useLatestRef';
 import {
   ChevronLeft,
   ChevronRight,
@@ -144,9 +145,10 @@ export default function AuditLogs() {
       .finally(() => setLoading(false));
   };
 
+  const fetchLogsRef = useLatestRef(fetchLogs);
   useEffect(() => {
-    fetchLogs(1);
-  }, []);
+    fetchLogsRef.current(1);
+  }, [fetchLogsRef]);
 
   useEffect(() => {
     const batchId = filters.batchId.trim();
