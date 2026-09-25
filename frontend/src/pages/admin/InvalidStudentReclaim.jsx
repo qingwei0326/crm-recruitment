@@ -60,6 +60,8 @@ export default function InvalidStudentReclaim() {
   const [reclaimingSchool, setReclaimingSchool] = useState(null);
   const [batchAction, setBatchAction] = useState('');
   const [lastBatchId, setLastBatchId] = useState('');
+  // 后端回收接口强制校验 preview_token：取不到凭据时必须拦住，不能靠「不传字段」放行
+  const reclaimTokenMissingHint = '未获取到回收预览凭据，已阻止本次回收，请刷新列表后重试';
   const canReclaimInvalid = canPerformAdminOperation(
     user,
     ADMIN_OPERATION_PERMISSIONS.invalidReclaim,
@@ -215,12 +217,18 @@ export default function InvalidStudentReclaim() {
     });
     if (!ok) return;
 
+    // 后端强制校验 preview_token：取不到凭据时必须拦住，不能靠「不传字段」放行。
+    if (!impact.previewToken) {
+      toast?.error(reclaimTokenMissingHint);
+      return;
+    }
+
     setReclaimingSchool(schoolName);
     try {
       const res = await api.post('/admin/reclaim-by-school', {
         school_name: schoolName,
         ...(invalidReason ? { invalid_reason: invalidReason } : {}),
-        ...(impact.previewToken ? { preview_token: impact.previewToken } : {}),
+        preview_token: impact.previewToken,
       });
       if (res.data.code === 0) {
         const d = res.data.data || {};
@@ -280,11 +288,17 @@ export default function InvalidStudentReclaim() {
     });
     if (!ok) return;
 
+    // 后端强制校验 preview_token：取不到凭据时必须拦住，不能靠「不传字段」放行。
+    if (!impact.previewToken) {
+      toast?.error(reclaimTokenMissingHint);
+      return;
+    }
+
     setBatchAction('reclaim');
     try {
       const res = await api.post('/admin/invalid-students/reclaim', {
         student_ids: ids,
-        ...(impact.previewToken ? { preview_token: impact.previewToken } : {}),
+        preview_token: impact.previewToken,
       });
       if (res.data.code === 0) {
         setLastBatchId(res.data.data?.batch_id || '');

@@ -88,7 +88,7 @@ export default function Report({ embedded = false }) {
       })
       .catch(() => { toast?.error('数据加载失败'); })
       .finally(() => setLoading(false));
-  }, []);
+  }, [toast]);
 
   // Split visits by type
   const campusVisits = (visits || []).filter((v) => v.visit_type === '来校参观');

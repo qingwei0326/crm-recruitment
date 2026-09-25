@@ -37,14 +37,17 @@ export default function HandoverCenter() {
   const listQuery = useHandoverList({ page: 1, page_size: 200 });
   const requestedBatchId = Number(searchParams.get('batch')) || 0;
   const batchId = requestedBatchId || listQuery.data?.list?.[0]?.id || 0;
+  // searchParams 由 useSearchParams 按 location.search 记忆化，引用稳定；
+  // 这里直接读 searchParams 而不是每次渲染新建的 values，避免 filters 反复重建。
   const detailFilters = useMemo(() => {
     const filters = { page, page_size: 50 };
     for (const key of FILTER_KEYS) {
-      if (!values[key]) continue;
-      filters[key] = key === 'overdue' ? values[key] === 'true' : values[key];
+      const value = searchParams.get(key);
+      if (!value) continue;
+      filters[key] = key === 'overdue' ? value === 'true' : value;
     }
     return filters;
-  }, [page, values.intent, values.kind, values.overdue, values.q, values.region, values.school, values.status]);
+  }, [page, searchParams]);
   const detailQuery = useHandoverDetail(batchId, detailFilters);
   const agentsQuery = useActiveHandoverAgents();
   const previewMutation = usePreviewHandoverTransfer();
