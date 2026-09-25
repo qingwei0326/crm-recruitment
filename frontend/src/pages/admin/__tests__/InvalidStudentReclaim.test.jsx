@@ -5,6 +5,9 @@ import { MemoryRouter } from 'react-router-dom';
 import InvalidStudentReclaim from '../InvalidStudentReclaim';
 import api from '../../../api';
 
+// 回收预览下发的凭据：后端已强制校验 preview_token，前端必须原样带回。
+const RECLAIM_PREVIEW_TOKEN = 'reclaim-preview-token';
+
 vi.mock('../../../api', () => ({
   default: {
     get: vi.fn(),
@@ -115,7 +118,26 @@ function mockInvalidApis() {
     }
     return Promise.resolve({ data: { code: 0, data: {} } });
   });
-  api.post.mockResolvedValue({ data: { code: 0, data: { reclaimed_count: 1, deleted_count: 1 } } });
+  api.post.mockImplementation((url) => {
+    // 回收预览接口必须下发 preview_token：后端已强制校验，缺失时前端应中止回收。
+    if (String(url).includes('preview')) {
+      return Promise.resolve({
+        data: {
+          code: 0,
+          data: {
+            student_count: 1,
+            assigned_count: 0,
+            students_with_notes: 0,
+            note_count: 0,
+            preview_token: RECLAIM_PREVIEW_TOKEN,
+          },
+        },
+      });
+    }
+    return Promise.resolve({
+      data: { code: 0, data: { reclaimed_count: 1, deleted_count: 1 } },
+    });
+  });
 }
 
 function renderPage(entry = '/admin/invalid-reclaim') {
@@ -167,6 +189,7 @@ describe('InvalidStudentReclaim', () => {
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/admin/invalid-students/reclaim', {
         student_ids: [10],
+        preview_token: RECLAIM_PREVIEW_TOKEN,
       }),
     );
   });
@@ -224,6 +247,7 @@ describe('InvalidStudentReclaim', () => {
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith('/admin/invalid-students/reclaim', {
         student_ids: [10],
+        preview_token: RECLAIM_PREVIEW_TOKEN,
       });
     });
 
