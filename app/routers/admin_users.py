@@ -3,7 +3,7 @@ from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,9 @@ from app.auth import (
     ADMIN_PAGE_ACCOUNT_MANAGE,
     ADMIN_PAGE_AUDIT_LOGS,
     ADMIN_PAGE_SCORE_PREVIEW,
+    MAX_PASSWORD_LENGTH,
+    MIN_PASSWORD_LENGTH,
+    USERNAME_PATTERN,
     hash_password,
     invalidate_user_tokens,
     normalize_operation_permissions,
@@ -30,6 +33,7 @@ from app.auth import (
     require_operation_permission,
     require_page_permission,
     user_has_operation_permission,
+    validate_password_strength,
 )
 from app.database import get_db
 from app.dial_recording import (
@@ -69,14 +73,20 @@ router = APIRouter(prefix="/api/admin", tags=["管理"])
 
 
 class UserCreateReq(BaseModel):
-    username: str
-    password: str
+    # 用户名只接受 ASCII 账号字符，顺带挡掉空格/路径分隔符带来的注入与误配。
+    username: str = Field(..., min_length=3, max_length=32, pattern=USERNAME_PATTERN)
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
     name: str
     role: Literal["admin", "agent"] = "agent"
     is_super_admin: bool = False
     service_regions: str = ""
     page_permissions: list[str] = []
     operation_permissions: list[str] = []
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class UserUpdateReq(BaseModel):
@@ -650,8 +660,9 @@ async def create_user(
             if body.role != "admin" or body.is_super_admin
             else operation_permissions_to_storage(body.operation_permissions)
         ),
-        # 新建话务员：首次登录强制本人改密；管理员账号不强制
-        must_change_password=(UserRole(body.role) == UserRole.agent),
+        # 账号密码由创建者代设，无论话务员还是管理员，首次登录都强制本人改密，
+        # 否则「创建者知道新账号密码」会一直成立。
+        must_change_password=True,
     )
     db.add(user)
     await db.flush()

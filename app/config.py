@@ -32,17 +32,29 @@ if not SECRET_KEY:
     )
 
 ALGORITHM = "HS256"
+APP_ENV = os.getenv("APP_ENV", "development").lower()
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "0").lower() in {"1", "true", "yes", "on"}
-TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "0").lower() in {"1", "true", "yes", "on"}
+
+# 是否信任 Cloudflare 注入的 CF-Connecting-IP。
+# 隧道部署下 request.client.host 恒为 127.0.0.1，不信任代理头会让登录 IP 限流
+# 退化成全站共享配额（一人刷爆 → 全网登不进），所以生产环境默认开启。
+# 非生产环境默认关闭：直连部署时客户端可任意伪造 X-Forwarded-For，
+# 只有明确处于可信反代之后才应打开（仍可用环境变量覆盖）。
+_TRUST_PROXY_DEFAULT = "1" if APP_ENV == "production" else "0"
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", _TRUST_PROXY_DEFAULT).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE = os.getenv("DEEPSEEK_BASE", "https://api.deepseek.com")
 
-APP_ENV = os.getenv("APP_ENV", "development").lower()
-EXPECTED_ALEMBIC_REVISION = os.getenv("EXPECTED_ALEMBIC_REVISION", "20260823_01")
+EXPECTED_ALEMBIC_REVISION = os.getenv("EXPECTED_ALEMBIC_REVISION", "20260925_01")
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
 _default_cors_origins = _DEFAULT_CORS_ORIGINS if APP_ENV != "production" else ""
 _raw_cors_origins = os.getenv("CORS_ORIGINS", _default_cors_origins)

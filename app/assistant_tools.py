@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_lead_utils import _student_search_predicate
@@ -21,6 +21,7 @@ from app.admin_ops_utils import backup_items
 from app.auth import hash_password, invalidate_user_tokens
 from app.backup import do_backup_async
 from app.domain_models import HandoverItem, StudentAssignment, WorkItem
+from app.student_delete import delete_students_cascade
 from app.models import (
     Call,
     CampusVisitTask,
@@ -1066,37 +1067,9 @@ async def _delete_students_with_all_relations(
     action: str,
     batch_id: str,
 ) -> int:
-    if not students:
-        return 0
-    student_ids = [student.id for student in students]
-    for student in students:
-        db.add(
-            make_operation_log(
-                operator,
-                student.id,
-                student.case_no or "",
-                action,
-                content=f"删除无可用号码学生 {student.name} 及全部关联业务记录",
-                batch_id=batch_id,
-            )
-        )
-    for model in (
-        HandoverItem,
-        WorkItem,
-        EnrollmentRecord,
-        CampusVisitTask,
-        HomeVisitTask,
-        StudentAssignment,
-        DialLog,
-        Call,
-        Note,
-        FollowUp,
-        LeadViewLog,
-        Visit,
-    ):
-        await db.execute(delete(model).where(model.student_id.in_(student_ids)))
-    await db.execute(delete(Student).where(Student.id.in_(student_ids)))
-    return len(student_ids)
+    return await delete_students_cascade(
+        db, students, operator, action=action, batch_id=batch_id
+    )
 
 
 async def _execute_cleanup_duplicates(

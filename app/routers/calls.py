@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin_config import decrypt_secret_config_value
 from app.ai_analyzer import analyze_transcript
 from app.auth import get_current_user
 from app.database import get_db
@@ -21,7 +22,9 @@ router = APIRouter(prefix="/api/calls", tags=["通话"])
 async def _get_config(db: AsyncSession, key: str) -> str:
     result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
     config = result.scalar_one_or_none()
-    return config.value.strip() if config and config.value else ""
+    if not config or not config.value:
+        return ""
+    return decrypt_secret_config_value(key, config.value).strip()
 
 
 async def _resolve_ai_engine(db: AsyncSession) -> tuple[str | None, str | None, str]:

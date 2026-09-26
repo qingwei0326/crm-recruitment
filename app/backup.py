@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import hashlib
 import logging
 import os
@@ -9,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from app.config import DATABASE_URL, DB_ENGINE, DB_PATH
 
 BACKUP_ENCRYPTION_KEY = os.getenv("BACKUP_ENCRYPTION_KEY", "")
@@ -17,14 +20,48 @@ BACKUP_REMOTE_UPLOAD = os.getenv(
 )  # e.g. "s3://bucket/path" or "scp://user@host:/path"
 BACKUP_REMOTE_SCRIPT = os.getenv("BACKUP_REMOTE_SCRIPT", "")  # custom script path
 
+logger = logging.getLogger("backup")
+
+# 旧版备份用的是自造 XOR 流密码：SQLite 文件头是已知明文，密钥流可直接还原，
+# 等同于没加密。这类文件无法用 Fernet 解开，属预期行为，给出明确提示而不是崩栈。
+LEGACY_XOR_BACKUP_HINT = (
+    "该 .enc 备份由旧版 XOR 算法生成，无法解密；"
+    "请用生成它的旧版本程序还原，或直接改用未加密的历史备份文件。"
+)
+
+
+def _backup_fernet(key: str) -> Fernet:
+    """由 BACKUP_ENCRYPTION_KEY 派生 Fernet 密钥（AES-256-CBC + HMAC-SHA256）。"""
+    digest = hashlib.sha256(f"crm-backup:{key}".encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
 
 def _encrypt_file(src: str, dst: str, key: str) -> None:
-    """Simple XOR-based encryption for backup files. For stronger security, use GPG."""
-    key_bytes = hashlib.sha256(key.encode()).digest()
-    with open(src, "rb") as f_in, open(dst, "wb") as f_out:
-        data = f_in.read()
-        encrypted = bytes(b ^ key_bytes[i % len(key_bytes)] for i, b in enumerate(data))
-        f_out.write(encrypted)
+    """Encrypt a backup file with Fernet (AES-256-CBC + HMAC-SHA256)."""
+    with open(src, "rb") as f_in:
+        payload = f_in.read()
+    with open(dst, "wb") as f_out:
+        f_out.write(_backup_fernet(key).encrypt(payload))
+
+
+def decrypt_backup_file(src: str, dst: str, key: str) -> None:
+    """Decrypt a Fernet-encrypted backup. 旧 XOR 备份会抛出明确的 ValueError。"""
+    with open(src, "rb") as f_in:
+        payload = f_in.read()
+    try:
+        plaintext = _backup_fernet(key).decrypt(payload)
+    except InvalidToken as exc:
+        raise ValueError(LEGACY_XOR_BACKUP_HINT) from exc
+    with open(dst, "wb") as f_out:
+        f_out.write(plaintext)
+
+
+def _warn_plaintext_backup(dest: str) -> None:
+    logger.warning(
+        "BACKUP_ENCRYPTION_KEY 未配置：备份文件 %s 以明文落盘，"
+        "数据库泄露即等于全量数据泄露。请配置 BACKUP_ENCRYPTION_KEY 后重新备份。",
+        dest,
+    )
 
 
 def _upload_remote(filepath: str) -> None:
@@ -72,8 +109,6 @@ def _upload_remote(filepath: str) -> None:
         except Exception as e:
             logger.error("SCP upload failed: %s", e)
 
-
-logger = logging.getLogger("backup")
 
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backups")
 MAX_BACKUPS = 7
@@ -155,6 +190,8 @@ def _backup_postgresql():
             logger.info("Backup encrypted: %s", dest)
         except Exception as e:
             logger.error("Encryption failed: %s", e)
+    else:
+        _warn_plaintext_backup(dest)
 
     # Optional remote upload
     _upload_remote(dest)
@@ -216,6 +253,8 @@ def _backup_sqlite():
             logger.info("Backup encrypted: %s", dest)
         except Exception as e:
             logger.error("Encryption failed: %s", e)
+    else:
+        _warn_plaintext_backup(dest)
 
     # Optional remote upload
     _upload_remote(dest)

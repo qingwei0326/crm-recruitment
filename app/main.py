@@ -1,9 +1,10 @@
 import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -61,6 +62,8 @@ from app.scheduler import (
     notification_retry_scheduler,
 )
 
+logger = logging.getLogger("crm.health")
+
 FRONTEND_DIR = os.getenv(
     "FRONTEND_DIR",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"),
@@ -103,6 +106,23 @@ async def _domain_error_handler(_request: Request, exc: DomainError) -> JSONResp
 
 
 app.add_exception_handler(DomainError, _domain_error_handler)
+
+
+async def _http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+    """把 126 处 raise HTTPException 的 {"detail": ...} 收敛成项目信封 {code,data,msg}。
+
+    保留 detail 字段做兼容：前端 utils.getApiErrorMessage 与既有测试都读它，
+    等 Response.error 的 HTTP 200 一起改完（需前后端联调）后再摘掉。
+    """
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": exc.status_code, "data": None, "msg": detail, "detail": detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+app.add_exception_handler(HTTPException, _http_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -167,8 +187,22 @@ async def health():
             await session.execute(text("SELECT 1"))
         db_ms = round((time.monotonic() - start) * 1000)
         return {"code": 0, "msg": "ok", "db": "ok", "db_ms": db_ms}
-    except Exception as e:
-        return {"code": 1, "msg": f"database error: {e}", "db": "error"}
+    except Exception:
+        # 异常原文可能带 DSN / 数据库文件路径，只写日志，对外返回固定文案。
+        logger.exception("健康检查：数据库探测失败")
+        return {"code": 1, "msg": "database error", "db": "error"}
+
+
+def _resolve_spa_path(path: str) -> str | None:
+    """将请求路径约束在 FRONTEND_DIR 内部，防止 ``/..%2F..%2F.env`` 类路径穿越。
+
+    返回绝对安全路径；若解析后越出 FRONTEND_DIR（含符号链接逃逸），返回 ``None``。
+    """
+    base_dir = os.path.realpath(FRONTEND_DIR)
+    requested = os.path.realpath(os.path.join(base_dir, path))
+    if requested != base_dir and not requested.startswith(base_dir + os.sep):
+        return None
+    return requested
 
 
 # Serve frontend static in production
@@ -183,10 +217,15 @@ if os.path.isdir(FRONTEND_DIR):
             from fastapi import HTTPException
 
             raise HTTPException(status_code=404)
-        file_path = os.path.join(FRONTEND_DIR, path)
-        if os.path.isfile(file_path):
-            headers = NO_STORE_HEADERS if os.path.basename(file_path) == "index.html" else None
-            return FileResponse(file_path, headers=headers)
+        # Path-traversal guard: resolve symlinks/``..`` and confine to FRONTEND_DIR.
+        requested = _resolve_spa_path(path)
+        if requested is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404)
+        if os.path.isfile(requested):
+            headers = NO_STORE_HEADERS if os.path.basename(requested) == "index.html" else None
+            return FileResponse(requested, headers=headers)
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"), headers=NO_STORE_HEADERS)
 
     @app.get("/")

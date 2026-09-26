@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import (
@@ -21,18 +21,13 @@ from app.auth import (
 from app.database import get_db
 from app.dial_guard import require_recent_agent_dial
 from app.models import (
-    Call,
-    DialLog,
-    FollowUp,
     IntentLevel,
-    LeadViewLog,
-    Note,
     Student,
     StudentStage,
     StudentStatus,
     User,
-    Visit,
 )
+from app.student_delete import delete_students_cascade
 from app.permissions import (
     get_accessible_student,
     get_student_or_404,
@@ -660,17 +655,8 @@ async def delete_student(
     current_user: User = Depends(require_operation_permission(ADMIN_OP_STUDENT_DELETE)),
 ):
     student = await get_student_or_404(db, student_id)
-    db.add(
-        make_operation_log(
-            current_user,
-            student.id,
-            student.case_no or "",
-            "删除线索",
-            content=f"删除学生 {student.name}（含通话/备注/回访/到访/查看日志）",
-        )
-    )
-    for model in (Call, Note, FollowUp, LeadViewLog, Visit, DialLog):
-        await db.execute(delete(model).where(model.student_id == student_id))
-    await db.delete(student)
+    deleted = await delete_students_cascade(db, [student], current_user, action="删除线索")
     await db.commit()
+    if deleted == 0:
+        return Response.error(msg="学生不存在或已删除", code=404)
     return Response.ok(msg="删除成功")

@@ -137,9 +137,13 @@ async def test_reclaim_preview_reports_assignment_and_notes_without_mutating(
     assert sample_student.status == StudentStatus.invalid
     assert sample_student.assigned_to == agent_user.id
 
+    # 该接口已强制二次确认：必须带上 preview 发放的 token，否则拒绝执行。
     reclaimed = await client.post(
         "/api/admin/invalid-students/reclaim",
-        json={"student_ids": [sample_student.id]},
+        json={
+            "student_ids": [sample_student.id],
+            "preview_token": preview.json()["data"]["preview_token"],
+        },
         headers=admin_headers,
     )
 
@@ -327,17 +331,44 @@ async def test_all_invalid_reclaim_paths_atomically_reject_enrolled_elsewhere(
             headers=admin_headers,
         )
     elif mode == "selected_to_pool":
-        response = await client.post(
-            "/api/admin/invalid-students/reclaim",
+        # 该接口已强制二次确认，需先走 reclaim-preview。
+        # preview 自身同样执行原子性校验，因此含不可回收学生时会在此处就被拒绝——
+        # 与旧版「直接调 reclaim」断言的是同一行为（409 + 暴露被拒学生）。
+        preview = await client.post(
+            "/api/admin/invalid-students/reclaim-preview",
             json={"student_ids": student_ids},
             headers=admin_headers,
         )
+        if preview.status_code == 200:
+            response = await client.post(
+                "/api/admin/invalid-students/reclaim",
+                json={
+                    "student_ids": student_ids,
+                    "preview_token": preview.json()["data"]["preview_token"],
+                },
+                headers=admin_headers,
+            )
+        else:
+            response = preview
     else:
-        response = await client.post(
-            "/api/admin/reclaim-by-school",
+        # 该接口同样已强制二次确认，需先走 reclaim-by-school-preview。
+        # preview 自身执行原子性校验，含不可回收学生时会在此处被拒绝。
+        preview = await client.post(
+            "/api/admin/reclaim-by-school-preview",
             json={"school_name": "不可回收学校"},
             headers=admin_headers,
         )
+        if preview.status_code == 200:
+            response = await client.post(
+                "/api/admin/reclaim-by-school",
+                json={
+                    "school_name": "不可回收学校",
+                    "preview_token": preview.json()["data"]["preview_token"],
+                },
+                headers=admin_headers,
+            )
+        else:
+            response = preview
 
     assert response.status_code == 409
     body = response.json()
@@ -355,3 +386,94 @@ async def test_all_invalid_reclaim_paths_atomically_reject_enrolled_elsewhere(
             "enrolled_elsewhere",
             "no_intent",
         }
+
+
+async def _prepare_reclaimable_student(db, agent_user, assignment_baseline, sample_student):
+    sample_student.status = StudentStatus.invalid
+    sample_student.status_detail = "无意向"
+    sample_student.outcome_reason_code = "no_intent"
+    await assignment_baseline(sample_student, agent_user)
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_reclaim_rejects_missing_preview_token(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+    assignment_baseline,
+    sample_student,
+):
+    """二次确认不能被「不传 preview_token」跳过。"""
+    await _prepare_reclaimable_student(db, agent_user, assignment_baseline, sample_student)
+
+    response = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={"student_ids": [sample_student.id]},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 409
+    await db.refresh(sample_student)
+    # 关键：缺 token 时必须拒绝，绝不能静默执行回收
+    assert sample_student.status == StudentStatus.invalid
+    assert sample_student.assigned_to == agent_user.id
+
+
+@pytest.mark.asyncio
+async def test_reclaim_rejects_forged_preview_token(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+    assignment_baseline,
+    sample_student,
+):
+    """伪造的 preview_token 必须被拒绝。"""
+    await _prepare_reclaimable_student(db, agent_user, assignment_baseline, sample_student)
+
+    response = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={"student_ids": [sample_student.id], "preview_token": "forged-token"},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 409
+    await db.refresh(sample_student)
+    assert sample_student.status == StudentStatus.invalid
+    assert sample_student.assigned_to == agent_user.id
+
+
+@pytest.mark.asyncio
+async def test_reclaim_accepts_valid_preview_token_and_mutates(
+    client,
+    db,
+    admin_headers,
+    agent_user,
+    assignment_baseline,
+    sample_student,
+):
+    """走完 preview 并带上合法 token 时，回收正常执行（防止收紧过头）。"""
+    await _prepare_reclaimable_student(db, agent_user, assignment_baseline, sample_student)
+
+    preview = await client.post(
+        "/api/admin/invalid-students/reclaim-preview",
+        json={"student_ids": [sample_student.id]},
+        headers=admin_headers,
+    )
+    assert preview.status_code == 200
+
+    response = await client.post(
+        "/api/admin/invalid-students/reclaim",
+        json={
+            "student_ids": [sample_student.id],
+            "preview_token": preview.json()["data"]["preview_token"],
+        },
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200
+    await db.refresh(sample_student)
+    assert sample_student.status == StudentStatus.not_contacted
+    assert sample_student.assigned_to is None

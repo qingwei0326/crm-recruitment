@@ -2,7 +2,7 @@ import secrets
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -97,6 +97,26 @@ ADMIN_OPERATION_PERMISSION_KEYS = {
 }
 
 
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+USERNAME_PATTERN = r"^[A-Za-z0-9._@-]{3,32}$"
+
+
+def validate_password_strength(password: str) -> str:
+    """新建账号的密码强度下限：长度 + 至少字母与数字两类字符。
+
+    只作用于「创建账号」这条路径；重置密码 / 自助改密沿用各自既有规则，
+    避免把存量账号的运维动作一起卡死。
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"密码至少 {MIN_PASSWORD_LENGTH} 位")
+    if not any(char.isalpha() for char in password):
+        raise ValueError("密码需同时包含字母和数字")
+    if not any(char.isdigit() for char in password):
+        raise ValueError("密码需同时包含字母和数字")
+    return password
+
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -125,7 +145,31 @@ def invalidate_user_tokens(user: User) -> None:
     user.token_version = (user.token_version or 1) + 1
 
 
+# ── 强制改密拦截 ──────────────────────────────────────────
+# must_change_password 之前只是前端 flag：绕过页面直接打 API 照样能用全部功能。
+# 这里在 get_current_user 里统一拦，除登录/改密/登出/读自身信息外一律 403。
+MUST_CHANGE_PASSWORD_ALLOWED_PATHS = frozenset(
+    {
+        "/api/auth/login",
+        "/api/auth/logout",
+        "/api/auth/change-password",
+        "/api/auth/me",
+        "/api/me",
+    }
+)
+MUST_CHANGE_PASSWORD_MESSAGE = "请先修改密码后再使用其它功能"
+
+
+def _enforce_password_changed(request: Request, user: User) -> None:
+    if not user.must_change_password:
+        return
+    if request.url.path in MUST_CHANGE_PASSWORD_ALLOWED_PATHS:
+        return
+    raise HTTPException(status_code=403, detail=MUST_CHANGE_PASSWORD_MESSAGE)
+
+
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     access_token: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
@@ -154,6 +198,7 @@ async def get_current_user(
     # 缺失 tv（迁移前签发的旧 token）也视为失效，强制重新登录。
     if token_version is None or token_version != user.token_version:
         raise HTTPException(status_code=401, detail="Token已失效，请重新登录")
+    _enforce_password_changed(request, user)
     return user
 
 

@@ -472,9 +472,20 @@ async def test_reclaim_invalid_students_to_unassigned_pool(
     await db.commit()
     await db.refresh(student)
 
+    # 该接口已强制二次确认：需先走 reclaim-preview 拿 preview_token。
+    preview = await client.post(
+        "/api/admin/invalid-students/reclaim-preview",
+        json={"student_ids": [student.id]},
+        headers=admin_headers,
+    )
+    assert preview.status_code == 200
+
     response = await client.post(
         "/api/admin/invalid-students/reclaim",
-        json={"student_ids": [student.id]},
+        json={
+            "student_ids": [student.id],
+            "preview_token": preview.json()["data"]["preview_token"],
+        },
         headers=admin_headers,
     )
 

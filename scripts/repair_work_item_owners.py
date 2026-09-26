@@ -226,7 +226,7 @@ async def run_repair(database: Path, apply: bool) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", required=True, type=Path)
-    parser.add_argument("--expect-revision", default="20260823_01")
+    parser.add_argument("--expect-revision", default="20260925_01")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     database = args.database.expanduser().resolve()

@@ -282,10 +282,19 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOMAIN_AUDIT_DATABASE)) {
             "--database",
             $env:DOMAIN_AUDIT_DATABASE,
             "--expect-revision",
-            "20260823_01"
+            "20260925_01"
         ) -WorkingDirectory $Root
     }
+
+    # P0 数据库迁移门禁（v2.0 Phase 0-4）：落后库先自愈升级到 head，再校验无漂移。
+    # 这样携带「落后一个迁移导致报名/财务接口 500」的库在发布前会被自动修复，而非带着故障上线。
+    Invoke-ReleaseStep -Name "P0 database migration gate (alembic head + check)" -Command {
+        $python = Get-ProjectPython
+        Invoke-CheckedCommand -FilePath $python -Arguments @("-m", "alembic", "upgrade", "head") -WorkingDirectory $Root
+        Invoke-CheckedCommand -FilePath $python -Arguments @("-m", "alembic", "check") -WorkingDirectory $Root
+    }
 }
+
 
 if (-not $SkipBackendTests) {
     Invoke-ReleaseStep -Name "Backend tests" -Command {

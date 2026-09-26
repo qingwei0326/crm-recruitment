@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin_config import (
     ALLOWED_CONFIG_KEYS,
     ASSIGNMENT_CAPACITY_DEFAULTS,
+    decrypt_secret_config_value,
+    encrypt_secret_config_value,
     mask_config_value,
     validate_capacity_settings,
     validate_config_value,
@@ -31,7 +33,7 @@ async def get_config_value(db: AsyncSession, key: str, fallback: str = "") -> st
     result = await db.execute(select(SystemConfig).where(SystemConfig.key == key))
     item = result.scalar_one_or_none()
     if item and item.value:
-        return item.value
+        return decrypt_secret_config_value(key, item.value)
     return os.getenv(key.upper(), fallback)
 
 
@@ -60,6 +62,8 @@ async def update_system_config(
     if err:
         return Response.error(code=1, msg=err)
     value = normalized
+    # 校验基于明文；通过后才加密落库，历史明文值在下次保存时自动转为密文。
+    stored_value = encrypt_secret_config_value(key, value)
 
     if key in ASSIGNMENT_CAPACITY_DEFAULTS:
         capacity_result = await db.execute(
@@ -95,9 +99,9 @@ async def update_system_config(
     item = result.scalar_one_or_none()
     old_value = item.value if item else ""
     if item:
-        item.value = value
+        item.value = stored_value
     else:
-        item = SystemConfig(key=key, value=value)
+        item = SystemConfig(key=key, value=stored_value)
         db.add(item)
     db.add(
         make_operation_log(

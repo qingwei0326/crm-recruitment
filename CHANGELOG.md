@@ -1,5 +1,29 @@
 # 更新日志
 
+## 2026-09-26 · 20260926-student-cascade-security
+
+### 🐛 修复
+- **学生级联删除统一（P0-2 根因修复）** — 抽出 `app/student_delete.py` 作为唯一真源，统一 `assistant_tools` / `students.py` / `admin_invalid.py` 三处删除入口，删除学生时一并清理全部 12 张关联业务表，消除外键报错（实测 94.7% 无效线索带 assignment 行时删除失败）。
+- **数据库外键补 ON DELETE CASCADE** — 新增 alembic 迁移 `20260925_01`，为所有指向 `students` 的外键补级联删除，做到库级自愈，与应用层 `delete_students_cascade` 双保险。
+
+### 🔒 安全
+- **SPA 路径遍历防护** — 新增 `tests/test_spa_traversal.py` 回归测试覆盖前端路由与静态资源路径遍历。
+- **Phase 1 安全加固** — 新增 `tests/test_phase1_security_hardening.py`；`auth.py` / `main.py` 认证与路由边界加固。
+
+### 🔧 重构
+- **无效线索删除重构** — `admin_invalid.py` 改用统一级联删除工具（约 160 行改动），`assistant_tools.py` / `students.py` 删除分支收敛到 `student_delete.py`。
+
+### 💾 备份与发布
+- `backup.py` 备份逻辑增强，覆盖级联删除后的关联数据。
+- `prepare-production-release.ps1` / `release-check.ps1` 发布脚本更新。
+
+### 🧪 测试与部署
+- 新增 `test_student_delete_cascade.py`、`test_phase1_security_hardening.py`、`test_spa_traversal.py`；`test_lead_outcomes.py` 扩充报名结果回归（约 +132）。
+- 后端测试通过，前端生产构建通过。
+- 已推送 GitHub 并部署。
+
+---
+
 ## 2026-09-12 · 20260912-pending-pagination-fix-1
 
 ### 🐛 修复
