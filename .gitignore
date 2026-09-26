@@ -94,3 +94,13 @@ backups/
 
 # Local server access notes (sensitive)
 服务器访问说明.txt
+
+# WorkBuddy 工作记忆
+.workbuddy/
+
+# 本地诊断 / 报告产物
+outputs/
+
+# Vite 临时文件
+frontend/vite.config.js.timestamp-*.mjs
+*.timestamp-*.mjs

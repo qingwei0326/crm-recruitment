@@ -1,3 +1,13 @@
+import logging
+
+from app.assistant_security import (
+    AssistantSecretError,
+    decrypt_assistant_secret,
+    encrypt_assistant_secret,
+)
+
+logger = logging.getLogger("admin_config")
+
 SCORE_DAILY_CALL_TARGET_MAX = 1000
 
 ALLOWED_CONFIG_KEYS = {
@@ -24,6 +34,10 @@ AI_PROVIDERS = {"deepseek", "mimo", "custom"}
 AI_BASE_KEYS = {"mimo_base", "ai_custom_base"}
 AI_MODEL_KEYS = {"mimo_model", "ai_custom_model"}
 AI_GENERIC_KEY_KEYS = {"mimo_api_key", "ai_custom_api_key"}
+
+# 落库即加密的敏感配置项。执行助手密钥已走 Fernet，AI provider 的 key 必须同标准，
+# 否则 DB/备份泄露等于密钥泄露。
+SECRET_CONFIG_KEYS = {"deepseek_api_key", "mimo_api_key", "ai_custom_api_key"}
 
 ASSIGNMENT_CAPACITY_DEFAULTS = {
     "assignment_capacity_lookback_days": 7,
@@ -147,10 +161,32 @@ def validate_config_value(key: str, value: str) -> tuple[str | None, str | None]
     return value, None
 
 
+def encrypt_secret_config_value(key: str, value: str) -> str:
+    """写入前加密：SECRET_CONFIG_KEYS 存密文，其余按原文存。"""
+    if key in SECRET_CONFIG_KEYS and value:
+        return encrypt_assistant_secret(value)
+    return value
+
+
+def decrypt_secret_config_value(key: str, value: str) -> str:
+    """读取时解密：解密失败（历史明文值）按原文返回，保证老配置不突然失效。"""
+    if key not in SECRET_CONFIG_KEYS or not value:
+        return value
+    try:
+        return decrypt_assistant_secret(value)
+    except AssistantSecretError:
+        logger.warning("配置项 %s 不是密文格式，按历史明文值使用（下次保存时会自动加密）", key)
+        return value
+
+
 def mask_config_value(key: str, value: str) -> str:
-    if (
-        key in ("pushplus_token", "deepseek_api_key", "mimo_api_key", "ai_custom_api_key")
-        and len(value) > 4
-    ):
+    if key in SECRET_CONFIG_KEYS:
+        # 密文末四位是乱码，必须先还原明文再取末四位，否则前端看到的是无意义后缀。
+        return _mask_secret(decrypt_secret_config_value(key, value))
+    if key == "pushplus_token" and len(value) > 4:
         return "****" + value[-4:]
     return value
+
+
+def _mask_secret(value: str) -> str:
+    return "****" + value[-4:] if len(value) > 4 else value

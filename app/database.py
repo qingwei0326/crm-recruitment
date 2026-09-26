@@ -1,3 +1,4 @@
+import os
 import re
 
 from sqlalchemy import create_engine, event, inspect, text
@@ -50,16 +51,13 @@ async def get_db():
 
 
 async def init_db():
+    # 自愈：启动时先把数据库迁移到 head，再校验版本等于预期。
+    # 这样落后的库（实测本地 20260726_01 vs 预期 head 20260925_01）会在启动时被自动升级，
+    # 而不是「拒绝启动」或「静默错列」导致报名/财务等接口 500。
+    _run_alembic_upgrade_head()
     async with engine.begin() as conn:
-        if APP_ENV == "production":
-            await conn.run_sync(
-                lambda sync_connection: _assert_schema_revision(
-                    sync_connection,
-                    EXPECTED_ALEMBIC_REVISION,
-                )
-            )
-        else:
-            await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_assert_schema_revision, EXPECTED_ALEMBIC_REVISION)
+        # 以下内联兼容迁移为历史遗留双轨逻辑，计划 v2.0 Phase 2-4 将固化进 Alembic 后移除。
         await conn.run_sync(_drop_legacy_student_phone_column)
         await conn.run_sync(_migrate_student_phone_normalization)
         await conn.run_sync(_migrate_follow_up_columns)
@@ -78,6 +76,22 @@ async def init_db():
         await conn.run_sync(_migrate_legacy_student_status_values)
         await conn.run_sync(_migrate_legacy_student_stage_values)
         await conn.run_sync(_migrate_admissions_workflow_tables)
+
+
+def _run_alembic_upgrade_head() -> None:
+    """在启动时将数据库迁移到最新版本（head）。
+
+    alembic 仅在部署/运行环境可用，故在此惰性导入，避免影响单元测试环境（测试用 create_all，不调用 init_db）。
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini"
+    )
+    cfg = Config(config_path)
+    # 复用当前进程的数据库环境变量（DATABASE_URL / DATABASE_PATH），env.py 据此解析同步迁移 URL。
+    command.upgrade(cfg, "head")
 
 
 def _assert_schema_revision(sync_connection, expected_revision: str) -> None:

@@ -247,7 +247,7 @@ class Call(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     duration_seconds = Column(Integer, default=0)
     recording_path = Column(String(512), default="")
@@ -268,7 +268,7 @@ class Note(Base):
     __table_args__ = (Index("ix_notes_student_id", "student_id"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     content = Column(Text, nullable=False)
     source = Column(String(16), default="human", nullable=False)
@@ -287,7 +287,7 @@ class FollowUp(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     follow_up_date = Column(DateTime, nullable=False)
     follow_up_type = Column(String(16), nullable=True)
@@ -305,7 +305,7 @@ class LeadViewLog(Base):
     __table_args__ = (Index("ix_lead_view_logs_student_id", "student_id"),)
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     viewer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     viewed_at = Column(DateTime, default=func.now(), nullable=False)
 
@@ -318,7 +318,7 @@ class Visit(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     visit_type = Column(SAEnum(VisitType), nullable=False)
     scheduled_date = Column(DateTime, nullable=False)
@@ -342,7 +342,7 @@ class HomeVisitTask(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     creator_agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     assigned_admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(SAEnum(HomeVisitStatus), nullable=False, default=HomeVisitStatus.pending)
@@ -389,7 +389,7 @@ class CampusVisitTask(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     creator_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     reception_admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     home_visit_task_id = Column(Integer, ForeignKey("home_visit_tasks.id"), nullable=True)
@@ -434,7 +434,7 @@ class EnrollmentRecord(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     attributed_agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     confirmed_by_admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     first_assigned_agent_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -531,7 +531,7 @@ class DialLog(Base):
     __tablename__ = "dial_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False, index=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     dialed_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     duration_seconds = Column(Integer, default=0)

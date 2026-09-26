@@ -2,7 +2,7 @@ import hashlib
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_lead_utils import _student_search_predicate, invalid_reason_predicate
@@ -17,20 +17,16 @@ from app.auth import (
 from app.database import get_db
 from app.domain_errors import DomainConflict
 from app.models import (
-    Call,
-    DialLog,
-    FollowUp,
     IntentLevel,
-    LeadViewLog,
     Note,
     OperationLog,
     Student,
     StudentStage,
     StudentStatus,
     User,
-    Visit,
 )
 from app.schemas import Response
+from app.student_delete import delete_students_cascade
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.services.lead_outcome_service import require_reclaimable_reasons
 from app.status_policy import (
@@ -58,22 +54,7 @@ async def delete_students_with_related(
     current_user: User,
     action: str = "批量删除无效线索",
 ) -> int:
-    deleted_count = 0
-    for student in students:
-        db.add(
-            make_operation_log(
-                current_user,
-                student.id,
-                student.case_no or "",
-                action,
-                content=f"删除学生 {student.name}（含通话/备注/回访/到访/日志）",
-            )
-        )
-        for model in (Call, Note, FollowUp, LeadViewLog, Visit, DialLog):
-            await db.execute(delete(model).where(model.student_id == student.id))
-        await db.delete(student)
-        deleted_count += 1
-    return deleted_count
+    return await delete_students_cascade(db, students, current_user, action=action)
 
 
 async def reclaim_invalid_students_to_pool(
@@ -298,8 +279,72 @@ def _verify_reclaim_preview_token(
     students: list[Student],
     preview_token: str | None,
 ) -> None:
+    """可选校验：仅当客户端带了 token 时才比对。
+
+    适用范围：``reclaim-students`` / ``reclaim-by-school`` 两个接口目前**没有**
+    对应的 preview 发放口，客户端拿不到 token，因此这里只能做可选校验。
+    待这两个接口补上 preview 流程后，应统一改用
+    ``_verify_reclaim_preview_token_required``，让二次确认不可被省略。
+    """
     if preview_token and preview_token != _reclaim_preview_token(students):
         raise DomainConflict("预览后的学生数据已变化，请刷新后重新预览")
+
+
+def _verify_reclaim_preview_token_required(
+    students: list[Student],
+    preview_token: str | None,
+) -> None:
+    """强校验：缺失或过期一律拒绝（对齐 ``_verify_delete_preview_token``）。
+
+    用于 ``/invalid-students/reclaim``——该接口有完整的
+    ``/invalid-students/reclaim-preview`` 发放口，二次确认必须走完，
+    不允许靠「不传 preview_token」跳过。
+    """
+    if not preview_token:
+        raise DomainConflict(
+            "请先调用 /api/admin/invalid-students/reclaim-preview 预览确认后再执行回收"
+        )
+    if preview_token != _reclaim_preview_token(students):
+        raise DomainConflict("预览后的学生数据已变化，请刷新后重新预览")
+
+
+# 按校删除是不可回滚的批量物理删除，二次确认不能靠客户端「不传 preview_token」跳过。
+MAX_DELETE_BY_SCHOOL_STUDENTS = 500
+
+
+def _verify_delete_preview_token(
+    students: list[Student],
+    preview_token: str | None,
+) -> None:
+    """校验按校删除的预览 token：缺失或过期一律拒绝。"""
+    if not preview_token:
+        raise DomainConflict(
+            "请先调用 /api/admin/delete-by-school-preview 预览确认后再执行删除"
+        )
+    if preview_token != _reclaim_preview_token(students):
+        raise DomainConflict("预览后的学生数据已变化，请刷新后重新预览")
+
+
+def _check_delete_batch_limit(students: list[Student]) -> str | None:
+    """单次删除条数上限，避免一次误删整校数据。"""
+    if len(students) > MAX_DELETE_BY_SCHOOL_STUDENTS:
+        return (
+            f"单次按校删除上限 {MAX_DELETE_BY_SCHOOL_STUDENTS} 条，"
+            f"当前命中 {len(students)} 条；请先用无效原因或搜索条件缩小范围"
+        )
+    return None
+
+
+def _school_invalid_students_query(school_name: str, invalid_reason: str | None) -> list:
+    """按学校 + 可选无效原因拼出无效线索查询条件。"""
+    where = [
+        Student.school_name == school_name,
+        Student.status.in_(statuses_for_canonical(StudentStatus.invalid)),
+    ]
+    reason_clause = invalid_reason_predicate(invalid_reason or "")
+    if reason_clause is not None:
+        where.append(reason_clause)
+    return where
 
 
 @router.post("/invalid-students/reclaim-preview")
@@ -360,6 +405,9 @@ async def reclaim_invalid_students(
         names = ", ".join([s.name for s in non_invalid[:3]])
         return Response.error(code=1, msg=f"部分学生不是无效状态，无法回收: {names}")
 
+    # 注意：/reclaim-students 目前没有独立的 preview 发放口，客户端拿不到 token，
+    # 因此这里只能做可选校验。待补上 preview 接口后再改用
+    # _verify_reclaim_preview_token_required，让二次确认不可被省略。
     _verify_reclaim_preview_token(students, body.preview_token)
     await require_reclaimable_reasons(db, students)
     impact = await _reclaim_impact(db, students)
@@ -466,7 +514,8 @@ async def reclaim_invalid_students_to_unassigned_pool(
         names = ", ".join([student.name for student in non_invalid[:3]])
         return Response.error(code=1, msg=f"部分学生不是无效状态，无法回收: {names}")
 
-    _verify_reclaim_preview_token(students, body.preview_token)
+    # 该接口有 /invalid-students/reclaim-preview 发放口，二次确认必须走完。
+    _verify_reclaim_preview_token_required(students, body.preview_token)
     reclaimed_count = await reclaim_invalid_students_to_pool(
         db, students, current_user, action="批量回收无效线索"
     )
@@ -738,13 +787,7 @@ async def preview_reclaim_by_school(
     """Preview a school-level invalid-lead reclaim without changing rows."""
     if not body.school_name:
         return Response.error(code=1, msg="school_name不能为空")
-    where = [
-        Student.school_name == body.school_name,
-        Student.status.in_(statuses_for_canonical(StudentStatus.invalid)),
-    ]
-    reason_clause = invalid_reason_predicate(body.invalid_reason or "")
-    if reason_clause is not None:
-        where.append(reason_clause)
+    where = _school_invalid_students_query(body.school_name, body.invalid_reason)
     students = list((await db.execute(select(Student).where(*where))).scalars().all())
     if not students:
         return Response.error(code=1, msg=f"学校「{body.school_name}」没有可回收的无效线索")
@@ -763,19 +806,14 @@ async def reclaim_by_school(
         return Response.error(code=1, msg="school_name不能为空")
 
     # 查出该校所有无效学员
-    where = [
-        Student.school_name == body.school_name,
-        Student.status.in_(statuses_for_canonical(StudentStatus.invalid)),
-    ]
-    reason_clause = invalid_reason_predicate(body.invalid_reason or "")
-    if reason_clause is not None:
-        where.append(reason_clause)
+    where = _school_invalid_students_query(body.school_name, body.invalid_reason)
     result = await db.execute(select(Student).where(*where))
     students = result.scalars().all()
     if not students:
         return Response.error(code=1, msg=f"学校「{body.school_name}」没有可回收的无效线索")
 
-    _verify_reclaim_preview_token(students, body.preview_token)
+    # 该接口有 /reclaim-by-school-preview 发放口，二次确认必须走完。
+    _verify_reclaim_preview_token_required(students, body.preview_token)
 
     reclaimed_count = await reclaim_invalid_students_to_pool(
         db, students, current_user, action="分学校回收"
@@ -786,27 +824,57 @@ async def reclaim_by_school(
     return Response.ok({**reclaimed_count, "school_name": body.school_name})
 
 
+@router.post("/delete-by-school-preview")
+async def preview_delete_by_school(
+    body: ReclaimBySchoolReq,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operation_permission(ADMIN_OP_INVALID_DELETE)),
+):
+    """按校删除的预览确认：返回命中条数与 preview_token（删除接口强制校验）。"""
+    if not body.school_name:
+        return Response.error(code=1, msg="school_name不能为空")
+
+    where = _school_invalid_students_query(body.school_name, body.invalid_reason)
+    students = list((await db.execute(select(Student).where(*where))).scalars().all())
+    if not students:
+        return Response.error(code=1, msg=f"学校「{body.school_name}」没有可删除的无效线索")
+
+    limit_error = _check_delete_batch_limit(students)
+    if limit_error:
+        return Response.error(code=1, msg=limit_error)
+
+    return Response.ok(
+        {
+            "school_name": body.school_name,
+            "student_count": len(students),
+            "preview_token": _reclaim_preview_token(students),
+        }
+    )
+
+
 @router.post("/delete-by-school")
 async def delete_by_school(
     body: ReclaimBySchoolReq,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_operation_permission(ADMIN_OP_INVALID_DELETE)),
 ):
-    """按学校批量删除无效线索（含关联的通话/备注/回访/到访/日志）"""
+    """按学校批量删除无效线索（含关联的通话/备注/回访/到访/日志）
+
+    必须先调用 /delete-by-school-preview 拿到 preview_token，缺失或数据已变化一律拒绝。
+    """
     if not body.school_name:
         return Response.error(code=1, msg="school_name不能为空")
 
-    where = [
-        Student.school_name == body.school_name,
-        Student.status.in_(statuses_for_canonical(StudentStatus.invalid)),
-    ]
-    reason_clause = invalid_reason_predicate(body.invalid_reason or "")
-    if reason_clause is not None:
-        where.append(reason_clause)
+    where = _school_invalid_students_query(body.school_name, body.invalid_reason)
     result = await db.execute(select(Student).where(*where))
     students = result.scalars().all()
     if not students:
         return Response.error(code=1, msg=f"学校「{body.school_name}」没有可删除的无效线索")
+
+    limit_error = _check_delete_batch_limit(students)
+    if limit_error:
+        return Response.error(code=1, msg=limit_error)
+    _verify_delete_preview_token(students, body.preview_token)
 
     deleted_count = await delete_students_with_related(
         db, students, current_user, action="批量删除无效线索"

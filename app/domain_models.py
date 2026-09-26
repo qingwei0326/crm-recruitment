@@ -173,7 +173,7 @@ class StudentAssignment(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     started_at = Column(DateTime, nullable=False)
     ended_at = Column(DateTime, nullable=True)
@@ -292,7 +292,7 @@ class WorkItem(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     kind = Column(
         _stored_enum(WorkItemKind, "work_item_kind"),
         nullable=False,
@@ -381,7 +381,7 @@ class HandoverItem(Base):
         ForeignKey("handover_batches.id"),
         nullable=False,
     )
-    student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     source_assignment_id = Column(
         Integer,
         ForeignKey("student_assignments.id"),

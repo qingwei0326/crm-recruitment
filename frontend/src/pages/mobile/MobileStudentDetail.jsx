@@ -525,6 +525,25 @@ export default function MobileStudentDetail() {
     );
   };
 
+  const handleToggleNeedHelp = async () => {
+    if (workflowSaving) return;
+    const next = !student.need_help;
+    setWorkflowSaving(true);
+    try {
+      const r = await api.put(`/students/${student.id}`, { need_help: next });
+      if (r.data.code === 0) {
+        patchStudent({ need_help: next });
+        showToast(next ? '已向主管发起协助' : '已取消协助');
+      } else {
+        showToast(r.data.msg || '操作失败');
+      }
+    } catch (e) {
+      showToast(getApiErrorMessage(e));
+    } finally {
+      setWorkflowSaving(false);
+    }
+  };
+
   const handleCompleteFollowUp = (followUp) => {
     runWorkflowUpdate(
       () => api.put(`/follow-ups/${followUp.id}`, { is_completed: true }),
@@ -900,7 +919,7 @@ export default function MobileStudentDetail() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button type="button" onClick={() => { setMoreActionsOpen(false); setNoteOpen(true); }} className="min-h-[72px] rounded-xl bg-slate-50 px-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                 写备注
               </button>
@@ -909,6 +928,9 @@ export default function MobileStudentDetail() {
               </button>
               <button type="button" onClick={() => { setMoreActionsOpen(false); openWorkflowEditor(); }} className="min-h-[72px] rounded-xl bg-blue-50 px-2 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                 编辑状态
+              </button>
+              <button type="button" onClick={() => { setMoreActionsOpen(false); handleToggleNeedHelp(); }} className={`min-h-[72px] rounded-xl px-2 text-sm font-medium ${student?.need_help ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300' : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300'}`}>
+                {student?.need_help ? '取消协助' : '需要协助'}
               </button>
             </div>
           </div>

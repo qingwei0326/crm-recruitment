@@ -16,7 +16,7 @@ $ReleaseDir = Join-Path $ReleaseRoot $ReleaseName
 $ZipPath = Join-Path $ReleaseRoot "$ReleaseName.zip"
 $ZipHashPath = "$ZipPath.sha256"
 $DatabaseUpgradeFromRevision = "20260726_01"
-$ExpectedDatabaseRevision = "20260823_01"
+$ExpectedDatabaseRevision = "20260925_01"
 
 function Copy-ReleaseTree {
     param(
@@ -98,12 +98,19 @@ foreach ($requiredDir in @("app", "alembic", "frontend\dist")) {
 foreach ($requiredFile in @(
     "alembic.ini",
     "alembic\env.py",
-    "alembic\versions\${ExpectedDatabaseRevision}_enrollment_finance.py",
     "frontend\dist\index.html"
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $Root $requiredFile) -PathType Leaf)) {
         throw "Required release file missing: $requiredFile"
     }
+}
+# 必需：恰好存在一个 head revision 对应的迁移文件（与 verify_production_release.py 的 glob 约定一致）
+$headMigrations = @(
+    Get-ChildItem -LiteralPath (Join-Path $Root "alembic\versions") `
+        -Filter "${ExpectedDatabaseRevision}_*.py" -File -ErrorAction SilentlyContinue
+)
+if ($headMigrations.Count -ne 1) {
+    throw "Release must contain exactly one Alembic migration for $ExpectedDatabaseRevision (found $($headMigrations.Count))"
 }
 $assetDir = Join-Path $Root "frontend\dist\assets"
 if (-not (Get-ChildItem -LiteralPath $assetDir -Filter "*.js" -File -ErrorAction SilentlyContinue)) {

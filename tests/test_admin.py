@@ -390,7 +390,8 @@ class TestAdminCreateUser:
             "/api/admin/users",
             json={
                 "username": "newadmin",
-                "password": "adminpass",
+                # 创建账号的密码需 >=8 位且字母+数字（见 UserCreateReq），旧值 adminpass 已不合规
+                "password": "adminpass123",
                 "name": "新管理员",
                 "role": "admin",
                 "page_permissions": ["score_preview", "bad_key", "report_center"],
@@ -409,7 +410,8 @@ class TestAdminCreateUser:
             "/api/admin/users",
             json={
                 "username": "newsuper",
-                "password": "adminpass",
+                # 同上：旧值 adminpass 不满足新密码强度下限
+                "password": "adminpass123",
                 "name": "新超管",
                 "role": "admin",
                 "is_super_admin": True,
@@ -445,7 +447,8 @@ class TestAdminCreateUser:
             "/api/admin/users",
             json={
                 "username": "testadmin",
-                "password": "x",
+                # 本用例验的是重名冲突，密码只做合规占位（旧值 "x" 已被强度校验挡在 422）
+                "password": "newpass123",
                 "name": "duplicate",
             },
             headers=admin_headers,
