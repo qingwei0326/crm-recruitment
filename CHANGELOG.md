@@ -1,5 +1,18 @@
 # 更新日志
 
+## 2026-09-27 · 20260927-ui-maintenance-and-release-gate
+
+### 🔧 优化
+- **线索管理拆分** — 将 `LeadsManage.jsx` 的表格行、移动卡片、编辑/报名/分配弹窗等拆到独立模块，主文件由约 2,539 行降至 1,474 行。
+- **清理前端死代码** — 移除未使用的 `useLeadsManage` hook，并统一修正 React effect 依赖处理。
+- **移动端协助流程** — 改用话务员有权访问的专用协助接口，避免被管理员专用的学生编辑权限拦截。
+- **发布迁移检查** — Alembic 检查明确指向 `DOMAIN_AUDIT_DATABASE`，在一致性审计前执行升级与漂移检查，并恢复原数据库环境变量。
+
+### 🧪 覆盖
+- 补充无效线索 `preview_token` 校验、路径遍历及学生关联记录删除回归用例。
+
+---
+
 ## 2026-09-26 · 20260926-student-cascade-security
 
 ### 🐛 修复
@@ -20,7 +33,7 @@
 ### 🧪 测试与部署
 - 新增 `test_student_delete_cascade.py`、`test_phase1_security_hardening.py`、`test_spa_traversal.py`；`test_lead_outcomes.py` 扩充报名结果回归（约 +132）。
 - 后端测试通过，前端生产构建通过。
-- 已推送 GitHub 并部署。
+- 生产部署状态以服务器发布记录为准；此处仅记录代码变更。
 
 ---
 
