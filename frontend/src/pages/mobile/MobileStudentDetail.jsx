@@ -527,11 +527,11 @@ export default function MobileStudentDetail() {
 
   const handleToggleNeedHelp = async () => {
     if (workflowSaving) return;
-    const next = !student.need_help;
     setWorkflowSaving(true);
     try {
-      const r = await api.put(`/students/${student.id}`, { need_help: next });
+      const r = await api.post(`/students/${student.id}/need-help`);
       if (r.data.code === 0) {
+        const next = Boolean(r.data.data?.need_help);
         patchStudent({ need_help: next });
         showToast(next ? '已向主管发起协助' : '已取消协助');
       } else {
