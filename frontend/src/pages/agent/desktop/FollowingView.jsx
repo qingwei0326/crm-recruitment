@@ -3,6 +3,7 @@ import { Loader2, RefreshCw } from 'lucide-react';
 import { INTENT_BADGES, statusLabel, stageLabel } from '../../../labels';
 import AssignedDaysBadge from '../shared/AssignedDaysBadge';
 import { STATUS_STYLE } from '../agentWorkUtils';
+import { EmptyState, ErrorState } from '../../../components/AsyncState';
 
 export default function FollowingView({ followingData, loading, onRefresh, onOpenDetail }) {
   const [lastRefresh, setLastRefresh] = useState(Date.now());
@@ -30,7 +31,7 @@ export default function FollowingView({ followingData, loading, onRefresh, onOpe
   }
 
   if (!followingData) {
-    return <div className="text-center text-gray-400 py-8">加载失败</div>;
+    return <ErrorState bare title="加载失败" message="跟进中学员加载失败，请稍后重试。" />;
   }
 
   const { total, intent_counts, list } = followingData;
@@ -101,7 +102,7 @@ export default function FollowingView({ followingData, loading, onRefresh, onOpe
           ))}
         </div>
       ) : (
-        <div className="text-center text-gray-400 py-8">暂无跟进中学员</div>
+        <EmptyState bare title="暂无跟进中学员" />
       )}
     </div>
   );

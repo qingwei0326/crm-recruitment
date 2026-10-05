@@ -12,6 +12,7 @@ import { STATUS_STYLE, getContactOptions } from '../agentWorkUtils';
 import AssignedDaysBadge from '../shared/AssignedDaysBadge';
 import StageProgress from '../shared/StageProgress';
 import ExpandedRow from './ExpandedRow';
+import { EmptyState } from '../../../components/AsyncState';
 
 const COLUMNS = [
   { key: 'name', label: '学生', className: 'w-[18%]' },
@@ -89,8 +90,8 @@ export default function StudentTable({
         <tbody>
           {students.length === 0 ? (
             <tr>
-              <td colSpan={7} className="py-20 text-center text-xs font-medium text-gray-400 dark:text-gray-600">
-                暂无符合当前条件的话务任务
+              <td colSpan={7}>
+                <EmptyState bare title="暂无符合当前条件的话务任务" />
               </td>
             </tr>
           ) : (

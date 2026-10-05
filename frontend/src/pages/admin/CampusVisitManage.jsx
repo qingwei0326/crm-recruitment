@@ -8,6 +8,7 @@ import { AdminPageContainer, adminPageMainClass } from '../../components/admin/A
 import { useToast } from '../../components/Toast';
 import useIsMobile from '../../hooks/useIsMobile';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
+import { ContentSkeleton, EmptyState } from '../../components/AsyncState';
 
 const CAMPUS_STATUSES = ['待预约', '已预约', '已到校', '未到校', '已改期', '已取消', '已报名'];
 const CAMPUS_RESULTS = ['', '已到校', '未到校', '改期', '取消', '现场报名', '继续考虑'];
@@ -234,9 +235,9 @@ export default function CampusVisitManage() {
 
           <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
             {loading ? (
-              <div className="py-10 text-center text-sm text-gray-500">加载中...</div>
+              <ContentSkeleton rows={3} compact className="p-4" />
             ) : filteredRows.length === 0 ? (
-              <div className="py-10 text-center text-sm text-gray-500">暂无到校参观</div>
+              <EmptyState bare title="暂无到校参观" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-[1120px] w-full text-sm">

@@ -1,3 +1,4 @@
+import { EmptyState } from '../../components/AsyncState';
 /**
  * 无效线索回收管理页面
  *
@@ -483,9 +484,10 @@ export default function InvalidStudentReclaim() {
                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
               </div>
             ) : schoolGroups.length === 0 ? (
-              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-12 text-center text-gray-400">
-                {appliedQ ? `没有匹配「${appliedQ}」的无效线索` : '暂无无效线索'}
-              </div>
+              <EmptyState
+                title={appliedQ ? `没有匹配「${appliedQ}」的无效线索` : '暂无无效线索'}
+                description={appliedQ ? '请更换关键词后重试。' : undefined}
+              />
             ) : (
               schoolGroups.map((g) => (
                 <div
@@ -542,7 +544,7 @@ export default function InvalidStudentReclaim() {
                           <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
                         </div>
                       ) : expandedStudents.length === 0 ? (
-                        <div className="p-6 text-center text-gray-400 text-sm">暂无数据</div>
+                        <EmptyState bare title="暂无数据" />
                       ) : (
                         <>
                           <div className="px-4 py-3 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 flex flex-col lg:flex-row lg:items-center gap-3">

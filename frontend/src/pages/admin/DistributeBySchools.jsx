@@ -1,3 +1,4 @@
+import { EmptyState } from '../../components/AsyncState';
 /**
  * 多学校分发页面
  *
@@ -315,9 +316,7 @@ export default function DistributeBySchools() {
                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
               </div>
             ) : schoolGroups.length === 0 ? (
-              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-12 text-center text-gray-400">
-                暂无未分配学员
-              </div>
+              <EmptyState title="暂无未分配学员" />
             ) : (
               <>
                 {/* 全选 */}
@@ -405,7 +404,7 @@ export default function DistributeBySchools() {
                                   {expandedLoading ? (
                                     <div className="p-6 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" /></div>
                                   ) : expandedStudents.length === 0 ? (
-                                    <div className="p-6 text-center text-gray-400 text-sm">暂无数据</div>
+                                    <EmptyState bare title="暂无数据" />
                                   ) : (
                                     <div className="overflow-x-auto">
                                       <table className="w-full text-sm">
