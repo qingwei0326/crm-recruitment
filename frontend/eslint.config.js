@@ -22,9 +22,6 @@ export default [
         navigator: 'readonly',
         localStorage: 'readonly',
         sessionStorage: 'readonly',
-        alert: 'readonly',
-        confirm: 'readonly',
-        prompt: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setInterval: 'readonly',
@@ -77,6 +74,10 @@ export default [
         {
           selector: 'Literal[value=/text-.[189][01]?px.|bg-.#f5f7fb.|shadow-.0_2px_10px|rounded-xl|rounded-2xl|rounded-t-xl|rounded-t-2xl/]',
           message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark), rounded-panel.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='window'][callee.property.name=/alert|confirm|prompt/]",
+          message: 'Use useConfirm()/usePrompt() from ConfirmDialog or useToast() instead of native dialogs.',
         },
         {
           selector: 'TemplateElement[value.raw=/text-.[189][01]?px.|bg-.#f5f7fb.|shadow-.0_2px_10px|rounded-xl|rounded-2xl|rounded-t-xl|rounded-t-2xl/]',
