@@ -27,7 +27,6 @@ from app.models import (
     StudentStatus,
     User,
 )
-from app.student_delete import delete_students_cascade
 from app.permissions import (
     get_accessible_student,
     get_student_or_404,
@@ -47,6 +46,7 @@ from app.status_policy import (
     status_detail_for_write,
     status_detail_value,
 )
+from app.student_delete import delete_students_cascade
 from app.utils import (
     make_batch_id,
     make_operation_log,

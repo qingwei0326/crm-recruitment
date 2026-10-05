@@ -20,24 +20,14 @@ from app.admin_lead_utils import _student_search_predicate
 from app.admin_ops_utils import backup_items
 from app.auth import hash_password, invalidate_user_tokens
 from app.backup import do_backup_async
-from app.domain_models import HandoverItem, StudentAssignment, WorkItem
-from app.student_delete import delete_students_cascade
 from app.models import (
-    Call,
-    CampusVisitTask,
-    DialLog,
     EnrollmentRecord,
-    FollowUp,
-    HomeVisitTask,
-    LeadViewLog,
-    Note,
     OperationLog,
     Student,
     StudentStage,
     StudentStatus,
     User,
     UserRole,
-    Visit,
 )
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.services.lead_outcome_service import apply_outcome_reason
@@ -48,6 +38,7 @@ from app.status_policy import (
     normalize_status_for_write,
     statuses_for_canonical,
 )
+from app.student_delete import delete_students_cascade
 from app.task_stats import ASSIGNABLE_STUDENT_STATUSES, TERMINAL_STUDENT_STATUSES
 from app.utils import make_batch_id, make_operation_log, mask_phone, normalize_phone, utcnow
 

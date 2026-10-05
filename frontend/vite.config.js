@@ -31,6 +31,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test-setup.js',
+    globalSetup: './src/test-global-setup.js',
     pool: 'threads',
     maxWorkers: 8,
     reporters: ['dot'],
