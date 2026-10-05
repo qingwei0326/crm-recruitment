@@ -14,7 +14,7 @@ export default function DashboardPanelError({ title, onRetry, retrying = false, 
           onClick={onRetry}
           disabled={retrying}
           aria-label={`重试${title}`}
-          className="inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium hover:bg-amber-100 disabled:opacity-60 dark:hover:bg-amber-900/40"
+          className="inline-flex h-7 items-center gap-1 rounded px-2 text-2xs font-medium hover:bg-amber-100 disabled:opacity-60 dark:hover:bg-amber-900/40"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${retrying ? 'animate-spin' : ''}`} />
           {retrying ? '重试中' : '重试'}

@@ -90,7 +90,7 @@ export default function FilterPanel({
         </button>
 
         <div className="shrink-0 text-right">
-          <div className="text-[11px] text-gray-400 dark:text-gray-500">当前结果</div>
+          <div className="text-2xs text-gray-400 dark:text-gray-500">当前结果</div>
           <div className="text-sm font-bold tabular-nums text-gray-800 dark:text-gray-100">{totalCount ?? 0}</div>
         </div>
       </div>
@@ -178,7 +178,7 @@ export default function FilterPanel({
             </FilterSelect>
 
             <div>
-              <label className="mb-1 block text-[11px] font-medium text-gray-500 dark:text-gray-400">成绩范围</label>
+              <label className="mb-1 block text-2xs font-medium text-gray-500 dark:text-gray-400">成绩范围</label>
               <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                 <input
                   aria-label="最低分"
@@ -219,7 +219,7 @@ export default function FilterPanel({
 function FilterSelect({ label, value, onChange, children }) {
   return (
     <label>
-      <span className="mb-1 block text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</span>
+      <span className="mb-1 block text-2xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
       <select
         aria-label={`按${label}筛选`}
         value={value || ''}

@@ -105,7 +105,7 @@ export default function YesterdayUncontactedPrompt({ user, onHandleNow }) {
                 )}
               </div>
               {item.assigned_at && (
-                <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
+                <div className="mt-1 flex items-center gap-1 text-2xs text-gray-400 dark:text-gray-500">
                   <CalendarClock className="h-3 w-3" />
                   分配：{formatDateTime(item.assigned_at)}
                 </div>

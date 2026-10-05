@@ -53,7 +53,7 @@ export function AdminMetricStrip({ cards, loading, onRetry }) {
                   {card.label}
                 </span>
               </div>
-              <div className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">
+              <div className="mt-0.5 truncate text-2xs text-gray-400 dark:text-gray-500">
                 {card.error ? '指标加载失败，请重试' : card.detail}
               </div>
             </div>
@@ -108,10 +108,10 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
             <h2 className="truncate text-xs font-semibold text-gray-900 dark:text-gray-100">
               各阶段线索实时沉淀与工作进展
             </h2>
-            <p className="mt-0.5 text-[10px] text-gray-400">点击阶段直达对应学生列表</p>
+            <p className="mt-0.5 text-3xs text-gray-400">点击阶段直达对应学生列表</p>
           </div>
         </div>
-        <span className="shrink-0 rounded bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+        <span className="shrink-0 rounded bg-blue-50 px-2 py-1 text-3xs font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
           全盘动态
         </span>
       </div>
@@ -130,7 +130,7 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
           const height = count > 0 ? Math.max((count / maxValue) * 100, 4) : 0;
           const content = (
             <>
-              <span className="flex h-5 items-center justify-center text-[10px] font-bold tabular-nums text-gray-600 group-hover:text-blue-600 dark:text-gray-300 dark:group-hover:text-blue-400">
+              <span className="flex h-5 items-center justify-center text-3xs font-bold tabular-nums text-gray-600 group-hover:text-blue-600 dark:text-gray-300 dark:group-hover:text-blue-400">
                 {count.toLocaleString()}
               </span>
               <span className="relative flex min-h-0 flex-1 items-end justify-center overflow-hidden">
@@ -197,10 +197,10 @@ function AgentWorkStatus({ scoreItems = [], error, onRetry, retrying }) {
           <UserRound className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
           <div className="min-w-0">
             <h2 className="truncate text-xs font-semibold text-gray-900 dark:text-gray-100">话务员工作状态</h2>
-            <p className="mt-0.5 text-[10px] text-gray-400">按今日呼出量查看执行进度</p>
+            <p className="mt-0.5 text-3xs text-gray-400">按今日呼出量查看执行进度</p>
           </div>
         </div>
-        <Link to="/admin/score-preview" className="shrink-0 text-[10px] font-medium text-blue-600 hover:underline dark:text-blue-400">坐席明细</Link>
+        <Link to="/admin/score-preview" className="shrink-0 text-3xs font-medium text-blue-600 hover:underline dark:text-blue-400">坐席明细</Link>
       </div>
       {error ? (
         <DashboardPanelError title="话务员状态" onRetry={onRetry} retrying={retrying} />
@@ -217,11 +217,11 @@ function AgentWorkStatus({ scoreItems = [], error, onRetry, retrying }) {
               <Link key={item.agent?.id || item.agent?.username || item.agent_name} to="/admin/score-preview" className="block py-2.5 first:pt-0 last:pb-0 hover:bg-gray-50 dark:hover:bg-gray-800/40">
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <span className="min-w-0 truncate font-medium text-gray-800 dark:text-gray-100">{item.agent?.name || item.agent_name || '未命名坐席'}</span>
-                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] ${attention ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}>{item.level_label || (attention ? '需关注' : '正常')}</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-3xs ${attention ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'}`}>{item.level_label || (attention ? '需关注' : '正常')}</span>
                 </div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"><div className={`h-full rounded-full ${attention ? 'bg-amber-500' : 'bg-violet-500'}`} style={{ width: `${progress}%` }} /></div>
-                  <span className="w-16 shrink-0 text-right text-[10px] tabular-nums text-gray-500 dark:text-gray-400">{calls} / {target} 通</span>
+                  <span className="w-16 shrink-0 text-right text-3xs tabular-nums text-gray-500 dark:text-gray-400">{calls} / {target} 通</span>
                 </div>
               </Link>
             );
@@ -239,17 +239,17 @@ function AssignmentCapacity({ availableUnassigned = 0, totalStudents = 0, aLevel
   return (
     <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2"><Gauge className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" /><div><h2 className="text-xs font-semibold text-gray-900 dark:text-gray-100">分配池与处理容量</h2><p className="mt-0.5 text-[10px] text-gray-400">快速判断线索是否需要补充承接</p></div></div>
-        <Link to="/admin/leads?assignment=unassigned&active=1" className="shrink-0 text-[10px] font-medium text-blue-600 hover:underline dark:text-blue-400">去分配</Link>
+        <div className="flex min-w-0 items-center gap-2"><Gauge className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" /><div><h2 className="text-xs font-semibold text-gray-900 dark:text-gray-100">分配池与处理容量</h2><p className="mt-0.5 text-3xs text-gray-400">快速判断线索是否需要补充承接</p></div></div>
+        <Link to="/admin/leads?assignment=unassigned&active=1" className="shrink-0 text-3xs font-medium text-blue-600 hover:underline dark:text-blue-400">去分配</Link>
       </div>
       {error ? <DashboardPanelError title="分配池数据" onRetry={onRetry} retrying={retrying} /> : (
         <>
           <div className="grid grid-cols-3 divide-x divide-gray-100 rounded-xl bg-gray-50 py-3 text-center dark:divide-gray-800 dark:bg-gray-800/60">
-            <div><div className="text-lg font-black tabular-nums text-gray-950 dark:text-white">{loading ? '-' : unassigned.toLocaleString()}</div><div className="text-[10px] text-gray-400">待分配</div></div>
-            <div><div className="text-lg font-black tabular-nums text-gray-950 dark:text-white">{loading ? '-' : total.toLocaleString()}</div><div className="text-[10px] text-gray-400">全盘线索</div></div>
-            <div><div className="text-lg font-black tabular-nums text-amber-600 dark:text-amber-400">{loading ? '-' : Number(aLevelTotal || 0).toLocaleString()}</div><div className="text-[10px] text-gray-400">A级重点</div></div>
+            <div><div className="text-lg font-black tabular-nums text-gray-950 dark:text-white">{loading ? '-' : unassigned.toLocaleString()}</div><div className="text-3xs text-gray-400">待分配</div></div>
+            <div><div className="text-lg font-black tabular-nums text-gray-950 dark:text-white">{loading ? '-' : total.toLocaleString()}</div><div className="text-3xs text-gray-400">全盘线索</div></div>
+            <div><div className="text-lg font-black tabular-nums text-amber-600 dark:text-amber-400">{loading ? '-' : Number(aLevelTotal || 0).toLocaleString()}</div><div className="text-3xs text-gray-400">A级重点</div></div>
           </div>
-          <div className="mt-4 flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400"><span>已进入承接流程</span><span className="font-bold tabular-nums text-gray-800 dark:text-gray-200">{loading ? '-' : `${Math.max(0, Math.min(assignedRate, 100))}%`}</span></div>
+          <div className="mt-4 flex items-center justify-between text-3xs text-gray-500 dark:text-gray-400"><span>已进入承接流程</span><span className="font-bold tabular-nums text-gray-800 dark:text-gray-200">{loading ? '-' : `${Math.max(0, Math.min(assignedRate, 100))}%`}</span></div>
           <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"><div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-600" style={{ width: `${Math.max(0, Math.min(assignedRate, 100))}%` }} /></div>
         </>
       )}
@@ -272,7 +272,7 @@ function RegionRanking({ stats, error, onRetry, retrying }) {
           <MapPin className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <h2 className="truncate text-xs font-semibold text-gray-900 dark:text-gray-100">核心地域招生转化效率排位</h2>
         </div>
-        <span className="shrink-0 text-[10px] text-gray-400">Top 5</span>
+        <span className="shrink-0 text-3xs text-gray-400">Top 5</span>
       </div>
 
       {error ? (

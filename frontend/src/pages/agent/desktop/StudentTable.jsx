@@ -192,7 +192,7 @@ function StudentRow({
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label="需要协助" />
                 )}
               </div>
-              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
+              <div className="mt-0.5 flex items-center gap-2 text-2xs text-gray-400 dark:text-gray-500">
                 <AssignedDaysBadge days={student.days_since_assigned} />
                 {student.score != null && <span className="tabular-nums">{student.score} 分</span>}
               </div>
@@ -203,7 +203,7 @@ function StudentRow({
           <div className="max-w-[220px] truncate font-medium text-gray-700 dark:text-gray-200" title={student.school_name || '未知学校'}>
             {student.school_name || '未知学校'}
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">{student.region || '地域未填写'}</div>
+          <div className="mt-0.5 truncate text-2xs text-gray-400 dark:text-gray-500">{student.region || '地域未填写'}</div>
         </td>
         <td className={`border-y px-3 py-2.5 ${cellTone}`} onClick={(event) => event.stopPropagation()}>
           <StageProgress currentStage={student.stage} onStageClick={onUpdateStage} compact />
@@ -220,7 +220,7 @@ function StudentRow({
             </span>
           </div>
           {student.status_detail && (
-            <div className="mt-1 max-w-[160px] truncate text-[11px] text-gray-500 dark:text-gray-400" title={student.status_detail}>
+            <div className="mt-1 max-w-[160px] truncate text-2xs text-gray-500 dark:text-gray-400" title={student.status_detail}>
               {student.status_detail}
             </div>
           )}

@@ -289,7 +289,7 @@ export default function AdminWorkCenter() {
                 <h2 className="text-sm font-bold text-gray-950 dark:text-gray-100">
                 {queueTabs.find((tab) => tab.key === queue)?.label || '全部'}待办
                 </h2>
-                <p className="mt-0.5 text-[11px] text-gray-400">支持按学生、学校、区域和坐席快速定位</p>
+                <p className="mt-0.5 text-2xs text-gray-400">支持按学生、学校、区域和坐席快速定位</p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <label className="relative min-w-0 sm:w-64">

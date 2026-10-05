@@ -126,7 +126,7 @@ function AgentRow({ item }) {
               {item.agent?.name || '-'}
             </div>
             <span
-              className={`rounded-full px-2 py-0.5 text-[11px] ${
+              className={`rounded-full px-2 py-0.5 text-2xs ${
                 needsAttention
                   ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
                   : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
@@ -143,7 +143,7 @@ function AgentRow({ item }) {
           <div className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
             {Number(item.score || 0).toFixed(1)}
           </div>
-          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+          <div className="text-2xs text-gray-500 dark:text-gray-400">
             流程均耗 {Number(metrics.avg_recorded_duration_seconds || 0) > 0
               ? formatDuration(metrics.avg_recorded_duration_seconds)
               : '-'}
@@ -172,18 +172,18 @@ function MobileGlobalOverview({ summary, enrolledTotal, loading }) {
       <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
         <div>
           <h2 className="text-xs font-bold tracking-wide text-gray-900 dark:text-gray-100">全局数据总览</h2>
-          <p className="mt-0.5 text-[10px] text-gray-400">全库实时口径</p>
+          <p className="mt-0.5 text-3xs text-gray-400">全库实时口径</p>
         </div>
         <Globe2 className="h-4 w-4 text-blue-500" />
       </div>
       <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 dark:divide-gray-700">
         {cells.map(([label, value, detail]) => (
           <div key={label} className="min-w-0 px-4 py-3">
-            <div className="truncate text-[10px] font-medium text-gray-500 dark:text-gray-400">{label}</div>
+            <div className="truncate text-3xs font-medium text-gray-500 dark:text-gray-400">{label}</div>
             <div className="mt-1 text-lg font-black tabular-nums text-gray-950 dark:text-white">
               {loading ? '-' : n(value).toLocaleString()}
             </div>
-            <div className="mt-0.5 truncate text-[10px] text-gray-400">{detail}</div>
+            <div className="mt-0.5 truncate text-3xs text-gray-400">{detail}</div>
           </div>
         ))}
       </div>
@@ -582,7 +582,7 @@ export default function AdminMobileDash() {
                   type="button"
                   aria-pressed={scope === 'today'}
                   onClick={() => setScope('today')}
-                  className={`inline-flex min-h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition ${scope === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  className={`inline-flex min-h-7 items-center gap-1 rounded-lg px-2 text-2xs font-semibold transition ${scope === 'today' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
                 >
                   <CalendarDays className="h-3 w-3" />
                   今日
@@ -591,7 +591,7 @@ export default function AdminMobileDash() {
                   type="button"
                   aria-pressed={scope === 'all'}
                   onClick={() => setScope('all')}
-                  className={`inline-flex min-h-7 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition ${scope === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                  className={`inline-flex min-h-7 items-center gap-1 rounded-lg px-2 text-2xs font-semibold transition ${scope === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'}`}
                 >
                   <Globe2 className="h-3 w-3" />
                   全局
@@ -618,7 +618,7 @@ export default function AdminMobileDash() {
             <div className="mb-2 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">核心指标</h2>
-                <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">无数据卡片会自动隐藏，可在更多中调整展示</div>
+                <div className="mt-0.5 text-2xs text-gray-500 dark:text-gray-400">无数据卡片会自动隐藏，可在更多中调整展示</div>
               </div>
               <DashboardCardPicker
                 cards={metricCards}
