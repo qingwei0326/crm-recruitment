@@ -16,7 +16,7 @@ export default function StatCards({ totalStudents, contacted, totalA, todayCalls
         <Link
           to={s.link}
           key={i}
-          className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 lg:p-5 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition cursor-pointer"
+          className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 lg:p-5 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition cursor-pointer"
         >
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${s.color}`}>

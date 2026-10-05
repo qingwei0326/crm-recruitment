@@ -52,7 +52,7 @@ function VisitSheet({ open, onClose, onSubmit, submitting }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -111,7 +111,7 @@ function NoteSheet({ open, onClose, onSubmit, submitting, initialText = '', titl
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -157,7 +157,7 @@ function DateTimeSheet({
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -213,7 +213,7 @@ function WorkflowEditSheet({
       <div
         role="dialog"
         aria-label="编辑跟进状态"
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[88dvh] overflow-y-auto overscroll-contain"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[88dvh] overflow-y-auto overscroll-contain"
         onClick={(e) => e.stopPropagation()}
         aria-busy={saving}
       >
@@ -236,7 +236,7 @@ function WorkflowEditSheet({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 dark:bg-gray-800 p-1" role="tablist" aria-label="跟进状态编辑项">
+        <div className="grid grid-cols-2 gap-1 rounded-panel bg-gray-100 dark:bg-gray-800 p-1" role="tablist" aria-label="跟进状态编辑项">
           {WORKFLOW_EDIT_TABS.map((tab) => (
             <button
               key={tab.key}
@@ -270,7 +270,7 @@ function WorkflowEditSheet({
                   type="button"
                   disabled={saving}
                   onClick={() => onStatusChange(outcome)}
-                  className={`min-h-[50px] rounded-xl px-2 text-sm font-medium leading-5 whitespace-normal text-white ${outcome.className} disabled:opacity-60`}
+                  className={`min-h-[50px] rounded-panel px-2 text-sm font-medium leading-5 whitespace-normal text-white ${outcome.className} disabled:opacity-60`}
                 >
                   {outcome.label}
                 </button>
@@ -291,7 +291,7 @@ function WorkflowEditSheet({
                   type="button"
                   disabled={saving || student?.stage === stage}
                   onClick={() => onStageChange(stage)}
-                  className={`min-h-[44px] rounded-xl border px-2 text-sm font-medium leading-5 whitespace-normal ${
+                  className={`min-h-[44px] rounded-panel border px-2 text-sm font-medium leading-5 whitespace-normal ${
                     student?.stage === stage
                       ? 'bg-teal-600 text-white border-teal-600'
                       : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'
@@ -681,7 +681,7 @@ export default function MobileStudentDetail() {
         />
         <button
           onClick={() => navigate(-1)}
-          className="mx-auto min-h-[44px] rounded-xl px-4 text-sm font-medium text-gray-600 dark:text-gray-300"
+          className="mx-auto min-h-[44px] rounded-panel px-4 text-sm font-medium text-gray-600 dark:text-gray-300"
         >
           返回上一页
         </button>
@@ -805,7 +805,7 @@ export default function MobileStudentDetail() {
       </header>
 
       <div className="p-3 space-y-3">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4">
           <StudentInfoCard
             student={student}
             onDial={handleDial}
@@ -818,11 +818,11 @@ export default function MobileStudentDetail() {
           />
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4">
           <PersonalGroupMembershipEditor studentId={student.id} />
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">
@@ -843,7 +843,7 @@ export default function MobileStudentDetail() {
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="min-w-0 rounded-xl bg-gray-50 dark:bg-gray-700/50 p-3">
+            <div className="min-w-0 rounded-panel bg-gray-50 dark:bg-gray-700/50 p-3">
               <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">联系状态</div>
               <StatusBadge status={student.status} />
               {student.status_detail && (
@@ -852,7 +852,7 @@ export default function MobileStudentDetail() {
                 </div>
               )}
             </div>
-            <div className="min-w-0 rounded-xl bg-gray-50 dark:bg-gray-700/50 p-3">
+            <div className="min-w-0 rounded-panel bg-gray-50 dark:bg-gray-700/50 p-3">
               <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">跟进阶段</div>
               <div className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-5 break-words">
                 {stageLabel(student.stage) || '未设置'}
@@ -861,7 +861,7 @@ export default function MobileStudentDetail() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4">
           <div className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-purple-500" />
             完整时间线
@@ -885,7 +885,7 @@ export default function MobileStudentDetail() {
           type="button"
           onClick={handleDial}
           disabled={dialing}
-          className="flex-1 min-h-[52px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-base flex items-center justify-center gap-2 disabled:opacity-60 active:scale-95"
+          className="flex-1 min-h-[52px] rounded-panel bg-blue-600 hover:bg-blue-700 text-white font-semibold text-base flex items-center justify-center gap-2 disabled:opacity-60 active:scale-95"
         >
           {dialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Phone className="w-5 h-5" />}
           开始拨打
@@ -893,7 +893,7 @@ export default function MobileStudentDetail() {
         <button
           type="button"
           onClick={() => setMoreActionsOpen(true)}
-          className="inline-flex min-h-[52px] min-w-[72px] items-center justify-center gap-1 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 active:scale-95 dark:border-slate-600 dark:text-slate-200"
+          className="inline-flex min-h-[52px] min-w-[72px] items-center justify-center gap-1 rounded-panel border border-slate-200 px-3 text-sm font-medium text-slate-700 active:scale-95 dark:border-slate-600 dark:text-slate-200"
           aria-label="更多操作"
         >
           <MoreHorizontal className="h-5 w-5" />
@@ -907,7 +907,7 @@ export default function MobileStudentDetail() {
             role="dialog"
             aria-modal="true"
             aria-label="学生更多操作"
-            className="w-full rounded-t-2xl bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl dark:bg-slate-900"
+            className="w-full rounded-t-panel bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl dark:bg-slate-900"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
@@ -920,16 +920,16 @@ export default function MobileStudentDetail() {
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { setMoreActionsOpen(false); setNoteOpen(true); }} className="min-h-[72px] rounded-xl bg-slate-50 px-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <button type="button" onClick={() => { setMoreActionsOpen(false); setNoteOpen(true); }} className="min-h-[72px] rounded-panel bg-slate-50 px-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                 写备注
               </button>
-              <button type="button" onClick={() => { setMoreActionsOpen(false); setVisitOpen(true); }} className="min-h-[72px] rounded-xl bg-teal-50 px-2 text-sm font-medium text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
+              <button type="button" onClick={() => { setMoreActionsOpen(false); setVisitOpen(true); }} className="min-h-[72px] rounded-panel bg-teal-50 px-2 text-sm font-medium text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
                 登记到访
               </button>
-              <button type="button" onClick={() => { setMoreActionsOpen(false); openWorkflowEditor(); }} className="min-h-[72px] rounded-xl bg-blue-50 px-2 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+              <button type="button" onClick={() => { setMoreActionsOpen(false); openWorkflowEditor(); }} className="min-h-[72px] rounded-panel bg-blue-50 px-2 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                 编辑状态
               </button>
-              <button type="button" onClick={() => { setMoreActionsOpen(false); handleToggleNeedHelp(); }} className={`min-h-[72px] rounded-xl px-2 text-sm font-medium ${student?.need_help ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300' : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300'}`}>
+              <button type="button" onClick={() => { setMoreActionsOpen(false); handleToggleNeedHelp(); }} className={`min-h-[72px] rounded-panel px-2 text-sm font-medium ${student?.need_help ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300' : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300'}`}>
                 {student?.need_help ? '取消协助' : '需要协助'}
               </button>
             </div>

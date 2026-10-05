@@ -44,7 +44,7 @@ function StatCard({ label, value, color = 'blue', onClick, hint }) {
     <Component
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800"
+      className="min-w-0 rounded-panel border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</div>
@@ -83,7 +83,7 @@ export function StudentRow({ s, onDial, onDetail, dialing, overdueOnly = false }
   ].filter((contact) => contact.phone);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-3.5 min-[380px]:p-4 space-y-3">
+    <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-3.5 min-[380px]:p-4 space-y-3">
       <button
         type="button"
         onClick={() => onDetail(s.id)}
@@ -122,7 +122,7 @@ export function StudentRow({ s, onDial, onDetail, dialing, overdueOnly = false }
               type="button"
               disabled={dialing}
               onClick={() => onDial(s.id, contact.key)}
-              className="inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-60"
+              className="inline-flex h-12 min-w-0 items-center justify-center gap-2 rounded-panel bg-blue-600 px-3 text-sm font-semibold text-white transition hover:bg-blue-700 active:scale-95 disabled:opacity-60"
               aria-label={`拨打 ${s.name || '学生'} ${contact.label}`}
             >
               {dialing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Phone className="w-5 h-5" />}
@@ -133,7 +133,7 @@ export function StudentRow({ s, onDial, onDetail, dialing, overdueOnly = false }
           <button
             type="button"
             disabled
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gray-100 text-sm font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-500"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-panel bg-gray-100 text-sm font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-500"
           >
             <Phone className="w-5 h-5" />
             无电话
@@ -231,7 +231,7 @@ function SettingsSheet({ open, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[85vh] overflow-y-auto"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -245,7 +245,7 @@ function SettingsSheet({ open, onClose }) {
           </button>
         </div>
 
-        <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-3">
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-panel px-3 py-3">
           <div className="text-xs text-gray-400 mb-0.5">当前用户</div>
           <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
             {user?.name || user?.username} · {user?.role}
@@ -605,7 +605,7 @@ export function PendingList() {
             value={pendingSearch}
             onChange={(e) => setPendingSearch(e.target.value)}
             placeholder="搜索姓名或手机号尾号"
-            className="w-full min-h-[44px] rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-900/30"
+            className="w-full min-h-[44px] rounded-panel border border-gray-200 bg-white pl-9 pr-10 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-900/30"
           />
           {pendingSearch && (
             <button
@@ -627,7 +627,7 @@ export function PendingList() {
           aria-label={selectionMode ? '退出批量整理' : '批量整理学生分组'}
           aria-pressed={selectionMode}
           title={selectionMode ? '退出批量整理' : '批量整理'}
-          className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${selectionMode ? 'border-cyan-300 bg-cyan-100 text-cyan-800 dark:border-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+          className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-panel border ${selectionMode ? 'border-cyan-300 bg-cyan-100 text-cyan-800 dark:border-cyan-800 dark:bg-cyan-900/50 dark:text-cyan-200' : 'border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
         >
           <ListChecks className="h-5 w-5" />
         </button>
@@ -806,7 +806,7 @@ export function PendingList() {
             type="button"
             disabled={loadingMore}
             onClick={loadMore}
-            className="min-h-[48px] w-full rounded-xl border border-blue-300 bg-white text-sm font-medium text-blue-600 disabled:opacity-60 dark:border-blue-700 dark:bg-gray-800 dark:text-blue-300"
+            className="min-h-[48px] w-full rounded-panel border border-blue-300 bg-white text-sm font-medium text-blue-600 disabled:opacity-60 dark:border-blue-700 dark:bg-gray-800 dark:text-blue-300"
           >
             {loadingMore ? '加载中…' : `加载更多（剩余${listTotal - items.length}）`}
           </button>
@@ -850,7 +850,7 @@ function MePanel({ onOpenSettings }) {
 
   return (
     <div className="space-y-3">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 flex items-center justify-center text-lg font-semibold">
             {(user?.name || user?.username || '?').slice(0, 1)}
@@ -869,13 +869,13 @@ function MePanel({ onOpenSettings }) {
       <button
         type="button"
         onClick={() => setShowPwd(!showPwd)}
-        className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
+        className="w-full bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
       >
         <span>修改密码</span>
         <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showPwd ? 'rotate-90' : ''}`} />
       </button>
       {showPwd && (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
+        <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 space-y-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">当前密码</label>
             <input aria-label="当前密码" type="password" value={oldPwd} onChange={e => setOldPwd(e.target.value)} placeholder="请输入当前密码"
@@ -901,7 +901,7 @@ function MePanel({ onOpenSettings }) {
       <button
         type="button"
         onClick={onOpenSettings}
-        className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
+        className="w-full bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
       >
         <span>PushPlus Token 设置</span>
         <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -910,7 +910,7 @@ function MePanel({ onOpenSettings }) {
       <button
         type="button"
         onClick={toggle}
-        className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
+        className="w-full bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
       >
         <span>主题模式</span>
         <span className="text-gray-500 dark:text-gray-400">{dark ? '深色' : '浅色'}</span>
@@ -919,7 +919,7 @@ function MePanel({ onOpenSettings }) {
       <button
         type="button"
         onClick={() => setHelpOpen(true)}
-        className="w-full bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
+        className="w-full bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 text-left text-sm text-gray-800 dark:text-gray-200 min-h-[56px] flex items-center justify-between"
       >
         <span>使用说明</span>
         <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -933,7 +933,7 @@ function MePanel({ onOpenSettings }) {
           await logout();
           window.location.href = '/login';
         }}
-        className="w-full min-h-[48px] bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 rounded-2xl text-sm font-medium"
+        className="w-full min-h-[48px] bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-300 rounded-panel text-sm font-medium"
       >
         退出登录
       </button>
@@ -1043,7 +1043,7 @@ export default function MobileHome() {
         {tab === 'tasks' && (
           <>
             {/* Progress card */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 p-4 space-y-3">
+            <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
                   今日任务进度
@@ -1147,7 +1147,7 @@ export default function MobileHome() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="搜索姓名或电话"
-                className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-9 py-2.5 rounded-panel border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               {search && (
                 <button
@@ -1194,7 +1194,7 @@ export default function MobileHome() {
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className="w-full py-3 text-sm text-blue-600 dark:text-blue-400 text-center active:bg-gray-100 dark:active:bg-gray-700 rounded-xl"
+                    className="w-full py-3 text-sm text-blue-600 dark:text-blue-400 text-center active:bg-gray-100 dark:active:bg-gray-700 rounded-panel"
                   >
                     {loadingMore ? '加载中…' : '加载更多'}
                   </button>

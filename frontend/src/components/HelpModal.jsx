@@ -236,7 +236,7 @@ export default memo(function HelpModal({ isOpen, onClose, role = 'admin' }) {
       <div className="fixed inset-0 bg-black/40" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-xl border dark:border-gray-700 w-full max-w-lg max-h-[80vh] flex flex-col">
+      <div className="relative bg-white dark:bg-gray-800 rounded-panel shadow-xl border dark:border-gray-700 w-full max-w-lg max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b dark:border-gray-700 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -256,7 +256,7 @@ export default memo(function HelpModal({ isOpen, onClose, role = 'admin' }) {
         {/* Body */}
         <div className="overflow-y-auto px-5 py-4 space-y-1 flex-1">
           {sections.map((section, i) => (
-            <div key={i} className="border dark:border-gray-700 rounded-xl overflow-hidden">
+            <div key={i} className="border dark:border-gray-700 rounded-panel overflow-hidden">
               <button
                 onClick={() => toggle(i)}
                 className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

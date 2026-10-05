@@ -108,7 +108,7 @@ export default function AgentWorkMobile({
             <Menu className="h-5 w-5 text-slate-600 dark:text-gray-300" />
           </button>
           <div className="min-w-0">
-            <div className="truncate text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
+            <div className="truncate text-3xs font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
               招生运营 / 话务执行
             </div>
             <div className="flex items-center gap-2">
@@ -331,9 +331,9 @@ export default function AgentWorkMobile({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="grid grid-cols-3 gap-3 flex-1">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center"><div className="text-2xl font-bold text-blue-600">{followingData.total}</div><div className="text-xs text-gray-500">跟进中</div></div>
+                  <div className="bg-white dark:bg-gray-800 rounded-panel border p-4 text-center"><div className="text-2xl font-bold text-blue-600">{followingData.total}</div><div className="text-xs text-gray-500">跟进中</div></div>
                   {followingData.intent_counts && Object.entries(followingData.intent_counts).filter(([k]) => k !== '无').map(([level, count]) => (
-                    <div key={level} className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center"><div className="text-2xl font-bold text-amber-600">{count}</div><div className="text-xs text-gray-500">{level}级意向</div></div>
+                    <div key={level} className="bg-white dark:bg-gray-800 rounded-panel border p-4 text-center"><div className="text-2xl font-bold text-amber-600">{count}</div><div className="text-xs text-gray-500">{level}级意向</div></div>
                   ))}
                 </div>
                 <button onClick={fetchFollowing} disabled={followingLoading} className="ml-2 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
@@ -344,7 +344,7 @@ export default function AgentWorkMobile({
                 <div className="space-y-2">
                   {followingData.list.map((item) => (
                     <button key={item.id} onClick={() => { loadDetail(item.id); setShowDetail(true); }}
-                      className="w-full text-left bg-white dark:bg-gray-800 rounded-xl border p-3 active:bg-gray-50 dark:active:bg-gray-700">
+                      className="w-full text-left bg-white dark:bg-gray-800 rounded-panel border p-3 active:bg-gray-50 dark:active:bg-gray-700">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">

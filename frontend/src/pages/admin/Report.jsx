@@ -132,7 +132,7 @@ export default function Report({ embedded = false }) {
           {/* ── Section 0: 报名后生命周期分布 + 流失率 ── */}
           {substageData && (
             <LazyChart height={340}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm">
                 <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
                   <TrendingDown className="w-5 h-5 text-red-500" />
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100">报名后生命周期</h3>
@@ -216,7 +216,7 @@ export default function Report({ embedded = false }) {
           )}
 
           {/* ── Section 1: Agent ranking ── */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm">
             <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-amber-500" />
@@ -339,7 +339,7 @@ export default function Report({ embedded = false }) {
           {/* ── Section 2: Visit schedules ── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Campus visits */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm">
               <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
                   <Home className="w-4 h-4 text-green-600 dark:text-green-400" />
@@ -400,7 +400,7 @@ export default function Report({ embedded = false }) {
             </div>
 
             {/* Home visits */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+            <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm">
               <div className="px-4 py-4 border-b dark:border-gray-700 flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
                   <MapPin className="w-4 h-4 text-amber-600 dark:text-amber-400" />
@@ -464,7 +464,7 @@ export default function Report({ embedded = false }) {
           {/* ── Section 3: 坐席工作量热力图 ── */}
           {heatmapData && (
             <LazyChart height={320}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm">
                 <div className="px-4 lg:px-6 py-4 border-b dark:border-gray-700 flex items-center gap-2">
                   <BarChart3 className="w-5 h-5 text-blue-500" />
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100">坐席工作量热力图</h3>

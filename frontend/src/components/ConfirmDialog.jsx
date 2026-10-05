@@ -50,7 +50,7 @@ export function ConfirmProvider({ children }) {
           onClick={() => close(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 shadow-xl p-5"
+            className="w-full max-w-sm rounded-panel bg-white dark:bg-gray-800 shadow-xl p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -134,7 +134,7 @@ export function PromptProvider({ children }) {
           onClick={() => close(null)}
         >
           <form
-            className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 shadow-xl p-5"
+            className="w-full max-w-sm rounded-panel bg-white dark:bg-gray-800 shadow-xl p-5"
             onClick={(e) => e.stopPropagation()}
             onSubmit={submit}
           >

@@ -199,7 +199,7 @@ export default function CallVolumeQuery({ embedded = false }) {
               </button>
             </div>
           )}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 space-y-3">
+          <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 space-y-3">
             <div className="flex flex-wrap gap-3 items-center">
               <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                 <span className="shrink-0">开始日期</span>
@@ -251,7 +251,7 @@ export default function CallVolumeQuery({ embedded = false }) {
             {summaryItems.map((item) => (
               <div
                 key={item.label}
-                className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
+                className="rounded-panel border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
               >
                 <div className="text-xs text-gray-500 dark:text-gray-400">{item.label}</div>
                 <div className="mt-1 text-xl font-semibold text-gray-900 dark:text-gray-100">
@@ -261,7 +261,7 @@ export default function CallVolumeQuery({ embedded = false }) {
             ))}
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
                 <thead>

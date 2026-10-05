@@ -65,7 +65,7 @@ export function AdminMetricStrip({ cards, loading, onRetry }) {
           </>
         );
         const className =
-          'flex min-h-[104px] items-center gap-4 rounded-2xl border border-gray-200/80 bg-white p-5 shadow-sm transition dark:border-gray-800 dark:bg-gray-900 xl:p-6';
+          'flex min-h-[104px] items-center gap-4 rounded-panel border border-gray-200/80 bg-white p-5 shadow-sm transition dark:border-gray-800 dark:bg-gray-900 xl:p-6';
 
         return card.error ? (
           <button
@@ -100,7 +100,7 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
   const maxValue = Math.max(...Object.values(stageStats || {}).map(Number), 1);
 
   return (
-    <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="rounded-panel border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
@@ -139,7 +139,7 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
                   style={{ height: `${height}%` }}
                 />
               </span>
-              <span className="flex h-10 items-start justify-center px-0.5 pt-1.5 text-center text-[9px] font-medium leading-3 text-gray-500 dark:text-gray-400">
+              <span className="flex h-10 items-start justify-center px-0.5 pt-1.5 text-center text-3xs font-medium leading-3 text-gray-500 dark:text-gray-400">
                 {compactStageLabel[stage] || stageLabel(stage)}
               </span>
             </>
@@ -169,7 +169,7 @@ function StageDistribution({ stageStats, canViewLeadsManage, error, onRetry, ret
 
 function ConversionFunnel({ funnelData, error, onRetry, retrying }) {
   return (
-    <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="rounded-panel border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-4 flex items-center gap-2">
         <TrendingUp className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
         <h2 className="text-xs font-semibold text-gray-900 dark:text-gray-100">全链路招生流转漏斗</h2>
@@ -191,7 +191,7 @@ function AgentWorkStatus({ scoreItems = [], error, onRetry, retrying }) {
     .slice(0, 5);
 
   return (
-    <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="rounded-panel border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <UserRound className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-400" />
@@ -237,14 +237,14 @@ function AssignmentCapacity({ availableUnassigned = 0, totalStudents = 0, aLevel
   const unassigned = Number(availableUnassigned || 0);
   const assignedRate = total > 0 ? Math.round(((total - unassigned) / total) * 100) : 0;
   return (
-    <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="rounded-panel border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2"><Gauge className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-400" /><div><h2 className="text-xs font-semibold text-gray-900 dark:text-gray-100">分配池与处理容量</h2><p className="mt-0.5 text-3xs text-gray-400">快速判断线索是否需要补充承接</p></div></div>
         <Link to="/admin/leads?assignment=unassigned&active=1" className="shrink-0 text-3xs font-medium text-blue-600 hover:underline dark:text-blue-400">去分配</Link>
       </div>
       {error ? <DashboardPanelError title="分配池数据" onRetry={onRetry} retrying={retrying} /> : (
         <>
-          <div className="grid grid-cols-3 divide-x divide-gray-100 rounded-xl bg-gray-50 py-3 text-center dark:divide-gray-800 dark:bg-gray-800/60">
+          <div className="grid grid-cols-3 divide-x divide-gray-100 rounded-panel bg-gray-50 py-3 text-center dark:divide-gray-800 dark:bg-gray-800/60">
             <div><div className="text-lg font-black tabular-nums text-gray-950 dark:text-white">{loading ? '-' : unassigned.toLocaleString()}</div><div className="text-3xs text-gray-400">待分配</div></div>
             <div><div className="text-lg font-black tabular-nums text-gray-950 dark:text-white">{loading ? '-' : total.toLocaleString()}</div><div className="text-3xs text-gray-400">全盘线索</div></div>
             <div><div className="text-lg font-black tabular-nums text-amber-600 dark:text-amber-400">{loading ? '-' : Number(aLevelTotal || 0).toLocaleString()}</div><div className="text-3xs text-gray-400">A级重点</div></div>
@@ -266,7 +266,7 @@ function RegionRanking({ stats, error, onRetry, retrying }) {
   );
 
   return (
-    <section className="flex min-h-[230px] flex-col rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
+    <section className="flex min-h-[230px] flex-col rounded-panel border border-gray-200/80 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <MapPin className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -291,7 +291,7 @@ function RegionRanking({ stats, error, onRetry, retrying }) {
                 <div className="h-1.5 overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
                   <div className={`h-full rounded transition-all duration-500 ${barClass}`} style={{ width: `${rate}%` }} />
                 </div>
-                <div className="text-[9px] tabular-nums text-gray-400">
+                <div className="text-3xs tabular-nums text-gray-400">
                   {Number(region.a_count || 0).toLocaleString()} 名 A 级 · {Number(region.total || 0).toLocaleString()} 名学生
                 </div>
               </div>

@@ -63,7 +63,7 @@ export default function YesterdayUncontactedPrompt({ user, onHandleNow }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="yesterday-uncontacted-title"
-        className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl dark:bg-gray-800"
+        className="w-full max-w-md rounded-panel bg-white p-5 shadow-2xl dark:bg-gray-800"
       >
         <div className="flex items-start gap-3">
           <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
@@ -86,7 +86,7 @@ export default function YesterdayUncontactedPrompt({ user, onHandleNow }) {
           {previewItems.map((item) => (
             <div
               key={item.id}
-              className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40"
+              className="rounded-panel border border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900/40"
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
                 <div className="min-w-0">
