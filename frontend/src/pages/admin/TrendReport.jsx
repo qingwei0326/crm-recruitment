@@ -187,7 +187,7 @@ export default function TrendReport({ embedded = false }) {
             </div>
           )}
           {/* Controls */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 flex flex-wrap gap-3 items-center">
+          <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 flex flex-wrap gap-3 items-center">
             <button
               onClick={() => handleRangeChange('week')}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${range === 'week' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
@@ -232,7 +232,7 @@ export default function TrendReport({ embedded = false }) {
             <>
               {/* Calls + Enrollments chart */}
               {visibleMainSeries.length > 0 && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm p-4">
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">每日趋势</h3>
                   <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
                     <LineChart data={chartData}>
@@ -271,7 +271,7 @@ export default function TrendReport({ embedded = false }) {
 
               {/* Agent comparison chart */}
               {visibleAgents.length > 0 && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm p-4">
+                <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm p-4">
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">
                     各话务员每日呼出量对比
                   </h3>
@@ -348,7 +348,7 @@ export default function TrendReport({ embedded = false }) {
               )}
 
               {/* Data table */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm overflow-hidden">
+              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b dark:border-gray-700">
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100">数据明细</h3>
                 </div>

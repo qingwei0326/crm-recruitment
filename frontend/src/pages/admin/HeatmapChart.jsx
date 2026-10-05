@@ -78,7 +78,7 @@ export default function HeatmapChart({ data }) {
                   title={`${agent} ${dates[di]}: ${val} 通`}
                 >
                   {val > 0 && (
-                    <span className="text-[9px] font-medium text-gray-700 dark:text-gray-200">
+                    <span className="text-3xs font-medium text-gray-700 dark:text-gray-200">
                       {val}
                     </span>
                   )}

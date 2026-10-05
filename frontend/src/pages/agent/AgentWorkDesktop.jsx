@@ -75,7 +75,7 @@ export default function AgentWorkDesktop({
       {/* Sidebar */}
       <aside className="flex w-64 shrink-0 flex-col bg-slate-950 text-white">
         <div className="flex items-center gap-3 border-b border-slate-800/90 px-5 py-5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-950/30">
+          <div className="flex h-10 w-10 items-center justify-center rounded-panel bg-emerald-600 shadow-lg shadow-emerald-950/30">
             <Phone className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0">

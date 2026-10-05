@@ -75,12 +75,12 @@ export default [
       'no-restricted-syntax': [
         'error',
         {
-          selector: 'Literal[value=/text-.1[01]px.|bg-.#f5f7fb.|shadow-.0_2px_10px/]',
-          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark).',
+          selector: 'Literal[value=/text-.[189][01]?px.|bg-.#f5f7fb.|shadow-.0_2px_10px|rounded-xl|rounded-2xl|rounded-t-xl|rounded-t-2xl/]',
+          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark), rounded-panel.',
         },
         {
-          selector: 'TemplateElement[value.raw=/text-.1[01]px.|bg-.#f5f7fb.|shadow-.0_2px_10px/]',
-          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark).',
+          selector: 'TemplateElement[value.raw=/text-.[189][01]?px.|bg-.#f5f7fb.|shadow-.0_2px_10px|rounded-xl|rounded-2xl|rounded-t-xl|rounded-t-2xl/]',
+          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark), rounded-panel.',
         },
       ],
     },

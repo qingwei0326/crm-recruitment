@@ -29,7 +29,7 @@ function fmt(value) {
 
 function Metric({ label, value, hint }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <div className="rounded-panel border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
         {fmt(value)}
@@ -136,7 +136,7 @@ export default function SmartAssignment() {
         </PageHeader>
 
         <div className="p-4 lg:p-6 max-w-6xl mx-auto space-y-4">
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <section className="rounded-panel border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <h2 className="mb-3 text-sm font-semibold text-gray-900 dark:text-gray-100">
               筛选与参数
             </h2>
@@ -221,7 +221,7 @@ export default function SmartAssignment() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <section className="rounded-panel border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">坐席负载</h2>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-sm">
@@ -262,7 +262,7 @@ export default function SmartAssignment() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <section className="rounded-panel border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">分配建议</h2>
               <div className="text-sm font-semibold text-blue-600">

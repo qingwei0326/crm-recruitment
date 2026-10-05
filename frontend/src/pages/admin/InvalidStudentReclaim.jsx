@@ -407,7 +407,7 @@ export default function InvalidStudentReclaim() {
               </Link>
             </div>
           )}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 space-y-4">
+          <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4 space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:justify-between">
               <div className="flex items-center gap-3">
                 <School className="w-5 h-5 text-blue-600" />
@@ -479,18 +479,18 @@ export default function InvalidStudentReclaim() {
 
           <div className="space-y-2">
             {loading ? (
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-12 text-center">
+              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-12 text-center">
                 <Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400" />
               </div>
             ) : schoolGroups.length === 0 ? (
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-12 text-center text-gray-400">
+              <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-12 text-center text-gray-400">
                 {appliedQ ? `没有匹配「${appliedQ}」的无效线索` : '暂无无效线索'}
               </div>
             ) : (
               schoolGroups.map((g) => (
                 <div
                   key={g.name}
-                  className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden"
+                  className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 overflow-hidden"
                 >
                   <div
                     className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"

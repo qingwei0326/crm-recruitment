@@ -54,12 +54,12 @@ export default function FollowingView({ followingData, loading, onRefresh, onOpe
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
+        <div className="bg-white dark:bg-gray-800 rounded-panel border p-4 text-center">
           <div className="text-2xl font-bold text-blue-600">{total}</div>
           <div className="text-xs text-gray-500">跟进中</div>
         </div>
         {intent_counts && Object.entries(intent_counts).filter(([k]) => k !== '无').map(([level, count]) => (
-          <div key={level} className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center">
+          <div key={level} className="bg-white dark:bg-gray-800 rounded-panel border p-4 text-center">
             <div className="text-2xl font-bold text-amber-600">{count}</div>
             <div className="text-xs text-gray-500">{level}级意向</div>
           </div>
@@ -73,7 +73,7 @@ export default function FollowingView({ followingData, loading, onRefresh, onOpe
             <button
               key={item.id}
               onClick={() => onOpenDetail?.(item.id)}
-              className="w-full text-left bg-white dark:bg-gray-800 rounded-xl border p-3 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+              className="w-full text-left bg-white dark:bg-gray-800 rounded-panel border p-3 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">

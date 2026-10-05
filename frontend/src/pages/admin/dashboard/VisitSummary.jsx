@@ -3,7 +3,7 @@ import { MapPin, Home, Calendar } from 'lucide-react';
 export default function VisitSummary({ data }) {
   if (!data) return null;
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 shadow-sm">
+    <div className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 shadow-sm">
       <div className="px-4 py-4 border-b dark:border-gray-700">
         <h3 className="font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
           <MapPin className="w-4 h-4" /> 到访汇总

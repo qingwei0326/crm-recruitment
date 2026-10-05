@@ -79,10 +79,10 @@ function todayRecordingCounts(metrics = {}) {
 
 function MetricCard({ icon: Icon, label, value, detail, tone = 'gray', to }) {
   const body = (
-    <div className={`group min-h-[116px] rounded-2xl border p-4 shadow-sm transition hover:shadow-md ${metricTone[tone] || metricTone.gray}`}>
+    <div className={`group min-h-[116px] rounded-panel border p-4 shadow-sm transition hover:shadow-md ${metricTone[tone] || metricTone.gray}`}>
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0 break-words text-xs font-semibold leading-4 opacity-80">{label}</div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/70 dark:bg-gray-900/40">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-panel bg-white/70 dark:bg-gray-900/40">
           <Icon className="h-4 w-4 opacity-80" />
         </div>
       </div>
@@ -96,7 +96,7 @@ function MetricCard({ icon: Icon, label, value, detail, tone = 'gray', to }) {
 
 function QuickAction({ icon: Icon, title, detail, tone = 'gray', to }) {
   const body = (
-    <div className={`flex min-h-[72px] items-center gap-3 rounded-xl border px-3 py-3 ${metricTone[tone] || metricTone.gray}`}>
+    <div className={`flex min-h-[72px] items-center gap-3 rounded-panel border px-3 py-3 ${metricTone[tone] || metricTone.gray}`}>
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/70 dark:bg-gray-900/40">
         <Icon className="h-5 w-5" />
       </div>
@@ -117,7 +117,7 @@ function AgentRow({ item }) {
   return (
     <Link
       to={`/admin/score-preview?filter=${needsAttention ? 'attention' : 'all'}`}
-      className="block rounded-xl border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800"
+      className="block rounded-panel border border-gray-200 bg-white px-3 py-3 dark:border-gray-700 dark:bg-gray-800"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -168,7 +168,7 @@ function MobileGlobalOverview({ summary, enrolledTotal, loading }) {
   ];
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+    <section className="overflow-hidden rounded-panel border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700">
         <div>
           <h2 className="text-xs font-bold tracking-wide text-gray-900 dark:text-gray-100">全局数据总览</h2>
@@ -565,7 +565,7 @@ export default function AdminMobileDash() {
         </PageHeader>
 
         <div className="space-y-4 px-4 py-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
-          <section className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+          <section className="rounded-panel border border-blue-100 bg-blue-50/70 px-4 py-4 dark:border-blue-900/60 dark:bg-blue-950/20">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-gray-950 dark:text-white">移动指挥中心</div>
@@ -576,7 +576,7 @@ export default function AdminMobileDash() {
               <div
                 role="group"
                 aria-label="移动管理数据范围"
-                className="flex shrink-0 items-center gap-0.5 rounded-xl border border-blue-100 bg-white/80 p-1 dark:border-blue-900/60 dark:bg-gray-800/80"
+                className="flex shrink-0 items-center gap-0.5 rounded-panel border border-blue-100 bg-white/80 p-1 dark:border-blue-900/60 dark:bg-gray-800/80"
               >
                 <button
                   type="button"
@@ -600,7 +600,7 @@ export default function AdminMobileDash() {
             </div>
           </section>
 
-          <section className={`rounded-2xl border px-4 py-4 ${hasCritical ? metricTone.amber : metricTone.green}`}>
+          <section className={`rounded-panel border px-4 py-4 ${hasCritical ? metricTone.amber : metricTone.green}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold">
@@ -628,7 +628,7 @@ export default function AdminMobileDash() {
               />
             </div>
             {visibleMetricCards.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-6 text-center text-xs text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-300">
+              <div className="rounded-panel border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-6 text-center text-xs text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-300">
                 暂无可展示指标
               </div>
             ) : (
@@ -644,7 +644,7 @@ export default function AdminMobileDash() {
             <MobileGlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} />
           )}
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <section className="rounded-panel border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">异常处理</h2>
@@ -665,7 +665,7 @@ export default function AdminMobileDash() {
               </div>
             </div>
             {visibleActionCards.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 px-3 py-5 text-center text-xs text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-300">
+              <div className="rounded-panel border border-dashed border-emerald-200 bg-emerald-50/60 px-3 py-5 text-center text-xs text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-300">
                 暂无需要处理的异常
               </div>
             ) : (
@@ -678,7 +678,7 @@ export default function AdminMobileDash() {
           </section>
 
           {canViewScorePreview && (
-            <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <section className="rounded-panel border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">话务员概览</h2>
@@ -699,7 +699,7 @@ export default function AdminMobileDash() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-xl bg-gray-50 px-3 py-6 text-center text-sm text-gray-500 dark:bg-gray-900/50 dark:text-gray-400">
+                <div className="rounded-panel bg-gray-50 px-3 py-6 text-center text-sm text-gray-500 dark:bg-gray-900/50 dark:text-gray-400">
                   暂无话务员评分数据
                 </div>
               )}

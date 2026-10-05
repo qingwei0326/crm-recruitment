@@ -84,7 +84,7 @@ function DestructiveConfirm({ call, busy, onCancel, onConfirm }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="assistant-destructive-title"
-        className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-t-xl border border-red-200 bg-white shadow-2xl dark:border-red-900 dark:bg-gray-800 sm:rounded-lg"
+        className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-t-panel border border-red-200 bg-white shadow-2xl dark:border-red-900 dark:bg-gray-800 sm:rounded-lg"
       >
         <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-gray-700">
           <ShieldAlert className="h-5 w-5 shrink-0 text-red-600" />

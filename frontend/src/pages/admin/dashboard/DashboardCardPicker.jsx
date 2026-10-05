@@ -137,7 +137,7 @@ export function DashboardCardPicker({
         <div
           role="dialog"
           aria-label="选择展示卡片"
-          className="absolute right-0 top-10 z-30 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          className="absolute right-0 top-10 z-30 w-64 rounded-panel border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
         >
           <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2.5 dark:border-slate-800">
             <div>
