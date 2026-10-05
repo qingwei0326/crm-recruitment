@@ -77,7 +77,7 @@ test.describe('mobile layout polish', () => {
     await page.goto('/mobile');
 
     await expect(page.getByText('超长名字学生甲乙丙丁')).toBeVisible();
-    await expect(page.getByText('下一步：首次呼出')).toBeVisible();
+    await expect(page.getByText(/拨 超长监护人称呼一号/)).toBeVisible();
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ path: 'test-results/mobile-agent-polish.png', fullPage: true });
   });
