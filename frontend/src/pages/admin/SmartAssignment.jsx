@@ -20,6 +20,7 @@ import { getApiErrorMessage } from '../../utils';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { useToast } from '../../components/Toast';
 import { ADMIN_OPERATION_PERMISSIONS, canPerformAdminOperation } from '../../adminPermissions';
+import { EmptyState } from '../../components/AsyncState';
 
 const numberFmt = new Intl.NumberFormat('zh-CN');
 
@@ -257,7 +258,7 @@ export default function SmartAssignment() {
                 </tbody>
               </table>
               {(!preview?.agents || preview.agents.length === 0) && (
-                <div className="py-8 text-center text-sm text-gray-400">暂无可用坐席</div>
+                <EmptyState bare title="暂无可用坐席" />
               )}
             </div>
           </section>
@@ -282,9 +283,7 @@ export default function SmartAssignment() {
               ))}
             </div>
             {(!plan.per_agent || plan.per_agent.length === 0) && (
-              <div className="mt-3 rounded-lg bg-gray-50 px-3 py-6 text-center text-sm text-gray-400 dark:bg-gray-900/40">
-                暂无可执行分配建议
-              </div>
+              <EmptyState title="暂无可执行分配建议" className="mt-3" />
             )}
             {executeResult && (
               <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-200">

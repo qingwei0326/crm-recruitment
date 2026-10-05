@@ -1,3 +1,4 @@
+import { EmptyState } from '../../../components/AsyncState';
 /**
  * 待处理学生列表
  * 从 /tasks/handled API 加载已联系、未接、待回访状态的学生
@@ -312,7 +313,7 @@ export default function HandledView({ onOpenDetail }) {
             <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
           </div>
         ) : students.length === 0 ? (
-          <div className="text-center text-sm text-gray-400 py-10">暂无待处理</div>
+          <EmptyState bare title="暂无待处理" />
         ) : (
           <div className="divide-y dark:divide-gray-700">
             {students.map((s) => (

@@ -25,6 +25,7 @@ import {
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
 import { QueueRow } from './AdminWorkflowComponents';
+import { ContentSkeleton, EmptyState } from '../../components/AsyncState';
 
 const PAGE_SIZE = 50;
 
@@ -54,10 +55,6 @@ function normalizeQueue(value) {
   if (value === 'lead' || value === 'initial_contact') return 'lead_contact';
   if (value === 'stale_a') return 'stale-a';
   return value || 'all';
-}
-
-function EmptyState({ text }) {
-  return <div className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">{text}</div>;
 }
 
 function toneFor(item) {
@@ -327,9 +324,9 @@ export default function AdminWorkCenter() {
               </div>
             </div>
             {loading ? (
-              <EmptyState text="加载中..." />
+              <ContentSkeleton rows={3} compact className="p-3" />
             ) : visibleItems.length === 0 ? (
-              <EmptyState text="暂无待办" />
+              <EmptyState bare title="暂无待办" />
             ) : (
               <div className="space-y-2 p-3">
                 {visibleItems.map((item) => {

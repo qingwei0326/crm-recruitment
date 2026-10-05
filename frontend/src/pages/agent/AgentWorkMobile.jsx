@@ -20,6 +20,7 @@ import StudentTimeline from '../../components/StudentTimeline';
 import HomeVisitForm from '../../components/admissions/HomeVisitForm';
 import CampusVisitForm from '../../components/admissions/CampusVisitForm';
 import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
+import { EmptyState, ErrorState } from '../../components/AsyncState';
 
 export default function AgentWorkMobile({
   // State
@@ -360,10 +361,10 @@ export default function AgentWorkMobile({
                   ))}
                 </div>
               ) : (
-                <div className="text-center text-gray-400 py-8">暂无跟进中学员</div>
+                <EmptyState bare title="暂无跟进中学员" />
               )}
             </div>
-          ) : <div className="text-center text-gray-400">加载失败</div>}
+          ) : <ErrorState bare title="加载失败" message="跟进中学员加载失败，请稍后重试。" />}
         </div>
       )}
       {showDetail && detailStudent && (

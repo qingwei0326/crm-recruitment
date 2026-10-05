@@ -25,6 +25,7 @@ import useIsMobile from '../../hooks/useIsMobile';
 import { formatDuration, getApiErrorMessage } from '../../utils';
 import { dashboardLeadUrls, leadFilterUrl, reportTabUrl } from './adminWorkflow';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from '../../adminPermissions';
+import { EmptyState } from '../../components/AsyncState';
 
 const levelClass = {
   excellent: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
@@ -491,13 +492,9 @@ export default function AgentScorePreview() {
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
             ) : (data.items || []).length === 0 ? (
-              <div className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">
-                暂无评分数据
-              </div>
+              <EmptyState bare title="暂无评分数据" />
             ) : filteredItems.length === 0 ? (
-              <div className="py-16 text-center text-sm text-gray-400 dark:text-gray-500">
-                当前筛选暂无匹配话务员
-              </div>
+              <EmptyState bare title="当前筛选暂无匹配话务员" description="请调整筛选条件后重试。" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1180px] table-fixed text-sm">

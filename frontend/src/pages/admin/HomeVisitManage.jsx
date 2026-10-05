@@ -8,6 +8,7 @@ import { AdminPageContainer, adminPageMainClass } from '../../components/admin/A
 import { useToast } from '../../components/Toast';
 import useIsMobile from '../../hooks/useIsMobile';
 import { formatDateTime, getApiErrorMessage } from '../../utils';
+import { ContentSkeleton, EmptyState } from '../../components/AsyncState';
 
 const HOME_STATUSES = ['待确认', '已确认', '已安排', '已完成', '已取消', '暂缓'];
 const HOME_RESULTS = ['', '成功', '考虑中', '等成绩', '无效', '已报名', '安排到校参观'];
@@ -276,9 +277,9 @@ export default function HomeVisitManage() {
 
           <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
             {loading ? (
-              <div className="py-10 text-center text-sm text-gray-500">加载中...</div>
+              <ContentSkeleton rows={3} compact className="p-4" />
             ) : filteredRows.length === 0 ? (
-              <div className="py-10 text-center text-sm text-gray-500">暂无家访任务</div>
+              <EmptyState bare title="暂无家访任务" />
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-[1120px] w-full text-sm">

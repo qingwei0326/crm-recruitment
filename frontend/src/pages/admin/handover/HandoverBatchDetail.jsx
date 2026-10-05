@@ -1,7 +1,8 @@
-import { AlertTriangle, ArrowRightLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import HandoverFilters from './HandoverFilters';
 import HandoverStudentTable from './HandoverStudentTable';
+import { ErrorState } from '../../../components/AsyncState';
 
 const fieldClass =
   'min-h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100';
@@ -49,17 +50,14 @@ export default function HandoverBatchDetail({
 
   if (error || !detail) {
     return (
-      <div className="flex min-h-[420px] flex-col items-center justify-center text-center">
-        <AlertTriangle className="h-6 w-6 text-red-500" aria-hidden="true" />
-        <p className="mt-2 text-sm text-red-600 dark:text-red-400">交接详情加载失败</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-lg border px-3 text-sm text-gray-700 dark:border-gray-600 dark:text-gray-200"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />重试
-        </button>
-      </div>
+      <ErrorState
+        bare
+        title="交接详情加载失败"
+        message="请稍后重试。"
+        retryLabel="重试"
+        onRetry={onRetry}
+        className="flex min-h-[420px] flex-col items-center justify-center"
+      />
     );
   }
 

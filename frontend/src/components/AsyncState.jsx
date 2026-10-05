@@ -24,10 +24,14 @@ export function EmptyState({
   actionLabel,
   onAction,
   icon: Icon = Inbox,
+  bare = false,
   className = '',
 }) {
+  const frame = bare
+    ? 'px-5 py-10 text-center'
+    : 'rounded-panel border border-dashed border-slate-300 bg-white px-5 py-10 text-center dark:border-slate-700 dark:bg-slate-800';
   return (
-    <div className={`rounded-panel border border-dashed border-slate-300 bg-white px-5 py-10 text-center dark:border-slate-700 dark:bg-slate-800 ${className}`}>
+    <div className={`${frame} ${className}`}>
       <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-300">
         <Icon className="h-5 w-5" />
       </div>
@@ -50,10 +54,15 @@ export function ErrorState({
   title = '加载失败',
   message = '网络开小差了，请稍后重试。',
   onRetry,
+  retryLabel = '重新加载',
+  bare = false,
   className = '',
 }) {
+  const frame = bare
+    ? 'px-5 py-8 text-center'
+    : 'rounded-panel border border-red-200 bg-red-50 px-5 py-8 text-center dark:border-red-900/70 dark:bg-red-950/30';
   return (
-    <div role="alert" className={`rounded-panel border border-red-200 bg-red-50 px-5 py-8 text-center dark:border-red-900/70 dark:bg-red-950/30 ${className}`}>
+    <div role="alert" className={`${frame} ${className}`}>
       <AlertTriangle className="mx-auto h-7 w-7 text-red-500" />
       <h3 className="mt-3 text-sm font-semibold text-red-800 dark:text-red-200">{title}</h3>
       <p className="mt-1 text-xs leading-5 text-red-600 dark:text-red-300">{message}</p>
@@ -64,7 +73,7 @@ export function ErrorState({
           className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-panel bg-red-600 px-4 text-sm font-semibold text-white active:scale-95"
         >
           <RotateCcw className="h-4 w-4" />
-          重新加载
+          {retryLabel}
         </button>
       ) : null}
     </div>
