@@ -14,7 +14,7 @@ import {
   adminPageMainClass,
 } from '../../components/admin/AdminPagePrimitives';
 import { useToast } from '../../components/Toast';
-import { useConfirm } from '../../components/ConfirmDialog';
+import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
 import { stageLabel, statusLabel, STAGES } from '../../labels';
 import { buildStudentPayload, getApiErrorMessage } from '../../utils';
 import {
@@ -66,6 +66,7 @@ export default function LeadsManage() {
   const isMobile = useIsMobile();
   const toast = useToast();
   const confirm = useConfirm();
+  const prompt = usePrompt();
   const [searchParams] = useSearchParams();
   const searchParamString = searchParams.toString();
   const navigate = useNavigate();
@@ -566,9 +567,11 @@ export default function LeadsManage() {
     if (!canEditStudent) return;
     let payload = { status: s };
     if (s === '无效') {
-      const reason = window.prompt(
-        '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
-      );
+      const reason = await prompt({
+        title: '标记为无效',
+        message: '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
+        placeholder: '无效原因',
+      });
       if (!reason || !reason.trim()) {
         // 用户取消或留空，不提交；重新拉一次列表把下拉值还原
         fetchStudents(page);

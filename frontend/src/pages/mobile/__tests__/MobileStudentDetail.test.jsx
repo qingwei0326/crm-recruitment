@@ -20,6 +20,12 @@ vi.mock('../../../context/AuthContext', () => ({
   }),
 }));
 
+const { mockConfirm } = vi.hoisted(() => ({ mockConfirm: vi.fn() }));
+
+vi.mock('../../../components/ConfirmDialog', () => ({
+  useConfirm: () => mockConfirm,
+}));
+
 vi.mock('../../../hooks/useDialFlow', () => ({
   default: () => ({
     dial: vi.fn(),
@@ -110,7 +116,7 @@ describe('MobileStudentDetail follow-up workflow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockConfirm.mockResolvedValue(true);
     mockDetailLoads();
     api.put.mockResolvedValue({ data: { code: 0, data: {} } });
     api.post.mockResolvedValue({ data: { code: 0, data: {} } });
@@ -302,5 +308,31 @@ describe('MobileStudentDetail follow-up workflow', () => {
         scheduled_date: '2026-06-14T09:00:00',
       });
     });
+  });
+
+  it('deletes a follow-up and a visit only after the in-app confirm is accepted', async () => {
+    renderPage();
+
+    const followUp = await screen.findByTestId('follow-up-501');
+    fireEvent.click(within(followUp).getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/follow-ups/501'));
+
+    fireEvent.click(within(screen.getByTestId('visit-601')).getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/visits/601'));
+
+    expect(mockConfirm).toHaveBeenCalledTimes(2);
+    expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({ tone: 'danger' }));
+  });
+
+  it('does not delete a follow-up or visit when the confirm is cancelled', async () => {
+    mockConfirm.mockResolvedValue(false);
+    renderPage();
+
+    fireEvent.click(within(await screen.findByTestId('follow-up-501')).getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    fireEvent.click(within(screen.getByTestId('visit-601')).getByRole('button', { name: '删除' }));
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(2));
+
+    expect(api.delete).not.toHaveBeenCalled();
   });
 });

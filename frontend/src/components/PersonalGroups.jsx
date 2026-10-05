@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import api from '../api';
+import { useConfirm } from './ConfirmDialog';
 
 export const UNGROUPED_FILTER = 'ungrouped';
 
@@ -81,6 +82,7 @@ function readRecentGroupIds(storageKey) {
 }
 
 function usePersonalGroups() {
+  const confirm = useConfirm();
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -160,7 +162,13 @@ function usePersonalGroups() {
   };
 
   const deleteGroup = async (group) => {
-    if (!window.confirm(`删除私人分组“${group.name}”？学生正式状态不会改变。`)) return false;
+    const ok = await confirm({
+      title: '删除私人分组',
+      message: `删除私人分组“${group.name}”？学生正式状态不会改变。`,
+      confirmText: '删除',
+      tone: 'danger',
+    });
+    if (!ok) return false;
     setError('');
     try {
       const response = await api.delete(`/personal-groups/${group.id}`);

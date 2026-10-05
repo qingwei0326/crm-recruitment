@@ -608,7 +608,13 @@ export default function MobileStudentDetail() {
 
   const handleDeleteNote = async (noteId) => {
     if (busyDelete) return;
-    if (!window.confirm('确定删除这条备注吗？')) return;
+    const ok = await confirm({
+      title: '删除备注',
+      message: '确定删除这条备注吗？',
+      confirmText: '删除',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setBusyDelete(true);
     try {
       const r = await api.delete(`/notes/${noteId}`);
@@ -627,7 +633,13 @@ export default function MobileStudentDetail() {
 
   const handleDeleteVisit = async (visitId) => {
     if (busyDelete) return;
-    if (!window.confirm('确定删除这条到访记录吗？')) return;
+    const ok = await confirm({
+      title: '删除到访记录',
+      message: '确定删除这条到访记录吗？',
+      confirmText: '删除',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setBusyDelete(true);
     try {
       const r = await api.delete(`/visits/${visitId}`);
@@ -646,7 +658,13 @@ export default function MobileStudentDetail() {
 
   const handleDeleteFollowUp = async (fuId) => {
     if (busyDelete) return;
-    if (!window.confirm('确定删除这条回访计划吗？')) return;
+    const ok = await confirm({
+      title: '删除回访计划',
+      message: '确定删除这条回访计划吗？',
+      confirmText: '删除',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setBusyDelete(true);
     try {
       const r = await api.delete(`/follow-ups/${fuId}`);
