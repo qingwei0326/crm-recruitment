@@ -71,6 +71,18 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // Design tokens live in tailwind.config.js; don't reintroduce the arbitrary values they replaced.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/text-.1[01]px.|bg-.#f5f7fb.|shadow-.0_2px_10px/]',
+          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark).',
+        },
+        {
+          selector: 'TemplateElement[value.raw=/text-.1[01]px.|bg-.#f5f7fb.|shadow-.0_2px_10px/]',
+          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark).',
+        },
+      ],
     },
   },
   {
