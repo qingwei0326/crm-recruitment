@@ -211,7 +211,7 @@ export default function HandoverCenter() {
             <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 dark:border-gray-800 dark:text-gray-300">
               <span>交接批次</span>
               {listQuery.data && (
-                <span className="rounded-md bg-gray-200 px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                <span className="rounded-md bg-gray-200 px-1.5 py-0.5 font-mono text-2xs font-medium tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                   {listQuery.data.total}
                 </span>
               )}

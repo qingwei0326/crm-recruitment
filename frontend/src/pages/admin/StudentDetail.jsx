@@ -368,7 +368,7 @@ export default function StudentDetail() {
                       <span>· {formatDateTime(c.created_at || c.call_time)}</span>
                       <span>· 时长 {formatDuration(c.duration_seconds ?? c.duration)}</span>
                       {c.ai_confidence != null && (
-                        <span className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">
+                        <span className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-3xs font-semibold">
                           <Sparkles className="w-3 h-3" />
                           置信度 {Math.round(c.ai_confidence * 100)}%
                         </span>

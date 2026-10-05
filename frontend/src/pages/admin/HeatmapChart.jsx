@@ -54,7 +54,7 @@ export default function HeatmapChart({ data }) {
           {dates.map((d, i) => (
             <div
               key={i}
-              className="w-8 h-5 text-center text-[10px] leading-5 text-gray-500 dark:text-gray-400"
+              className="w-8 h-5 text-center text-3xs leading-5 text-gray-500 dark:text-gray-400"
               title={d}
               aria-label={d}
             >
@@ -90,7 +90,7 @@ export default function HeatmapChart({ data }) {
 
         {/* 图例 */}
         <div className="flex items-center gap-1 mt-2 ml-20">
-          <span className="text-[10px] text-gray-400 mr-1">少</span>
+          <span className="text-3xs text-gray-400 mr-1">少</span>
           {[0, 0.2, 0.4, 0.6, 0.8].map((r) => {
             const val = Math.round(maxVal * r);
             return (
@@ -100,7 +100,7 @@ export default function HeatmapChart({ data }) {
               />
             );
           })}
-          <span className="text-[10px] text-gray-400 ml-1">多</span>
+          <span className="text-3xs text-gray-400 ml-1">多</span>
         </div>
       </div>
     </div>

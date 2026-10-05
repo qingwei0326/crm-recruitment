@@ -221,7 +221,7 @@ function ComponentBar({ component }) {
         <div className="h-full rounded-full bg-blue-600" style={{ width: `${pct}%` }} />
       </div>
       {component?.detail ? (
-        <div className="mt-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+        <div className="mt-1 text-2xs leading-4 text-gray-500 dark:text-gray-400">
           {component.detail}
         </div>
       ) : null}

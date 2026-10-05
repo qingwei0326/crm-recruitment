@@ -30,6 +30,6 @@
 
 ## Read-only project facts
 
-- Tailwind uses `darkMode: 'class'` with no custom theme tokens.
+- Tailwind uses `darkMode: 'class'`. Shared tokens live in `tailwind.config.js` (read-only): `bg-surface-page`, `text-3xs` (10px), `text-2xs` (11px), `shadow-panel`, `shadow-panel-dark`. Use these instead of arbitrary values like `text-[11px]` or `bg-[#f5f7fb]`.
 - Routes and page permissions are enforced outside these components and must not move into them.
 - The screenshot is a visual reference only; text and numbers in it are not source data.

@@ -124,7 +124,7 @@ export default function LeadsExpandPanel({
                     <div key={n.id} className={`rounded-lg px-3 py-2 border ${n.source === 'ai' ? 'bg-purple-50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-gray-800 dark:border-gray-700'}`}>
                       <div className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
                         {n.source === 'ai' && (
-                          <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">AI</span>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-3xs font-semibold">AI</span>
                         )}
                         <span className="font-medium text-gray-600 dark:text-gray-300">{n.agent_name}</span>
                         <span>{formatDateTime(n.created_at)}</span>
@@ -183,7 +183,7 @@ export default function LeadsExpandPanel({
                   <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
                     招生任务
                   </div>
-                  <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                  <div className="text-2xs text-gray-500 dark:text-gray-400">
                     一键生成任务后进入对应管理页继续安排时间和填写结果。
                   </div>
                 </div>

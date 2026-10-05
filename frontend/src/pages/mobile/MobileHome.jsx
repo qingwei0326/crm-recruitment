@@ -51,7 +51,7 @@ function StatCard({ label, value, color = 'blue', onClick, hint }) {
         {onClick ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600" /> : null}
       </div>
       <div className={`mt-1 text-2xl font-bold tabular-nums ${colorMap[color] || colorMap.gray}`}>{value}</div>
-      {hint ? <div className="mt-1 truncate text-[11px] text-slate-400 dark:text-slate-500">{hint}</div> : null}
+      {hint ? <div className="mt-1 truncate text-2xs text-slate-400 dark:text-slate-500">{hint}</div> : null}
     </Component>
   );
 }
@@ -98,12 +98,12 @@ export function StudentRow({ s, onDial, onDetail, dialing, overdueOnly = false }
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
             <StatusBadge status={s.status} />
             {s.status_detail && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+              <span className="text-2xs px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
                 {s.status_detail}
               </span>
             )}
             {overdueOnly && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">
+              <span className="text-2xs px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300">
                 逾期未处理
               </span>
             )}
@@ -1053,7 +1053,7 @@ export default function MobileHome() {
                 </div>
               </div>
               <ProgressBar pct={progressStats.progress_pct} />
-              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+              <div className="text-2xs text-gray-400 dark:text-gray-500">
                 已推进 {progressed} / {progressStats.total ?? 0} 项任务
               </div>
               <div className="grid grid-cols-2 gap-2">
