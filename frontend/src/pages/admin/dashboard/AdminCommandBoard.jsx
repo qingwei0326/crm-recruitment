@@ -24,7 +24,7 @@ import {
   useDashboardCardPreferences,
 } from './DashboardCardPicker';
 
-const surface = 'rounded-xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark';
+const surface = 'rounded-panel border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark';
 
 function n(value) {
   const parsed = Number(value || 0);

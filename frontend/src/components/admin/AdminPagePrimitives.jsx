@@ -12,7 +12,7 @@ export function AdminPageContainer({ children, className = '' }) {
 export function AdminSurface({ children, className = '', as: Component = 'section' }) {
   return (
     <Component
-      className={`rounded-xl border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark ${className}`}
+      className={`rounded-panel border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark ${className}`}
     >
       {children}
     </Component>

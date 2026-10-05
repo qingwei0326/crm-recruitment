@@ -13,6 +13,10 @@ export default {
         '3xs': '10px',
         '2xs': '11px',
       },
+      borderRadius: {
+        // Canonical admin panel/surface radius (same as rounded-xl).
+        panel: '12px',
+      },
       boxShadow: {
         panel: '0 2px 10px rgba(15, 23, 42, 0.04)',
         'panel-dark': '0 2px 10px rgba(0, 0, 0, 0.18)',
