@@ -26,7 +26,14 @@ def test_resolve_spa_path_blocks_parent_traversal(monkeypatch, tmp_path):
     monkeypatch.setattr("app.main.FRONTEND_DIR", str(tmp_path))
     assert _resolve_spa_path("../secret.txt") is None
     assert _resolve_spa_path("foo/../../etc/passwd") is None
-    assert _resolve_spa_path("..\\..\\.env") is None
+    # 反斜杠只在 Windows 上是路径分隔符；在 Linux（生产环境）上它是普通字符，
+    # "..\\..\\.env" 只是根目录内的一个字面文件名，并未越界。
+    backslash = _resolve_spa_path("..\\..\\.env")
+    if os.sep == "\\":
+        assert backslash is None
+    else:
+        assert backslash is not None
+        assert backslash.startswith(os.path.realpath(str(tmp_path)) + os.sep)
 
 
 def test_resolve_spa_path_blocks_encoded_traversal(monkeypatch, tmp_path):
