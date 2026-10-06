@@ -22,6 +22,7 @@ import {
   ADMIN_OPERATION_PERMISSIONS,
   canPerformAdminOperation,
 } from '../../adminPermissions';
+import { ContentSkeleton, EmptyState } from '../../components/AsyncState';
 
 const SETTLEMENT_STATUSES = ['未结算', '已结算', '暂缓', '争议'];
 const FINANCE_FIELDS = [
@@ -78,9 +79,7 @@ function filterRows(rows, filters) {
 function SummaryCards({ rows }) {
   if (!rows.length) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500 dark:border-gray-700">
-        暂无结算汇总
-      </div>
+      <EmptyState title="暂无结算汇总" />
     );
   }
   return (
@@ -446,9 +445,9 @@ function EnrollmentSettlementContent({ embedded = false }) {
 
       <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
         {loading ? (
-          <div className="py-10 text-center text-sm text-gray-500">加载中...</div>
+          <ContentSkeleton rows={3} compact className="p-4" />
         ) : filteredRows.length === 0 ? (
-          <div className="py-10 text-center text-sm text-gray-500">暂无报名记录</div>
+          <EmptyState bare title="暂无报名记录" />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-[1120px] w-full text-sm">

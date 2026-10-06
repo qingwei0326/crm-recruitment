@@ -41,7 +41,7 @@ export default function StageProgress({ currentStage, onStageClick, compact = fa
         <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
           <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${progress}%` }} />
         </div>
-        <div className="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-gray-500">
+        <div className="mt-1 flex justify-between text-3xs text-gray-400 dark:text-gray-500">
           <span>{stageLabel(STAGES[0])}</span>
           <span className="font-medium text-blue-600 dark:text-blue-400">{currentIndex + 1}/{STAGES.length}</span>
           <span>{stageLabel(STAGES[STAGES.length - 1])}</span>

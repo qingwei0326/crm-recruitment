@@ -203,7 +203,7 @@ export default function GlobalSearch() {
         <AdminPageContainer>
           <form
             onSubmit={submit}
-            className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4"
+            className="bg-white dark:bg-gray-800 rounded-panel border dark:border-gray-700 p-4"
           >
             <div className="flex flex-col md:flex-row gap-3">
               <div className="relative flex-1">

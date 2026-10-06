@@ -1,5 +1,5 @@
 export const adminPageMainClass =
-  'flex h-screen min-w-0 flex-1 flex-col overflow-y-auto bg-[#f5f7fb] dark:bg-gray-950 scroll-thin';
+  'flex h-screen min-w-0 flex-1 flex-col overflow-y-auto bg-surface-page dark:bg-gray-950 scroll-thin';
 
 export function AdminPageContainer({ children, className = '' }) {
   return (
@@ -12,7 +12,7 @@ export function AdminPageContainer({ children, className = '' }) {
 export function AdminSurface({ children, className = '', as: Component = 'section' }) {
   return (
     <Component
-      className={`rounded-xl border border-slate-200 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_2px_10px_rgba(0,0,0,0.18)] ${className}`}
+      className={`rounded-panel border border-slate-200 bg-white shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark ${className}`}
     >
       {children}
     </Component>
@@ -46,7 +46,7 @@ export function AdminSectionHeading({ title, description, actions }) {
     <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-700 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 className="text-sm font-bold text-slate-950 dark:text-slate-100">{title}</h2>
-        {description && <p className="mt-0.5 text-[11px] text-slate-400 dark:text-slate-500">{description}</p>}
+        {description && <p className="mt-0.5 text-2xs text-slate-400 dark:text-slate-500">{description}</p>}
       </div>
       {actions}
     </div>

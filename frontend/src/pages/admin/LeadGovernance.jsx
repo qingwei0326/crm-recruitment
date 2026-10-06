@@ -316,7 +316,7 @@ export default function LeadGovernance() {
 
         <AdminPageContainer className="max-w-6xl">
           {(loadingSignals || pendingHealthSignals.length > 0) && (
-          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
+          <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-panel shadow-sm p-4 lg:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -388,7 +388,7 @@ export default function LeadGovernance() {
           )}
 
           <div className={`grid gap-4 ${showRiskAlerts ? 'lg:grid-cols-2' : ''}`}>
-            <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
+            <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-panel shadow-sm p-4 lg:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
                   <Users className="h-4 w-4 text-blue-600" />
@@ -480,7 +480,7 @@ export default function LeadGovernance() {
             </section>
 
             {showRiskAlerts && (
-            <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-4 lg:p-5">
+            <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-panel shadow-sm p-4 lg:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
                   <ShieldAlert className="h-4 w-4 text-amber-600" />
@@ -550,7 +550,7 @@ export default function LeadGovernance() {
                 <Link
                   key={item.to}
                   to={item.to}
-                  className="group bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-sm p-5 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+                  className="group bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-panel shadow-sm p-5 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
                 >
                   <div className="flex items-start gap-4">
                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${toneClasses[item.tone]}`}>

@@ -662,14 +662,14 @@ export default function AgentManage() {
                           setAgentStatusFilter(option.key);
                           setSelectedAgent(null);
                         }}
-                        className={`flex min-h-11 min-w-0 flex-col items-center justify-center rounded-md px-1 py-1 text-[11px] leading-4 transition-colors ${
+                        className={`flex min-h-11 min-w-0 flex-col items-center justify-center rounded-md px-1 py-1 text-2xs leading-4 transition-colors ${
                           agentStatusFilter === option.key
                             ? 'bg-white font-semibold text-blue-700 shadow-sm dark:bg-gray-700 dark:text-blue-300'
                             : 'text-gray-500 hover:bg-white/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700/70 dark:hover:text-gray-200'
                         }`}
                       >
                         <span className="whitespace-nowrap">{option.label}</span>
-                        <span className="font-mono text-[10px] opacity-80">{option.count}</span>
+                        <span className="font-mono text-3xs opacity-80">{option.count}</span>
                       </button>
                     ))}
                   </div>
@@ -695,12 +695,12 @@ export default function AgentManage() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
                             <span className="max-w-[10rem] truncate">{a.name}</span>
-                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-2xs font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-300">
                               {roleLabel(a)}
                             </span>
                             <EmploymentStatusBadge account={a} />
                             {isLocked(a) && (
-                              <span className="inline-flex items-center gap-0.5 rounded bg-orange-100 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+                              <span className="inline-flex items-center gap-0.5 rounded bg-orange-100 px-1.5 py-0.5 text-2xs font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
                                 <Lock className="h-3 w-3" />
                                 已锁定
                               </span>

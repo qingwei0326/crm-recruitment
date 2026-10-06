@@ -25,6 +25,7 @@ import {
 import { formatDateTime, getApiErrorMessage } from '../../utils';
 import { useToast } from '../../components/Toast';
 import { QueueRow } from './AdminWorkflowComponents';
+import { ContentSkeleton, EmptyState } from '../../components/AsyncState';
 
 const PAGE_SIZE = 50;
 
@@ -54,10 +55,6 @@ function normalizeQueue(value) {
   if (value === 'lead' || value === 'initial_contact') return 'lead_contact';
   if (value === 'stale_a') return 'stale-a';
   return value || 'all';
-}
-
-function EmptyState({ text }) {
-  return <div className="py-10 text-center text-sm text-gray-400 dark:text-gray-500">{text}</div>;
 }
 
 function toneFor(item) {
@@ -270,7 +267,7 @@ export default function AdminWorkCenter() {
                       setPage(1);
                       setSearchParams(tab.key === 'all' ? {} : { queue: tab.key });
                     }}
-                    className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition ${
+                    className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-panel border px-3 text-xs font-semibold transition ${
                       queue === tab.key
                         ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
                         : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
@@ -289,7 +286,7 @@ export default function AdminWorkCenter() {
                 <h2 className="text-sm font-bold text-gray-950 dark:text-gray-100">
                 {queueTabs.find((tab) => tab.key === queue)?.label || '全部'}待办
                 </h2>
-                <p className="mt-0.5 text-[11px] text-gray-400">支持按学生、学校、区域和坐席快速定位</p>
+                <p className="mt-0.5 text-2xs text-gray-400">支持按学生、学校、区域和坐席快速定位</p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <label className="relative min-w-0 sm:w-64">
@@ -302,12 +299,12 @@ export default function AdminWorkCenter() {
                       setSearchQuery(event.target.value);
                     }}
                     placeholder="搜索学生、学校或坐席"
-                    className="h-9 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    className="h-9 w-full rounded-panel border border-gray-200 bg-gray-50 pl-9 pr-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                   />
                   <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
                 </label>
                 {availableRegions.length > 0 && (
-                  <label className="flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+                  <label className="flex h-9 items-center gap-1.5 rounded-panel border border-gray-200 bg-gray-50 px-2.5 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
                     <MapPin className="h-3.5 w-3.5" />
                     <span className="sr-only">区域筛选</span>
                     <select
@@ -327,9 +324,9 @@ export default function AdminWorkCenter() {
               </div>
             </div>
             {loading ? (
-              <EmptyState text="加载中..." />
+              <ContentSkeleton rows={3} compact className="p-3" />
             ) : visibleItems.length === 0 ? (
-              <EmptyState text="暂无待办" />
+              <EmptyState bare title="暂无待办" />
             ) : (
               <div className="space-y-2 p-3">
                 {visibleItems.map((item) => {

@@ -88,7 +88,7 @@ export function ToastProvider({ children }) {
             <div
               key={toastItem.id}
               role={urgent ? 'alert' : 'status'}
-              className={`${config.className} pointer-events-auto flex min-h-12 items-start gap-3 rounded-xl border px-3.5 py-3 shadow-xl backdrop-blur animate-slide-in`}
+              className={`${config.className} pointer-events-auto flex min-h-12 items-start gap-3 rounded-panel border px-3.5 py-3 shadow-xl backdrop-blur animate-slide-in`}
             >
               <Icon className={`${config.iconClassName} mt-0.5 h-5 w-5 shrink-0`} aria-hidden="true" />
               <span className="min-w-0 flex-1 break-words text-sm font-medium leading-5">

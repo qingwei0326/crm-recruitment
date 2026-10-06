@@ -21,13 +21,13 @@ export default memo(function TimelineItem({ type, icon: Icon, color = 'gray', ti
         <div className="flex items-center flex-wrap gap-2 mb-1">
           <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{title}</span>
           {source === 'ai' && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[10px] font-semibold">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-3xs font-semibold">
               <Sparkles className="w-3 h-3" />
               AI
             </span>
           )}
           {type && (
-            <span className="text-[10px] uppercase tracking-wide text-gray-400">{type}</span>
+            <span className="text-3xs uppercase tracking-wide text-gray-400">{type}</span>
           )}
         </div>
         {content && (

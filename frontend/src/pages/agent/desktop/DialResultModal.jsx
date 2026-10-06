@@ -84,8 +84,8 @@ export default function DialResultModal({
         aria-busy={submitting}
         className={`w-full overflow-y-auto bg-white shadow-2xl dark:bg-gray-900 ${
           mobile
-            ? 'max-h-[92dvh] rounded-t-2xl px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2'
-            : 'max-w-sm rounded-2xl p-6'
+            ? 'max-h-[92dvh] rounded-t-panel px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2'
+            : 'max-w-sm rounded-panel p-6'
         }`}
       >
         {mobile && <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-gray-300 dark:bg-gray-600" aria-hidden="true" />}

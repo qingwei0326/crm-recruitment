@@ -42,7 +42,7 @@ export default function PageHeader({
           </button>
         )}
         <div className="min-w-0">
-          <div className={`truncate text-[10px] font-bold uppercase tracking-[0.14em] ${light ? 'text-indigo-600' : 'text-indigo-600 dark:text-indigo-300'}`}>
+          <div className={`truncate text-3xs font-bold uppercase tracking-[0.14em] ${light ? 'text-indigo-600' : 'text-indigo-600 dark:text-indigo-300'}`}>
             招生运营 / 管理后台
           </div>
           <h1 className={`truncate text-lg font-bold leading-5 ${light ? 'text-slate-900' : 'text-slate-900 dark:text-gray-100'}`}>{title}</h1>

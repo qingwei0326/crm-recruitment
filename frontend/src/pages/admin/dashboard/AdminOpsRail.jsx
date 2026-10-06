@@ -31,7 +31,7 @@ function SectionHeading({ icon: Icon, title, meta }) {
         <Icon className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
         {title}
       </h3>
-      {meta && <span className="text-[10px] text-gray-400">{meta}</span>}
+      {meta && <span className="text-3xs text-gray-400">{meta}</span>}
     </div>
   );
 }
@@ -48,15 +48,15 @@ function DailyOps({ dailyOps, loading, error, savingKey, canReview, onMark, onRe
       <div className="mt-3 grid grid-cols-3 divide-x divide-gray-200 rounded-lg bg-gray-50 py-2 text-center dark:divide-gray-700 dark:bg-gray-800/70">
         <div>
           <div className="text-sm font-bold tabular-nums text-gray-950 dark:text-white">{loading ? '-' : error ? '--' : summary.total_items || 0}</div>
-          <div className="text-[10px] text-gray-400">今日事项</div>
+          <div className="text-3xs text-gray-400">今日事项</div>
         </div>
         <div>
           <div className="text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{loading ? '-' : error ? '--' : summary.closed_items || 0}</div>
-          <div className="text-[10px] text-gray-400">已闭环</div>
+          <div className="text-3xs text-gray-400">已闭环</div>
         </div>
         <div>
           <div className="text-sm font-bold tabular-nums text-red-600 dark:text-red-400">{loading ? '-' : error ? '--' : summary.high_pending_items || 0}</div>
-          <div className="text-[10px] text-gray-400">高风险</div>
+          <div className="text-3xs text-gray-400">高风险</div>
         </div>
       </div>
 
@@ -69,7 +69,7 @@ function DailyOps({ dailyOps, loading, error, savingKey, canReview, onMark, onRe
       ) : activeItems.length === 0 ? (
         <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2.5 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
           <div className="font-medium">今日运营闭环暂无待处理事项</div>
-          <div className="mt-1 text-[10px] opacity-80">可以继续检查待分配池和风险队列。</div>
+          <div className="mt-1 text-3xs opacity-80">可以继续检查待分配池和风险队列。</div>
         </div>
       ) : (
         <div className="mt-3 space-y-2">
@@ -78,17 +78,17 @@ function DailyOps({ dailyOps, loading, error, savingKey, canReview, onMark, onRe
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-xs font-semibold">{item.title}</div>
-                  <div className="mt-1 text-[10px] leading-4 opacity-80">{item.detail}</div>
+                  <div className="mt-1 text-3xs leading-4 opacity-80">{item.detail}</div>
                 </div>
                 <span className="shrink-0 text-sm font-bold tabular-nums">{item.count}</span>
               </div>
-              <div className="mt-2 flex items-center gap-1 text-[10px] opacity-75">
+              <div className="mt-2 flex items-center gap-1 text-3xs opacity-75">
                 <Clock3 className="h-3 w-3" />
                 {item.status}
                 {item.reviewed_by && <span className="truncate"> · {item.reviewed_by}</span>}
               </div>
               {item.owners?.length > 0 && (
-                <div className="mt-2 divide-y divide-current/10 border-y border-current/10 text-[10px]">
+                <div className="mt-2 divide-y divide-current/10 border-y border-current/10 text-3xs">
                   {item.owners.slice(0, 3).map((owner) => (
                     <Link
                       key={`${item.key}-${owner.agent_id ?? 'none'}`}
@@ -106,7 +106,7 @@ function DailyOps({ dailyOps, loading, error, savingKey, canReview, onMark, onRe
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <Link
                   to={item.to || '/admin/work-center'}
-                  className="inline-flex h-7 items-center gap-1 rounded bg-white/70 px-2 text-[10px] font-medium hover:bg-white dark:bg-black/15 dark:hover:bg-black/25"
+                  className="inline-flex h-7 items-center gap-1 rounded bg-white/70 px-2 text-3xs font-medium hover:bg-white dark:bg-black/15 dark:hover:bg-black/25"
                 >
                   查看 <ExternalLink className="h-3 w-3" />
                 </Link>
@@ -116,7 +116,7 @@ function DailyOps({ dailyOps, loading, error, savingKey, canReview, onMark, onRe
                     type="button"
                     disabled={savingKey === `${item.key}:${status}`}
                     onClick={() => onMark(item, status)}
-                    className={`h-7 rounded px-2 text-[10px] font-medium disabled:opacity-50 ${
+                    className={`h-7 rounded px-2 text-3xs font-medium disabled:opacity-50 ${
                       status === '已处理'
                         ? 'bg-blue-600 text-white hover:bg-blue-700'
                         : 'bg-white/70 hover:bg-white dark:bg-black/15 dark:hover:bg-black/25'
@@ -154,7 +154,7 @@ function RiskQueue({ items, loading, error, onRetry }) {
           {!error && items.length === 0 && (
             <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2.5 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
               <div className="font-medium">今日暂无待处理风险项</div>
-              <div className="mt-1 text-[10px] opacity-80">可继续查看下方关键指标和报表趋势。</div>
+              <div className="mt-1 text-3xs opacity-80">可继续查看下方关键指标和报表趋势。</div>
             </div>
           )}
           {items.length > 0 && (
@@ -167,7 +167,7 @@ function RiskQueue({ items, loading, error, onRetry }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-medium text-gray-800 dark:text-gray-100">{item.title}</span>
-                  <span className="mt-0.5 block truncate text-[10px] text-gray-400">{item.detail}</span>
+                  <span className="mt-0.5 block truncate text-3xs text-gray-400">{item.detail}</span>
                 </span>
                 {item.to && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-300" />}
               </>
@@ -213,26 +213,26 @@ function OperationalOverview({
       <dl className="mt-3 grid grid-cols-3 divide-x divide-gray-200 rounded-lg bg-gray-50 py-2.5 text-center dark:divide-gray-700 dark:bg-gray-800/70">
         <div>
           <dd className="text-sm font-bold tabular-nums text-gray-950 dark:text-white">{loading ? '-' : errors.quality ? '--' : recordedCalls}</dd>
-          <dt className="mt-0.5 text-[10px] text-gray-400">有效通话</dt>
+          <dt className="mt-0.5 text-3xs text-gray-400">有效通话</dt>
         </div>
         <div>
           <dd className="text-sm font-bold tabular-nums text-gray-950 dark:text-white">{loading ? '-' : errors.enrollment ? '--' : enrollmentData?.total || 0}</dd>
-          <dt className="mt-0.5 text-[10px] text-gray-400">报名总数</dt>
+          <dt className="mt-0.5 text-3xs text-gray-400">报名总数</dt>
         </div>
         <div>
           <dd className="text-sm font-bold tabular-nums text-gray-950 dark:text-white">{loading ? '-' : errors.visits ? '--' : totalVisits}</dd>
-          <dt className="mt-0.5 text-[10px] text-gray-400">家访 / 到校</dt>
+          <dt className="mt-0.5 text-3xs text-gray-400">家访 / 到校</dt>
         </div>
       </dl>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         {canViewReportCenter && (
-          <Link to="/admin/report-center?tab=summary" className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300">
+          <Link to="/admin/report-center?tab=summary" className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-gray-200 text-2xs font-medium text-gray-600 hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300">
             报表中心 <ArrowUpRight className="h-3 w-3" />
           </Link>
         )}
         {canViewLeadsManage && (
-          <Link to="/admin/leads" className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-gray-200 text-[11px] font-medium text-gray-600 hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300">
+          <Link to="/admin/leads" className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-gray-200 text-2xs font-medium text-gray-600 hover:border-blue-300 hover:text-blue-600 dark:border-gray-700 dark:text-gray-300">
             学生全量 <ArrowUpRight className="h-3 w-3" />
           </Link>
         )}
@@ -261,10 +261,10 @@ export default function AdminOpsRail({
   className = '',
 }) {
   return (
-    <aside className={`flex flex-col overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${className}`}>
+    <aside className={`flex flex-col overflow-hidden rounded-panel border border-gray-200/80 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 ${className}`}>
       <div className="shrink-0 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <h2 className="text-sm font-semibold text-gray-950 dark:text-white">运营与流转控制台</h2>
-        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">从线索分配到风险闭环，保持同屏决策。</p>
+        <p className="mt-0.5 text-2xs text-gray-500 dark:text-gray-400">从线索分配到风险闭环，保持同屏决策。</p>
       </div>
       <div>
         <DailyOps

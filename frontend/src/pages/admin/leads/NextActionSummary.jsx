@@ -13,7 +13,7 @@ export default function NextActionSummary({ action, showEmpty = false }) {
   return (
     <div className="min-w-0" data-testid="next-action">
       <div className={`truncate text-xs font-semibold ${labelTone}`}>{action.label || '待处理'}</div>
-      <div className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
+      <div className="mt-0.5 truncate text-2xs text-gray-500 dark:text-gray-400">
         {action.owner_name || '待分配'}
         {action.due_at ? ` · ${formatDateTime(action.due_at)}` : ''}
       </div>

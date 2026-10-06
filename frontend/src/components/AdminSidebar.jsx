@@ -119,7 +119,7 @@ export default function AdminSidebar({ onClose, compact = false }) {
   );
 
   const navClass = (active) =>
-    `group flex min-h-10 rounded-lg border-l-2 font-medium transition ${compact ? 'flex-col justify-center gap-1 border-l-0 px-1 py-1.5 text-center text-[10px]' : 'items-center gap-3 px-3 text-sm'} ${
+    `group flex min-h-10 rounded-lg border-l-2 font-medium transition ${compact ? 'flex-col justify-center gap-1 border-l-0 px-1 py-1.5 text-center text-3xs' : 'items-center gap-3 px-3 text-sm'} ${
       active
         ? compact ? 'border-blue-100 bg-white/18 text-white shadow-sm' : 'border-indigo-400 bg-indigo-600 text-white shadow-sm'
         : compact ? 'border-transparent text-blue-100/75 hover:bg-white/10 hover:text-white' : 'border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-100'
@@ -129,14 +129,14 @@ export default function AdminSidebar({ onClose, compact = false }) {
     <>
       <div className={`flex items-center justify-between border-b ${compact ? 'border-blue-500/50 px-2 py-4 dark:border-slate-700' : 'border-slate-800/90 px-5 py-5'}`}>
         <div className={`flex min-w-0 items-center ${compact ? 'w-full flex-col gap-1.5 text-center' : 'gap-3'}`}>
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${compact ? 'bg-white/15' : 'bg-indigo-600 shadow-lg shadow-indigo-950/30'}`}>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-panel ${compact ? 'bg-white/15' : 'bg-indigo-600 shadow-lg shadow-indigo-950/30'}`}>
             <BarChart3 className="h-5 w-5 text-white" />
           </div>
           <div className={`min-w-0 ${compact ? 'w-full' : ''}`}>
-            <div className={`truncate font-bold tracking-wide text-white ${compact ? 'text-[10px]' : 'text-sm'}`}>
+            <div className={`truncate font-bold tracking-wide text-white ${compact ? 'text-3xs' : 'text-sm'}`}>
               招生话务 CRM
             </div>
-            <div className={`mt-0.5 truncate font-medium ${compact ? 'text-[8px] text-blue-100/75' : 'text-[10px] text-slate-500'}`}>
+            <div className={`mt-0.5 truncate font-medium ${compact ? 'text-3xs text-blue-100/75' : 'text-3xs text-slate-500'}`}>
               运营管理工作台
             </div>
           </div>
@@ -154,7 +154,7 @@ export default function AdminSidebar({ onClose, compact = false }) {
       </div>
 
       <nav className={`min-h-0 flex-1 space-y-1 overflow-y-auto scroll-thin ${compact ? 'p-1.5' : 'p-3'}`}>
-        <div className={`${compact ? 'px-1 pb-2 pt-1 text-center text-[8px] text-blue-100/65' : 'px-3 pb-2 pt-1 text-[10px] text-slate-600'} font-bold uppercase tracking-[0.16em]`}>
+        <div className={`${compact ? 'px-1 pb-2 pt-1 text-center text-3xs text-blue-100/65' : 'px-3 pb-2 pt-1 text-3xs text-slate-600'} font-bold uppercase tracking-[0.16em]`}>
           运营导航
         </div>
         {visibleNavItems.map((item) => {
@@ -176,7 +176,7 @@ export default function AdminSidebar({ onClose, compact = false }) {
           </div>
           <div className={`min-w-0 flex-1 ${compact ? 'hidden' : ''}`}>
             <div className="truncate text-xs font-semibold text-white">{user?.name || '系统管理员'}</div>
-            <div className="mt-0.5 truncate text-[10px] text-slate-500">{user?.role || 'admin'} · 在线</div>
+            <div className="mt-0.5 truncate text-3xs text-slate-500">{user?.role || 'admin'} · 在线</div>
           </div>
         </div>
         <button

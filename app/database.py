@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import (
-    APP_ENV,
     DATABASE_URL,
     DATABASE_URL_SYNC,
     DB_ENGINE,
@@ -81,10 +80,12 @@ async def init_db():
 def _run_alembic_upgrade_head() -> None:
     """在启动时将数据库迁移到最新版本（head）。
 
-    alembic 仅在部署/运行环境可用，故在此惰性导入，避免影响单元测试环境（测试用 create_all，不调用 init_db）。
+    alembic 仅在部署/运行环境可用，故在此惰性导入，避免影响单元测试环境
+    （测试用 create_all，不调用 init_db）。
     """
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     config_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini"

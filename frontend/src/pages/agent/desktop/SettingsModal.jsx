@@ -30,7 +30,7 @@ export default function SettingsModal({ show, onClose, tokenInput, setTokenInput
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-5 shadow-xl">
+      <div className="bg-white dark:bg-gray-800 rounded-panel max-w-md w-full p-5 shadow-xl">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">个人推送设置</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">

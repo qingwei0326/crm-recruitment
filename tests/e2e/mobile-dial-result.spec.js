@@ -63,6 +63,21 @@ function todayPayload(list) {
   };
 }
 
+const outcomeReasons = [
+  { code: 'phone_invalid', label: '空号', terminal: true, reclaimable: true },
+  { code: 'high_score', label: '高分段', terminal: true, reclaimable: true },
+  { code: 'no_intent', label: '无意向', terminal: true, reclaimable: true },
+  { code: 'child_declined', label: '孩子不想读', terminal: true, reclaimable: true },
+  { code: 'enrolled_elsewhere', label: '已报名其他学校', terminal: true, reclaimable: false },
+  { code: 'other', label: '其他', terminal: true, reclaimable: true },
+];
+
+async function mockOutcomeCatalog(page) {
+  await page.route('**/api/lead-outcome-reasons', async (route) => {
+    await route.fulfill({ json: { code: 0, data: outcomeReasons } });
+  });
+}
+
 test.describe('mobile dial result flow', () => {
   test('fixed invalid reason saves and mobile task list refreshes to next student', async ({ page }) => {
     const updateRequests = [];
@@ -83,6 +98,7 @@ test.describe('mobile dial result flow', () => {
       );
     }, { user: agentUser });
 
+    await mockOutcomeCatalog(page);
     await page.route('**/api/auth/me', async (route) => {
       await route.fulfill({ json: { code: 0, data: agentUser } });
     });
@@ -123,13 +139,15 @@ test.describe('mobile dial result flow', () => {
     await page.goto('/mobile');
 
     await expect(page.getByText('移动空号学生')).toHaveCount(2);
-    await expect(page.getByText('通话已完成，请选择处理结果')).toBeVisible();
+    const dialResult = page.getByRole('dialog');
+    await expect(dialResult.getByText('先选择本次拨打结果')).toBeVisible();
 
-    await page.getByRole('button', { name: '空号', exact: true }).click();
+    await dialResult.getByRole('button', { name: /^号码无效/ }).click();
+    await dialResult.getByRole('button', { name: '确认空号/停机' }).click();
 
     await expect(page.getByText('移动空号学生')).toHaveCount(0);
     await expect(page.getByText('移动下一条学生')).toBeVisible();
-    await expect(page.getByText('通话已完成，请选择处理结果')).not.toBeVisible();
+    await expect(page.getByRole('dialog')).not.toBeVisible();
     expect(updateRequests).toEqual([{ status: '无效', invalid_reason: '空号' }]);
     expect(new URL(durationRequestUrl).searchParams.get('dial_log_id')).toBe('9001');
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem('pendingDial'))).toBeNull();
@@ -144,6 +162,7 @@ test.describe('mobile dial result flow', () => {
       localStorage.setItem('crm_user', JSON.stringify(user));
     }, { user: agentUser });
 
+    await mockOutcomeCatalog(page);
     await page.route('**/api/auth/me', async (route) => {
       await route.fulfill({ json: { code: 0, data: agentUser } });
     });
@@ -191,6 +210,7 @@ test.describe('mobile dial result flow', () => {
       }));
     });
 
+    await page.getByRole('button', { name: '编辑状态' }).click();
     await page.getByRole('group', { name: '处理结果' })
       .getByRole('button', { name: '空号', exact: true })
       .click();

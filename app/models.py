@@ -531,7 +531,12 @@ class DialLog(Base):
     __tablename__ = "dial_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(
+        Integer,
+        ForeignKey("students.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     dialed_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     duration_seconds = Column(Integer, default=0)
