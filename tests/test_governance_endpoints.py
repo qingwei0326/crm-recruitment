@@ -15,7 +15,7 @@ from app.models import (
     StudentStage,
     StudentStatus,
 )
-from app.utils import today_cst_as_utc, utcnow
+from app.utils import utcnow
 
 
 def _student(name, **kw):
@@ -122,13 +122,13 @@ async def test_data_health_counts_and_review_lifecycle(
 
 @pytest.mark.asyncio
 async def test_risk_alerts_window_follows_days_parameter(client, db, admin_user, admin_headers):
-    today = today_cst_as_utc()
+    now = utcnow()  # relative to "now": the alert window is [now - days, now]
     db.add_all([
         OperationLog(operator_id=admin_user.id, operator_name="管理员", case_no="",
-                     action="删除线索", content="删除 X", created_at=today - timedelta(hours=5)),
+                     action="删除线索", content="删除 X", created_at=now - timedelta(hours=5)),
         OperationLog(operator_id=admin_user.id, operator_name="管理员", case_no="",
                      action="自动分配汇总", content="自动分配",
-                     created_at=today - timedelta(days=20)),
+                     created_at=now - timedelta(days=20)),
     ])
     await db.commit()
 
