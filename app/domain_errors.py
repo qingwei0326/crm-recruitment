@@ -18,3 +18,13 @@ class InactiveAssignmentTarget(DomainError):  # noqa: N818 - stable domain API n
 
 class StudentNotFound(DomainError):  # noqa: N818 - stable domain API name
     code = "student_not_found"
+
+
+class InvalidFilter(DomainError):  # noqa: N818 - stable domain API name
+    code = "invalid_filter"
+    http_status = 422
+
+
+class ResourceNotFound(DomainError):  # noqa: N818 - stable domain API name
+    code = "not_found"
+    http_status = 404
