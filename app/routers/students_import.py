@@ -4,7 +4,7 @@ from io import BytesIO
 from itertools import chain
 from zipfile import BadZipFile
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
@@ -16,10 +16,10 @@ from app.auth import (
     ADMIN_OP_STUDENT_IMPORT,
     ADMIN_PAGE_LEADS_MANAGE,
     require_page_permission,
-    user_has_operation_permission,
 )
 from app.database import get_db
 from app.models import IntentLevel, Student, StudentStage, StudentStatus, User
+from app.permissions import require_admin_operation
 from app.schemas import Response
 from app.student_import import (
     MAX_STUDENT_IMPORT_BYTES,
@@ -33,11 +33,6 @@ router = APIRouter(prefix="/api/students", tags=["学生"])
 logger = logging.getLogger(__name__)
 
 
-def _require_admin_operation(current_user: User, permission: str) -> None:
-    if not user_has_operation_permission(current_user, permission):
-        raise HTTPException(status_code=403, detail="无权执行该操作")
-
-
 @router.post("/import")
 async def import_students_excel(
     file: UploadFile = File(...),
@@ -45,7 +40,7 @@ async def import_students_excel(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
-    _require_admin_operation(current_user, ADMIN_OP_STUDENT_IMPORT)
+    require_admin_operation(current_user, ADMIN_OP_STUDENT_IMPORT)
     filename = file.filename or ""
     if not filename.lower().endswith(".xlsx"):
         return Response.error(code=1, msg="仅支持 .xlsx 文件")

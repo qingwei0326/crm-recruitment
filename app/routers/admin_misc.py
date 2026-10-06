@@ -11,7 +11,7 @@ from app.admin_lead_utils import (
     _admin_student_search_payload,
     _latest_log_payload,
     _operation_log_search_predicate,
-    _student_search_predicate,
+    student_search_predicate,
 )
 from app.admin_ops_utils import backup_items
 from app.auth import (
@@ -113,7 +113,7 @@ async def global_search(
     if not keyword:
         return Response.ok({"q": "", "students": [], "operation_logs": []})
 
-    student_predicate = _student_search_predicate(keyword)
+    student_predicate = student_search_predicate(keyword)
     student_rows = []
     if student_predicate is not None:
         student_result = await db.execute(

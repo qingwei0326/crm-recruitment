@@ -48,7 +48,7 @@ def invalid_reason_predicate(reason: str):
     return clauses[0] if len(clauses) == 1 else clauses[0] | clauses[1]
 
 
-def _student_search_predicate(q: str):
+def student_search_predicate(q: str):
     keyword = (q or "").strip()
     if not keyword:
         return None

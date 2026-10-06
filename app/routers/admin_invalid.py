@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin_lead_utils import _student_search_predicate, invalid_reason_predicate
+from app.admin_lead_utils import invalid_reason_predicate, student_search_predicate
 from app.auth import (
     ADMIN_OP_ASSIGNMENT_ROLLBACK,
     ADMIN_OP_INVALID_DELETE,
@@ -137,7 +137,7 @@ async def list_invalid_students(
     reason_clause = invalid_reason_predicate(invalid_reason or "")
     if reason_clause is not None:
         where.append(reason_clause)
-    search_clause = _student_search_predicate(q)
+    search_clause = student_search_predicate(q)
     if search_clause is not None:
         where.append(search_clause)
 
@@ -902,7 +902,7 @@ async def invalid_school_groups(
     reason_clause = invalid_reason_predicate(invalid_reason or "")
     if reason_clause is not None:
         where.append(reason_clause)
-    search_clause = _student_search_predicate(q)
+    search_clause = student_search_predicate(q)
     if search_clause is not None:
         where.append(search_clause)
     result = await db.execute(

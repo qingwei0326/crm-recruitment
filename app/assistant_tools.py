@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin_lead_utils import _student_search_predicate
+from app.admin_lead_utils import student_search_predicate
 from app.admin_ops_utils import backup_items
 from app.auth import hash_password, invalidate_user_tokens
 from app.backup import do_backup_async
@@ -243,7 +243,7 @@ async def _search_students(
     args: SearchStudentsArgs,
     _operator: User,
 ) -> dict[str, Any]:
-    predicate = _student_search_predicate(args.query)
+    predicate = student_search_predicate(args.query)
     where = [predicate]
     if args.status:
         try:

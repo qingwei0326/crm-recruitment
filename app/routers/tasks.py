@@ -31,7 +31,7 @@ router = APIRouter(prefix="/api/tasks", tags=["任务"])
 TODAY_TASK_LIMIT = 1000
 
 
-def _student_search_predicate(q: str):
+def _agent_task_search_predicate(q: str):
     if is_phone_query(q):
         phone_q = normalize_phone(q)
         return or_(
@@ -211,7 +211,7 @@ async def today_tasks(
     search_pred = None
     if search and search.strip():
         q = search.strip()
-        search_pred = _student_search_predicate(q)
+        search_pred = _agent_task_search_predicate(q)
         filters.append(search_pred)
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
@@ -436,7 +436,7 @@ async def handled_students(
 
     if search and search.strip():
         q = search.strip()
-        shared_filters.append(_student_search_predicate(q))
+        shared_filters.append(_agent_task_search_predicate(q))
 
     region_filter = None
     if region and region.strip():
