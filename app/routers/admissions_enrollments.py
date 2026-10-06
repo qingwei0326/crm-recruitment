@@ -23,7 +23,7 @@ from app.models import (
     Student,
     User,
 )
-from app.permissions import get_accessible_student, is_admin
+from app.permissions import get_accessible_student, is_admin, require_admin_operation
 from app.routers.admissions import (
     _create_enrollment_record,
     _enrollment_payload,
@@ -31,7 +31,6 @@ from app.routers.admissions import (
     _load_enrollment_payload,
     _page_payload,
     _require_admin_module,
-    _require_admin_operation,
     _sync_enrollment_work_item,
 )
 from app.schemas import EnrollmentCreate, EnrollmentUpdate, Response
@@ -173,7 +172,7 @@ async def settlement_batch_preview(
     current_user: User = Depends(get_current_user),
 ):
     _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
-    _require_admin_operation(current_user, ADMIN_OP_REPORT_EXPORT)
+    require_admin_operation(current_user, ADMIN_OP_REPORT_EXPORT)
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="无权生成结算批次")
 
@@ -283,7 +282,7 @@ async def create_enrollment(
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="只有管理员可以确认报名")
     _require_admin_module(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT)
-    _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_CREATE)
+    require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_CREATE)
 
     student = await get_accessible_student(db, body.student_id, current_user)
     record = await _create_enrollment_record(db, body, student, current_user)
@@ -305,9 +304,9 @@ async def update_enrollment(
     changed_fields = body.model_fields_set
     finance_changed_fields = set(changed_fields) & set(FINANCE_FIELDS)
     if "attributed_agent_id" in changed_fields:
-        _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_ATTRIBUTION)
+        require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_ATTRIBUTION)
     if {"settlement_status", "settlement_notes"} & changed_fields or finance_changed_fields:
-        _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
+        require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
 
     record = await _get_enrollment_or_404(db, record_id)
     old_agent_id = record.attributed_agent_id
