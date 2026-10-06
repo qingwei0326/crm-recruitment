@@ -9,21 +9,19 @@ from app.auth import (
     ADMIN_PAGE_LEADS_MANAGE,
     get_current_user,
     require_page_permission,
-    user_has_operation_permission,
 )
 from app.database import get_db
 from app.dial_recording import DIAL_RECORDING_COMPLETED, DIAL_RECORDING_PENDING
 from app.models import DialLog, User
-from app.permissions import get_accessible_student, get_student_or_404, is_admin
+from app.permissions import (
+    get_accessible_student,
+    get_student_or_404,
+    require_admin_operation,
+)
 from app.schemas import Response
 from app.utils import make_operation_log, utcnow
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
-
-
-def _require_admin_operation(current_user: User, permission: str) -> None:
-    if is_admin(current_user) and not user_has_operation_permission(current_user, permission):
-        raise HTTPException(status_code=403, detail="无权执行该操作")
 
 
 DIAL_PENDING_REUSE_SECONDS = 2 * 60
@@ -37,7 +35,7 @@ async def get_student_phone(
     current_user: User = Depends(get_current_user),
 ):
     student = await get_accessible_student(db, student_id, current_user)
-    _require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
+    require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
 
     # 新客户端传回精确会话 ID；旧客户端在两分钟内复用 pending 会话。
     if dial_log_id is not None:
@@ -151,7 +149,7 @@ async def reveal_student_phone_plain(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
-    _require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
+    require_admin_operation(current_user, ADMIN_OP_STUDENT_PHONE)
     student = await get_student_or_404(db, student_id)
     db.add(
         make_operation_log(

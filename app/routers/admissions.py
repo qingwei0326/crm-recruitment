@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.auth import (
-    user_has_operation_permission,
     user_has_page_permission,
 )
 from app.domain_models import WorkItemKind
@@ -136,11 +135,6 @@ def _advance_student_stage(student: Student, stage: StudentStage) -> None:
 def _require_admin_module(current_user: User, permission: str) -> None:
     if is_admin(current_user) and not user_has_page_permission(current_user, permission):
         raise HTTPException(status_code=403, detail="无权访问该管理模块")
-
-
-def _require_admin_operation(current_user: User, permission: str) -> None:
-    if is_admin(current_user) and not user_has_operation_permission(current_user, permission):
-        raise HTTPException(status_code=403, detail="无权执行该操作")
 
 
 def _mark_student_enrolled(student: Student, enrolled_at=None) -> None:

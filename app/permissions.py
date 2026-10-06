@@ -3,11 +3,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from app.auth import user_has_operation_permission
 from app.models import Student, User, UserRole
 
 
 def is_admin(user: User) -> bool:
     return user.role == UserRole.admin
+
+
+def require_admin_operation(user: User, permission: str) -> None:
+    """Require an admin to hold ``permission``.
+
+    Non-admin roles are gated by their route dependencies, not here.
+    """
+    if is_admin(user) and not user_has_operation_permission(user, permission):
+        raise HTTPException(status_code=403, detail="无权执行该操作")
 
 
 def can_access_student(user: User, student: Student) -> bool:
