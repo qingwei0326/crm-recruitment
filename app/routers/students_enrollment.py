@@ -11,7 +11,6 @@ from app.auth import (
     ADMIN_PAGE_LEADS_MANAGE,
     get_current_user,
     require_admin,
-    user_has_operation_permission,
     user_has_page_permission,
 )
 from app.database import get_db
@@ -23,7 +22,12 @@ from app.models import (
     StudentStatus,
     User,
 )
-from app.permissions import get_accessible_student, get_student_or_404, is_admin
+from app.permissions import (
+    get_accessible_student,
+    get_student_or_404,
+    is_admin,
+    require_admin_operation,
+)
 from app.schemas import EnrollInfo, EnrollmentCreate, Response, StageUpdate
 from app.services.work_item_service import sync_student_work_items
 from app.stage_policy import normalize_stage, validate_stage_transition
@@ -38,11 +42,6 @@ def _require_admin_leads_manage(current_user: User) -> None:
         current_user, ADMIN_PAGE_LEADS_MANAGE
     ):
         raise HTTPException(status_code=403, detail="无权访问该管理模块")
-
-
-def _require_admin_operation(current_user: User, permission: str) -> None:
-    if is_admin(current_user) and not user_has_operation_permission(current_user, permission):
-        raise HTTPException(status_code=403, detail="无权执行该操作")
 
 
 def _enum_or_error(enum_cls, value: str, label: str):
@@ -194,7 +193,7 @@ async def set_enroll_info(
         raise HTTPException(status_code=403, detail="无权设置报名信息")
     if not user_has_page_permission(current_user, ADMIN_PAGE_ENROLLMENT_SETTLEMENT):
         raise HTTPException(status_code=403, detail="无权访问该管理模块")
-    _require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
+    require_admin_operation(current_user, ADMIN_OP_ENROLLMENT_SETTLEMENT)
     student = await get_student_or_404(db, student_id)
     existing = (
         await db.execute(

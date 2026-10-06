@@ -118,3 +118,51 @@ class TestAgentIsolation:
         """对照组：admin 不受隔离限制。"""
         resp = await client.get(f"/api/students/{student_of_b.id}", headers=admin_headers)
         assert resp.status_code == 200
+
+
+class TestRequireAdminOperation:
+    """require_admin_operation 是 5 个路由文件原本各自定义的同一份检查，收敛后语义必须不变。"""
+
+    @staticmethod
+    def _user(role, permissions="", super_admin=False):
+        return User(
+            username=f"{role}_op",
+            hashed_password="x",
+            role=role,
+            name="操作权限测试",
+            is_active=True,
+            is_super_admin=super_admin,
+            operation_permissions=permissions,
+        )
+
+    def test_admin_without_operation_permission_is_rejected(self):
+        from fastapi import HTTPException
+
+        from app.auth import ADMIN_OP_STUDENT_IMPORT
+        from app.permissions import require_admin_operation
+
+        with pytest.raises(HTTPException) as exc:
+            require_admin_operation(self._user("admin"), ADMIN_OP_STUDENT_IMPORT)
+        assert exc.value.status_code == 403
+
+    def test_admin_with_operation_permission_passes(self):
+        from app.auth import ADMIN_OP_STUDENT_IMPORT
+        from app.permissions import require_admin_operation
+
+        require_admin_operation(
+            self._user("admin", permissions=ADMIN_OP_STUDENT_IMPORT),
+            ADMIN_OP_STUDENT_IMPORT,
+        )
+
+    def test_super_admin_passes_without_explicit_permission(self):
+        from app.auth import ADMIN_OP_STUDENT_IMPORT
+        from app.permissions import require_admin_operation
+
+        require_admin_operation(self._user("admin", super_admin=True), ADMIN_OP_STUDENT_IMPORT)
+
+    def test_agent_is_not_gated_here(self):
+        """话务员由各自路由依赖限制访问，这里不拦截（与收敛前 4 处定义一致）。"""
+        from app.auth import ADMIN_OP_STUDENT_PHONE
+        from app.permissions import require_admin_operation
+
+        require_admin_operation(self._user("agent"), ADMIN_OP_STUDENT_PHONE)
