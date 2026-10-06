@@ -103,6 +103,11 @@ export default [
     },
   },
   {
+    // Vitest globalSetup runs in Node.
+    files: ['src/test-global-setup.js'],
+    languageOptions: { globals: { process: 'readonly' } },
+  },
+  {
     ignores: ['dist/', 'node_modules/'],
   },
 ];
