@@ -248,7 +248,7 @@ test.describe('current e2e smoke contracts', () => {
     await page.getByRole('button', { name: '登 录' }).click();
 
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByRole('heading', { name: '仪表盘' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '招生指挥中心', level: 1 })).toBeVisible();
     await expect(page.getByRole('heading', { name: '今日运营闭环' })).toBeVisible();
   });
 

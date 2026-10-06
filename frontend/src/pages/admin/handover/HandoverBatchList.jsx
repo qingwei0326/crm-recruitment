@@ -1,4 +1,5 @@
-import { AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
+import { ContentSkeleton, EmptyState, ErrorState } from '../../../components/AsyncState';
 
 const statusMeta = {
   pending: { label: '待交接', className: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
@@ -15,28 +16,23 @@ export default function HandoverBatchList({
   onRetry,
 }) {
   if (loading) {
-    return <div className="px-4 py-12 text-center text-sm text-gray-400">正在加载交接批次...</div>;
+    return <ContentSkeleton rows={3} compact className="p-3" />;
   }
 
   if (error) {
     return (
-      <div className="px-4 py-10 text-center">
-        <AlertTriangle className="mx-auto h-5 w-5 text-red-500" aria-hidden="true" />
-        <p className="mt-2 text-sm text-red-600 dark:text-red-400">交接批次加载失败</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-lg border px-3 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          重试
-        </button>
-      </div>
+      <ErrorState
+        bare
+        title="交接批次加载失败"
+        message="请稍后重试。"
+        retryLabel="重试"
+        onRetry={onRetry}
+      />
     );
   }
 
   if (batches.length === 0) {
-    return <div className="px-4 py-12 text-center text-sm text-gray-400">暂无离职交接批次</div>;
+    return <EmptyState bare title="暂无离职交接批次" />;
   }
 
   return (

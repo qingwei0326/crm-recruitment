@@ -41,12 +41,12 @@ export default function FunnelChart({ data }) {
                   minWidth: stage.value > 0 ? '1.5rem' : '0',
                 }}
               >
-                <span className="text-[10px] sm:text-xs font-medium text-white drop-shadow">
+                <span className="text-3xs sm:text-xs font-medium text-white drop-shadow">
                   {stage.value.toLocaleString()}
                 </span>
               </div>
             </div>
-            <div className="w-14 sm:w-20 text-right text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 shrink-0">
+            <div className="w-14 sm:w-20 text-right text-3xs sm:text-xs text-gray-500 dark:text-gray-400 shrink-0">
               {pct}%
               {convPct !== null && (
                 <span className="block text-gray-400 dark:text-gray-500">

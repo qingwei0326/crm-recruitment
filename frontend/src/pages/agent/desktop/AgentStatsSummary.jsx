@@ -27,13 +27,13 @@ export default function AgentStatsSummary({ stats }) {
     <section className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 px-4 py-3">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-200">我的任务总览</h3>
-        <span className="text-[11px] text-gray-400 dark:text-gray-500">全局业绩，不随筛选变化</span>
+        <span className="text-2xs text-gray-400 dark:text-gray-500">全局业绩，不随筛选变化</span>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-12 gap-2">
         {items.map((item) => (
           <div key={item.label} className="rounded-lg bg-gray-50 dark:bg-gray-900 px-3 py-2">
             <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{item.value}</div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">{item.label}</div>
+            <div className="text-2xs text-gray-500 dark:text-gray-400">{item.label}</div>
           </div>
         ))}
       </div>

@@ -9,6 +9,12 @@ import {
   UNGROUPED_FILTER,
 } from '../PersonalGroups';
 
+const { mockConfirm } = vi.hoisted(() => ({ mockConfirm: vi.fn() }));
+
+vi.mock('../ConfirmDialog', () => ({
+  useConfirm: () => mockConfirm,
+}));
+
 vi.mock('../../api', () => ({
   default: {
     get: vi.fn(),
@@ -26,6 +32,7 @@ const groups = [
 describe('PersonalGroups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockConfirm.mockResolvedValue(true);
     localStorage.clear();
     api.get.mockImplementation((url) => {
       if (url === '/personal-groups') {
@@ -252,5 +259,32 @@ describe('PersonalGroups', () => {
     expect(api.post).toHaveBeenNthCalledWith(2, '/personal-groups/1/members', {
       student_ids: [201],
     });
+  });
+
+  it('deletes a private group only after the in-app confirm is accepted', async () => {
+    const onSelect = vi.fn();
+    api.delete.mockResolvedValue({ data: { code: 0, data: {} } });
+    render(<PersonalGroupFilter selectedGroupId={1} onSelect={onSelect} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '管理当前分组' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/personal-groups/1'));
+    expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      tone: 'danger',
+      message: expect.stringContaining('今晚再打'),
+    }));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps the group when the delete confirm is cancelled', async () => {
+    mockConfirm.mockResolvedValue(false);
+    render(<PersonalGroupFilter selectedGroupId={1} onSelect={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '管理当前分组' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    expect(api.delete).not.toHaveBeenCalled();
   });
 });

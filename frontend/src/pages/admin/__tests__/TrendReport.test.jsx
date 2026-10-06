@@ -286,7 +286,9 @@ describe('TrendReport', () => {
     expect(orderedNames).toEqual(['最高', '较低', '同值', '零值', '无效']);
     expect(agentTooltip.itemSorter({})).toBe(0);
     expect(agentTooltip.itemSorter({ value: null })).toBe(0);
-  });
+    // importActual('recharts') cold-loads the whole library; under full-suite
+    // load it can exceed the 5s default timeout.
+  }, 30_000);
 
   it('requests natural CST week and month ranges', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });

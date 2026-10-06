@@ -7,6 +7,7 @@ import api from '../../../api';
 let isMobileMock = false;
 let studentStageMock = '待到校参观';
 const mockConfirm = vi.fn();
+const mockPrompt = vi.fn();
 
 vi.mock('../../../api', () => ({
   default: {
@@ -46,6 +47,7 @@ vi.mock('../../../components/Toast', () => ({
 
 vi.mock('../../../components/ConfirmDialog', () => ({
   useConfirm: () => mockConfirm,
+  usePrompt: () => mockPrompt,
 }));
 
 describe('LeadsManage privacy', () => {
@@ -54,6 +56,7 @@ describe('LeadsManage privacy', () => {
     isMobileMock = false;
     studentStageMock = '待到校参观';
     mockConfirm.mockResolvedValue(true);
+    mockPrompt.mockResolvedValue('空号');
     api.post.mockResolvedValue({ data: { code: 0, data: {} } });
     api.delete.mockResolvedValue({ data: { code: 0 } });
     api.get.mockImplementation((url, config) => {
@@ -525,5 +528,36 @@ describe('LeadsManage privacy', () => {
       }));
     });
     expect(api.delete).toHaveBeenCalledWith('/students/10');
+  });
+
+  it('asks for an invalid reason through the in-app prompt before saving 无效', async () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
+        <LeadsManage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('脱敏学生');
+    fireEvent.change(screen.getByLabelText('设置 脱敏学生 状态'), { target: { value: '无效' } });
+
+    await waitFor(() => {
+      expect(api.put).toHaveBeenCalledWith('/students/10', { status: '无效', invalid_reason: '空号' });
+    });
+    expect(mockPrompt).toHaveBeenCalledWith(expect.objectContaining({ title: '标记为无效' }));
+  });
+
+  it('does not save 无效 when the reason prompt is cancelled', async () => {
+    mockPrompt.mockResolvedValue(null);
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin/leads']}>
+        <LeadsManage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('脱敏学生');
+    fireEvent.change(screen.getByLabelText('设置 脱敏学生 状态'), { target: { value: '无效' } });
+
+    await waitFor(() => expect(mockPrompt).toHaveBeenCalledTimes(1));
+    expect(api.put).not.toHaveBeenCalled();
   });
 });

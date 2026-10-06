@@ -26,7 +26,6 @@ from app.models import (
     User,
 )
 from app.schemas import Response
-from app.student_delete import delete_students_cascade
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.services.lead_outcome_service import require_reclaimable_reasons
 from app.status_policy import (
@@ -35,6 +34,7 @@ from app.status_policy import (
     status_detail_value,
     statuses_for_canonical,
 )
+from app.student_delete import delete_students_cascade
 from app.utils import (
     make_batch_id,
     make_operation_log,

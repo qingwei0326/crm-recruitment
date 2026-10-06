@@ -14,7 +14,7 @@ import {
   adminPageMainClass,
 } from '../../components/admin/AdminPagePrimitives';
 import { useToast } from '../../components/Toast';
-import { useConfirm } from '../../components/ConfirmDialog';
+import { useConfirm, usePrompt } from '../../components/ConfirmDialog';
 import { stageLabel, statusLabel, STAGES } from '../../labels';
 import { buildStudentPayload, getApiErrorMessage } from '../../utils';
 import {
@@ -66,6 +66,7 @@ export default function LeadsManage() {
   const isMobile = useIsMobile();
   const toast = useToast();
   const confirm = useConfirm();
+  const prompt = usePrompt();
   const [searchParams] = useSearchParams();
   const searchParamString = searchParams.toString();
   const navigate = useNavigate();
@@ -566,9 +567,11 @@ export default function LeadsManage() {
     if (!canEditStudent) return;
     let payload = { status: s };
     if (s === '无效') {
-      const reason = window.prompt(
-        '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
-      );
+      const reason = await prompt({
+        title: '标记为无效',
+        message: '请简要说明无效原因\n例如：空号 / 明确拒绝 / 已报他校 / 家长态度恶劣',
+        placeholder: '无效原因',
+      });
       if (!reason || !reason.trim()) {
         // 用户取消或留空，不提交；重新拉一次列表把下拉值还原
         fetchStudents(page);
@@ -1175,7 +1178,7 @@ export default function LeadsManage() {
                     type="button"
                     onClick={item.onClick}
                     disabled={!item.onClick}
-                    className={`rounded-xl border p-3 text-left transition ${item.className} ${item.onClick ? 'hover:-translate-y-0.5 hover:shadow-sm' : 'cursor-default'}`}
+                    className={`rounded-panel border p-3 text-left transition ${item.className} ${item.onClick ? 'hover:-translate-y-0.5 hover:shadow-sm' : 'cursor-default'}`}
                   >
                     <div className="text-xs font-medium text-gray-500 dark:text-gray-400">{item.label}</div>
                     <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{item.value}</div>
@@ -1184,7 +1187,7 @@ export default function LeadsManage() {
                 ))}
               </div>
 
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-panel border border-gray-200 dark:border-gray-700 p-4">
                 <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 font-medium">跟进阶段分布</div>
                 <div className="flex gap-1.5 h-16 items-end">
                   {STAGE_STAT_KEYS.map((s) => {

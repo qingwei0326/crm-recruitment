@@ -615,7 +615,7 @@ export default function AuditLogs() {
         </div>
         {rollbackModal && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl dark:bg-gray-800">
+            <div className="w-full max-w-2xl rounded-panel bg-white p-5 shadow-xl dark:bg-gray-800">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">

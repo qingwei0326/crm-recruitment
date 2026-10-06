@@ -100,7 +100,7 @@ export default function LeadsMobileCard({
             )}
           </div>
           <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 dark:bg-gray-900/60">
-            <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">下一步</div>
+            <div className="mb-0.5 text-3xs font-medium uppercase tracking-wide text-gray-400">下一步</div>
             <NextActionSummary action={l.next_action} showEmpty />
           </div>
         </button>
@@ -181,7 +181,7 @@ export default function LeadsMobileCard({
                 <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">
                   招生任务
                 </div>
-                <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                <div className="text-2xs text-gray-500 dark:text-gray-400">
                   生成后进入对应管理页继续处理
                 </div>
               </div>

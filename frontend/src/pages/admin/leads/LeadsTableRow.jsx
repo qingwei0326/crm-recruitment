@@ -135,7 +135,7 @@ export default function LeadsTableRow({
               </select>
             )}
             {l.status_detail && (
-              <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
+              <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-600 dark:text-gray-300">
                 {l.status === '无效' ? `原因：${l.status_detail}` : l.status_detail}
               </span>
             )}

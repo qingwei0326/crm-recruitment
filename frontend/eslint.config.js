@@ -22,9 +22,6 @@ export default [
         navigator: 'readonly',
         localStorage: 'readonly',
         sessionStorage: 'readonly',
-        alert: 'readonly',
-        confirm: 'readonly',
-        prompt: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         setInterval: 'readonly',
@@ -71,6 +68,22 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // Design tokens live in tailwind.config.js; don't reintroduce the arbitrary values they replaced.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/text-.[189][01]?px.|bg-.#f5f7fb.|shadow-.0_2px_10px|rounded-xl|rounded-2xl|rounded-t-xl|rounded-t-2xl/]',
+          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark), rounded-panel.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='window'][callee.property.name=/alert|confirm|prompt/]",
+          message: 'Use useConfirm()/usePrompt() from ConfirmDialog or useToast() instead of native dialogs.',
+        },
+        {
+          selector: 'TemplateElement[value.raw=/text-.[189][01]?px.|bg-.#f5f7fb.|shadow-.0_2px_10px|rounded-xl|rounded-2xl|rounded-t-xl|rounded-t-2xl/]',
+          message: 'Use design tokens: text-2xs/text-3xs, bg-surface-page, shadow-panel(-dark), rounded-panel.',
+        },
+      ],
     },
   },
   {
@@ -88,6 +101,11 @@ export default [
         afterAll: 'readonly',
       },
     },
+  },
+  {
+    // Vitest globalSetup runs in Node.
+    files: ['src/test-global-setup.js'],
+    languageOptions: { globals: { process: 'readonly' } },
   },
   {
     ignores: ['dist/', 'node_modules/'],

@@ -125,11 +125,11 @@ export function DashboardCardPicker({
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-blue-700 dark:hover:text-blue-300"
+        className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-2xs font-semibold text-slate-600 shadow-sm transition hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-blue-700 dark:hover:text-blue-300"
       >
         <SlidersHorizontal className="h-3.5 w-3.5" />
         {label}
-        <span className="text-[10px] text-slate-400 dark:text-slate-500">{selectedCount}</span>
+        <span className="text-3xs text-slate-400 dark:text-slate-500">{selectedCount}</span>
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -137,17 +137,17 @@ export function DashboardCardPicker({
         <div
           role="dialog"
           aria-label="选择展示卡片"
-          className="absolute right-0 top-10 z-30 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
+          className="absolute right-0 top-10 z-30 w-64 rounded-panel border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900"
         >
           <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2.5 dark:border-slate-800">
             <div>
               <div className="text-xs font-bold text-slate-800 dark:text-slate-100">选择展示卡片</div>
-              <div className="mt-0.5 text-[10px] leading-4 text-slate-400 dark:text-slate-500">无数据时仍会自动隐藏</div>
+              <div className="mt-0.5 text-3xs leading-4 text-slate-400 dark:text-slate-500">无数据时仍会自动隐藏</div>
             </div>
             <button
               type="button"
               onClick={onReset}
-              className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              className="inline-flex items-center gap-1 text-3xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400"
             >
               <RotateCcw className="h-3 w-3" />
               恢复默认
@@ -175,7 +175,7 @@ export function DashboardCardPicker({
                     {checked && <Check className="h-3 w-3" />}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-medium">{card.label}</span>
-                  {unavailable && <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">无数据</span>}
+                  {unavailable && <span className="shrink-0 text-3xs text-slate-400 dark:text-slate-500">无数据</span>}
                 </label>
               );
             })}

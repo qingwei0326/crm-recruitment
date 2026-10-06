@@ -185,26 +185,52 @@ async function installApiMocks(page, user = adminUser) {
     }
 
     if (path === '/admissions/work-items') {
+      const homeVisitItem = {
+        id: 'home_visit:101',
+        kind: 'home_visit',
+        queue: 'home_visit',
+        priority: 'high',
+        title: '工作流学生 家访',
+        student_id: lead.id,
+        student_name: lead.name,
+        region: lead.region,
+        school_name: lead.school_name,
+        agent_name: agentUser.name,
+        due_at: '2026-07-03T09:00:00',
+        status: 'pending',
+        reason: '家访待确认',
+        target_url: '/admin/home-visits',
+        source_id: 101,
+      };
+      const staleAItem = {
+        id: `stale_a:${staleAStudent.id}`,
+        kind: 'stale_a',
+        queue: 'stale-a',
+        priority: 'high',
+        title: `${staleAStudent.name} A 级超时`,
+        student_id: staleAStudent.id,
+        student_name: staleAStudent.name,
+        region: staleAStudent.region,
+        school_name: staleAStudent.school_name,
+        agent_name: agentUser.name,
+        due_at: staleAStudent.last_activity_at,
+        status: staleAStudent.status,
+        reason: '4天未推进',
+        target_url: `/admin/leads/${staleAStudent.id}`,
+        source_id: staleAStudent.id,
+      };
+      const all = [homeVisitItem, staleAItem];
+      const requestedQueue = url.searchParams.get('queue') || 'all';
+      const rows = requestedQueue === 'all'
+        ? all
+        : all.filter((item) => item.queue === requestedQueue);
       await route.fulfill({
-        json: ok(pagePayload([
-          {
-            id: 'home_visit:101',
-            kind: 'home_visit',
-            queue: 'home_visit',
-            priority: 'high',
-            title: '工作流学生 家访',
-            student_id: lead.id,
-            student_name: lead.name,
-            region: lead.region,
-            school_name: lead.school_name,
-            agent_name: agentUser.name,
-            due_at: '2026-07-03T09:00:00',
-            status: 'pending',
-            reason: '家访待确认',
-            target_url: '/admin/home-visits',
-            source_id: 101,
-          },
-        ])),
+        json: ok({
+          ...pagePayload(rows),
+          has_more: false,
+          queue_counts: { all: all.length, home_visit: 1, 'stale-a': 1 },
+          regions: [],
+        }),
       });
       return;
     }
@@ -315,10 +341,10 @@ test.describe('current full role workflow', () => {
     await installApiMocks(page, adminUser);
 
     await page.goto('/admin');
-    await expect(page.getByRole('heading', { name: '仪表盘' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '招生指挥中心', level: 1 })).toBeVisible();
     await expect(page.getByText('A 级超时未推进')).toBeVisible();
 
-    await page.getByRole('link', { name: /查看/ }).first().click();
+    await page.locator('a[href="/admin/work-center?queue=stale-a"]').first().click();
     await expect(page).toHaveURL(/\/admin\/work-center\?queue=stale-a/);
     await expect(page.getByRole('button', { name: 'A超时 1' })).toBeVisible();
     await expect(page.getByText('周八 A 级超时')).toBeVisible();
@@ -331,7 +357,7 @@ test.describe('current full role workflow', () => {
       ['/admin/leads', '学生管理', '工作流学生'],
       ['/admin/agents', '账号管理', '工作流话务员'],
       ['/admin/report-center', '报表中心', '招生总览'],
-      ['/admin/governance', '线索治理', '数据健康中心'],
+      ['/admin/governance', '线索治理', '疑似重复线索'],
       ['/admin/settings', '系统设置', 'workflow-smoke-backup.db'],
     ];
 
@@ -361,7 +387,7 @@ test.describe('current full role workflow', () => {
 
     await page.goto('/mobile');
     await expect(page.getByText('工作流学生')).toBeVisible();
-    await expect(page.getByText('下一步：首次呼出')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^待拨打/ })).toBeVisible();
   });
 
   test('protected routing uses current role defaults', async ({ browser }) => {

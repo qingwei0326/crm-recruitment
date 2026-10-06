@@ -347,7 +347,7 @@ export default function MobileDialResult({ onUpdated }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="mobile-dial-result-title"
-        className="w-full bg-white dark:bg-gray-900 rounded-t-2xl p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[92dvh] overflow-y-auto overscroll-contain"
+        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[92dvh] overflow-y-auto overscroll-contain"
         onClick={(e) => e.stopPropagation()}
         aria-busy={submitting}
       >
@@ -391,7 +391,7 @@ export default function MobileDialResult({ onUpdated }) {
         {showFollowUp ? (
           <div className="space-y-3">
             {followUpMode === 'intent' && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+              <div className="rounded-panel border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
                 已加家长微信后，请直接在微信备注学生情况；系统这里只安排下次回访，不用重复写备注。
               </div>
             )}
@@ -431,7 +431,7 @@ export default function MobileDialResult({ onUpdated }) {
                     await finishDial({ businessSaved: true });
                   }}
                   disabled={submitting || completionPending}
-                  className="flex-1 min-h-[48px] rounded-xl border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
+                  className="flex-1 min-h-[48px] rounded-panel border dark:border-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium active:scale-95 disabled:opacity-60"
                 >
                   跳过
                 </button>
@@ -440,7 +440,7 @@ export default function MobileDialResult({ onUpdated }) {
                 type="button"
                 onClick={saveFollowUp}
                 disabled={submitting || completionPending || !followUpDate}
-                className="flex-1 min-h-[48px] rounded-xl bg-amber-600 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
+                className="flex-1 min-h-[48px] rounded-panel bg-amber-600 text-white text-sm font-semibold flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
               >
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                 {followUpMode === 'missed' ? '保存下一次重拨' : '保存回访提醒'}
@@ -476,7 +476,7 @@ export default function MobileDialResult({ onUpdated }) {
                       type="button"
                       onClick={() => pickContact(choice.key)}
                       disabled={submitting || completionPending}
-                      className={`${choice.colSpan ? 'col-span-2' : ''} min-h-[70px] rounded-xl border px-3 text-left active:scale-95 disabled:opacity-60 ${choice.className}`}
+                      className={`${choice.colSpan ? 'col-span-2' : ''} min-h-[70px] rounded-panel border px-3 text-left active:scale-95 disabled:opacity-60 ${choice.className}`}
                     >
                       <div className="text-base font-semibold">{choice.label}</div>
                       <div className="mt-1 text-xs opacity-75">{choice.hint}</div>
@@ -497,7 +497,7 @@ export default function MobileDialResult({ onUpdated }) {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                <div className="rounded-panel border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
                   首次沟通先记录客观结果，不要求判断 A/B/C。加微信后直接在微信里备注，避免两边重复填写。
                 </div>
 
@@ -586,7 +586,7 @@ export default function MobileDialResult({ onUpdated }) {
                     type="button"
                     onClick={() => pickStatus(phoneInvalidButton)}
                     disabled={submitting || completionPending}
-                    className="w-full min-h-[56px] rounded-xl border border-gray-300 bg-gray-100 text-gray-700 text-sm font-semibold active:scale-95 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                    className="w-full min-h-[56px] rounded-panel border border-gray-300 bg-gray-100 text-gray-700 text-sm font-semibold active:scale-95 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                   >
                     确认空号/停机
                   </button>

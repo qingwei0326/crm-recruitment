@@ -82,7 +82,7 @@ export default function ChangePassword() {
 
         <form
           onSubmit={handleSubmit}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 space-y-4"
+          className="bg-white dark:bg-gray-800 rounded-panel shadow-xl p-6 space-y-4"
         >
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

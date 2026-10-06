@@ -11,7 +11,7 @@ export default function AgentSidebar({
         <div className="flex h-16 items-center justify-between border-b border-slate-800/90 px-5">
           <div>
             <div className="text-sm font-bold tracking-wide text-white">话务执行中心</div>
-            <div className="mt-0.5 text-[10px] font-medium text-slate-500">运营工作台</div>
+            <div className="mt-0.5 text-3xs font-medium text-slate-500">运营工作台</div>
           </div>
           <button
             onClick={onCloseMenu}
@@ -23,7 +23,7 @@ export default function AgentSidebar({
         </div>
       )}
       <div className="space-y-1 p-3">
-        <div className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600">
+        <div className="px-3 pb-2 pt-1 text-3xs font-bold uppercase tracking-[0.16em] text-slate-600">
           执行导航
         </div>
         <button

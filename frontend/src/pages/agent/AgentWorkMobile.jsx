@@ -20,6 +20,7 @@ import StudentTimeline from '../../components/StudentTimeline';
 import HomeVisitForm from '../../components/admissions/HomeVisitForm';
 import CampusVisitForm from '../../components/admissions/CampusVisitForm';
 import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
+import { EmptyState, ErrorState } from '../../components/AsyncState';
 
 export default function AgentWorkMobile({
   // State
@@ -108,7 +109,7 @@ export default function AgentWorkMobile({
             <Menu className="h-5 w-5 text-slate-600 dark:text-gray-300" />
           </button>
           <div className="min-w-0">
-            <div className="truncate text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
+            <div className="truncate text-3xs font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
               招生运营 / 话务执行
             </div>
             <div className="flex items-center gap-2">
@@ -184,7 +185,7 @@ export default function AgentWorkMobile({
             <div className="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
               <div className="h-full rounded-full bg-blue-600 transition-[width] duration-500" style={{ width: `${progress}%` }} />
             </div>
-            <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+            <div className="mt-1 text-2xs text-gray-400 dark:text-gray-500">
               已推进 {progressed} / {progressStats.total ?? 0} 项任务
             </div>
           </section>
@@ -194,7 +195,7 @@ export default function AgentWorkMobile({
             ].map((s, i) => (
               <div key={i} className="bg-white px-1 py-2.5 text-center dark:bg-gray-800">
                 <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{s.value}</div>
-                <div className="text-[11px] text-gray-500 dark:text-gray-400">{s.label}</div>
+                <div className="text-2xs text-gray-500 dark:text-gray-400">{s.label}</div>
               </div>
             ))}
           </div>
@@ -263,7 +264,7 @@ export default function AgentWorkMobile({
                       <div className="flex shrink-0 flex-col items-end gap-1">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[current.status] || STATUS_STYLE['未联系']}`}>{statusLabel(current.status)}</span>
                         {current.status_detail && (
-                          <span className="max-w-[100px] truncate rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-gray-700 dark:text-gray-300">
+                          <span className="max-w-[100px] truncate rounded bg-slate-100 px-1.5 py-0.5 text-2xs text-slate-600 dark:bg-gray-700 dark:text-gray-300">
                             {current.status_detail}
                           </span>
                         )}
@@ -331,9 +332,9 @@ export default function AgentWorkMobile({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="grid grid-cols-3 gap-3 flex-1">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center"><div className="text-2xl font-bold text-blue-600">{followingData.total}</div><div className="text-xs text-gray-500">跟进中</div></div>
+                  <div className="bg-white dark:bg-gray-800 rounded-panel border p-4 text-center"><div className="text-2xl font-bold text-blue-600">{followingData.total}</div><div className="text-xs text-gray-500">跟进中</div></div>
                   {followingData.intent_counts && Object.entries(followingData.intent_counts).filter(([k]) => k !== '无').map(([level, count]) => (
-                    <div key={level} className="bg-white dark:bg-gray-800 rounded-xl border p-4 text-center"><div className="text-2xl font-bold text-amber-600">{count}</div><div className="text-xs text-gray-500">{level}级意向</div></div>
+                    <div key={level} className="bg-white dark:bg-gray-800 rounded-panel border p-4 text-center"><div className="text-2xl font-bold text-amber-600">{count}</div><div className="text-xs text-gray-500">{level}级意向</div></div>
                   ))}
                 </div>
                 <button onClick={fetchFollowing} disabled={followingLoading} className="ml-2 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
@@ -344,7 +345,7 @@ export default function AgentWorkMobile({
                 <div className="space-y-2">
                   {followingData.list.map((item) => (
                     <button key={item.id} onClick={() => { loadDetail(item.id); setShowDetail(true); }}
-                      className="w-full text-left bg-white dark:bg-gray-800 rounded-xl border p-3 active:bg-gray-50 dark:active:bg-gray-700">
+                      className="w-full text-left bg-white dark:bg-gray-800 rounded-panel border p-3 active:bg-gray-50 dark:active:bg-gray-700">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -360,10 +361,10 @@ export default function AgentWorkMobile({
                   ))}
                 </div>
               ) : (
-                <div className="text-center text-gray-400 py-8">暂无跟进中学员</div>
+                <EmptyState bare title="暂无跟进中学员" />
               )}
             </div>
-          ) : <div className="text-center text-gray-400">加载失败</div>}
+          ) : <ErrorState bare title="加载失败" message="跟进中学员加载失败，请稍后重试。" />}
         </div>
       )}
       {showDetail && detailStudent && (
@@ -454,13 +455,13 @@ export default function AgentWorkMobile({
       {/* Bottom tab bar */}
       <div className="sticky bottom-0 z-20 flex border-t border-slate-200/90 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
         <button onClick={() => changeViewTab('today')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'today' ? 'text-emerald-600' : 'text-gray-400'}`}>
-          <Target className="w-5 h-5" /><span className="text-[10px] mt-0.5">待拨打</span>
+          <Target className="w-5 h-5" /><span className="text-3xs mt-0.5">待拨打</span>
         </button>
         <button onClick={() => changeViewTab('handled')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'handled' ? 'text-emerald-600' : 'text-gray-400'}`}>
-          <CalendarClock className="w-5 h-5" /><span className="text-[10px] mt-0.5">待处理</span>
+          <CalendarClock className="w-5 h-5" /><span className="text-3xs mt-0.5">待处理</span>
         </button>
         <button onClick={() => changeViewTab('following')} className={`flex min-h-12 flex-1 flex-col items-center justify-center py-2 ${viewTab === 'following' ? 'text-emerald-600' : 'text-gray-400'}`}>
-          <History className="w-5 h-5" /><span className="text-[10px] mt-0.5">跟进中</span>
+          <History className="w-5 h-5" /><span className="text-3xs mt-0.5">跟进中</span>
         </button>
       </div>
     </div>

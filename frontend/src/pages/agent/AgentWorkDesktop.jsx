@@ -75,12 +75,12 @@ export default function AgentWorkDesktop({
       {/* Sidebar */}
       <aside className="flex w-64 shrink-0 flex-col bg-slate-950 text-white">
         <div className="flex items-center gap-3 border-b border-slate-800/90 px-5 py-5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 shadow-lg shadow-emerald-950/30">
+          <div className="flex h-10 w-10 items-center justify-center rounded-panel bg-emerald-600 shadow-lg shadow-emerald-950/30">
             <Phone className="h-5 w-5 text-white" />
           </div>
           <div className="min-w-0">
             <div className="truncate text-sm font-bold tracking-wide text-white">招生话务 CRM</div>
-            <div className="mt-0.5 truncate text-[10px] font-medium text-slate-500">话务执行工作台 · {user?.name || '坐席'}</div>
+            <div className="mt-0.5 truncate text-3xs font-medium text-slate-500">话务执行工作台 · {user?.name || '坐席'}</div>
           </div>
         </div>
         <AgentSidebar
@@ -99,13 +99,13 @@ export default function AgentWorkDesktop({
         {/* Toolbar */}
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200/90 bg-white/95 px-5 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
           <div className="min-w-0">
-            <div className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
+            <div className="truncate text-3xs font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-300">
               招生运营 / 话务执行
             </div>
             <h2 className="truncate text-base font-bold leading-5 text-slate-900 dark:text-gray-100">
               {viewTab === 'today' ? '待拨打任务' : viewTab === 'handled' ? '待处理线索' : '跟进中学生'}
             </h2>
-            <p className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-gray-500">
+            <p className="mt-0.5 truncate text-2xs text-gray-400 dark:text-gray-500">
               {viewTab === 'today' ? '今日分配任务' : viewTab === 'handled' ? '已产生联系结果的线索' : '需要持续推进的学生'}
             </p>
           </div>
