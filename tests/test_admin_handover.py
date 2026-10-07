@@ -236,9 +236,7 @@ async def test_handover_permissions_allow_partial_but_protect_start_and_completi
         assignment_baseline,
     )
 
-    assert (
-        await client.get("/api/admin/handovers", headers=agent_headers)
-    ).status_code == 403
+    assert (await client.get("/api/admin/handovers", headers=agent_headers)).status_code == 403
     assert (
         await client.get("/api/admin/handovers", headers=normal_admin_headers)
     ).status_code == 403

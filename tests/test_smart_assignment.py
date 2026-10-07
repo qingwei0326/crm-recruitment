@@ -282,7 +282,7 @@ async def test_smart_assign_execute_requires_confirm(client, admin_headers):
         headers=admin_headers,
         json={"limit": 1, "per_agent_limit": 1, "confirm": False},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 400
     assert resp.json()["code"] == 1
     assert resp.json()["msg"] == "请确认后再执行智能分配"
 
@@ -360,9 +360,7 @@ async def test_smart_assign_execute_recalculates_and_writes_rollbackable_logs(
         .all()
     )
     assert len(assignments) == 2
-    assert {assignment.start_reason for assignment in assignments} == {
-        "smart_assignment"
-    }
+    assert {assignment.start_reason for assignment in assignments} == {"smart_assignment"}
 
     rollback_resp = await client.get(
         f"/api/admin/assignment-rollbacks/{body['data']['batch_id']}",

@@ -72,9 +72,7 @@ def test_inspect_database_rejects_foreign_key_violations(tmp_path):
     source = tmp_path / "broken.db"
     with sqlite3.connect(source) as connection:
         connection.execute("create table parent (id integer primary key)")
-        connection.execute(
-            "create table child (parent_id integer references parent(id))"
-        )
+        connection.execute("create table child (parent_id integer references parent(id))")
         connection.execute("insert into child (parent_id) values (99)")
 
     with pytest.raises(ValueError, match="foreign key check failed"):

@@ -56,25 +56,18 @@ def test_dial_recording_state_migration_classifies_existing_rows_and_is_idempote
     engine = create_engine("sqlite://")
     with engine.begin() as conn:
         conn.exec_driver_sql(
-            "CREATE TABLE dial_logs ("
-            "id INTEGER PRIMARY KEY, duration_seconds INTEGER DEFAULT 0)"
+            "CREATE TABLE dial_logs (id INTEGER PRIMARY KEY, duration_seconds INTEGER DEFAULT 0)"
         )
-        conn.exec_driver_sql(
-            "INSERT INTO dial_logs (id, duration_seconds) VALUES (1, 0), (2, 45)"
-        )
+        conn.exec_driver_sql("INSERT INTO dial_logs (id, duration_seconds) VALUES (1, 0), (2, 45)")
 
         _migrate_dial_recording_state(conn)
         _migrate_dial_recording_state(conn)
 
-        rows = conn.exec_driver_sql(
-            "SELECT id, recording_state FROM dial_logs ORDER BY id"
-        ).all()
+        rows = conn.exec_driver_sql("SELECT id, recording_state FROM dial_logs ORDER BY id").all()
 
     db_inspector = inspect(engine)
     assert rows == [(1, "legacy_missing"), (2, "completed")]
-    assert "recording_state" in {
-        column["name"] for column in db_inspector.get_columns("dial_logs")
-    }
+    assert "recording_state" in {column["name"] for column in db_inspector.get_columns("dial_logs")}
     assert "ix_dial_logs_recording_state" in {
         index["name"] for index in db_inspector.get_indexes("dial_logs")
     }

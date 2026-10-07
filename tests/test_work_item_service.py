@@ -69,9 +69,7 @@ async def test_student_sync_creates_one_lead_and_preserves_creator_on_owner_chan
     repeated = await sync_student_work_items(db, student, admin_user, at=NOW)
 
     lead = next(item for item in first if item.kind == WorkItemKind.lead_contact)
-    repeated_lead = next(
-        item for item in repeated if item.kind == WorkItemKind.lead_contact
-    )
+    repeated_lead = next(item for item in repeated if item.kind == WorkItemKind.lead_contact)
     assert repeated_lead.id == lead.id
     assert lead.status == WorkItemStatus.open
     assert lead.owner_agent_id == agent_user.id
@@ -84,9 +82,7 @@ async def test_student_sync_creates_one_lead_and_preserves_creator_on_owner_chan
         admin_user,
         at=NOW + timedelta(minutes=1),
     )
-    changed_lead = next(
-        item for item in changed if item.kind == WorkItemKind.lead_contact
-    )
+    changed_lead = next(item for item in changed if item.kind == WorkItemKind.lead_contact)
     assert changed_lead.id == lead.id
     assert changed_lead.owner_agent_id == target.id
     assert changed_lead.creator_user_id == agent_user.id
@@ -110,9 +106,7 @@ async def test_terminal_student_completes_existing_lead_item(
         at=NOW + timedelta(hours=1),
     )
 
-    completed_lead = next(
-        item for item in completed if item.kind == WorkItemKind.lead_contact
-    )
+    completed_lead = next(item for item in completed if item.kind == WorkItemKind.lead_contact)
     assert completed_lead.id == lead.id
     assert completed_lead.status == WorkItemStatus.completed
     assert completed_lead.completed_at == NOW + timedelta(hours=1)
@@ -139,9 +133,7 @@ async def test_help_request_uses_stable_student_source_key(
         admin_user,
         at=NOW + timedelta(minutes=1),
     )
-    repeated_help = next(
-        item for item in repeated if item.kind == WorkItemKind.help_request
-    )
+    repeated_help = next(item for item in repeated if item.kind == WorkItemKind.help_request)
     assert repeated_help.due_at == NOW
     assert repeated_help.version == 1
 
@@ -300,8 +292,7 @@ async def test_bulk_student_sync_uses_constant_select_count(
     agent_user,
 ):
     students = [
-        await _assigned_student(db, agent_user, need_help=index % 2 == 0)
-        for index in range(20)
+        await _assigned_student(db, agent_user, need_help=index % 2 == 0) for index in range(20)
     ]
     statements: list[str] = []
 
@@ -371,14 +362,18 @@ async def test_source_kinds_open_and_complete_with_stable_keys(
     assert completed.id == item.id
     assert completed.status == WorkItemStatus.completed
     rows = (
-        await db.execute(
-            select(WorkItem).where(
-                WorkItem.kind == kind,
-                WorkItem.source_type == source_type,
-                WorkItem.source_id == source_id,
+        (
+            await db.execute(
+                select(WorkItem).where(
+                    WorkItem.kind == kind,
+                    WorkItem.source_type == source_type,
+                    WorkItem.source_id == source_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 

@@ -174,7 +174,7 @@ async def test_assistant_config_rejects_enabled_without_model_or_key(client, adm
             "model": "",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert response.json()["code"] == 1
     assert "Model" in response.json()["msg"]
 
@@ -457,11 +457,7 @@ async def test_assistant_unexpected_provider_error_is_recorded_safely(
     assert response.json()["msg"] == "AI 助手处理失败，请稍后重试"
     assert "raw-provider" not in response.text
     run = (
-        (
-            await db.execute(
-                select(AssistantRun).where(AssistantRun.session_id == session_id)
-            )
-        )
+        (await db.execute(select(AssistantRun).where(AssistantRun.session_id == session_id)))
         .scalars()
         .one()
     )
@@ -638,9 +634,7 @@ async def test_assistant_can_preview_assignment_by_school_without_student_ids(
     assert preview["distribution"] == [
         {"agent_id": agent_user.id, "agent_name": agent_user.name, "count": 1}
     ]
-    assert preview["_targets"] == [
-        {"student_id": sample_student.id, "agent_id": agent_user.id}
-    ]
+    assert preview["_targets"] == [{"student_id": sample_student.id, "agent_id": agent_user.id}]
     schemas = {schema["function"]["name"]: schema for schema in assistant_tool_schemas()}
     assert "assign_school_students" in schemas
     properties = schemas["assign_school_students"]["function"]["parameters"]["properties"]

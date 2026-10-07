@@ -12,10 +12,7 @@ def test_resolve_sync_migration_url_uses_absolute_sqlite_path(tmp_path):
 
 
 def test_resolve_sync_migration_url_converts_async_drivers():
-    assert (
-        resolve_sync_migration_url("sqlite+aiosqlite:///D:/crm.db")
-        == "sqlite:///D:/crm.db"
-    )
+    assert resolve_sync_migration_url("sqlite+aiosqlite:///D:/crm.db") == "sqlite:///D:/crm.db"
     assert (
         resolve_sync_migration_url("postgresql+asyncpg://u:p@db/crm")
         == "postgresql+psycopg2://u:p@db/crm"

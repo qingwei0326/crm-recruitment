@@ -111,8 +111,8 @@ app.add_exception_handler(DomainError, _domain_error_handler)
 async def _http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
     """把 126 处 raise HTTPException 的 {"detail": ...} 收敛成项目信封 {code,data,msg}。
 
-    保留 detail 字段做兼容：前端 utils.getApiErrorMessage 与既有测试都读它，
-    等 Response.error 的 HTTP 200 一起改完（需前后端联调）后再摘掉。
+    保留 detail 字段做兼容：前端 utils.getApiErrorMessage 与既有测试都读它。
+    前端 api.js 也靠 detail 区分这类响应与 Response.error（HTTP 4xx、无 detail）的业务失败信封。
     """
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     return JSONResponse(

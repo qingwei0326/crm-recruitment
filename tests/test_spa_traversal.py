@@ -3,6 +3,7 @@
 实测漏洞：app/main.py 的 SPA 回退用 os.path.join(FRONTEND_DIR, path) 拼接，
 未做 realpath 归一化，攻击者可借 ``/..%2F..%2F.env`` 读到 SECRET_KEY 并自签 admin JWT。
 """
+
 import os
 
 from app.main import _resolve_spa_path
@@ -15,9 +16,7 @@ def test_resolve_spa_path_allows_paths_inside_root(monkeypatch, tmp_path):
     (tmp_path / "assets" / "app.js").write_text("console.log(1)")
 
     assert _resolve_spa_path("index.html") == os.path.realpath(tmp_path / "index.html")
-    assert _resolve_spa_path("assets/app.js") == os.path.realpath(
-        tmp_path / "assets" / "app.js"
-    )
+    assert _resolve_spa_path("assets/app.js") == os.path.realpath(tmp_path / "assets" / "app.js")
     # 根目录本身（SPA 默认回退到 index.html）应被允许
     assert _resolve_spa_path("") == os.path.realpath(str(tmp_path))
 
