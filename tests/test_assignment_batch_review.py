@@ -284,6 +284,6 @@ async def test_assignment_batch_review_endpoint_returns_clear_missing_batch(
     )
     body = resp.json()
 
-    assert resp.status_code == 200
+    assert resp.status_code == 400
     assert body["code"] == 1
     assert body["msg"] == "未找到该分配批次"

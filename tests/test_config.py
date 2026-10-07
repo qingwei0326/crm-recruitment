@@ -24,7 +24,7 @@ async def test_follow_up_window_minutes_out_of_range_low(client, admin_headers):
         json={"key": "follow_up_window_minutes", "value": "0"},
         headers=admin_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 400
     assert r.json()["code"] == 1
 
 
@@ -35,7 +35,7 @@ async def test_follow_up_window_minutes_out_of_range_high(client, admin_headers)
         json={"key": "follow_up_window_minutes", "value": "61"},
         headers=admin_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 400
     assert r.json()["code"] == 1
 
 
@@ -46,7 +46,7 @@ async def test_follow_up_window_minutes_non_integer(client, admin_headers):
         json={"key": "follow_up_window_minutes", "value": "abc"},
         headers=admin_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 400
     assert r.json()["code"] == 1
 
 
@@ -79,7 +79,7 @@ async def test_follow_up_window_minutes_float_string(client, admin_headers):
         json={"key": "follow_up_window_minutes", "value": "10.5"},
         headers=admin_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 400
     assert r.json()["code"] == 1
 
 
@@ -90,7 +90,7 @@ async def test_follow_up_window_minutes_empty(client, admin_headers):
         json={"key": "follow_up_window_minutes", "value": ""},
         headers=admin_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 400
     # Empty string should either succeed (clearing value) or fail validation
     # Based on existing pattern, empty string is accepted for some keys
 
@@ -122,7 +122,7 @@ async def test_score_daily_call_target_rejects_out_of_range(client, admin_header
         json={"key": "score_daily_call_target", "value": "1001"},
         headers=admin_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 400
     assert r.json()["code"] == 1
 
 
@@ -179,7 +179,7 @@ async def test_capacity_config_rejects_invalid_min_max_without_writing(
         headers=admin_headers,
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert response.json()["code"] == 1
     stored = await db.get(SystemConfig, "assignment_capacity_min")
     assert stored.value == "150"
@@ -203,7 +203,7 @@ async def test_capacity_config_rejects_observed_days_above_lookback_without_writ
         headers=admin_headers,
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert response.json()["code"] == 1
     stored = await db.get(SystemConfig, "assignment_capacity_observed_days")
     assert stored.value == "5"

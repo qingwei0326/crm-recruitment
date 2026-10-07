@@ -129,4 +129,27 @@ describe('API Service', () => {
     expect(localStorageMock.getItem('crm_user')).toBeNull();
     expect(global.window.location.href).toBe('');
   });
+  describe('business-failure envelope (HTTP 4xx from Response.error)', () => {
+    const onError = () => api.default.__interceptors.response[1];
+
+    it('resolves 400 {code,data,msg} so callers keep reading data.code', async () => {
+      const response = { status: 400, data: { code: 1, data: null, msg: '手机号已存在' } };
+      await expect(onError()({ response, config: {} })).resolves.toBe(response);
+    });
+
+    it('still rejects HTTPException bodies (they carry detail)', async () => {
+      const err = {
+        response: { status: 403, data: { code: 403, data: null, msg: '无权限', detail: '无权限' } },
+        config: {},
+      };
+      await expect(onError()(err)).rejects.toBe(err);
+    });
+
+    it('still rejects 5xx and responses without an envelope', async () => {
+      const e500 = { response: { status: 500, data: { code: 500, msg: 'x' } }, config: {} };
+      await expect(onError()(e500)).rejects.toBe(e500);
+      const plain = { response: { status: 400, data: 'bad' }, config: {} };
+      await expect(onError()(plain)).rejects.toBe(plain);
+    });
+  });
 });

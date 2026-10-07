@@ -174,7 +174,7 @@ async def test_assistant_config_rejects_enabled_without_model_or_key(client, adm
             "model": "",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 400
     assert response.json()["code"] == 1
     assert "Model" in response.json()["msg"]
 

@@ -541,7 +541,7 @@ class TestAdminUpdateUser:
         )
         body = resp.json()
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert body["code"] == 1
         assert "角色不可修改" in body["msg"]
         await db.refresh(agent_user)
@@ -611,7 +611,7 @@ class TestAdminUpdateUser:
         )
         body = resp.json()
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert body["code"] == 1
         assert "状态词" in body["msg"]
         await db.refresh(agent_user)
@@ -630,7 +630,7 @@ class TestAdminUpdateUser:
         )
         body = resp.json()
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert body["code"] == 1
         assert "状态词" in body["msg"]
 
@@ -1647,7 +1647,7 @@ class TestLeadGovernanceRisk:
             headers=admin_headers,
         )
         body = resp.json()
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert body["code"] == 1
 
     async def test_governance_review_writes_audit_log_and_suppresses_reviewed_signal(
@@ -2126,7 +2126,7 @@ class TestDailyOps:
             headers=admin_headers,
         )
         body = resp.json()
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert body["code"] == 1
 
 
