@@ -52,7 +52,7 @@ async def _run_audit(database: Path) -> dict[str, int | bool]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", required=True, type=Path)
-    parser.add_argument("--expect-revision", default="20260925_01")
+    parser.add_argument("--expect-revision", default="20261007_01")
     args = parser.parse_args()
     database = args.database.expanduser().resolve()
 

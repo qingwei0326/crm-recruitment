@@ -16,7 +16,7 @@ $ReleaseDir = Join-Path $ReleaseRoot $ReleaseName
 $ZipPath = Join-Path $ReleaseRoot "$ReleaseName.zip"
 $ZipHashPath = "$ZipPath.sha256"
 $DatabaseUpgradeFromRevision = "20260726_01"
-$ExpectedDatabaseRevision = "20260925_01"
+$ExpectedDatabaseRevision = "20261007_01"
 
 function Copy-ReleaseTree {
     param(

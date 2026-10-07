@@ -1,11 +1,9 @@
 from sqlalchemy import create_engine, inspect
 
-from app.database import (
-    Base,
-    _ensure_student_indexes,
+from app.database import Base, sync_engine
+from app.legacy_schema_compat import (
     _migrate_dial_recording_state,
     _migrate_student_phone_normalization,
-    sync_engine,
 )
 from app.models import Student
 
@@ -13,19 +11,6 @@ from app.models import Student
 def _reset_schema():
     Base.metadata.drop_all(sync_engine)
     Base.metadata.create_all(sync_engine)
-
-
-def test_ensure_student_indexes_adds_guardian2_phone_index():
-    _reset_schema()
-    with sync_engine.begin() as conn:
-        conn.exec_driver_sql("DROP INDEX IF EXISTS ix_students_guardian2_phone")
-
-    with sync_engine.begin() as conn:
-        _ensure_student_indexes(conn)
-
-    inspector = inspect(sync_engine)
-    index_names = {index["name"] for index in inspector.get_indexes("students")}
-    assert "ix_students_guardian2_phone" in index_names
 
 
 def test_student_phone_normalization_migration_cleans_existing_rows():
