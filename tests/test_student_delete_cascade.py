@@ -6,7 +6,6 @@ P0-2 的实测问题：删除入口只清了 6 张表，已分配/有报名/有�
 2) 通过 API 删除一个「已分配」学生会成功，且不留孤儿 assignment 行；
 3) 直接调用共享函数，验证此前遗漏的 enrollment/assignment 等表一并被清。
 """
-
 import pytest
 from sqlalchemy import func, select
 
@@ -56,14 +55,16 @@ class TestApiDeleteAssignedStudent:
 
         before = (
             await db.execute(
-                select(func.count())
-                .select_from(StudentAssignment)
-                .where(StudentAssignment.student_id == student.id)
+                select(func.count()).select_from(StudentAssignment).where(
+                    StudentAssignment.student_id == student.id
+                )
             )
         ).scalar_one()
         assert before == 1
 
-        resp = await client.delete(f"/api/students/{student.id}", headers=admin_headers)
+        resp = await client.delete(
+            f"/api/students/{student.id}", headers=admin_headers
+        )
         assert resp.status_code == 200, resp.text
         assert resp.json()["code"] == 0
 
@@ -74,9 +75,9 @@ class TestApiDeleteAssignedStudent:
         ).scalar_one()
         orphan = (
             await db.execute(
-                select(func.count())
-                .select_from(StudentAssignment)
-                .where(StudentAssignment.student_id == student.id)
+                select(func.count()).select_from(StudentAssignment).where(
+                    StudentAssignment.student_id == student.id
+                )
             )
         ).scalar_one()
         assert remaining == 0
@@ -113,16 +114,16 @@ class TestCascadeDeleteFunction:
 
         assignment_count = (
             await db.execute(
-                select(func.count())
-                .select_from(StudentAssignment)
-                .where(StudentAssignment.student_id == student.id)
+                select(func.count()).select_from(StudentAssignment).where(
+                    StudentAssignment.student_id == student.id
+                )
             )
         ).scalar_one()
         enrollment_count = (
             await db.execute(
-                select(func.count())
-                .select_from(EnrollmentRecord)
-                .where(EnrollmentRecord.student_id == student.id)
+                select(func.count()).select_from(EnrollmentRecord).where(
+                    EnrollmentRecord.student_id == student.id
+                )
             )
         ).scalar_one()
         student_count = (

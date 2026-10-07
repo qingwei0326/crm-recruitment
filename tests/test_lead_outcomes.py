@@ -64,7 +64,9 @@ async def test_invalid_outcome_projection_persists_code_and_clears_on_reopen(
         headers=admin_headers,
     )
     listed = next(
-        row for row in invalid_list.json()["data"]["list"] if row["id"] == sample_student.id
+        row
+        for row in invalid_list.json()["data"]["list"]
+        if row["id"] == sample_student.id
     )
     assert listed["outcome_reason_code"] == "enrolled_elsewhere"
 
@@ -150,8 +152,8 @@ async def test_reclaim_preview_reports_assignment_and_notes_without_mutating(
     assert sample_student.status == StudentStatus.not_contacted
     assert sample_student.assigned_to is None
     assert (
-        (await db.execute(select(Note).where(Note.student_id == sample_student.id))).scalars().all()
-    )
+        await db.execute(select(Note).where(Note.student_id == sample_student.id))
+    ).scalars().all()
 
 
 @pytest.mark.asyncio
@@ -263,7 +265,10 @@ async def test_reclaim_to_agent_exposes_reclaim_batch_for_rollback(
         headers=admin_headers,
     )
     assert audit.status_code == 200
-    assert any(item["action"] == "线索回收汇总" for item in audit.json()["data"]["items"])
+    assert any(
+        item["action"] == "线索回收汇总"
+        for item in audit.json()["data"]["items"]
+    )
     listed = await client.get(
         "/api/operation-logs",
         params={"batch_id": batch_id},

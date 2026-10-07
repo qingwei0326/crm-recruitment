@@ -360,7 +360,9 @@ async def test_smart_assign_execute_recalculates_and_writes_rollbackable_logs(
         .all()
     )
     assert len(assignments) == 2
-    assert {assignment.start_reason for assignment in assignments} == {"smart_assignment"}
+    assert {assignment.start_reason for assignment in assignments} == {
+        "smart_assignment"
+    }
 
     rollback_resp = await client.get(
         f"/api/admin/assignment-rollbacks/{body['data']['batch_id']}",

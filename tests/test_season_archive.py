@@ -169,7 +169,9 @@ async def test_season_archive_prepare_and_cleanup_keeps_summary_audit(
     assert (await db.execute(select(func.count(WorkItem.id)))).scalar_one() == 0
     assert (
         await db.execute(
-            select(func.count(OperationLog.id)).where(OperationLog.action == "招生季清理汇总")
+            select(func.count(OperationLog.id)).where(
+                OperationLog.action == "招生季清理汇总"
+            )
         )
     ).scalar_one() == 1
 

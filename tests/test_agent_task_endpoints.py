@@ -43,44 +43,26 @@ async def test_yesterday_review_counts_calls_upgrades_and_stale_work(
     today = today_cst_as_utc()
     yesterday_noon = today - timedelta(hours=12)
     called = await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "昨日通话",
-        StudentStatus.pending_visit,
-        IntentLevel.A,
-        today - timedelta(days=4),
+        db, agent_user, assignment_baseline, "昨日通话", StudentStatus.pending_visit,
+        IntentLevel.A, today - timedelta(days=4),
     )
     stale = await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "昨日未联系",
-        StudentStatus.not_contacted,
-        IntentLevel.none,
-        yesterday_noon,
+        db, agent_user, assignment_baseline, "昨日未联系", StudentStatus.not_contacted,
+        IntentLevel.none, yesterday_noon,
     )
-    db.add_all(
-        [
-            Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
-            Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
-            OperationLog(
-                operator_id=agent_user.id,
-                operator_name="坐席",
-                target_student_id=called.id,
-                case_no="",
-                action="手动评级",
-                old_status="B",
-                new_status="A",
-                created_at=yesterday_noon,
-            ),
-            FollowUp(
-                student_id=called.id,
-                agent_id=agent_user.id,
-                follow_up_date=today + timedelta(hours=3),
-            ),
-        ]
-    )
+    db.add_all([
+        Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
+        Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
+        OperationLog(
+            operator_id=agent_user.id, operator_name="坐席", target_student_id=called.id,
+            case_no="", action="手动评级", old_status="B", new_status="A",
+            created_at=yesterday_noon,
+        ),
+        FollowUp(
+            student_id=called.id, agent_id=agent_user.id,
+            follow_up_date=today + timedelta(hours=3),
+        ),
+    ])
     await db.commit()
 
     data = (await client.get("/api/tasks/yesterday", headers=agent_headers)).json()["data"]
@@ -98,31 +80,16 @@ async def test_following_lists_intent_students_waiting_for_follow_up(
 ):
     today = today_cst_as_utc()
     await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "跟进A",
-        StudentStatus.pending_visit,
-        IntentLevel.A,
-        today - timedelta(days=2),
+        db, agent_user, assignment_baseline, "跟进A", StudentStatus.pending_visit,
+        IntentLevel.A, today - timedelta(days=2),
     )
     await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "无意向待回访",
-        StudentStatus.pending_visit,
-        IntentLevel.none,
-        today,
+        db, agent_user, assignment_baseline, "无意向待回访", StudentStatus.pending_visit,
+        IntentLevel.none, today,
     )
     await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "已联系B",
-        StudentStatus.contacted,
-        IntentLevel.B,
-        today,
+        db, agent_user, assignment_baseline, "已联系B", StudentStatus.contacted,
+        IntentLevel.B, today,
     )
     await db.commit()
 
@@ -139,31 +106,16 @@ async def test_backlog_counts_non_terminal_students_older_than_threshold(
 ):
     today = today_cst_as_utc()
     await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "积压",
-        StudentStatus.not_contacted,
-        IntentLevel.none,
-        today - timedelta(days=6),
+        db, agent_user, assignment_baseline, "积压", StudentStatus.not_contacted,
+        IntentLevel.none, today - timedelta(days=6),
     )
     await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "已报名不算",
-        StudentStatus.enrolled,
-        IntentLevel.A,
-        today - timedelta(days=9),
+        db, agent_user, assignment_baseline, "已报名不算", StudentStatus.enrolled,
+        IntentLevel.A, today - timedelta(days=9),
     )
     await _student(
-        db,
-        agent_user,
-        assignment_baseline,
-        "新分配不算",
-        StudentStatus.not_contacted,
-        IntentLevel.none,
-        today,
+        db, agent_user, assignment_baseline, "新分配不算", StudentStatus.not_contacted,
+        IntentLevel.none, today,
     )
     await db.commit()
 
@@ -175,7 +127,9 @@ async def test_backlog_counts_non_terminal_students_older_than_threshold(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("endpoint", ["/api/tasks/today", "/api/tasks/handled"])
-async def test_group_and_ungrouped_filters_are_mutually_exclusive(client, agent_headers, endpoint):
+async def test_group_and_ungrouped_filters_are_mutually_exclusive(
+    client, agent_headers, endpoint
+):
     response = await client.get(
         f"{endpoint}?personal_group_id=1&ungrouped=true", headers=agent_headers
     )
@@ -184,7 +138,9 @@ async def test_group_and_ungrouped_filters_are_mutually_exclusive(client, agent_
 
 
 @pytest.mark.asyncio
-async def test_today_rejects_other_agents_personal_group(client, db, admin_user, agent_headers):
+async def test_today_rejects_other_agents_personal_group(
+    client, db, admin_user, agent_headers
+):
     group = PersonalGroup(owner_id=admin_user.id, name="别人的分组", color="blue")
     db.add(group)
     await db.commit()

@@ -49,13 +49,16 @@ def _scan_router(path: Path) -> list[str]:
 
     relative_path = path.relative_to(PROJECT_ROOT).as_posix()
     return [
-        f"{relative_path}:{line}: direct is_active via {kind}" for line, kind in sorted(violations)
+        f"{relative_path}:{line}: direct is_active via {kind}"
+        for line, kind in sorted(violations)
     ]
 
 
 def test_routers_do_not_write_user_active_projection_directly():
     violations = [
-        violation for path in sorted(ROUTERS_DIR.glob("*.py")) for violation in _scan_router(path)
+        violation
+        for path in sorted(ROUTERS_DIR.glob("*.py"))
+        for violation in _scan_router(path)
     ]
 
     assert not violations, "\n" + "\n".join(violations)

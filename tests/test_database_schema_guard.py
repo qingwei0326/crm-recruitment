@@ -21,7 +21,9 @@ def test_production_schema_guard_rejects_old_revision_without_creating_tables():
             _assert_schema_revision(connection, "20260726_01")
         tables = {
             row[0]
-            for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            for row in connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
         }
         assert "personal_groups" not in tables
 

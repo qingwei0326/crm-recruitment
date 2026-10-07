@@ -134,7 +134,9 @@ async def test_reassignment_updates_history_projection_and_audit(db):
     assert assignments[1].previous_assignment_id == assignments[0].id
 
     log = (
-        await db.execute(select(OperationLog).where(OperationLog.target_student_id == student.id))
+        await db.execute(
+            select(OperationLog).where(OperationLog.target_student_id == student.id)
+        )
     ).scalar_one()
     assert log.action == "修改归属"
     assert log.batch_id == "assign-test-1"
@@ -165,7 +167,11 @@ async def test_reassignment_moves_all_active_source_work_items(db):
         item = WorkItem(
             student_id=student.id,
             kind=kind,
-            status=(WorkItemStatus.blocked_suspension if index == 1 else WorkItemStatus.open),
+            status=(
+                WorkItemStatus.blocked_suspension
+                if index == 1
+                else WorkItemStatus.open
+            ),
             owner_agent_id=source.id,
             creator_user_id=source.id,
             source_type=source_type,
@@ -311,7 +317,9 @@ async def test_unchanged_assignment_is_reported_without_new_rows(db):
     assert result.changed_ids == ()
     assert result.unchanged_ids == (student.id,)
     assignment_rows = await db.execute(
-        select(StudentAssignment).where(StudentAssignment.student_id == student.id)
+        select(StudentAssignment).where(
+            StudentAssignment.student_id == student.id
+        )
     )
     assignment_count = len(assignment_rows.scalars().all())
     log_count = len((await db.execute(select(OperationLog))).scalars().all())
