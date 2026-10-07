@@ -22,14 +22,8 @@ from app.models import (
 )
 from app.utils import today_cst_as_utc
 
-ALL_USER_OPS = [
-    "user_create",
-    "user_edit",
-    "user_delete",
-    "user_offboard",
-    "user_unlock",
-    "user_reset_password",
-]
+ALL_USER_OPS = ["user_create", "user_edit", "user_delete", "user_offboard", "user_unlock",
+                "user_reset_password"]
 
 
 def _headers(user):
@@ -168,29 +162,14 @@ async def test_directory_and_score_preview_aggregate_agent_work(
     await db.flush()
     await assignment_baseline(first, agent_user, started_at=today)
     await assignment_baseline(second, agent_user, started_at=today)
-    db.add_all(
-        [
-            DialLog(
-                student_id=first.id,
-                agent_id=agent_user.id,
-                dialed_at=today + timedelta(hours=1),
-                recording_state="completed",
-                duration_seconds=60,
-            ),
-            DialLog(
-                student_id=second.id,
-                agent_id=agent_user.id,
-                dialed_at=today + timedelta(hours=2),
-                recording_state="pending",
-                duration_seconds=0,
-            ),
-            FollowUp(
-                student_id=second.id,
-                agent_id=agent_user.id,
-                follow_up_date=today - timedelta(days=1),
-            ),
-        ]
-    )
+    db.add_all([
+        DialLog(student_id=first.id, agent_id=agent_user.id, dialed_at=today + timedelta(hours=1),
+                recording_state="completed", duration_seconds=60),
+        DialLog(student_id=second.id, agent_id=agent_user.id, dialed_at=today + timedelta(hours=2),
+                recording_state="pending", duration_seconds=0),
+        FollowUp(student_id=second.id, agent_id=agent_user.id,
+                 follow_up_date=today - timedelta(days=1)),
+    ])
     await db.commit()
 
     agents = (await client.get("/api/admin/agents", headers=admin_headers)).json()["data"]

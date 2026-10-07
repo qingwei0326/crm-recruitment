@@ -106,7 +106,9 @@ def seed_legacy_domain_scenario(session: Session) -> dict[str, object]:
         status=StudentStatus.invalid,
         status_detail="",
     )
-    session.add_all([active_student, terminal_student, suspended_student, blank_invalid])
+    session.add_all(
+        [active_student, terminal_student, suspended_student, blank_invalid]
+    )
     session.flush()
 
     pending_follow_up = FollowUp(
@@ -196,11 +198,18 @@ def test_backfill_domain_core_is_idempotent_and_preserves_legacy_state(sync_sess
     ) == before_terminal_state
 
     employment_by_user = {
-        row.user_id: row.status for row in sync_session.scalars(select(AgentEmployment)).all()
+        row.user_id: row.status
+        for row in sync_session.scalars(select(AgentEmployment)).all()
     }
     assert employment_by_user[seeded["active"].id] == EmploymentStatus.active
-    assert employment_by_user[seeded["audited_inactive"].id] == EmploymentStatus.offboarded
-    assert employment_by_user[seeded["suspended_inactive"].id] == EmploymentStatus.suspended
+    assert (
+        employment_by_user[seeded["audited_inactive"].id]
+        == EmploymentStatus.offboarded
+    )
+    assert (
+        employment_by_user[seeded["suspended_inactive"].id]
+        == EmploymentStatus.suspended
+    )
 
     assignments = sync_session.scalars(select(StudentAssignment)).all()
     assert len(assignments) == 3
@@ -219,11 +228,13 @@ def test_backfill_domain_core_is_idempotent_and_preserves_legacy_state(sync_sess
     )
     assert suspended_lead.status == WorkItemStatus.blocked_suspension
     assert not any(
-        row.source_type == "follow_up" and row.source_id == seeded["completed_follow_up"].id
+        row.source_type == "follow_up"
+        and row.source_id == seeded["completed_follow_up"].id
         for row in work_items
     )
     assert not any(
-        row.source_type == "home_visit" and row.source_id == seeded["completed_home_visit"].id
+        row.source_type == "home_visit"
+        and row.source_id == seeded["completed_home_visit"].id
         for row in work_items
     )
 
@@ -366,7 +377,9 @@ def test_source_work_items_keep_creator_and_use_current_owner(sync_session):
     assert audit_domain_core(sync_session)["ok"] is True
 
     sync_session.execute(
-        update(Student).where(Student.id == active_student.id).values(assigned_to=None)
+        update(Student)
+        .where(Student.id == active_student.id)
+        .values(assigned_to=None)
     )
     broken_audit = audit_domain_core(sync_session)
     assert broken_audit["ok"] is False

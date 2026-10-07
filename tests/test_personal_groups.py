@@ -24,12 +24,16 @@ async def _create_agent(db, username: str, name: str) -> tuple[User, dict[str, s
         )
     )
     await db.commit()
-    token = create_access_token({"sub": str(user.id), "role": user.role, "tv": user.token_version})
+    token = create_access_token(
+        {"sub": str(user.id), "role": user.role, "tv": user.token_version}
+    )
     return user, {"Authorization": f"Bearer {token}"}
 
 
 class TestPersonalGroups:
-    async def test_agent_creates_and_lists_only_own_groups(self, client, db, agent_headers):
+    async def test_agent_creates_and_lists_only_own_groups(
+        self, client, db, agent_headers
+    ):
         _other_agent, other_headers = await _create_agent(db, "other-agent", "其他坐席")
 
         created = await client.post(
@@ -54,7 +58,9 @@ class TestPersonalGroups:
         )
         assert forbidden.status_code == 404
 
-    async def test_agent_cannot_create_more_than_twenty_active_groups(self, client, agent_headers):
+    async def test_agent_cannot_create_more_than_twenty_active_groups(
+        self, client, agent_headers
+    ):
         for index in range(20):
             response = await client.post(
                 "/api/personal-groups",
@@ -121,7 +127,9 @@ class TestPersonalGroups:
             headers=agent_headers,
         )
         assert ungrouped.status_code == 200
-        assert [item["id"] for item in ungrouped.json()["data"]["list"]] == [own_ungrouped.id]
+        assert [item["id"] for item in ungrouped.json()["data"]["list"]] == [
+            own_ungrouped.id
+        ]
 
         conflicting = await client.get(
             f"/api/tasks/handled?personal_group_id={group['id']}&ungrouped=true",
@@ -164,7 +172,9 @@ class TestPersonalGroups:
             headers=agent_headers,
         )
         assert ungrouped_response.status_code == 200
-        assert [item["id"] for item in ungrouped_response.json()["data"]["list"]] == [ungrouped.id]
+        assert [item["id"] for item in ungrouped_response.json()["data"]["list"]] == [
+            ungrouped.id
+        ]
 
     async def test_deleting_student_cascades_private_group_membership(
         self,
@@ -194,7 +204,9 @@ class TestPersonalGroups:
         )
         await db.commit()
 
-        deleted = await client.delete(f"/api/students/{student.id}", headers=admin_headers)
+        deleted = await client.delete(
+            f"/api/students/{student.id}", headers=admin_headers
+        )
         assert deleted.json()["code"] == 0
         membership = await db.scalar(
             select(PersonalGroupMembership).where(
@@ -246,19 +258,15 @@ class TestPersonalGroups:
         )
         assert readded.status_code == 200
         history = (
-            (
-                await db.execute(
-                    select(PersonalGroupMembership)
-                    .where(
-                        PersonalGroupMembership.group_id == group["id"],
-                        PersonalGroupMembership.student_id == student.id,
-                    )
-                    .order_by(PersonalGroupMembership.id)
+            await db.execute(
+                select(PersonalGroupMembership)
+                .where(
+                    PersonalGroupMembership.group_id == group["id"],
+                    PersonalGroupMembership.student_id == student.id,
                 )
+                .order_by(PersonalGroupMembership.id)
             )
-            .scalars()
-            .all()
-        )
+        ).scalars().all()
         assert len(history) == 2
         assert history[0].archive_reason == "removed_by_owner"
         assert history[0].archived_at is not None
@@ -292,7 +300,9 @@ class TestPersonalGroups:
 
         denied = await client.get("/api/admin/personal-groups", headers=agent_headers)
         assert denied.status_code == 403
-        restricted = await client.get("/api/admin/personal-groups", headers=normal_admin_headers)
+        restricted = await client.get(
+            "/api/admin/personal-groups", headers=normal_admin_headers
+        )
         assert restricted.status_code == 403
 
         audited = await client.get("/api/admin/personal-groups", headers=admin_headers)

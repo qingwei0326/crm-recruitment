@@ -10,7 +10,11 @@ def _attribute_targets(node: ast.AST) -> list[ast.Attribute]:
     if isinstance(node, ast.Attribute):
         return [node]
     if isinstance(node, (ast.List, ast.Tuple)):
-        return [attribute for element in node.elts for attribute in _attribute_targets(element)]
+        return [
+            attribute
+            for element in node.elts
+            for attribute in _attribute_targets(element)
+        ]
     if isinstance(node, ast.Starred):
         return _attribute_targets(node.value)
     return []
@@ -28,7 +32,11 @@ def _is_student_update(node: ast.AST) -> bool:
 
 
 def _projection_keywords(node: ast.Call) -> set[str]:
-    return {keyword.arg for keyword in node.keywords if keyword.arg in PROJECTION_FIELDS}
+    return {
+        keyword.arg
+        for keyword in node.keywords
+        if keyword.arg in PROJECTION_FIELDS
+    }
 
 
 def _scan_router(path: Path) -> list[str]:
@@ -73,7 +81,9 @@ def _scan_router(path: Path) -> list[str]:
 
 def test_routers_do_not_write_assignment_projections_directly():
     violations = [
-        violation for path in sorted(ROUTERS_DIR.glob("*.py")) for violation in _scan_router(path)
+        violation
+        for path in sorted(ROUTERS_DIR.glob("*.py"))
+        for violation in _scan_router(path)
     ]
 
     assert not violations, "\n" + "\n".join(violations)

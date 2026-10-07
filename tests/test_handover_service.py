@@ -257,11 +257,13 @@ async def test_start_handover_preserves_progress_and_blocks_open_work(
     assert employment.version == 2
 
     items = (
-        (await db.execute(select(HandoverItem).where(HandoverItem.handover_batch_id == batch.id)))
-        .scalars()
-        .all()
-    )
-    assert {item.student_id for item in items} == {student.id for student in nonterminal}
+        await db.execute(
+            select(HandoverItem).where(HandoverItem.handover_batch_id == batch.id)
+        )
+    ).scalars().all()
+    assert {item.student_id for item in items} == {
+        student.id for student in nonterminal
+    }
     assert all(item.status == HandoverItemStatus.pending for item in items)
 
     for student in students:
@@ -277,22 +279,20 @@ async def test_start_handover_preserves_progress_and_blocks_open_work(
     assert all(student.assigned_to is None for student in terminal)
 
     blocked_work = (
-        (
-            await db.execute(
-                select(WorkItem).where(
-                    WorkItem.student_id.in_([student.id for student in nonterminal])
-                )
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.student_id.in_([student.id for student in nonterminal])
             )
         )
-        .scalars()
-        .all()
-    )
+    ).scalars().all()
     assert blocked_work
     assert all(item.status == WorkItemStatus.blocked_handover for item in blocked_work)
     assert all(item.owner_agent_id == source.id for item in blocked_work)
     assert all(item.handover_batch_id == batch.id for item in blocked_work)
     assert enrollment.attributed_agent_id == source.id
-    batch_count = (await db.execute(select(func.count(HandoverBatch.id)))).scalar_one()
+    batch_count = (
+        await db.execute(select(func.count(HandoverBatch.id)))
+    ).scalar_one()
     assert batch_count == 1
 
 
@@ -415,21 +415,19 @@ async def test_preview_selected_transfer_and_complete_all_remaining(
         assert student.assigned_to == target.id
 
     open_work = (
-        (
-            await db.execute(
-                select(WorkItem).where(
-                    WorkItem.student_id.in_([student.id for student in students[:5]])
-                )
+        await db.execute(
+            select(WorkItem).where(
+                WorkItem.student_id.in_([student.id for student in students[:5]])
             )
         )
-        .scalars()
-        .all()
-    )
+    ).scalars().all()
     assert all(item.status == WorkItemStatus.open for item in open_work)
     assert all(item.owner_agent_id == target.id for item in open_work)
     assert all(item.creator_user_id == source.id for item in open_work)
     assert enrollment.attributed_agent_id == source.id
-    assert (await db.execute(select(func.count(HandoverTransfer.id)))).scalar_one() == 2
+    assert (
+        await db.execute(select(func.count(HandoverTransfer.id)))
+    ).scalar_one() == 2
 
 
 @pytest.mark.asyncio
@@ -466,7 +464,9 @@ async def test_transfer_version_conflict_happens_before_writes(
 
     await db.refresh(students[0])
     assert students[0].assigned_to == source.id
-    assert (await db.execute(select(func.count(HandoverTransfer.id)))).scalar_one() == 0
+    assert (
+        await db.execute(select(func.count(HandoverTransfer.id)))
+    ).scalar_one() == 0
     item = (
         await db.execute(
             select(HandoverItem).where(

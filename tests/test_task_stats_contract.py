@@ -48,25 +48,23 @@ class TestAdminAgentTaskStats:
         )
         db.add_all([needs_help, completed_today])
         await db.flush()
-        db.add_all(
-            [
-                Call(
-                    student_id=completed_today.id,
-                    agent_id=agent_user.id,
-                    created_at=today_start + timedelta(hours=1),
-                ),
-                Call(
-                    student_id=completed_today.id,
-                    agent_id=agent_user.id,
-                    created_at=today_start + timedelta(hours=2),
-                ),
-                Call(
-                    student_id=needs_help.id,
-                    agent_id=agent_user.id,
-                    created_at=today_start - timedelta(hours=1),
-                ),
-            ]
-        )
+        db.add_all([
+            Call(
+                student_id=completed_today.id,
+                agent_id=agent_user.id,
+                created_at=today_start + timedelta(hours=1),
+            ),
+            Call(
+                student_id=completed_today.id,
+                agent_id=agent_user.id,
+                created_at=today_start + timedelta(hours=2),
+            ),
+            Call(
+                student_id=needs_help.id,
+                agent_id=agent_user.id,
+                created_at=today_start - timedelta(hours=1),
+            ),
+        ])
         await db.commit()
 
         response = await client.get("/api/tasks/today", headers=agent_headers)
@@ -669,7 +667,9 @@ class TestFollowUpStatusSync:
         ).scalar_one()
         assert item.status == WorkItemStatus.completed
 
-    async def test_delete_follow_up_cancels_work_item(self, client, db, agent_headers, agent_user):
+    async def test_delete_follow_up_cancels_work_item(
+        self, client, db, agent_headers, agent_user
+    ):
         student = Student(
             name="删除回访",
             assigned_to=agent_user.id,

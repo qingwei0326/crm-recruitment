@@ -162,7 +162,9 @@ async def test_config_update_writes_masked_audit_log(client, admin_headers, db, 
 
 
 @pytest.mark.asyncio
-async def test_capacity_config_rejects_invalid_min_max_without_writing(client, admin_headers, db):
+async def test_capacity_config_rejects_invalid_min_max_without_writing(
+    client, admin_headers, db
+):
     db.add_all(
         [
             SystemConfig(key="assignment_capacity_min", value="150"),

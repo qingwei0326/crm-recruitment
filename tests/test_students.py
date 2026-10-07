@@ -1560,7 +1560,9 @@ class TestAssignStudent:
             .all()
         )
         assert len(assignments) == 2
-        assert {assignment.start_reason for assignment in assignments} == {"auto_assignment"}
+        assert {assignment.start_reason for assignment in assignments} == {
+            "auto_assignment"
+        }
 
 
 @pytest.mark.asyncio

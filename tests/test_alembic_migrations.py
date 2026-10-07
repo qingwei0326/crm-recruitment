@@ -212,7 +212,6 @@ def test_empty_database_upgrades_to_domain_schema_without_dropping_legacy(tmp_pa
     finally:
         engine.dispose()
 
-
 def test_domain_schema_downgrade_removes_only_domain_delta(tmp_path):
     db_path = tmp_path / "domain-downgrade.db"
     upgraded = run_alembic(db_path, "upgrade", "20260711_02")
@@ -281,7 +280,9 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
         reason = session.get(LeadOutcomeReason, "enrolled_elsewhere")
         assert reason.reclaimable is False
         assert audit_domain_core(session)["ok"] is True
-        revision = session.execute(text("select version_num from alembic_version")).scalar_one()
+        revision = session.execute(
+            text("select version_num from alembic_version")
+        ).scalar_one()
         assert revision == "20260711_03"
     assistant_upgrade = run_alembic(db_path, "upgrade", "head")
     assert assistant_upgrade.returncode == 0, assistant_upgrade.stderr
@@ -312,7 +313,9 @@ def test_domain_backfill_downgrade_clears_only_new_domain_data(tmp_path):
         with Session(engine) as session:
             assert session.scalar(select(func.count(AgentEmployment.user_id))) == 0
             assert session.scalar(select(func.count(LeadOutcomeReason.code))) == 0
-            revision = session.execute(text("select version_num from alembic_version")).scalar_one()
+            revision = session.execute(
+                text("select version_num from alembic_version")
+            ).scalar_one()
             assert revision == "20260711_02"
     finally:
         engine.dispose()

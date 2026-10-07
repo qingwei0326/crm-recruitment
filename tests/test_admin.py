@@ -1738,9 +1738,9 @@ class TestLeadGovernanceRisk:
         await db.commit()
 
         reopened_resp = await client.get("/api/admin/data-health", headers=admin_headers)
-        reopened = {item["key"]: item for item in reopened_resp.json()["data"]["signals"]}[
-            "duplicate_phone"
-        ]
+        reopened = {
+            item["key"]: item for item in reopened_resp.json()["data"]["signals"]
+        }["duplicate_phone"]
         assert reopened["current_count"] == 2
         assert reopened["count"] == 2
         assert reopened["reviewed"] is False
@@ -1879,7 +1879,9 @@ class TestLeadGovernanceRisk:
         assert alert_types["unsettled_enrollments"]["to"] == "/admin/enrollment-settlement"
 
         health_resp = await client.get("/api/admin/data-health", headers=admin_headers)
-        health_signals = {item["key"]: item for item in health_resp.json()["data"]["signals"]}
+        health_signals = {
+            item["key"]: item for item in health_resp.json()["data"]["signals"]
+        }
         assert health_signals["stale_a"]["review_key"] == "stale_a_students"
 
     async def test_governance_review_reopens_when_entities_change_at_the_same_count(
@@ -2074,7 +2076,9 @@ class TestDailyOps:
         await db.commit()
 
         initial_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
-        initial_items = {item["key"]: item for item in initial_resp.json()["data"]["items"]}
+        initial_items = {
+            item["key"]: item for item in initial_resp.json()["data"]["items"]
+        }
         reviewed_count = initial_items["help_requests"]["count"]
         assert reviewed_count >= 1
 
@@ -2090,7 +2094,9 @@ class TestDailyOps:
         assert review_resp.json()["code"] == 0
 
         closed_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
-        closed_items = {item["key"]: item for item in closed_resp.json()["data"]["items"]}
+        closed_items = {
+            item["key"]: item for item in closed_resp.json()["data"]["items"]
+        }
         assert closed_items["help_requests"]["is_closed"] is True
 
         db.add(
@@ -2213,7 +2219,9 @@ class TestAssignmentRollback:
         assert student.assigned_at is None
         assignment = (
             await db.execute(
-                select(StudentAssignment).where(StudentAssignment.student_id == student.id)
+                select(StudentAssignment).where(
+                    StudentAssignment.student_id == student.id
+                )
             )
         ).scalar_one()
         assert assignment.ended_at is not None

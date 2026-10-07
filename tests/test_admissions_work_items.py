@@ -425,6 +425,8 @@ async def test_agent_work_items_are_scoped_to_own_students_and_records(client, d
     names = {row["student_name"] for row in resp.json()["data"]["list"]}
     assert "自己学生" in names
     assert "别人学生" not in names
-    own_row = next(row for row in resp.json()["data"]["list"] if row["student_name"] == "自己学生")
+    own_row = next(
+        row for row in resp.json()["data"]["list"] if row["student_name"] == "自己学生"
+    )
     assert own_row["agent_id"] == agent.id
     assert own_row["agent_name"] == agent.name

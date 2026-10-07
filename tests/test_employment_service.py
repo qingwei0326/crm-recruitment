@@ -79,7 +79,9 @@ async def test_suspend_updates_auth_employment_event_and_open_work_items(
 
     event = (
         await db.execute(
-            select(AgentEmploymentEvent).where(AgentEmploymentEvent.user_id == agent_user.id)
+            select(AgentEmploymentEvent).where(
+                AgentEmploymentEvent.user_id == agent_user.id
+            )
         )
     ).scalar_one()
     assert event.from_status == EmploymentStatus.active

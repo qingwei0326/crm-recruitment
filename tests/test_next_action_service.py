@@ -31,7 +31,9 @@ def _student(
         assigned_at=now - timedelta(hours=1) if assigned_to else None,
         status=status,
         stage=(
-            StudentStage.enrolled if status == StudentStatus.enrolled else StudentStage.interested
+            StudentStage.enrolled
+            if status == StudentStatus.enrolled
+            else StudentStage.interested
         ),
         intent_level=IntentLevel.A,
         need_help=need_help,
@@ -39,7 +41,9 @@ def _student(
 
 
 @pytest.mark.asyncio
-async def test_build_next_action_map_covers_assignment_lead_gap_and_terminal_states(db, agent_user):
+async def test_build_next_action_map_covers_assignment_lead_gap_and_terminal_states(
+    db, agent_user
+):
     lead = _student(
         name="待首呼",
         assigned_to=agent_user.id,

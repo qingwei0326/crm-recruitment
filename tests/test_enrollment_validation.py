@@ -42,10 +42,8 @@ async def test_enrollment_rejects_other_students_tasks(
     "amounts,detail",
     [
         ({"tuition_list_amount": 100, "student_subsidy_amount": 101}, "学费补贴不能高于标准学费"),
-        (
-            {"commission_base_amount": 100, "commission_adjustment_amount": -101},
-            "佣金调整后应结金额不能小于 0",
-        ),
+        ({"commission_base_amount": 100, "commission_adjustment_amount": -101},
+         "佣金调整后应结金额不能小于 0"),
     ],
 )
 async def test_enrollment_invalid_finance_is_client_error(

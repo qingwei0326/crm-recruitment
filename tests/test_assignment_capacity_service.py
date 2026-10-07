@@ -89,7 +89,9 @@ async def test_capacity_service_deduplicates_history_and_separates_today_from_ba
     agent = _agent("capacity-agent", "容量坐席")
     await _activate_agent(db, agent)
     today_start = datetime(2026, 8, 21, 16, 0, 0)
-    today_student = _student("今日一", created_at=AT, assigned_to=agent.id, assigned_at=today_start)
+    today_student = _student(
+        "今日一", created_at=AT, assigned_to=agent.id, assigned_at=today_start
+    )
     today_student_2 = _student(
         "今日二",
         created_at=AT + timedelta(seconds=1),
@@ -103,7 +105,8 @@ async def test_capacity_service_deduplicates_history_and_separates_today_from_ba
         assigned_at=today_start - timedelta(days=1),
     )
     history_students = [
-        _student(f"历史{i}", created_at=AT - timedelta(days=10, seconds=i)) for i in range(3)
+        _student(f"历史{i}", created_at=AT - timedelta(days=10, seconds=i))
+        for i in range(3)
     ]
     db.add_all([today_student, today_student_2, backlog, *history_students])
     await db.flush()
@@ -226,7 +229,8 @@ async def test_two_hundred_candidates_are_limited_to_one_hundred_fifty(db):
     agent = _agent("large-batch-agent", "大批量坐席")
     await _activate_agent(db, agent)
     students = [
-        _student(f"大批量候选{i}", created_at=AT + timedelta(seconds=i)) for i in range(200)
+        _student(f"大批量候选{i}", created_at=AT + timedelta(seconds=i))
+        for i in range(200)
     ]
     db.add_all(students)
     await db.commit()
@@ -256,7 +260,8 @@ async def test_capacity_is_clamped_to_configured_minimum_and_maximum(db):
         ]
     )
     history = [
-        _student(f"历史{i}", created_at=AT - timedelta(days=10, seconds=i)) for i in range(100)
+        _student(f"历史{i}", created_at=AT - timedelta(days=10, seconds=i))
+        for i in range(100)
     ]
     db.add_all(history)
     await db.flush()

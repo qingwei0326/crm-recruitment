@@ -149,13 +149,17 @@ class TestOffboard:
         departing_agent,
         students_under_departing,
     ):
-        assert (await client.get("/api/me", headers=departing_headers)).status_code == 200
+        assert (
+            await client.get("/api/me", headers=departing_headers)
+        ).status_code == 200
 
         await _post_offboard(client, admin_headers, departing_agent.id)
 
         await db.refresh(departing_agent)
         assert departing_agent.is_active is False
-        assert (await client.get("/api/me", headers=departing_headers)).status_code == 401
+        assert (
+            await client.get("/api/me", headers=departing_headers)
+        ).status_code == 401
         employment = await db.get(AgentEmployment, departing_agent.id)
         assert employment.status == EmploymentStatus.handover_pending
 
@@ -314,7 +318,9 @@ class TestOffboard:
 
         assert all(response.status_code == 200 for response in responses)
         assert all(response.json()["code"] == 0 for response in responses)
-        batch_ids = {response.json()["data"]["handover_batch_id"] for response in responses}
+        batch_ids = {
+            response.json()["data"]["handover_batch_id"] for response in responses
+        }
         assert len(batch_ids) == 1
         count = int(
             (
