@@ -30,15 +30,28 @@ async def _seed(db, agent_user, assignment_baseline):
     students = {
         "dup_a": _student("重复甲", school_name="一中", guardian_phone="13800001111"),
         "dup_b": _student("重复甲", school_name="一中", guardian_phone="13800001111"),
-        "dup_c": _student("重复乙", school_name="二中", guardian_phone="13900002222",
-                          guardian2_phone="13800001111"),
+        "dup_c": _student(
+            "重复乙",
+            school_name="二中",
+            guardian_phone="13900002222",
+            guardian2_phone="13800001111",
+        ),
         "dup_d": _student("重复丙", school_name="三中", guardian_phone="13900002222"),
-        "cleanable": _student("可清理", school_name="六中", guardian_phone="13800001111",
-                              guardian2_phone="13600009999"),
+        "cleanable": _student(
+            "可清理",
+            school_name="六中",
+            guardian_phone="13800001111",
+            guardian2_phone="13600009999",
+        ),
         "no_phone": _student("无电话", guardian_phone="", guardian2_phone=None),
-        "stale_a": _student("A超时", intent_level=IntentLevel.A,
-                            status=StudentStatus.pending_visit, guardian_phone="13700000001",
-                            created_at=old, assigned_at=old),
+        "stale_a": _student(
+            "A超时",
+            intent_level=IntentLevel.A,
+            status=StudentStatus.pending_visit,
+            guardian_phone="13700000001",
+            created_at=old,
+            assigned_at=old,
+        ),
     }
     db.add_all(list(students.values()))
     await db.flush()
@@ -100,8 +113,12 @@ async def test_data_health_counts_and_review_lifecycle(
 
     ok = await client.post(
         "/api/admin/governance-reviews",
-        json={"key": "missing_phone", "title": "无手机号线索", "detail": "已核对",
-              "review_token": token},
+        json={
+            "key": "missing_phone",
+            "title": "无手机号线索",
+            "detail": "已核对",
+            "review_token": token,
+        },
         headers=admin_headers,
     )
     assert ok.json()["data"] == {"reviewed": True, "key": "missing_phone", "count": 1}
@@ -112,9 +129,7 @@ async def test_data_health_counts_and_review_lifecycle(
     assert after["duplicate_phone"]["count"] == 5  # other signals are untouched
 
     log = (
-        await db.execute(
-            OperationLog.__table__.select().where(OperationLog.action == "治理复核")
-        )
+        await db.execute(OperationLog.__table__.select().where(OperationLog.action == "治理复核"))
     ).one()
     assert log.content == "确认复核 无手机号线索：已核对"
     assert log.batch_id == "governance-review:missing_phone"
@@ -123,13 +138,26 @@ async def test_data_health_counts_and_review_lifecycle(
 @pytest.mark.asyncio
 async def test_risk_alerts_window_follows_days_parameter(client, db, admin_user, admin_headers):
     now = utcnow()  # relative to "now": the alert window is [now - days, now]
-    db.add_all([
-        OperationLog(operator_id=admin_user.id, operator_name="管理员", case_no="",
-                     action="删除线索", content="删除 X", created_at=now - timedelta(hours=5)),
-        OperationLog(operator_id=admin_user.id, operator_name="管理员", case_no="",
-                     action="自动分配汇总", content="自动分配",
-                     created_at=now - timedelta(days=20)),
-    ])
+    db.add_all(
+        [
+            OperationLog(
+                operator_id=admin_user.id,
+                operator_name="管理员",
+                case_no="",
+                action="删除线索",
+                content="删除 X",
+                created_at=now - timedelta(hours=5),
+            ),
+            OperationLog(
+                operator_id=admin_user.id,
+                operator_name="管理员",
+                case_no="",
+                action="自动分配汇总",
+                content="自动分配",
+                created_at=now - timedelta(days=20),
+            ),
+        ]
+    )
     await db.commit()
 
     def types(response):

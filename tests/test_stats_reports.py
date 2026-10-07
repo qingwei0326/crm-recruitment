@@ -59,9 +59,7 @@ async def test_dashboard_all_uses_safe_read_sessions(client, admin_headers):
 
 
 @pytest.mark.asyncio
-async def test_trend_uses_agent_ids_and_cst_days(
-    client, admin_headers, db, admin_user, agent_user
-):
+async def test_trend_uses_agent_ids_and_cst_days(client, admin_headers, db, admin_user, agent_user):
     inactive_agent = User(
         username="trend-inactive-data",
         hashed_password="x",
@@ -125,8 +123,7 @@ async def test_trend_uses_agent_ids_and_cst_days(
         agent["id"] for agent in data["agents"]
     )
     assert any(
-        agent["id"] == inactive_agent.id and not agent["is_active"]
-        for agent in data["agents"]
+        agent["id"] == inactive_agent.id and not agent["is_active"] for agent in data["agents"]
     )
     assert any(agent["id"] == inactive_empty.id for agent in data["agents"])
     row = data["daily"][0]

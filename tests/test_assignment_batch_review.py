@@ -148,9 +148,7 @@ async def _seed_review_batch(db, admin_user, agent_user):
 async def test_build_assignment_batch_review_counts_funnel_agents_and_unhandled(
     db, admin_user, agent_user
 ):
-    batch_id, assigned_at, second_agent = await _seed_review_batch(
-        db, admin_user, agent_user
-    )
+    batch_id, assigned_at, second_agent = await _seed_review_batch(db, admin_user, agent_user)
 
     review = await build_assignment_batch_review(db, batch_id, window_days=7)
 
@@ -190,9 +188,7 @@ async def test_build_assignment_batch_review_counts_funnel_agents_and_unhandled(
 
 
 @pytest.mark.asyncio
-async def test_build_assignment_batch_review_respects_window_days(
-    db, admin_user, agent_user
-):
+async def test_build_assignment_batch_review_respects_window_days(db, admin_user, agent_user):
     assigned_at = datetime(2026, 7, 7, 7, 0, 0)
     batch_id = "smart-assign-window-test"
     student = _student("第三天处理学生", assigned_to=agent_user.id)
@@ -244,9 +240,7 @@ async def test_assignment_batch_review_endpoint_allows_audit_logs_permission(
     client, db, normal_admin_user, normal_admin_headers, admin_user, agent_user
 ):
     normal_admin_user.page_permissions = "audit_logs"
-    batch_id, _assigned_at, _second_agent = await _seed_review_batch(
-        db, admin_user, agent_user
-    )
+    batch_id, _assigned_at, _second_agent = await _seed_review_batch(db, admin_user, agent_user)
 
     resp = await client.get(
         f"/api/admin/assignment-batches/{batch_id}/review",
@@ -262,9 +256,7 @@ async def test_assignment_batch_review_endpoint_allows_audit_logs_permission(
 
 
 @pytest.mark.asyncio
-async def test_assignment_batch_review_endpoint_rejects_invalid_window(
-    client, admin_headers
-):
+async def test_assignment_batch_review_endpoint_rejects_invalid_window(client, admin_headers):
     resp = await client.get(
         "/api/admin/assignment-batches/smart-assign-review-test/review",
         params={"window_days": 2},
@@ -275,15 +267,13 @@ async def test_assignment_batch_review_endpoint_rejects_invalid_window(
 
 
 @pytest.mark.asyncio
-async def test_assignment_batch_review_endpoint_returns_clear_missing_batch(
-    client, admin_headers
-):
+async def test_assignment_batch_review_endpoint_returns_clear_missing_batch(client, admin_headers):
     resp = await client.get(
         "/api/admin/assignment-batches/missing-batch/review",
         headers=admin_headers,
     )
     body = resp.json()
 
-    assert resp.status_code == 200
+    assert resp.status_code == 400
     assert body["code"] == 1
     assert body["msg"] == "未找到该分配批次"

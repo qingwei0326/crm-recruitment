@@ -10,6 +10,16 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     const status = err.response?.status;
+    const body = err.response?.data;
+
+    // 业务失败信封 {code,data,msg}（后端 Response.error，HTTP 4xx）：保持原有调用约定，
+    // 以 resolve 交给调用方按 data.code 处理。HTTPException 的响应带 detail，仍按 reject 走 catch。
+    if (
+      status >= 400 && status < 500 && status !== 401 &&
+      body && typeof body === 'object' && 'code' in body && !('detail' in body)
+    ) {
+      return Promise.resolve(err.response);
+    }
 
     // 401: 未认证
     if (status === 401) {

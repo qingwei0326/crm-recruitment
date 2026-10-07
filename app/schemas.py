@@ -19,8 +19,13 @@ class Response:
         return JSONResponse(content={"code": 0, "data": data, "msg": msg})
 
     @staticmethod
-    def error(code=1, msg="error", data=None) -> JSONResponse:
-        return JSONResponse(content={"code": code, "data": data, "msg": msg})
+    def error(code=1, msg="error", data=None, status_code: int | None = None) -> JSONResponse:
+        """业务失败响应。HTTP 状态码如实反映失败：默认 400，code 本身是 4xx/5xx 时沿用。"""
+        if status_code is None:
+            status_code = code if 400 <= code < 600 else 400
+        return JSONResponse(
+            status_code=status_code, content={"code": code, "data": data, "msg": msg}
+        )
 
 
 class LoginReq(BaseModel):

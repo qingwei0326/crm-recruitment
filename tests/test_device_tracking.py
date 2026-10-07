@@ -555,7 +555,7 @@ async def test_reclaim_non_invalid_students_fails(
         },
         headers=admin_headers,
     )
-    assert response.status_code == 200
+    assert response.status_code == 400
     data = response.json()
     assert data["code"] == 1  # 应该失败
     assert "不是无效状态" in data["msg"]

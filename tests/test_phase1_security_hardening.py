@@ -215,23 +215,17 @@ class TestMustChangePasswordServerEnforcement:
 
     async def test_logout_is_not_blocked(self, client, db, admin_user):
         token = await self._force_change(db, admin_user)
-        resp = await client.post(
-            "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
-        )
+        resp = await client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
         assert resp.json()["code"] == 0
 
     async def test_business_endpoint_is_blocked(self, client, db, admin_user):
         token = await self._force_change(db, admin_user)
-        resp = await client.get(
-            "/api/admin/users", headers={"Authorization": f"Bearer {token}"}
-        )
+        resp = await client.get("/api/admin/users", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 403
         assert "修改密码" in resp.json()["msg"]
 
-    async def test_change_password_is_allowed_and_clears_the_flag(
-        self, client, db, admin_user
-    ):
+    async def test_change_password_is_allowed_and_clears_the_flag(self, client, db, admin_user):
         token = await self._force_change(db, admin_user)
         resp = await client.post(
             "/api/auth/change-password",
@@ -371,7 +365,7 @@ def test_delete_batch_limit_rejects_oversized_batches():
     students = _make_invalid_students("大连某校", MAX_DELETE_BY_SCHOOL_STUDENTS + 1)
     message = _check_delete_batch_limit(students)
     assert message and "上限" in message
-    assert _check_delete_batch_limit(students[: MAX_DELETE_BY_SCHOOL_STUDENTS]) is None
+    assert _check_delete_batch_limit(students[:MAX_DELETE_BY_SCHOOL_STUDENTS]) is None
 
 
 @pytest.mark.asyncio

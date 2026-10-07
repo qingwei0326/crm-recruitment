@@ -130,9 +130,7 @@ def replace_payload(root, relative, content):
 
 def test_prepare_production_release_always_rebuilds_frontend():
     script = (
-        Path(__file__).resolve().parents[1]
-        / "scripts"
-        / "prepare-production-release.ps1"
+        Path(__file__).resolve().parents[1] / "scripts" / "prepare-production-release.ps1"
     ).read_text(encoding="utf-8-sig")
 
     assert "SkipBuild" not in script
@@ -270,9 +268,7 @@ def test_verify_production_release_rejects_missing_css_url_asset(tmp_path):
 
 def test_verify_production_release_rejects_missing_target_migration(tmp_path):
     prepare_release(tmp_path)
-    migration = (
-        tmp_path / "alembic" / "versions" / "20260823_01_enrollment_finance.py"
-    )
+    migration = tmp_path / "alembic" / "versions" / "20260823_01_enrollment_finance.py"
     migration.unlink()
 
     with pytest.raises(ValueError, match="missing=.*20260823_01_enrollment_finance.py"):
