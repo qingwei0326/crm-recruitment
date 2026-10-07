@@ -81,7 +81,7 @@ class TestCreateStudent:
 
     async def test_create_without_phone(self, client, admin_headers):
         resp = await client.post("/api/students", json={"name": "测试"}, headers=admin_headers)
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         body = resp.json()
         assert body["code"] == 1
         assert body["msg"] == "至少需要一个可拨电话"
@@ -592,7 +592,7 @@ class TestUpdateStudent:
         )
         body = resp.json()
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert body["code"] == 1
         assert body["msg"] == "至少需要一个可拨电话"
         await db.refresh(student)
@@ -1034,7 +1034,7 @@ class TestUpdateStudent:
             headers=admin_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "家访任务" in resp.json()["msg"]
         assert resp.json()["data"] is None
@@ -1105,7 +1105,7 @@ class TestUpdateStudent:
             headers=admin_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "已报名" in resp.json()["msg"]
         await db.refresh(student)
@@ -1184,7 +1184,7 @@ class TestUpdateStudent:
             headers=admin_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "报名确认流程" in resp.json()["msg"]
         await db.refresh(sample_student)
@@ -1222,7 +1222,7 @@ class TestUpdateStudent:
             headers=agent_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "报名确认流程" in resp.json()["msg"]
         await db.refresh(student)
@@ -1253,7 +1253,7 @@ class TestUpdateStudent:
             headers=agent_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "报名确认流程" in resp.json()["msg"]
         await db.refresh(student)
@@ -1281,7 +1281,7 @@ class TestUpdateStudent:
             headers=agent_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "管理员回收" in resp.json()["msg"]
         await db.refresh(student)
@@ -1307,7 +1307,7 @@ class TestUpdateStudent:
             headers=agent_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "管理员回收" in resp.json()["msg"]
         await db.refresh(student)
@@ -1369,7 +1369,7 @@ class TestUpdateStudent:
             },
             headers=admin_headers,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "无效" in resp.json()["msg"]
 
@@ -1470,7 +1470,7 @@ class TestAssignStudent:
             headers=admin_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "已报名" in resp.json()["msg"]
         await db.refresh(student)
@@ -1492,7 +1492,7 @@ class TestAssignStudent:
             headers=admin_headers,
         )
 
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert resp.json()["code"] == 1
         assert "终态" in resp.json()["msg"]
         await db.refresh(student)
