@@ -4,8 +4,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from weakref import WeakValueDictionary
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain_errors import DomainConflict, DomainError
@@ -425,6 +425,35 @@ async def _replay_transfer_result(
     return result
 
 
+async def _claim_batch_version(
+    db: AsyncSession,
+    batch: HandoverBatch,
+    expected_version: int,
+) -> None:
+    """Compare-and-swap the batch version so concurrent transfers cannot both proceed.
+
+    The version bump is the claim: it is atomic in the database, so correctness does
+    not depend on the in-process lock above (which only serialises one worker). The
+    loser gets a conflict before any transfer row is written. SQLite reports a lost
+    race on a stale read snapshot as "database is locked"; treat that as a conflict too.
+    """
+    try:
+        claimed = await db.execute(
+            update(HandoverBatch)
+            .where(
+                HandoverBatch.id == batch.id,
+                HandoverBatch.version == expected_version,
+                HandoverBatch.status.in_(_ACTIVE_BATCH_STATUSES),
+            )
+            .values(version=HandoverBatch.version + 1)
+        )
+    except OperationalError as exc:
+        raise DomainConflict("交接数据已变化，请刷新后重试") from exc
+    if claimed.rowcount != 1:
+        raise DomainConflict("交接数据已变化，请刷新后重试")
+    await db.refresh(batch, attribute_names=["version"])
+
+
 async def execute_transfer(
     db: AsyncSession,
     batch_id: int,
@@ -485,6 +514,7 @@ async def execute_transfer(
         raise DomainConflict("交接批次已结束")
     if target_agent_id == batch.source_agent_id:
         raise DomainConflict("不能将交接学生转回原员工")
+    await _claim_batch_version(db, batch, expected_batch_version)
 
     target_rows = await db.execute(
         select(User, AgentEmployment)
@@ -617,7 +647,6 @@ async def execute_transfer(
     remaining_count = pending_count - len(eligible)
     batch.remaining_items = remaining_count
     batch.transferred_items += len(eligible)
-    batch.version += 1
     completed = remaining_count == 0
     if completed:
         batch.status = HandoverBatchStatus.completed
