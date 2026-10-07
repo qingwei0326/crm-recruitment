@@ -10,6 +10,7 @@ from app.auth import (
     require_page_permission,
 )
 from app.database import get_db
+from app.db_utils import scalars_in_chunks
 from app.models import Student, User
 from app.schemas import Response
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
@@ -96,10 +97,8 @@ async def smart_assign_execute(
         for ids in plan.assignments_by_agent.values()
         for student_id in ids
     ]
-    students = (
-        (await db.execute(select(Student).where(Student.id.in_(all_student_ids))))
-        .scalars()
-        .all()
+    students = await scalars_in_chunks(
+        db, lambda ids: select(Student).where(Student.id.in_(ids)), all_student_ids
     )
     students_by_id = {student.id: student for student in students}
     assigned_count = 0

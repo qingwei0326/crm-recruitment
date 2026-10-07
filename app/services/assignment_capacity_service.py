@@ -15,6 +15,7 @@ from app.admin_config import (
     ASSIGNMENT_CAPACITY_DEFAULTS,
     validate_capacity_settings,
 )
+from app.db_utils import scalars_in_chunks
 from app.domain_models import AgentEmployment, EmploymentStatus
 from app.models import DialLog, Student, SystemConfig, User, UserRole
 from app.task_stats import ASSIGNABLE_STUDENT_STATUSES
@@ -154,12 +155,14 @@ async def build_capacity_plan(
 
     candidate_rows: list[Student] = []
     if unique_candidate_ids:
-        candidates_result = await db.execute(
-            select(Student)
-            .where(Student.id.in_(unique_candidate_ids))
-            .order_by(Student.created_at.asc(), Student.id.asc())
-        )
-        rows_by_id = {student.id: student for student in candidates_result.scalars().all()}
+        rows_by_id = {
+            student.id: student
+            for student in await scalars_in_chunks(
+                db,
+                lambda ids: select(Student).where(Student.id.in_(ids)),
+                unique_candidate_ids,
+            )
+        }
         missing_count = len(set(unique_candidate_ids) - rows_by_id.keys())
         if missing_count:
             skipped["missing_candidate_ids"] = missing_count

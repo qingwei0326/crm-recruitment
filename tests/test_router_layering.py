@@ -43,7 +43,7 @@ BASELINE = {
     "admin_invalid.py": 6,
     "admin_misc.py": 12,
     "admin_season_archive.py": 6,
-    "admin_smart_assignment.py": 4,
+    "admin_smart_assignment.py": 3,
     "admin_stale.py": 20,
     "admissions.py": 13,
     "admissions_campus_visits.py": 15,

@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db_utils import rows_in_chunks, scalars_in_chunks
 from app.domain_errors import (
     DomainConflict,
     InactiveAssignmentTarget,
@@ -65,10 +66,12 @@ async def apply_assignment_changes(
         return AssignmentResult((), ())
 
     now = at or utcnow()
-    student_rows = await db.execute(
-        select(Student).where(Student.id.in_(sorted(requested)))
-    )
-    students = {student.id: student for student in student_rows.scalars().all()}
+    students = {
+        student.id: student
+        for student in await scalars_in_chunks(
+            db, lambda ids: select(Student).where(Student.id.in_(ids)), sorted(requested)
+        )
+    }
     missing = sorted(set(requested) - set(students))
     if missing:
         raise StudentNotFound(f"学生不存在: {missing}")
@@ -92,13 +95,14 @@ async def apply_assignment_changes(
         if invalid:
             raise InactiveAssignmentTarget(f"目标员工不可接收学生: {invalid}")
 
-    assignment_rows = await db.execute(
-        select(StudentAssignment).where(
-            StudentAssignment.student_id.in_(sorted(requested)),
+    active_assignments = await scalars_in_chunks(
+        db,
+        lambda ids: select(StudentAssignment).where(
+            StudentAssignment.student_id.in_(ids),
             StudentAssignment.ended_at.is_(None),
-        )
+        ),
+        sorted(requested),
     )
-    active_assignments = assignment_rows.scalars().all()
     active_counts = Counter(row.student_id for row in active_assignments)
     duplicate_active = sorted(
         student_id for student_id, count in active_counts.items() if count > 1
@@ -230,17 +234,19 @@ async def apply_assignment_changes(
         changed.append(student_id)
 
     if changed:
-        membership_rows = await db.execute(
-            select(PersonalGroupMembership, PersonalGroup).join(
+        membership_rows = await rows_in_chunks(
+            db,
+            lambda ids: select(PersonalGroupMembership, PersonalGroup).join(
                 PersonalGroup,
                 PersonalGroup.id == PersonalGroupMembership.group_id,
             ).where(
-                PersonalGroupMembership.student_id.in_(changed),
+                PersonalGroupMembership.student_id.in_(ids),
                 PersonalGroupMembership.archived_at.is_(None),
                 PersonalGroup.archived_at.is_(None),
-            )
+            ),
+            changed,
         )
-        for membership, group in membership_rows.all():
+        for membership, group in membership_rows:
             if group.owner_id != previous_agent_by_student.get(membership.student_id):
                 continue
             membership.archived_at = now
