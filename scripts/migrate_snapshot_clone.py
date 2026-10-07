@@ -204,7 +204,7 @@ def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
 
         if source_hash_before != source_hash_after:
             raise CloneMigrationError("source_changed_during_migration")
-        if destination_state["revision"] != "20260925_01":
+        if destination_state["revision"] != "20261007_01":
             raise CloneMigrationError("unexpected_destination_revision")
         if (
             destination_state["quick_check"] != "ok"
