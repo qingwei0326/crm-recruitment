@@ -54,7 +54,7 @@ BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE = os.getenv("DEEPSEEK_BASE", "https://api.deepseek.com")
 
-EXPECTED_ALEMBIC_REVISION = os.getenv("EXPECTED_ALEMBIC_REVISION", "20260925_01")
+EXPECTED_ALEMBIC_REVISION = os.getenv("EXPECTED_ALEMBIC_REVISION", "20261007_01")
 _DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:5173"
 _default_cors_origins = _DEFAULT_CORS_ORIGINS if APP_ENV != "production" else ""
 _raw_cors_origins = os.getenv("CORS_ORIGINS", _default_cors_origins)

@@ -292,7 +292,7 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20260925_01"
+        assert revision == "20261007_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
@@ -319,3 +319,55 @@ def test_domain_backfill_downgrade_clears_only_new_domain_data(tmp_path):
             assert revision == "20260711_02"
     finally:
         engine.dispose()
+
+
+def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_path):
+    db_path = tmp_path / "stamped-old.db"
+    assert run_alembic(db_path, "upgrade", "20260925_01").returncode == 0
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE users DROP COLUMN token_version")
+        conn.exec_driver_sql("ALTER TABLE follow_ups DROP COLUMN is_completed")
+        conn.exec_driver_sql("DROP TABLE IF EXISTS message_templates")
+        conn.exec_driver_sql(
+            "CREATE TABLE message_templates (id INTEGER PRIMARY KEY, body TEXT)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO students (name, region, status, status_detail, intent_level, stage, "
+            "program, guardian_name, guardian_phone, guardian2_name, guardian2_phone, "
+            "school_name, school_address, need_help, created_at, updated_at) "
+            "VALUES ('旧', '', '已联系', '', 'none', 'initial_contact', '', '', "
+            "'+86 139-6011-8706', '', '', '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+
+    upgrade = run_alembic(db_path, "upgrade", "head")
+    assert upgrade.returncode == 0, upgrade.stderr
+
+    inspector = inspect(engine)
+    assert "token_version" in {c["name"] for c in inspector.get_columns("users")}
+    assert "is_completed" in {c["name"] for c in inspector.get_columns("follow_ups")}
+    assert "message_templates" not in inspector.get_table_names()
+    with engine.connect() as conn:
+        row = conn.exec_driver_sql(
+            "SELECT guardian_phone, status FROM students WHERE name = '旧'"
+        ).one()
+        assert tuple(row) == ("13960118706", "contacted")
+        assert conn.execute(text("select version_num from alembic_version")).scalar_one() == (
+            "20261007_01"
+        )
+    assert run_alembic(db_path, "check").returncode == 0
+    engine.dispose()
+
+
+def test_fresh_head_schema_already_has_student_search_indexes(tmp_path):
+    db_path = tmp_path / "fresh.db"
+    assert run_alembic(db_path, "upgrade", "head").returncode == 0
+    engine = create_engine(f"sqlite:///{db_path}")
+    names = {index["name"] for index in inspect(engine).get_indexes("students")}
+    engine.dispose()
+    assert {
+        "ix_students_region",
+        "ix_students_school_name",
+        "ix_students_guardian_phone",
+        "ix_students_guardian2_phone",
+    } <= names
