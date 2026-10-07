@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db_utils import rowcount_in_chunks, scalars_in_chunks
 from app.domain_errors import DomainConflict
 from app.domain_models import (
     AgentEmployment,
@@ -350,9 +351,10 @@ async def sync_students_work_items(
         return ()
 
     student_ids = sorted(students_by_id)
-    existing_rows = await db.execute(
-        select(WorkItem).where(
-            WorkItem.source_id.in_(student_ids),
+    existing_rows = await scalars_in_chunks(
+        db,
+        lambda ids: select(WorkItem).where(
+            WorkItem.source_id.in_(ids),
             or_(
                 and_(
                     WorkItem.kind == WorkItemKind.lead_contact,
@@ -363,11 +365,11 @@ async def sync_students_work_items(
                     WorkItem.source_type == "help",
                 ),
             ),
-        )
+        ),
+        student_ids,
     )
     existing_by_key = {
-        (item.kind, item.source_type, item.source_id): item
-        for item in existing_rows.scalars().all()
+        (item.kind, item.source_type, item.source_id): item for item in existing_rows
     }
 
     terminal_by_student: dict[int, bool] = {}
@@ -485,9 +487,10 @@ async def sync_assignment_source_work_items(
     if not students_by_id:
         return ()
 
-    rows = await db.execute(
-        select(WorkItem).where(
-            WorkItem.student_id.in_(sorted(students_by_id)),
+    items = await scalars_in_chunks(
+        db,
+        lambda ids: select(WorkItem).where(
+            WorkItem.student_id.in_(ids),
             WorkItem.status.in_(_ACTIVE_WORK_STATUSES),
             ~or_(
                 and_(
@@ -499,9 +502,9 @@ async def sync_assignment_source_work_items(
                     WorkItem.source_type == "help",
                 ),
             ),
-        )
+        ),
+        sorted(students_by_id),
     )
-    items = rows.scalars().all()
     desired_owners: dict[int, int] = {}
     for item in items:
         student = students_by_id[item.student_id]
@@ -561,19 +564,18 @@ async def transfer_open_work_items(
         raise DomainConflict("开放工作项必须有负责人")
 
     now = at or utcnow()
-    result = await db.execute(
-        update(WorkItem)
-        .where(
-            WorkItem.student_id.in_(unique_student_ids),
-            WorkItem.status == from_status,
-        )
+    moved = await rowcount_in_chunks(
+        db,
+        lambda ids: update(WorkItem)
+        .where(WorkItem.student_id.in_(ids), WorkItem.status == from_status)
         .values(
             owner_agent_id=target_agent_id,
             status=to_status,
             handover_batch_id=handover_batch_id,
             version=WorkItem.version + 1,
             updated_at=now,
-        )
+        ),
+        unique_student_ids,
     )
     await db.flush()
-    return int(result.rowcount or 0)
+    return moved
