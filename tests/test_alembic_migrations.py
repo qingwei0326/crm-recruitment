@@ -340,8 +340,28 @@ def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_p
             "'+86 139-6011-8706', '', '', '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         )
 
+    with engine.begin() as conn:
+        for alias in ("unassigned", "no_intent", "child_not_interested"):
+            conn.exec_driver_sql(
+                "INSERT INTO students (name, region, status, status_detail, intent_level, stage, "
+                "program, guardian_name, guardian_phone, guardian2_name, guardian2_phone, "
+                "school_name, school_address, need_help, created_at, updated_at) "
+                f"VALUES ('别名-{alias}', '', '{alias}', '', 'none', 'initial_contact', '', '', "
+                "'', '', '', '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+
     upgrade = run_alembic(db_path, "upgrade", "head")
     assert upgrade.returncode == 0, upgrade.stderr
+
+    with engine.connect() as conn:
+        statuses = dict(
+            conn.exec_driver_sql("SELECT name, status FROM students WHERE name LIKE '别名-%'").all()
+        )
+    assert statuses == {
+        "别名-unassigned": "not_contacted",
+        "别名-no_intent": "not_interested",
+        "别名-child_not_interested": "child_not_want_study",
+    }
 
     inspector = inspect(engine)
     assert "token_version" in {c["name"] for c in inspector.get_columns("users")}

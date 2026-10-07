@@ -31,6 +31,7 @@ from app.pushplus import (
     notify_home_visit_created_background as notify_home_visit_created_background,  # noqa: F401
 )
 from app.schemas import EnrollmentCreate
+from app.services.enrollment_attribution_service import require_attribution_agent
 from app.services.enrollment_finance_service import (
     apply_finance_values,
     create_finance_values,
@@ -526,6 +527,7 @@ async def _resolve_enrollment_attribution(
             raise HTTPException(status_code=400, detail="家访任务不属于该学生")
 
     if body.attributed_agent_id is not None:
+        await require_attribution_agent(db, body.attributed_agent_id)
         return body.attributed_agent_id, AttributionMethod.manual
 
     if campus_visit is not None:

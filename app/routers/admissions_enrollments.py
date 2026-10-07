@@ -34,6 +34,7 @@ from app.routers.admissions import (
     _sync_enrollment_work_item,
 )
 from app.schemas import EnrollmentCreate, EnrollmentUpdate, Response
+from app.services.enrollment_attribution_service import require_attribution_agent
 from app.services.enrollment_finance_service import (
     FINANCE_FIELDS,
     apply_finance_values,
@@ -328,6 +329,7 @@ async def update_enrollment(
         reason = (body.attribution_reason or "").strip()
         if not reason:
             raise HTTPException(status_code=400, detail="修改报名归属必须填写原因")
+        await require_attribution_agent(db, body.attributed_agent_id)
         record.attributed_agent_id = body.attributed_agent_id
         record.attribution_method = AttributionMethod.manual
         record.attribution_reason = reason
