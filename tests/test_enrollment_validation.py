@@ -62,3 +62,43 @@ async def test_enrollment_invalid_finance_is_client_error(
     assert (await db.execute(select(EnrollmentRecord))).scalars().all() == []
     await db.refresh(student)
     assert student.status == StudentStatus.not_contacted
+
+
+@pytest.mark.parametrize("target", ["missing", "admin"])
+async def test_manual_attribution_must_be_an_existing_agent(
+    client, db, admin_headers, admin_user, agent_user, target
+):
+    student = Student(name="归属校验学生", assigned_to=agent_user.id)
+    db.add(student)
+    await db.commit()
+    bad_id = 987654 if target == "missing" else admin_user.id
+
+    created = await client.post(
+        "/api/admissions/enrollments",
+        headers=admin_headers,
+        json={
+            "student_id": student.id,
+            "attributed_agent_id": bad_id,
+            "attribution_reason": "手动确认归属",
+        },
+    )
+    assert created.status_code == 422
+    assert "话务员" in created.json()["msg"]
+    assert (await db.execute(select(EnrollmentRecord))).scalars().all() == []
+
+    ok = await client.post(
+        "/api/admissions/enrollments",
+        headers=admin_headers,
+        json={"student_id": student.id},
+    )
+    record_id = ok.json()["data"]["id"]
+    patched = await client.patch(
+        f"/api/admissions/enrollments/{record_id}",
+        headers=admin_headers,
+        json={"attributed_agent_id": bad_id, "attribution_reason": "手动确认归属"},
+    )
+    assert patched.status_code == 422
+    assert "话务员" in patched.json()["msg"]
+    record = await db.get(EnrollmentRecord, record_id)
+    await db.refresh(record)
+    assert record.attributed_agent_id == agent_user.id
