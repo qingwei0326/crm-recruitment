@@ -31,9 +31,6 @@ class UserRole(enum.StrEnum):
 class StudentStatus(enum.StrEnum):
     new_lead = "新线索"
     not_contacted = "未联系"
-    # Historical DB rows may still store this enum name. SQLAlchemy stores enum
-    # names by default, so keep it as an alias while startup migration normalizes.
-    unassigned = "未联系"
     contacted = "已联系"
     pending_visit = "待回访"
     completed = "已完成"
@@ -47,9 +44,34 @@ class StudentStatus(enum.StrEnum):
     not_reached = "未接"
     high_score = "高分段"
     not_interested = "无意向"
-    no_intent = "无意向"
     child_not_want_study = "孩子不想读"
-    child_not_interested = "孩子不想读"
+
+
+# Names that older databases stored for members that were later merged into a
+# canonical one. SQLAlchemy persists enum *names*, so rows written before the merge
+# (e.g. a restored old backup) still carry them until Alembic 20261007_01 runs.
+LEGACY_STUDENT_STATUS_NAMES: dict[str, StudentStatus] = {
+    "unassigned": StudentStatus.not_contacted,
+    "no_intent": StudentStatus.not_interested,
+    "child_not_interested": StudentStatus.child_not_want_study,
+}
+
+
+class StudentStatusEnum(SAEnum):
+    """Enum column that reads and writes legacy status names as their canonical member."""
+
+    cache_ok = True
+
+    @staticmethod
+    def _canonical_name(elem):
+        legacy = LEGACY_STUDENT_STATUS_NAMES.get(elem) if isinstance(elem, str) else None
+        return legacy.name if legacy is not None else elem
+
+    def _object_value_for_elem(self, elem):
+        return super()._object_value_for_elem(self._canonical_name(elem))
+
+    def _db_value_for_elem(self, elem):
+        return super()._db_value_for_elem(self._canonical_name(elem))
 
 
 class IntentLevel(enum.StrEnum):
@@ -198,7 +220,7 @@ class Student(Base):
     region = Column(String(64), default="", nullable=False, index=True)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(
-        SAEnum(StudentStatus, omit_aliases=False),
+        StudentStatusEnum(StudentStatus),
         nullable=False,
         default=StudentStatus.not_contacted,
     )
