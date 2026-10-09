@@ -2,6 +2,7 @@ import pytest
 
 from app.models import StudentStatus
 from app.status_policy import (
+    _CANONICAL_STATUS_BY_NAME,
     STATUS_DETAIL_VALUES,
     canonical_status_value,
     normalize_status_for_write,
@@ -72,3 +73,20 @@ def test_statuses_for_canonical_includes_legacy_database_names():
 
 def test_enrolled_elsewhere_is_a_supported_invalid_reason_detail():
     assert "已报名其他学校" in STATUS_DETAIL_VALUES
+
+
+def test_student_status_aliases_are_the_known_legacy_names_only():
+    """Aliases exist solely so legacy rows still load; new ones must be deliberate."""
+    aliases = {
+        name: member.name
+        for name, member in StudentStatus.__members__.items()
+        if name != member.name
+    }
+
+    assert aliases == {
+        "unassigned": "not_contacted",
+        "no_intent": "not_interested",
+        "child_not_interested": "child_not_want_study",
+    }
+    for alias in aliases:
+        assert alias in _CANONICAL_STATUS_BY_NAME

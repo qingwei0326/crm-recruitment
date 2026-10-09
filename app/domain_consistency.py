@@ -594,16 +594,11 @@ def _expected_outcome_code():
         (detail != "", "other"),
         (Student.status == StudentStatus.high_score, "high_score"),
         (
-            Student.status.in_({StudentStatus.not_interested, StudentStatus.no_intent}),
+            Student.status == StudentStatus.not_interested,
             "no_intent",
         ),
         (
-            Student.status.in_(
-                {
-                    StudentStatus.child_not_want_study,
-                    StudentStatus.child_not_interested,
-                }
-            ),
+            Student.status == StudentStatus.child_not_want_study,
             "child_declined",
         ),
         else_="legacy_unspecified",
