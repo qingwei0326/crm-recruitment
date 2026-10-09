@@ -31,8 +31,9 @@ class UserRole(enum.StrEnum):
 class StudentStatus(enum.StrEnum):
     new_lead = "新线索"
     not_contacted = "未联系"
-    # Historical DB rows may still store this enum name. SQLAlchemy stores enum
-    # names by default, so keep it as an alias while startup migration normalizes.
+    # Legacy aliases: SQLAlchemy persists enum *names*, so un-migrated rows (e.g. a
+    # restored old backup) must still load. Use the canonical member in new code; the
+    # set is pinned by tests/test_status_policy.py.
     unassigned = "未联系"
     contacted = "已联系"
     pending_visit = "待回访"
