@@ -86,8 +86,9 @@ frpc.ini
 start-tunnel.bat
 install-tunnel-task.ps1
 
-# Project docs
-docs/
+# Project docs (only the server runbook is tracked)
+docs/*
+!docs/server-ops.md
 
 # Backups
 backups/
