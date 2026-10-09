@@ -4,7 +4,7 @@ The database still contains several legacy statuses. Keep them readable, but
 surface and write the smaller workflow status set everywhere new code touches.
 """
 
-from app.models import StudentStatus
+from app.models import LEGACY_STUDENT_STATUS_NAMES, StudentStatus
 
 CANONICAL_STUDENT_STATUSES = (
     StudentStatus.not_contacted,
@@ -75,7 +75,8 @@ def statuses_for_canonical(*canonical_statuses: StudentStatus) -> tuple[StudentS
     targets = set(canonical_statuses)
     result: list[StudentStatus | str] = []
     seen: set[StudentStatus | str] = set()
-    for name, status in StudentStatus.__members__.items():
+    stored_names = {**StudentStatus.__members__, **LEGACY_STUDENT_STATUS_NAMES}
+    for name, status in stored_names.items():
         canonical = _CANONICAL_STATUS_BY_NAME.get(name, status)
         if canonical not in targets:
             continue
@@ -149,6 +150,10 @@ def student_status_from_any(status: StudentStatus | str) -> StudentStatus:
         pass
     try:
         return StudentStatus[str(status)]
+    except KeyError:
+        pass
+    try:
+        return LEGACY_STUDENT_STATUS_NAMES[str(status)]
     except KeyError as exc:
         raise ValueError(status) from exc
 
@@ -161,6 +166,9 @@ def student_status_name_and_enum(status: StudentStatus | str) -> tuple[str, Stud
         return str(status), StudentStatus[str(status)]
     except KeyError:
         pass
+    legacy = LEGACY_STUDENT_STATUS_NAMES.get(str(status))
+    if legacy is not None:
+        return str(status), legacy
     try:
         status_enum = StudentStatus(status)
         return status_enum.name, status_enum

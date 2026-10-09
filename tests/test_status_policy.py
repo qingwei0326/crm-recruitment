@@ -1,6 +1,6 @@
 import pytest
 
-from app.models import StudentStatus
+from app.models import LEGACY_STUDENT_STATUS_NAMES, StudentStatus
 from app.status_policy import (
     _CANONICAL_STATUS_BY_NAME,
     STATUS_DETAIL_VALUES,
@@ -75,18 +75,51 @@ def test_enrolled_elsewhere_is_a_supported_invalid_reason_detail():
     assert "已报名其他学校" in STATUS_DETAIL_VALUES
 
 
-def test_student_status_aliases_are_the_known_legacy_names_only():
-    """Aliases exist solely so legacy rows still load; new ones must be deliberate."""
-    aliases = {
-        name: member.name
-        for name, member in StudentStatus.__members__.items()
-        if name != member.name
+def test_student_status_enum_has_no_aliases_and_legacy_names_resolve():
+    assert all(name == member.name for name, member in StudentStatus.__members__.items())
+    assert LEGACY_STUDENT_STATUS_NAMES == {
+        "unassigned": StudentStatus.not_contacted,
+        "no_intent": StudentStatus.not_interested,
+        "child_not_interested": StudentStatus.child_not_want_study,
     }
+    for legacy, canonical in LEGACY_STUDENT_STATUS_NAMES.items():
+        assert legacy in _CANONICAL_STATUS_BY_NAME
+        assert student_status_from_any(legacy) is canonical
 
-    assert aliases == {
-        "unassigned": "not_contacted",
-        "no_intent": "not_interested",
-        "child_not_interested": "child_not_want_study",
-    }
-    for alias in aliases:
-        assert alias in _CANONICAL_STATUS_BY_NAME
+
+async def test_legacy_status_names_load_as_canonical_members(db):
+    from sqlalchemy import select, text
+
+    from app.models import Student
+
+    for index, legacy in enumerate(LEGACY_STUDENT_STATUS_NAMES, start=1):
+        await db.execute(
+            text(
+                "INSERT INTO students (name, region, status, status_detail, intent_level, stage, "
+                "program, guardian_name, guardian_phone, guardian2_name, guardian2_phone, "
+                "school_name, school_address, need_help, created_at, updated_at) "
+                "VALUES (:name, '', :status, '', 'none', 'initial_contact', '', '', '', '', '', "
+                "'', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ),
+            {"name": f"legacy-{index}", "status": legacy},
+        )
+    await db.commit()
+    db.expunge_all()
+
+    rows = (await db.execute(select(Student).order_by(Student.id))).scalars().all()
+
+    assert [row.status for row in rows] == list(LEGACY_STUDENT_STATUS_NAMES.values())
+
+
+async def test_legacy_status_names_are_stored_as_canonical_names(db):
+    from sqlalchemy import text
+
+    from app.models import Student
+
+    for index, legacy in enumerate(LEGACY_STUDENT_STATUS_NAMES, start=1):
+        db.add(Student(name=f"write-{index}", status=legacy))
+    await db.commit()
+
+    stored = (await db.execute(text("SELECT status FROM students ORDER BY id"))).scalars().all()
+
+    assert stored == [member.name for member in LEGACY_STUDENT_STATUS_NAMES.values()]
