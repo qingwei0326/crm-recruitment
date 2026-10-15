@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import StatusBadge from '../../components/StatusBadge';
 import MobileDialResult from '../../components/MobileDialResult';
+import AgentStudentSearch from '../../components/AgentStudentSearch';
 import useTodayTasks from '../../hooks/useTodayTasks';
 import useDialFlow from '../../hooks/useDialFlow';
 import { useToast } from '../../components/Toast';
@@ -970,6 +971,7 @@ export default function MobileHome() {
   const { dial } = useDialFlow();
   const [dialingId, setDialingId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchAllOpen, setSearchAllOpen] = useState(false);
   const [tab, setTab] = useState('tasks');
 
   // 学校分组：后端 SQL 聚合的全量结果（不受列表上限影响）
@@ -1020,6 +1022,14 @@ export default function MobileHome() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSearchAllOpen(true)}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
+            aria-label="搜索我的学生"
+          >
+            <Search className="w-5 h-5" />
+          </button>
           <button
             type="button"
             onClick={() => refetch(search, selectedSchool)}
@@ -1219,6 +1229,14 @@ export default function MobileHome() {
 
       <TabBar active={tab} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <AgentStudentSearch
+        open={searchAllOpen}
+        onClose={() => setSearchAllOpen(false)}
+        onPick={(studentId) => {
+          setSearchAllOpen(false);
+          handleDetail(studentId);
+        }}
+      />
 
       {/* 打完电话返回后弹“选择处理结果”，更新联系状况并刷新待拨打列表 */}
       <MobileDialResult onUpdated={() => refetch()} />

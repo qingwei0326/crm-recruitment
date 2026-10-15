@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { resolveOperatorResult } from '../operatorResultPolicy';
 import { displayStatusForOperatorResult } from '../labels';
 import { outcomeSavedMessage } from '../utils/outcomeFeedback';
+import { notifyOutcomeSaved } from '../utils/outcomeUndo';
 
 function successfulData(response, fallbackMessage) {
   if (response.data?.code !== undefined && response.data.code !== 0) {
@@ -26,6 +27,7 @@ export default function useAgentDial({
   prompt,
   updateIntentById,
   onFlowComplete,
+  onOutcomeUndone,
 }) {
   const dialCompletionRef = useRef(null);
   const finalizedFlowKeyRef = useRef(null);
@@ -150,6 +152,7 @@ export default function useAgentDial({
 
     let { status, invalidReason, originalStatus } = resolveOperatorResult(s);
     let saved = false;
+    let undoable = false;
 
     if (invalidReason) {
       try {
@@ -160,6 +163,7 @@ export default function useAgentDial({
           status_detail: updated.status_detail || invalidReason || '',
         });
         saved = true;
+        undoable = Boolean(updated.outcome_undoable);
       } catch (e) {
         toast?.error('更新状态失败: ' + getApiErrorMessage(e));
       }
@@ -180,6 +184,7 @@ export default function useAgentDial({
             status_detail: updated.status_detail || reason,
           });
           saved = true;
+          undoable = Boolean(updated.outcome_undoable);
         } catch (e) {
           toast?.error('更新状态失败: ' + getApiErrorMessage(e));
         }
@@ -205,6 +210,7 @@ export default function useAgentDial({
             status_detail: updated.status_detail ?? (fallbackStatusByDetail[status] ? status : ''),
           });
           saved = true;
+          undoable = Boolean(updated.outcome_undoable);
         } catch (e) {
           toast?.error('更新状态失败: ' + getApiErrorMessage(e));
         }
@@ -213,12 +219,15 @@ export default function useAgentDial({
 
     if (!saved) return;
 
-    toast?.success(
-      outcomeSavedMessage({
+    notifyOutcomeSaved(toast, {
+      message: outcomeSavedMessage({
         label: originalStatus,
         displayStatus: displayStatusForOperatorResult(s),
       }),
-    );
+      studentId: modal.studentId,
+      undoable,
+      onUndone: () => onOutcomeUndone?.(),
+    });
 
     // 首次拨打只记录结构化结果，不强制话务员立即判断 A/B/C。
     // 加微信/等待志愿仍保留一个轻量回访时间，避免线索没有下一步。
@@ -232,7 +241,7 @@ export default function useAgentDial({
       '状态已保存，通话记录待同步，请重试',
       { removeFromQueue: true },
     );
-  }, [state.dial.modal, actions, toast, prompt, confirm, finalizeSavedDial]);
+  }, [state.dial.modal, actions, toast, prompt, confirm, finalizeSavedDial, onOutcomeUndone]);
 
   // 处理拨号结果弹窗 - 意向选择
   const handleDialModalIntent = useCallback(async (level) => {

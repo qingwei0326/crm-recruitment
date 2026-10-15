@@ -12,11 +12,11 @@ describe('outcomeSavedMessage', () => {
     expect(outcomeSavedMessage({ label: '非常有意向', displayStatus: '已联系' })).toContain('待处理');
   });
 
-  it('warns that an invalid student leaves the agent list and who can restore it', () => {
+  it('warns that an invalid student leaves the agent list and says how to find it again', () => {
     const message = outcomeSavedMessage({ label: '空号', displayStatus: '无效' });
     expect(message).toContain('【空号】');
     expect(message).toContain('已从你的列表移走');
-    expect(message).toContain('管理员还原');
+    expect(message).toContain('搜索');
   });
 
   it('keeps an untouched student in the call queue', () => {
