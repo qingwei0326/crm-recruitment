@@ -38,6 +38,21 @@ describe('ErrorBoundary', () => {
     expect(screen.queryByText('返回登录')).not.toBeInTheDocument();
   });
 
+  it('explains a failed page download as a network problem', () => {
+    function ChunkFailure() {
+      throw new TypeError('Failed to fetch dynamically imported module: https://x/assets/A.js');
+    }
+    render(
+      <ErrorBoundary>
+        <ChunkFailure />
+      </ErrorBoundary>
+    );
+
+    expect(screen.getByText('网络不稳，页面没加载完整')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重新加载' })).toBeInTheDocument();
+    expect(screen.queryByText(/dynamically imported module/)).not.toBeInTheDocument();
+  });
+
   it('should show error message', () => {
     render(
       <ErrorBoundary>

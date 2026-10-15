@@ -22,13 +22,15 @@ import useDialFlow from '../../hooks/useDialFlow';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { getApiErrorMessage } from '../../utils';
 import {
-  defaultVisitDate,
   normalizeDateTimeLocal,
   toApiDateTime,
 } from '../../utils/dateTime';
 import { payloadForOperatorResult } from '../../operatorResultPolicy';
+import { outcomeSavedMessage } from '../../utils/outcomeFeedback';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import { ContentSkeleton, ErrorState } from '../../components/AsyncState';
+import HomeVisitForm from '../../components/admissions/HomeVisitForm';
+import CampusVisitForm from '../../components/admissions/CampusVisitForm';
 import {
   detailForOperatorResult,
   displayStatusForOperatorResult,
@@ -37,32 +39,29 @@ import {
 } from '../../labels';
 const VISIT_STATUSES = ['待确认', '已确认', '已完成', '已取消'];
 
-function VisitSheet({ open, onClose, onSubmit, submitting }) {
-  const [visitType, setVisitType] = useState('来校参观');
-  const [date, setDate] = useState(defaultVisitDate);
-  const [notes, setNotes] = useState('');
+// Visit registration now uses the full home/campus request forms (the same fields as
+// the work-group report) instead of a bare date + note, so the details are kept in
+// the system and the agent can copy the report from the same screen.
+function VisitSheet({ open, onClose, student, submitting, onSubmitHome, onSubmitCampus }) {
+  const [visitType, setVisitType] = useState('家访');
   useEffect(() => {
-    if (open) {
-      setVisitType('来校参观');
-      setDate(defaultVisitDate());
-      setNotes('');
-    }
+    if (open) setVisitType('家访');
   }, [open]);
-  if (!open) return null;
+  if (!open || !student) return null;
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
+        className="w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">登记到访</h3>
-          <button onClick={onClose} className="text-gray-400 p-1">
+          <button onClick={onClose} className="text-gray-400 p-1" aria-label="关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
         <div className="flex gap-2">
-          {['来校参观', '家访'].map((t) => (
+          {['家访', '来校参观'].map((t) => (
             <button
               key={t}
               type="button"
@@ -77,26 +76,23 @@ function VisitSheet({ open, onClose, onSubmit, submitting }) {
             </button>
           ))}
         </div>
-        <input
-          type="datetime-local"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="w-full border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-teal-500"
-        />
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          className="w-full h-20 border dark:border-gray-600 rounded-lg p-3 text-base bg-white dark:bg-gray-700 dark:text-gray-100 outline-none focus:ring-2 focus:ring-teal-500 resize-none"
-          placeholder="到访备注（可选）"
-        />
-        <button
-          type="button"
-          disabled={!date || submitting}
-          onClick={() => onSubmit({ visit_type: visitType, scheduled_date: date, notes })}
-          className="w-full min-h-[48px] bg-teal-600 text-white rounded-lg text-base font-medium disabled:opacity-50"
-        >
-          {submitting ? '提交中…' : '保存到访'}
-        </button>
+        {visitType === '家访' ? (
+          <HomeVisitForm
+            key="home"
+            student={student}
+            submitting={submitting}
+            onSubmit={onSubmitHome}
+            onCancel={onClose}
+          />
+        ) : (
+          <CampusVisitForm
+            key="campus"
+            student={student}
+            submitting={submitting}
+            onSubmit={onSubmitCampus}
+            onCancel={onClose}
+          />
+        )}
       </div>
     </div>
   );
@@ -461,18 +457,13 @@ export default function MobileStudentDetail() {
     }
   };
 
-  const handleSubmitVisit = async ({ visit_type, scheduled_date, notes }) => {
+  const submitAdmission = async (path, payload, doneMessage) => {
     setVisitSubmitting(true);
     try {
-      const r = await api.post('/visits', {
-        student_id: Number(id),
-        visit_type,
-        scheduled_date: toApiDateTime(scheduled_date),
-        notes,
-      });
-      if (r.data.code === 0) {
+      const r = await api.post(path, payload);
+      if (r.data?.code === undefined || r.data.code === 0) {
         setVisitOpen(false);
-        showToast('到访已登记');
+        showToast(doneMessage);
         loadDetail();
       } else {
         showToast(r.data.msg || '登记失败');
@@ -483,6 +474,11 @@ export default function MobileStudentDetail() {
       setVisitSubmitting(false);
     }
   };
+
+  const handleSubmitHomeVisit = (payload) =>
+    submitAdmission('/admissions/home-visits', payload, '家访申请已提交');
+  const handleSubmitCampusVisit = (payload) =>
+    submitAdmission('/admissions/campus-visits', payload, '到校预约已提交');
 
   const handleUpdateStudentStatus = async (outcome) => {
     if (!student) return false;
@@ -496,7 +492,10 @@ export default function MobileStudentDetail() {
     }
     const saved = await runWorkflowUpdate(
       () => api.put(`/students/${student.id}`, payloadForOperatorResult(outcome)),
-      '联系状态已更新',
+      outcomeSavedMessage({
+        label: outcome.label,
+        displayStatus: displayStatusForOperatorResult(outcome),
+      }),
       (updated) => {
         const nextStatus = updated?.status || displayStatusForOperatorResult(outcome);
         const nextDetail = updated?.status_detail ?? detailForOperatorResult(outcome);
@@ -974,8 +973,10 @@ export default function MobileStudentDetail() {
       <VisitSheet
         open={visitOpen}
         onClose={() => setVisitOpen(false)}
-        onSubmit={handleSubmitVisit}
+        student={student}
         submitting={visitSubmitting}
+        onSubmitHome={handleSubmitHomeVisit}
+        onSubmitCampus={handleSubmitCampusVisit}
       />
 
       <DateTimeSheet
