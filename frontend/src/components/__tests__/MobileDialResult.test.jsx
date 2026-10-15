@@ -36,6 +36,11 @@ vi.mock('../ConfirmDialog', () => ({
   useConfirm: () => vi.fn().mockResolvedValue(true),
 }));
 
+const toastSpy = { success: vi.fn(), error: vi.fn() };
+vi.mock('../Toast', () => ({
+  useToast: () => toastSpy,
+}));
+
 function defer() {
   let resolve;
   let reject;
@@ -175,6 +180,29 @@ describe('recordCallResult', () => {
         status: '无效',
         invalid_reason: '空号',
       });
+    });
+  });
+
+  it('tells the agent where the student went after saving a result', async () => {
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 60000,
+      }),
+    );
+
+    renderDialResult();
+
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
+
+    await waitFor(() => {
+      expect(toastSpy.success).toHaveBeenCalledWith(
+        '已标记【空号】，这个学生已从你的列表移走。标错了请告诉管理员还原',
+      );
     });
   });
 

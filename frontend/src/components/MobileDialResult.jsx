@@ -12,10 +12,12 @@ import { completePendingDial, readPendingDial } from '../dialSession';
 import logger from '../utils/logger';
 import { getApiErrorMessage, unwrapApiResponse } from '../utils';
 import { useConfirm } from './ConfirmDialog';
+import { useToast } from './Toast';
 import { payloadForOperatorResult } from '../operatorResultPolicy';
 import { getOperatorOutcomeGroups } from '../domain/outcomeCatalog';
 import useLeadOutcomeCatalog from '../hooks/useLeadOutcomeCatalog';
 import { displayStatusForOperatorResult } from '../labels';
+import { outcomeSavedMessage } from '../utils/outcomeFeedback';
 import {
   dateTimeAfterDays,
   defaultFollowUpDate,
@@ -86,6 +88,7 @@ const FOLLOW_UP_PRESETS = {
  */
 export default function MobileDialResult({ onUpdated }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const { results } = useLeadOutcomeCatalog();
   // 新线索是管理员回收/重新分配后的初始状态，话务员不能在拨号结果里再次选回。
   const statusButtons = results.filter((button) => button.code !== 'new_lead');
@@ -255,6 +258,9 @@ export default function MobileDialResult({ onUpdated }) {
 
       await putField(payloadForOperatorResult(btn));
       businessSavedRef.current = true;
+      toast?.success(
+        outcomeSavedMessage({ label: btn.label, displayStatus: displayStatusForOperatorResult(btn) }),
+      );
       onUpdated && onUpdated(
         pending.studentId,
         displayStatusForOperatorResult(btn),
