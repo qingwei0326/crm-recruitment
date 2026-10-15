@@ -1,4 +1,11 @@
 import { useState } from 'react';
+import {
+  buildVisitReport,
+  formatVisitTime,
+  initialReportValues,
+} from '../../utils/reportText';
+import ReportFields from './ReportFields';
+import useReportCopy from './useReportCopy';
 
 const fieldCls = 'w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100';
 
@@ -18,16 +25,30 @@ export default function CampusVisitForm({ student, source = '电话外呼', subm
     visitor_count: 1,
     current_concerns: '',
     notes: '',
+    ...initialReportValues(student),
   });
+  const { agentName, copyReport } = useReportCopy();
 
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const submit = (event) => {
+  const reportText = () => buildVisitReport({
+    agentName,
+    studentName: student.name,
+    phone: form.phone,
+    program: form.program,
+    score: form.score,
+    campusTime: formatVisitTime(form.appointment_at),
+    situation: form.current_concerns,
+  });
+
+  const submit = (event, { copy = false } = {}) => {
     event.preventDefault();
+    // Copy first, inside the click: browsers refuse to copy after a network wait.
+    if (copy) copyReport(reportText());
     onSubmit?.({
       student_id: student.id,
       source,
-      intent_program: student.program || '',
+      intent_program: form.program.trim(),
       appointment_at: dateTimeOrNull(form.appointment_at),
       needs_pickup: form.needs_pickup,
       visitor_count: intOrDefault(form.visitor_count, 1),
@@ -38,6 +59,7 @@ export default function CampusVisitForm({ student, source = '电话外呼', subm
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      <ReportFields studentName={student.name} values={form} onChange={update} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="space-y-1 text-xs font-medium text-gray-600 dark:text-gray-300">
           <span>预约到校时间</span>
@@ -97,6 +119,14 @@ export default function CampusVisitForm({ student, source = '电话外呼', subm
           className="px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
         >
           取消
+        </button>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={(event) => submit(event, { copy: true })}
+          className="px-3 py-2 rounded-lg border border-blue-600 text-blue-700 dark:text-blue-300 text-sm disabled:opacity-60"
+        >
+          提交并复制报备
         </button>
         <button
           type="submit"
