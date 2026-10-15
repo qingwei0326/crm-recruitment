@@ -185,23 +185,6 @@ class StaleReassignReq(BaseModel):
     agent_id: int | None = None
 
 
-# ── Visit ─────────────────────────────────────────────────
-
-
-class VisitCreate(BaseModel):
-    student_id: int
-    visit_type: Literal["来校参观", "家访"]
-    scheduled_date: datetime
-    notes: str = Field(default="")
-
-
-class VisitUpdate(BaseModel):
-    visit_type: Literal["来校参观", "家访"] | None = None
-    scheduled_date: datetime | None = None
-    status: Literal["待确认", "已确认", "已完成", "已取消"] | None = None
-    notes: str | None = None
-
-
 # ── Admissions workflow ───────────────────────────────────
 
 

@@ -128,6 +128,41 @@ def _validate_paths(source: Path, destination: Path) -> None:
         raise CloneMigrationError("source_has_uncheckpointed_wal", exit_code=2)
 
 
+VISIT_TASK_TABLES = ("home_visit_tasks", "campus_visit_tasks")
+
+
+def _row_count_mismatches(
+    source_counts: dict[str, int],
+    destination_counts: dict[str, int],
+) -> dict[str, dict[str, int | None]]:
+    """Every legacy row must survive the migration.
+
+    The one intended change: Alembic 20261016_01 moves each legacy ``visits`` row into
+    one of the visit task tables and writes one operation log for it.
+    """
+    folded = source_counts.get("visits", 0)
+    expected = {
+        table_name: count
+        for table_name, count in source_counts.items()
+        if table_name not in {"visits", *VISIT_TASK_TABLES}
+    }
+    if "operation_logs" in expected:
+        expected["operation_logs"] += folded
+    mismatches: dict[str, dict[str, int | None]] = {
+        table_name: {"source": count, "destination": destination_counts.get(table_name)}
+        for table_name, count in expected.items()
+        if destination_counts.get(table_name) != count
+    }
+    source_tasks = folded + sum(source_counts.get(name, 0) for name in VISIT_TASK_TABLES)
+    destination_tasks = sum(destination_counts.get(name, 0) for name in VISIT_TASK_TABLES)
+    if "visits" in destination_counts or source_tasks != destination_tasks:
+        mismatches["visits+visit_tasks"] = {
+            "source": source_tasks,
+            "destination": destination_tasks,
+        }
+    return mismatches
+
+
 def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
     source = source.expanduser().resolve()
     destination = destination.expanduser().resolve()
@@ -204,7 +239,7 @@ def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
 
         if source_hash_before != source_hash_after:
             raise CloneMigrationError("source_changed_during_migration")
-        if destination_state["revision"] != "20261007_01":
+        if destination_state["revision"] != "20261016_01":
             raise CloneMigrationError("unexpected_destination_revision")
         if (
             destination_state["quick_check"] != "ok"
@@ -214,14 +249,7 @@ def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
         if domain_audit.get("ok") is not True:
             raise CloneMigrationError("domain_audit_failed")
 
-        row_count_mismatches = {
-            table_name: {
-                "source": source_count,
-                "destination": destination_counts.get(table_name),
-            }
-            for table_name, source_count in source_counts.items()
-            if destination_counts.get(table_name) != source_count
-        }
+        row_count_mismatches = _row_count_mismatches(source_counts, destination_counts)
         if row_count_mismatches:
             raise CloneMigrationError("legacy_row_count_mismatch")
 

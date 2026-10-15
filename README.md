@@ -292,7 +292,6 @@ D:\招生系统\
 │   │   ├── admissions*.py       # 家访、到校、报名和工作项流程接口
 │   │   ├── stats*.py            # 仪表盘、话务员、报名等统计接口
 │   │   ├── tasks.py             # 任务接口
-│   │   ├── visits.py            # 到访记录接口
 │   │   ├── notes.py             # 备注接口
 │   │   └── operation_logs.py    # 操作日志
 │   ├── ai_analyzer.py          # DeepSeek AI 意向分析

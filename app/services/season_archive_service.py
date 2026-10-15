@@ -42,7 +42,6 @@ from app.models import (
     OperationLog,
     Student,
     User,
-    Visit,
 )
 from app.utils import make_batch_id, make_operation_log, utcnow
 
@@ -56,7 +55,6 @@ STUDENT_DATA_MODELS = (
     Note,
     FollowUp,
     LeadViewLog,
-    Visit,
     HomeVisitTask,
     CampusVisitTask,
     EnrollmentRecord,
@@ -440,8 +438,7 @@ async def cleanup_current_season(
         Note,
         FollowUp,
         LeadViewLog,
-        Visit,
-        PersonalGroupMembership,
+            PersonalGroupMembership,
     ):
         await db.execute(delete(model).where(_student_predicate(model)))
     await db.execute(
