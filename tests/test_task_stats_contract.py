@@ -492,21 +492,23 @@ class TestAdminAgentTaskStats:
     async def test_agent_today_tasks_can_filter_overdue_uncontacted_students(
         self, client, db, agent_headers, agent_user
     ):
-        today_start = today_cst_as_utc()
+        # Overdue means assigned 24+ hours ago; keep the times relative to now so the
+        # test does not depend on the hour it runs at.
+        now = utcnow()
         students = [
             Student(
-                name="昨日未处理",
+                name="超24小时未处理",
                 assigned_to=agent_user.id,
                 status=StudentStatus.not_contacted,
-                assigned_at=today_start - timedelta(hours=2),
-                updated_at=today_start - timedelta(hours=2),
+                assigned_at=now - timedelta(hours=25),
+                updated_at=now - timedelta(hours=25),
             ),
             Student(
                 name="今日任务",
                 assigned_to=agent_user.id,
                 status=StudentStatus.not_contacted,
-                assigned_at=today_start + timedelta(hours=1),
-                updated_at=today_start + timedelta(hours=1),
+                assigned_at=now - timedelta(hours=1),
+                updated_at=now - timedelta(hours=1),
             ),
             Student(
                 name="未记录分配时间",
@@ -532,7 +534,7 @@ class TestAdminAgentTaskStats:
         assert overdue_data["list_total"] == 1
         assert overdue_data["pending_count"] == 3
         assert overdue_data["overdue_count"] == 1
-        assert [item["name"] for item in overdue_data["list"]] == ["昨日未处理"]
+        assert [item["name"] for item in overdue_data["list"]] == ["超24小时未处理"]
         assert overdue_data["list"][0]["is_overdue"] is True
 
     async def test_agent_handled_tasks_prioritize_due_follow_up_and_intent(
