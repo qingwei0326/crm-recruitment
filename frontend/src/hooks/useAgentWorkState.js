@@ -28,7 +28,6 @@ const initialState = {
     notes: [],
     calls: [],
     followUps: [],
-    visits: [],
     intentTimeline: [],
     admissionsTimeline: [],
     noteIdx: 0,
@@ -54,13 +53,6 @@ const initialState = {
 
   // 回访相关
   followUpDate: '',
-
-  // 到访相关
-  visit: {
-    type: '来校参观',
-    date: '',
-    notes: '',
-  },
 
   // 创建学生相关
   create: {
@@ -119,7 +111,6 @@ const ActionTypes = {
 
   SET_NOTE_TEXT: 'SET_NOTE_TEXT',
   SET_FOLLOW_UP_DATE: 'SET_FOLLOW_UP_DATE',
-  SET_VISIT: 'SET_VISIT',
 
   SET_CREATE: 'SET_CREATE',
   TOGGLE_CREATE: 'TOGGLE_CREATE',
@@ -259,7 +250,6 @@ function agentWorkReducer(state, action) {
           notes: action.payload.notes ?? state.detail.notes,
           calls: action.payload.calls ?? state.detail.calls,
           followUps: action.payload.followUps ?? state.detail.followUps,
-          visits: action.payload.visits ?? state.detail.visits,
           intentTimeline: action.payload.intentTimeline ?? state.detail.intentTimeline,
           admissionsTimeline: action.payload.admissionsTimeline ?? state.detail.admissionsTimeline,
           noteIdx: action.payload.noteIdx ?? state.detail.noteIdx,
@@ -304,9 +294,6 @@ function agentWorkReducer(state, action) {
 
     case ActionTypes.SET_FOLLOW_UP_DATE:
       return { ...state, followUpDate: action.payload };
-
-    case ActionTypes.SET_VISIT:
-      return { ...state, visit: { ...state.visit, ...action.payload } };
 
     case ActionTypes.SET_CREATE:
       return { ...state, create: { ...state.create, ...action.payload } };
@@ -416,7 +403,6 @@ export default function useAgentWorkState() {
 
     setNoteText: (p) => dispatch({ type: ActionTypes.SET_NOTE_TEXT, payload: p }),
     setFollowUpDate: (p) => dispatch({ type: ActionTypes.SET_FOLLOW_UP_DATE, payload: p }),
-    setVisit: (p) => dispatch({ type: ActionTypes.SET_VISIT, payload: p }),
 
     setCreate: (p) => dispatch({ type: ActionTypes.SET_CREATE, payload: p }),
     toggleCreate: (p) => dispatch({ type: ActionTypes.TOGGLE_CREATE, payload: p }),

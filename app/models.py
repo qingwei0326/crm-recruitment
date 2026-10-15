@@ -98,18 +98,6 @@ class StudentStage(enum.StrEnum):
     enrolled = "已报名"
 
 
-class VisitType(enum.StrEnum):
-    campus = "来校参观"
-    home = "家访"
-
-
-class VisitStatus(enum.StrEnum):
-    pending = "待确认"
-    confirmed = "已确认"
-    completed = "已完成"
-    cancelled = "已取消"
-
-
 class HomeVisitStatus(enum.StrEnum):
     pending = "待确认"
     confirmed = "已确认"
@@ -330,27 +318,6 @@ class LeadViewLog(Base):
     student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
     viewer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     viewed_at = Column(DateTime, default=func.now(), nullable=False)
-
-
-class Visit(Base):
-    __tablename__ = "visits"
-    __table_args__ = (
-        Index("ix_visits_student_id", "student_id"),
-        Index("ix_visits_agent_id", "agent_id"),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
-    agent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    visit_type = Column(SAEnum(VisitType), nullable=False)
-    scheduled_date = Column(DateTime, nullable=False)
-    status = Column(SAEnum(VisitStatus), nullable=False, default=VisitStatus.pending)
-    notes = Column(Text, default="")
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
-
-    student = relationship("Student", backref="visits")
-    agent = relationship("User", backref="visits")
 
 
 class HomeVisitTask(Base):

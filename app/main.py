@@ -56,7 +56,6 @@ from app.routers import (
     students_phone,
     students_query,
     tasks,
-    visits,
 )
 from app.scheduler import (
     follow_up_reminder_scheduler,
@@ -177,7 +176,6 @@ app.include_router(admissions_work_items.router)
 app.include_router(admissions_home_visits.router)
 app.include_router(admissions_campus_visits.router)
 app.include_router(admissions_enrollments.router)
-app.include_router(visits.router)
 app.include_router(operation_logs.router)
 
 

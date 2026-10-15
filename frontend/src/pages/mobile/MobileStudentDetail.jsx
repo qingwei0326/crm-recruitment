@@ -39,7 +39,6 @@ import {
   STAGES,
   stageLabel,
 } from '../../labels';
-const VISIT_STATUSES = ['待确认', '已确认', '已完成', '已取消'];
 
 // Visit registration now uses the full home/campus request forms (the same fields as
 // the work-group report) instead of a bare date + note, so the details are kept in
@@ -326,7 +325,6 @@ export default function MobileStudentDetail() {
   const [editNote, setEditNote] = useState(null); // { id, content }
   const [editNoteSubmitting, setEditNoteSubmitting] = useState(false);
   const [editFollowUp, setEditFollowUp] = useState(null);
-  const [editVisit, setEditVisit] = useState(null);
   const [workflowSaving, setWorkflowSaving] = useState(false);
   const [workflowEditorOpen, setWorkflowEditorOpen] = useState(false);
   const [workflowEditorTab, setWorkflowEditorTab] = useState('result');
@@ -373,7 +371,7 @@ export default function MobileStudentDetail() {
   const calls = data?.calls || [];
   const notes = data?.notes || [];
   const followUps = data?.follow_ups || [];
-  const visits = data?.visits || [];
+  const admissionsTimeline = data?.admissions_timeline || [];
 
   const showToast = (m) => {
     setToast(m);
@@ -394,18 +392,6 @@ export default function MobileStudentDetail() {
         ...prev,
         follow_ups: (prev.follow_ups || []).map((fu) =>
           fu.id === fuId ? { ...fu, ...patch } : fu,
-        ),
-      };
-    });
-  };
-
-  const patchVisit = (visitId, patch) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        visits: (prev.visits || []).map((visit) =>
-          visit.id === visitId ? { ...visit, ...patch } : visit,
         ),
       };
     });
@@ -576,28 +562,6 @@ export default function MobileStudentDetail() {
     );
   };
 
-  const handleUpdateVisitStatus = (visit, status) => {
-    if (visit.status === status) return;
-    runWorkflowUpdate(
-      () => api.put(`/visits/${visit.id}`, { status }),
-      '到访状态已更新',
-      () => patchVisit(visit.id, { status }),
-    );
-  };
-
-  const handleRescheduleVisit = (date) => {
-    if (!editVisit) return;
-    const scheduled_date = toApiDateTime(date);
-    runWorkflowUpdate(
-      () => api.put(`/visits/${editVisit.id}`, { scheduled_date }),
-      '到访时间已更新',
-      () => {
-        patchVisit(editVisit.id, { scheduled_date });
-        setEditVisit(null);
-      },
-    );
-  };
-
   const handleEditNote = async (content) => {
     if (!editNote) return;
     setEditNoteSubmitting(true);
@@ -631,31 +595,6 @@ export default function MobileStudentDetail() {
       const r = await api.delete(`/notes/${noteId}`);
       if (r.data.code === 0) {
         showToast('备注已删除');
-        loadDetail();
-      } else {
-        showToast(r.data.msg || '删除失败');
-      }
-    } catch (e) {
-      showToast(getApiErrorMessage(e));
-    } finally {
-      setBusyDelete(false);
-    }
-  };
-
-  const handleDeleteVisit = async (visitId) => {
-    if (busyDelete) return;
-    const ok = await confirm({
-      title: '删除到访记录',
-      message: '确定删除这条到访记录吗？',
-      confirmText: '删除',
-      tone: 'danger',
-    });
-    if (!ok) return;
-    setBusyDelete(true);
-    try {
-      const r = await api.delete(`/visits/${visitId}`);
-      if (r.data.code === 0) {
-        showToast('到访已删除');
         loadDetail();
       } else {
         showToast(r.data.msg || '删除失败');
@@ -775,41 +714,6 @@ export default function MobileStudentDetail() {
     );
   };
 
-  const renderVisitActions = (visit) => {
-    if (!canModify(visit)) return null;
-    return (
-      <div className="flex flex-wrap gap-2 mt-1 ml-9 text-xs">
-        {VISIT_STATUSES.filter((status) => status !== visit.status).map((status) => (
-          <button
-            key={status}
-            type="button"
-            disabled={workflowSaving}
-            onClick={() => handleUpdateVisitStatus(visit, status)}
-            className="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-600 text-gray-500 hover:text-teal-700 hover:border-teal-300 dark:hover:text-teal-300 disabled:opacity-50"
-          >
-            {status}
-          </button>
-        ))}
-        <button
-          type="button"
-          disabled={workflowSaving}
-          onClick={() => setEditVisit(visit)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50"
-        >
-          <Pencil className="w-3 h-3" /> 改期
-        </button>
-        <button
-          type="button"
-          disabled={busyDelete}
-          onClick={() => handleDeleteVisit(visit.id)}
-          className="inline-flex items-center gap-1 px-2 py-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
-        >
-          <Trash2 className="w-3 h-3" /> 删除
-        </button>
-      </div>
-    );
-  };
-
   const openWorkflowEditor = (tab = 'result') => {
     setWorkflowEditorTab(tab);
     setWorkflowEditorOpen(true);
@@ -900,10 +804,9 @@ export default function MobileStudentDetail() {
             calls={calls}
             notes={notes}
             followUps={followUps}
-            visits={visits}
+            admissionsTimeline={admissionsTimeline}
             renderNoteActions={renderNoteActions}
             renderFollowUpActions={renderFollowUpActions}
-            renderVisitActions={renderVisitActions}
           />
         </div>
       </div>
@@ -1000,17 +903,6 @@ export default function MobileStudentDetail() {
         label="回访时间"
         submitText="保存回访"
         initialValue={editFollowUp?.follow_up_date || ''}
-      />
-
-      <DateTimeSheet
-        open={!!editVisit}
-        onClose={() => setEditVisit(null)}
-        onSubmit={handleRescheduleVisit}
-        submitting={workflowSaving}
-        title="到访改期"
-        label="到访时间"
-        submitText="保存到访"
-        initialValue={editVisit?.scheduled_date || editVisit?.visit_date || ''}
       />
 
       <WorkflowEditSheet

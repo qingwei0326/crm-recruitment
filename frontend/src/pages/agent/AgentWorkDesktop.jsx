@@ -31,7 +31,7 @@ export default function AgentWorkDesktop({
   noteText, setNoteText,
   lockedStudentId,
   handleDial, updateStatus, updateStage, addNote, updateScore,
-  detailLoading, detailError, detailCalls, detailNotes, detailFollowUps, detailVisits,
+  detailLoading, detailError, detailCalls, detailNotes, detailFollowUps,
   detailIntentTimeline, detailAdmissionsTimeline, updateDetailField,
   showDetail, detailStudent,
   setShowDetail, loadDetail,
@@ -210,7 +210,6 @@ export default function AgentWorkDesktop({
           calls={detailCalls}
           notes={detailNotes}
           followUps={detailFollowUps}
-          visits={detailVisits}
           intentTimeline={detailIntentTimeline}
           admissionsTimeline={detailAdmissionsTimeline}
           onClose={() => setShowDetail(false)}

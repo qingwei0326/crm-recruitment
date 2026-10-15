@@ -6,7 +6,6 @@ describe('buildDashboardActions', () => {
     const actions = buildDashboardActions({
       helpCount: 0,
       followUps: [{ follow_up_date: new Date(Date.now() + 86400000).toISOString() }],
-      visits: [{ scheduled_date: new Date().toISOString() }],
       scoreItems: [
         { level: 'good', signals: [] },
         { level: 'excellent', signals: [] },
@@ -25,7 +24,6 @@ describe('buildDashboardActions', () => {
     const actions = buildDashboardActions({
       helpCount: 2,
       followUps: [{ follow_up_date: yesterday }],
-      visits: [{ scheduled_date: new Date().toISOString() }],
       scoreItems: [
         {
           level: 'watch',

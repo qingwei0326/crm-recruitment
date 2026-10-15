@@ -19,11 +19,9 @@ from app.models import (
     StudentStatus,
     User,
     UserRole,
-    Visit,
-    VisitStatus,
-    VisitType,
 )
 from app.schemas import Response
+from app.services.visit_stats_service import visit_counts_by_creator
 from app.utils import month_start_cst_as_utc, today_cst_as_utc, utcnow
 
 router = APIRouter(prefix="/api/stats", tags=["统计"])
@@ -233,26 +231,8 @@ async def agent_ranking(
             "enrolled": int(enrolled),
         }
 
-    # Visit stats per agent (total, completed, campus, home)
-    visit_stats_r = await db.execute(
-        select(
-            Visit.agent_id,
-            func.count(Visit.id),
-            func.sum(case((Visit.status == VisitStatus.completed, 1), else_=0)),
-            func.sum(case((Visit.visit_type == VisitType.campus, 1), else_=0)),
-            func.sum(case((Visit.visit_type == VisitType.home, 1), else_=0)),
-        )
-        .where(Visit.agent_id.in_(agent_ids))
-        .group_by(Visit.agent_id)
-    )
-    v_map = {}
-    for aid, total, done, campus, home in visit_stats_r.all():
-        v_map[aid] = {
-            "total_visits": int(total),
-            "visits_done": int(done),
-            "campus_visits": int(campus),
-            "home_visits": int(home),
-        }
+    # Visits each agent requested (home visits + campus visits) and how many happened
+    v_map = await visit_counts_by_creator(db, agent_ids)
 
     # Call stats per agent (today, month)
     today_calls_r = await db.execute(

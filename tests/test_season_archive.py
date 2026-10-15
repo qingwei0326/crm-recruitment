@@ -13,13 +13,12 @@ from app.domain_models import (
 )
 from app.models import (
     Call,
+    CampusVisitTask,
     DialLog,
     FollowUp,
     Note,
     OperationLog,
     Student,
-    Visit,
-    VisitType,
 )
 from app.services import season_archive_service as archive_service
 from app.utils import utcnow
@@ -48,11 +47,10 @@ async def _seed_season_data(db, admin_user, agent_user):
                 follow_up_date=utcnow() + timedelta(days=1),
             ),
             DialLog(student_id=student.id, agent_id=agent_user.id),
-            Visit(
+            CampusVisitTask(
                 student_id=student.id,
-                agent_id=agent_user.id,
-                visit_type=VisitType.campus,
-                scheduled_date=utcnow() + timedelta(days=1),
+                creator_user_id=agent_user.id,
+                appointment_at=utcnow() + timedelta(days=1),
             ),
             StudentAssignment(
                 student_id=student.id,

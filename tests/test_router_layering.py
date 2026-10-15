@@ -58,16 +58,15 @@ BASELINE = {
     "operation_logs.py": 22,
     "personal_groups.py": 48,
     "stats.py": 6,
-    "stats_agents.py": 16,
-    "stats_dashboard.py": 70,
-    "stats_enrollment.py": 72,
+    "stats_agents.py": 14,
+    "stats_dashboard.py": 62,
+    "stats_enrollment.py": 70,
     "students.py": 16,
     "students_assignment.py": 21,
     "students_enrollment.py": 11,
     "students_import.py": 11,
     "students_phone.py": 14,
-    "students_query.py": 41,
-    "visits.py": 27,
+    "students_query.py": 39,
 }
 
 
