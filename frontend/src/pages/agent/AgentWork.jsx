@@ -20,7 +20,7 @@ import StudentCreateModal from './StudentCreateModal';
 import SettingsModal from './desktop/SettingsModal';
 import DialResultModal from './desktop/DialResultModal';
 import HelpModal from '../../components/HelpModal';
-import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
+import YesterdayUncontactedBanner from '../../components/YesterdayUncontactedBanner';
 
 export default function AgentWork() {
   const { user, logout } = useAuth();
@@ -97,8 +97,17 @@ export default function AgentWork() {
     if (state.currentIdx < filteredStudents.length - 1) actions.setCurrentIdx(state.currentIdx + 1);
   };
 
-  // 时限类提醒已暂时关闭，保留 prop 以兼容桌面/移动布局。
-  const backlogBanner = null;
+  // 非阻塞提示条：分配超过 24 小时仍未联系的线索（桌面/移动布局共用这个插槽）。
+  const backlogBanner = (
+    <YesterdayUncontactedBanner
+      user={user}
+      onHandleNow={() => {
+        actions.setViewTab('today');
+        actions.setCurrentIdx(0);
+        fetchToday();
+      }}
+    />
+  );
 
   // Modals
   const modals = (
@@ -137,14 +146,6 @@ export default function AgentWork() {
           role="agent"
         />
       )}
-      <YesterdayUncontactedPrompt
-        user={user}
-        onHandleNow={() => {
-          actions.setViewTab('today');
-          actions.setCurrentIdx(0);
-          fetchToday();
-        }}
-      />
     </>
   );
 
