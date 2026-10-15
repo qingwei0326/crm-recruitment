@@ -27,6 +27,7 @@ import {
   toApiDateTime,
 } from '../../utils/dateTime';
 import { payloadForOperatorResult } from '../../operatorResultPolicy';
+import { outcomeSavedMessage } from '../../utils/outcomeFeedback';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import { ContentSkeleton, ErrorState } from '../../components/AsyncState';
 import {
@@ -496,7 +497,10 @@ export default function MobileStudentDetail() {
     }
     const saved = await runWorkflowUpdate(
       () => api.put(`/students/${student.id}`, payloadForOperatorResult(outcome)),
-      '联系状态已更新',
+      outcomeSavedMessage({
+        label: outcome.label,
+        displayStatus: displayStatusForOperatorResult(outcome),
+      }),
       (updated) => {
         const nextStatus = updated?.status || displayStatusForOperatorResult(outcome);
         const nextDetail = updated?.status_detail ?? detailForOperatorResult(outcome);

@@ -4,6 +4,8 @@ import { completePendingDial, readPendingDial, savePendingDial } from '../dialSe
 import { getApiErrorMessage } from '../utils';
 import logger from '../utils/logger';
 import { resolveOperatorResult } from '../operatorResultPolicy';
+import { displayStatusForOperatorResult } from '../labels';
+import { outcomeSavedMessage } from '../utils/outcomeFeedback';
 
 function successfulData(response, fallbackMessage) {
   if (response.data?.code !== undefined && response.data.code !== 0) {
@@ -146,7 +148,7 @@ export default function useAgentDial({
     const modal = state.dial.modal;
     if (!modal) return;
 
-    let { status, invalidReason } = resolveOperatorResult(s);
+    let { status, invalidReason, originalStatus } = resolveOperatorResult(s);
     let saved = false;
 
     if (invalidReason) {
@@ -157,8 +159,6 @@ export default function useAgentDial({
           status: updated.status || '无效',
           status_detail: updated.status_detail || invalidReason || '',
         });
-        actions.setActionMsg('状态已更新');
-        setTimeout(() => actions.setActionMsg(''), 2000);
         saved = true;
       } catch (e) {
         toast?.error('更新状态失败: ' + getApiErrorMessage(e));
@@ -179,8 +179,6 @@ export default function useAgentDial({
             status: updated.status || '无效',
             status_detail: updated.status_detail || reason,
           });
-          actions.setActionMsg('状态已更新');
-          setTimeout(() => actions.setActionMsg(''), 2000);
           saved = true;
         } catch (e) {
           toast?.error('更新状态失败: ' + getApiErrorMessage(e));
@@ -206,8 +204,6 @@ export default function useAgentDial({
             status: updated.status || fallbackStatusByDetail[status] || status,
             status_detail: updated.status_detail ?? (fallbackStatusByDetail[status] ? status : ''),
           });
-          actions.setActionMsg('状态已更新');
-          setTimeout(() => actions.setActionMsg(''), 2000);
           saved = true;
         } catch (e) {
           toast?.error('更新状态失败: ' + getApiErrorMessage(e));
@@ -216,6 +212,13 @@ export default function useAgentDial({
     }
 
     if (!saved) return;
+
+    toast?.success(
+      outcomeSavedMessage({
+        label: originalStatus,
+        displayStatus: displayStatusForOperatorResult(s),
+      }),
+    );
 
     // 首次拨打只记录结构化结果，不强制话务员立即判断 A/B/C。
     // 加微信/等待志愿仍保留一个轻量回访时间，避免线索没有下一步。
