@@ -59,14 +59,16 @@ export default function YesterdayUncontactedBanner({ user, onHandleNow }) {
   return (
     <div
       role="status"
-      className="mx-4 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/60 dark:text-amber-100"
+      className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/60 dark:text-amber-100"
     >
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />
-      <span className="min-w-0 flex-1">
-        有 {items.length} 个线索分配超过 24 小时还没联系
-        {oldestDays >= 1 ? `（最久 ${oldestDays} 天）` : ''}
-      </span>
-      <span className="flex shrink-0 gap-2">
+      <div className="flex min-w-0 basis-full items-start gap-2 sm:flex-1 sm:basis-0">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />
+        <span className="min-w-0">
+          有 {items.length} 个线索分配超过 24 小时还没联系
+          {oldestDays >= 1 ? `（最久 ${oldestDays} 天）` : ''}
+        </span>
+      </div>
+      <div className="ml-auto flex shrink-0 gap-2">
         <button
           type="button"
           onClick={dismiss}
@@ -81,7 +83,7 @@ export default function YesterdayUncontactedBanner({ user, onHandleNow }) {
         >
           去处理
         </button>
-      </span>
+      </div>
     </div>
   );
 }
