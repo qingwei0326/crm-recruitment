@@ -62,16 +62,17 @@ const detailPayload = {
       created_at: '2026-06-10T09:00:00',
     },
   ],
-  visits: [
+  admissions_timeline: [
     {
+      type: 'campus_visit',
       id: 601,
-      student_id: 42,
-      visit_type: '来校参观',
-      scheduled_date: '2026-06-12T10:00:00',
-      status: '待确认',
-      agent_id: 7,
-      agent_name: '话务员',
-      created_at: '2026-06-10T09:30:00',
+      title: '预约到校',
+      status: '已预约',
+      result: '',
+      operator_name: '话务员',
+      occurred_at: '2026-06-10T09:30:00',
+      scheduled_at: '2026-06-12T10:00:00',
+      summary: '家长想看实训楼',
     },
   ],
 };
@@ -326,51 +327,32 @@ describe('MobileStudentDetail follow-up workflow', () => {
     });
   });
 
-  it('lets agents update visit status and schedule from the timeline', async () => {
+  it('shows home and campus visit tasks in the timeline, with no legacy visit actions', async () => {
     renderPage();
 
-    const visit = await screen.findByTestId('visit-601');
-    fireEvent.click(within(visit).getByRole('button', { name: '已确认' }));
-
-    await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith('/visits/601', { status: '已确认' });
-    });
-
-    fireEvent.click(within(visit).getByRole('button', { name: '改期' }));
-    fireEvent.change(screen.getByLabelText('到访时间'), {
-      target: { value: '2026-06-14T09:00' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '保存到访' }));
-
-    await waitFor(() => {
-      expect(api.put).toHaveBeenCalledWith('/visits/601', {
-        scheduled_date: '2026-06-14T09:00:00',
-      });
-    });
+    const visit = await screen.findByTestId('admission-campus_visit-601');
+    expect(within(visit).getByText('预约到校 · 已预约')).toBeInTheDocument();
+    expect(within(visit).getByText('家长想看实训楼')).toBeInTheDocument();
+    expect(within(visit).queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('deletes a follow-up and a visit only after the in-app confirm is accepted', async () => {
+  it('deletes a follow-up only after the in-app confirm is accepted', async () => {
     renderPage();
 
     const followUp = await screen.findByTestId('follow-up-501');
     fireEvent.click(within(followUp).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/follow-ups/501'));
 
-    fireEvent.click(within(screen.getByTestId('visit-601')).getByRole('button', { name: '删除' }));
-    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/visits/601'));
-
-    expect(mockConfirm).toHaveBeenCalledTimes(2);
+    expect(mockConfirm).toHaveBeenCalledTimes(1);
     expect(mockConfirm).toHaveBeenCalledWith(expect.objectContaining({ tone: 'danger' }));
   });
 
-  it('does not delete a follow-up or visit when the confirm is cancelled', async () => {
+  it('does not delete a follow-up when the confirm is cancelled', async () => {
     mockConfirm.mockResolvedValue(false);
     renderPage();
 
     fireEvent.click(within(await screen.findByTestId('follow-up-501')).getByRole('button', { name: '删除' }));
     await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
-    fireEvent.click(within(screen.getByTestId('visit-601')).getByRole('button', { name: '删除' }));
-    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(2));
 
     expect(api.delete).not.toHaveBeenCalled();
   });

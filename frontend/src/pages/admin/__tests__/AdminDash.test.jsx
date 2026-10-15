@@ -118,9 +118,6 @@ function mockDashboardApis() {
         },
       });
     }
-    if (url === '/visits/summary') {
-      return Promise.resolve({ data: { data: null } });
-    }
     if (url === '/stats/stages') {
       return Promise.resolve({ data: { data: mockStageStats } });
     }
@@ -133,7 +130,7 @@ function mockDashboardApis() {
     if (url === '/students') {
       return Promise.resolve({ data: { data: { total: 0, list: [] } } });
     }
-    if (url === '/follow-ups' || url === '/visits') {
+    if (url === '/follow-ups') {
       return Promise.resolve({ data: { data: { list: [] } } });
     }
     if (url === '/admin/agent-score-preview') {
@@ -222,6 +219,7 @@ describe('AdminDash responsive entry', () => {
     expect(api.get).not.toHaveBeenCalledWith('/stats/sources');
     expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard-summary');
     expect(api.get).not.toHaveBeenCalledWith('/visits/summary');
+    expect(api.get).not.toHaveBeenCalledWith('/visits', expect.anything());
     expect(api.get).not.toHaveBeenCalledWith('/stats/stages');
     expect(api.get).not.toHaveBeenCalledWith('/stats/funnel');
     expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard', expect.anything());

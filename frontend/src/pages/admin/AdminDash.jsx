@@ -34,7 +34,6 @@ import TeamProgressPanel from './dashboard/TeamProgressPanel';
 const EMPTY_ACTION_DATA = {
   helpRequests: [],
   followUps: [],
-  visits: [],
   scoreItems: [],
   staleAItems: [],
 };
@@ -105,7 +104,6 @@ function AdminDesktopDash({ isMobile }) {
       api.get('/stats/dashboard-all'),
       canViewLeadsManage ? api.get('/students', { params: { need_help: '1', page_size: 100 } }) : Promise.resolve({ data: { data: { list: [] } } }),
       api.get('/follow-ups', { params: { is_completed: false, page_size: 100 } }),
-      api.get('/visits', { params: { page_size: 100 } }),
       canViewScorePreview ? api.get('/admin/agent-score-preview', { params: { daily_call_target: 30 } }) : Promise.resolve({ data: { data: { items: [] } } }),
       api.get('/admin/stale-a', { params: { days: 3 } }),
       api.get('/admin/data-quality'),
@@ -118,35 +116,31 @@ function AdminDesktopDash({ isMobile }) {
         dailyOps: dashboardResultFailed(results[0]),
         summary: dashboardResultFailed(results[1]),
         regions: dashboardResultFailed(results[1]),
-        visitsSummary: dashboardResultFailed(results[1]),
         stages: dashboardResultFailed(results[1]),
         enrollment: dashboardResultFailed(results[1]),
         funnel: dashboardResultFailed(results[1]),
         helpRequests: dashboardResultFailed(results[2]),
         followUps: dashboardResultFailed(results[3]),
-        visits: dashboardResultFailed(results[4]),
-        scoreItems: dashboardResultFailed(results[5]),
-        staleAItems: dashboardResultFailed(results[6]),
-        quality: dashboardResultFailed(results[7]),
-        trend: dashboardResultFailed(results[8]),
+        scoreItems: dashboardResultFailed(results[4]),
+        staleAItems: dashboardResultFailed(results[5]),
+        quality: dashboardResultFailed(results[6]),
+        trend: dashboardResultFailed(results[7]),
       };
       const helpData = responseData(results[2], { list: [] });
       const followUpData = responseData(results[3], { list: [] });
-      const visitsData = responseData(results[4], { list: [] });
-      const scoreData = responseData(results[5], { items: [] });
-      const staleAData = responseData(results[6], []);
+      const scoreData = responseData(results[4], { items: [] });
+      const staleAData = responseData(results[5], []);
       if (!nextErrors.dailyOps) setDailyOps(responseData(results[0], null));
       if (!nextErrors.summary) setSummary(coreData?.summary ?? null);
       if (!nextErrors.regions) setStats(Array.isArray(coreData?.sources) ? coreData.sources : []);
       if (!nextErrors.stages) setStageStats(coreData?.stages ?? {});
       if (!nextErrors.enrollment) setEnrollmentData(coreData?.summary ? { total: coreData.summary.enrolled_total ?? 0 } : null);
       if (!nextErrors.funnel) setFunnelData(coreData?.funnel ?? null);
-      if (!nextErrors.quality) setQuality(responseData(results[7], null));
-      if (!nextErrors.trend) setTrendData(responseData(results[8], null));
+      if (!nextErrors.quality) setQuality(responseData(results[6], null));
+      if (!nextErrors.trend) setTrendData(responseData(results[7], null));
       setActionData((current) => ({
         helpRequests: nextErrors.helpRequests ? current.helpRequests : (Array.isArray(helpData?.list) ? helpData.list : []),
         followUps: nextErrors.followUps ? current.followUps : (Array.isArray(followUpData?.list) ? followUpData.list : []),
-        visits: nextErrors.visits ? current.visits : (Array.isArray(visitsData?.list) ? visitsData.list : []),
         scoreItems: nextErrors.scoreItems ? current.scoreItems : (Array.isArray(scoreData?.items) ? scoreData.items : []),
         staleAItems: nextErrors.staleAItems ? current.staleAItems : (Array.isArray(staleAData) ? staleAData : []),
       }));
@@ -178,7 +172,6 @@ function AdminDesktopDash({ isMobile }) {
   const actionItems = useMemo(() => buildDashboardActions({
     helpCount: actionData.helpRequests.length,
     followUps: actionData.followUps,
-    visits: actionData.visits,
     scoreItems: actionData.scoreItems,
     missingPhoneCount: quality?.students?.missing_phone_tasks ?? 0,
     staleAItems: actionData.staleAItems,
@@ -234,7 +227,7 @@ function AdminDesktopDash({ isMobile }) {
           <section className="flex flex-col justify-between gap-2 rounded-panel border border-slate-200 bg-white px-4 py-3 shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark sm:flex-row sm:items-center lg:px-5"><div><div className="text-sm font-bold text-slate-900 dark:text-slate-100">招生指挥中心</div><p className="mt-0.5 text-2xs text-slate-500 dark:text-slate-400">{scope === 'today' ? '聚焦今日执行、运营闭环与高风险待办。' : '聚焦全库资产、联系覆盖与招生转化沉淀。'} 点击指标即可进入处理页面。</p></div><div className="flex items-center gap-2 text-2xs font-semibold text-blue-600 dark:text-blue-400"><span className="h-2 w-2 rounded-full bg-emerald-500" />{loading ? '正在同步数据…' : '数据已同步'}</div></section>
           <TeamProgressPanel refreshKey={refreshKey} canViewLeadsManage={canViewLeadsManage} />
           {scope === 'all' && <GlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} summaryError={errors.summary} enrollmentError={errors.enrollment} />}
-          <AdminCommandBoard actionItems={actionItems} dailyOps={dailyOps} quality={quality} scoreItems={actionData.scoreItems} stageStats={stageStats} funnelData={funnelData} stats={stats} trendData={trendData} loading={loading} errors={errors} onRetry={retryDashboard} retrying={loading} canViewLeadsManage={canViewLeadsManage} canViewWorkCenter={canViewWorkCenter} canViewReportCenter={canViewReportCenter} metricCards={metricCards} availableUnassigned={availableUnassigned} totalStudents={totalStudents} aLevelTotal={aLevelTotal} enrolledTotal={enrolledTotal} todayNewLeads={todayNewLeads} dailyOpsLoading={loading} dailyOpsError={errors.dailyOps} dailyOpsSavingKey={dailyOpsSavingKey} canReviewDailyOps={canReviewDailyOps} onMarkDailyOps={markDailyOpsItem} actionItemsError={Boolean(errors.helpRequests || errors.followUps || errors.visits || errors.scoreItems || errors.staleAItems || errors.quality || notifyFailsError)} cardPreferenceUserKey={user?.id || user?.username || 'admin'} cardPreferenceScope={scope} />
+          <AdminCommandBoard actionItems={actionItems} dailyOps={dailyOps} quality={quality} scoreItems={actionData.scoreItems} stageStats={stageStats} funnelData={funnelData} stats={stats} trendData={trendData} loading={loading} errors={errors} onRetry={retryDashboard} retrying={loading} canViewLeadsManage={canViewLeadsManage} canViewWorkCenter={canViewWorkCenter} canViewReportCenter={canViewReportCenter} metricCards={metricCards} availableUnassigned={availableUnassigned} totalStudents={totalStudents} aLevelTotal={aLevelTotal} enrolledTotal={enrolledTotal} todayNewLeads={todayNewLeads} dailyOpsLoading={loading} dailyOpsError={errors.dailyOps} dailyOpsSavingKey={dailyOpsSavingKey} canReviewDailyOps={canReviewDailyOps} onMarkDailyOps={markDailyOpsItem} actionItemsError={Boolean(errors.helpRequests || errors.followUps || errors.scoreItems || errors.staleAItems || errors.quality || notifyFailsError)} cardPreferenceUserKey={user?.id || user?.username || 'admin'} cardPreferenceScope={scope} />
         </div>
       </main>
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role={user?.is_super_admin ? 'super_admin' : 'admin'} />

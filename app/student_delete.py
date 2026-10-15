@@ -25,7 +25,6 @@ from app.models import (
     LeadViewLog,
     Note,
     Student,
-    Visit,
 )
 from app.utils import make_operation_log
 
@@ -43,7 +42,6 @@ RELATED_MODELS = (
     Note,
     FollowUp,
     LeadViewLog,
-    Visit,
 )
 
 

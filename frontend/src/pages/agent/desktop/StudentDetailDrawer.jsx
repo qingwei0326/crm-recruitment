@@ -28,7 +28,6 @@ export default function StudentDetailDrawer({
   calls = [],
   notes = [],
   followUps = [],
-  visits = [],
   intentTimeline = [],
   admissionsTimeline = [],
   onClose,
@@ -221,7 +220,6 @@ export default function StudentDetailDrawer({
               calls={calls}
               notes={notes}
               followUps={followUps}
-              visits={visits}
               intentTimeline={intentTimeline}
               admissionsTimeline={admissionsTimeline}
             />

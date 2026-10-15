@@ -47,7 +47,6 @@ export default function useAgentWork() {
     updateDetailField,
     addNote: addNoteBase,
     addFollowUp: addFollowUpBase,
-    addVisit: addVisitBase,
   } = useAgentDetail({ state, actions, students, toast });
 
   // ── 4. 跟进中 + 积压提醒 ──
@@ -60,7 +59,6 @@ export default function useAgentWork() {
 
   // ── 便捷别名 ──
   const { noteText, followUpDate } = state;
-  const { visit } = state;
 
   const recordDialDurationOnce = useCallback((modal) => {
     if (!modal?.studentId || !modal?.dialStartedAt) return;
@@ -127,7 +125,7 @@ export default function useAgentWork() {
     await handleCreateBase(newStudent);
   }, [handleCreateBase]);
 
-  // ── 11. 备注 / 回访 / 到访（适配子组件调用签名）──
+  // ── 11. 备注 / 回访（适配子组件调用签名）──
   const addNote = useCallback((targetId) => {
     addNoteBase(targetId, noteText);
   }, [addNoteBase, noteText]);
@@ -135,10 +133,6 @@ export default function useAgentWork() {
   const addFollowUp = useCallback(async () => {
     await addFollowUpBase(current, followUpDate);
   }, [addFollowUpBase, current, followUpDate]);
-
-  const addVisit = useCallback(async () => {
-    await addVisitBase(current, visit);
-  }, [addVisitBase, current, visit]);
 
   // ── 12. 拨号结果弹窗流程 ──
   const handleDialModalStatus = useCallback(async (s) => {
@@ -282,7 +276,6 @@ export default function useAgentWork() {
     updateDetailField,
     addNote,
     addFollowUp,
-    addVisit,
     handleDial,
     dismissBacklogAlert,
     prev,

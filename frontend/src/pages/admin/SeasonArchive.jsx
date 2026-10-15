@@ -28,7 +28,6 @@ const countLabels = [
   ['calls', '通话'],
   ['notes', '备注'],
   ['follow_ups', '回访'],
-  ['visits', '到访'],
   ['home_visit_tasks', '家访任务'],
   ['campus_visit_tasks', '到校任务'],
   ['enrollment_records', '报名记录'],

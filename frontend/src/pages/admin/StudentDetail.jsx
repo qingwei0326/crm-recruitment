@@ -109,7 +109,6 @@ export default function StudentDetail() {
   const calls = data?.calls || [];
   const notes = data?.notes || [];
   const followUps = data?.follow_ups || [];
-  const visits = data?.visits || [];
   const intentTimeline = useMemo(() => data?.intent_timeline || [], [data?.intent_timeline]);
   const admissionsTimeline = data?.admissions_timeline || [];
 
@@ -279,7 +278,6 @@ export default function StudentDetail() {
               calls={calls}
               notes={notes}
               followUps={followUps}
-              visits={visits}
               intentTimeline={intentTimeline}
               admissionsTimeline={admissionsTimeline}
               emptyText="暂无记录"

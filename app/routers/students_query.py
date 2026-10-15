@@ -20,7 +20,6 @@ from app.models import (
     StudentStage,
     StudentStatus,
     User,
-    Visit,
 )
 from app.permissions import apply_student_scope, get_accessible_student, is_admin
 from app.routers.students import (
@@ -420,27 +419,6 @@ async def get_student_detail(
         for f, agent_name in fu_r.all()
     ]
 
-    # 到访（全部）
-    visits_r = await db.execute(
-        select(Visit, User.name)
-        .outerjoin(User, Visit.agent_id == User.id)
-        .where(Visit.student_id == student.id)
-        .order_by(Visit.scheduled_date.desc())
-    )
-    visits = [
-        {
-            "id": v.id,
-            "agent_id": v.agent_id,
-            "agent_name": agent_name or "",
-            "visit_type": str(v.visit_type),
-            "scheduled_date": str(v.scheduled_date),
-            "status": str(v.status),
-            "notes": v.notes or "",
-            "created_at": str(v.created_at),
-        }
-        for v, agent_name in visits_r.all()
-    ]
-
     home_visits_r = await db.execute(
         select(HomeVisitTask, User.name)
         .outerjoin(User, HomeVisitTask.creator_agent_id == User.id)
@@ -562,7 +540,6 @@ async def get_student_detail(
             "calls": calls,
             "notes": notes,
             "follow_ups": follow_ups,
-            "visits": visits,
             "admissions_timeline": admissions_timeline,
             "intent_timeline": intent_timeline,
         }
