@@ -45,9 +45,9 @@ export function ToastProvider({ children }) {
     timersRef.current.clear();
   }, []);
 
-  const addToast = useCallback((message, type = 'info', duration = 4000) => {
+  const addToast = useCallback((message, type = 'info', duration = 4000, action = null) => {
     const id = ++_id;
-    setToasts((prev) => [...prev.slice(-3), { id, message, type }]);
+    setToasts((prev) => [...prev.slice(-3), { id, message, type, action }]);
     if (duration > 0) {
       const timer = window.setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -65,12 +65,18 @@ export function ToastProvider({ children }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = useMemo(() => ({
-    info: (msg) => addToast(msg, 'info'),
-    success: (msg) => addToast(msg, 'success'),
-    error: (msg) => addToast(msg, 'error', 6000),
-    warning: (msg) => addToast(msg, 'warning', 5000),
-  }), [addToast]);
+  // options: { action: { label, onClick }, duration } - an action keeps the toast up long
+  // enough to tap, and closes it once tapped.
+  const toast = useMemo(() => {
+    const make = (type, defaultDuration) => (msg, options) =>
+      addToast(msg, type, options?.duration ?? defaultDuration, options?.action ?? null);
+    return {
+      info: make('info', 4000),
+      success: make('success', 4000),
+      error: make('error', 6000),
+      warning: make('warning', 5000),
+    };
+  }, [addToast]);
 
   return (
     <ToastContext.Provider value={toast}>
@@ -94,6 +100,18 @@ export function ToastProvider({ children }) {
               <span className="min-w-0 flex-1 break-words text-sm font-medium leading-5">
                 {toastItem.message}
               </span>
+              {toastItem.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    removeToast(toastItem.id);
+                    toastItem.action.onClick();
+                  }}
+                  className="-my-1 min-h-10 shrink-0 rounded-lg px-3 text-sm font-semibold underline underline-offset-2 transition hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  {toastItem.action.label}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => removeToast(toastItem.id)}
