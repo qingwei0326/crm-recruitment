@@ -32,6 +32,17 @@ def today_cst_as_utc() -> datetime:
     return cst_date_start_as_utc(today_cst_date())
 
 
+# A lead that has been assigned for this long and is still untouched counts as
+# overdue. One rolling rule for the agent lists, the stale-lead banner and the
+# admin daily-ops numbers, so the two sides never disagree about the same student.
+OVERDUE_AFTER_HOURS = 24
+
+
+def overdue_cutoff(now: datetime | None = None) -> datetime:
+    """Leads assigned at or before this naive-UTC moment are overdue."""
+    return (now or utcnow()) - timedelta(hours=OVERDUE_AFTER_HOURS)
+
+
 def make_batch_id(prefix: str) -> str:
     """Generate a short operation batch id for audit and rollback links."""
     safe_prefix = re.sub(r"[^a-zA-Z0-9_-]+", "-", prefix.strip())[:24] or "batch"

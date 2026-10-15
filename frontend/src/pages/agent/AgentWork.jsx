@@ -75,6 +75,7 @@ export default function AgentWork() {
     prompt,
     updateIntentById,
     onFlowComplete: mobileAutoAdvance.handleDialComplete,
+    onOutcomeUndone: fetchToday,
   });
 
   // 详情面板管理

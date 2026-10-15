@@ -25,7 +25,14 @@ from app.task_stats import (
     TERMINAL_STUDENT_STATUSES,
     build_task_stats,
 )
-from app.utils import is_phone_query, mask_phone, normalize_phone, today_cst_as_utc, utcnow
+from app.utils import (
+    is_phone_query,
+    mask_phone,
+    normalize_phone,
+    overdue_cutoff,
+    today_cst_as_utc,
+    utcnow,
+)
 
 
 def _agent_task_search_predicate(q: str):
@@ -46,6 +53,14 @@ def _agent_task_search_predicate(q: str):
         )
 
     return Student.name.ilike(f"%{q}%")
+
+
+def _agent_search_all_predicate(q: str):
+    """Name / guardian / phone match for the all-status search box."""
+    base = _agent_task_search_predicate(q)
+    if is_phone_query(q):
+        return base
+    return or_(base, Student.guardian_name.ilike(f"%{q}%"))
 
 
 def _intent_priority_expr():
@@ -207,13 +222,14 @@ async def today_tasks(
     if school_name and school_name.strip():
         filters.append(Student.school_name == school_name.strip())
 
-    # 逾期定义为：分配时间早于北京时间今天零点，且仍在未联系任务池中。
+    # 逾期定义为：分配满 24 小时，且仍在未联系任务池中（与管理端、昨日遗留提示条同口径）。
     # overdue_count 始终按当前搜索/学校/意向筛选计算，方便前端展示准确的队列数量。
     pending_filters = list(filters)
     today_start = today_cst_as_utc()
+    stale_cutoff = overdue_cutoff()
     overdue_predicates = [
         Student.assigned_at.is_not(None),
-        Student.assigned_at < today_start,
+        Student.assigned_at <= stale_cutoff,
     ]
     overdue_filters = [*filters, *overdue_predicates]
     overdue_count = (
@@ -363,7 +379,7 @@ async def today_tasks(
                 "expired_at": str(s.expired_at) if s.expired_at else None,
                 "assigned_at": str(s.assigned_at) if s.assigned_at else None,
                 "days_since_assigned": _days_since(s.assigned_at),
-                "is_overdue": bool(s.assigned_at and s.assigned_at < today_start),
+                "is_overdue": bool(s.assigned_at and s.assigned_at <= stale_cutoff),
                 "updated_at": str(s.updated_at),
                 "personal_groups": groups_by_student.get(s.id, []),
             }
@@ -610,18 +626,18 @@ async def yesterday_review(db: AsyncSession, agent_id: int) -> dict:
         for fu, student in follow_up_result.all()
     ]
 
-    # 昨日及更早分配但仍未联系的学员：昨日没干完的活
+    # 分配满 24 小时仍未联系的学员：没干完的活
+    now = utcnow()
     stale_r = await db.execute(
         select(Student)
         .where(
             Student.assigned_to == agent_id,
             Student.status == StudentStatus.not_contacted,
-            Student.assigned_at < today,
+            Student.assigned_at <= overdue_cutoff(now),
         )
         .order_by(Student.assigned_at.asc())
         .limit(50)
     )
-    now = utcnow()
     stale_list = []
     for s in stale_r.scalars().all():
         days = (now - s.assigned_at).days if s.assigned_at else None
@@ -711,3 +727,60 @@ async def backlog(db: AsyncSession, agent_id: int, days_threshold: int) -> dict:
     oldest_days = (now - oldest_at).days if oldest_at else 0
 
     return {"count": count, "oldest_days": oldest_days, "threshold_days": days_threshold}
+
+
+SEARCH_RESULT_LIMIT = 30
+
+
+def locate_in_agent_lists(status) -> dict:
+    """Say which of the agent's lists a student is in, so "where did it go" has an answer."""
+    canonical = canonical_student_status(status)
+    if canonical in (StudentStatus.not_contacted, StudentStatus.new_lead):
+        return {"queue": "pending_dial", "queue_label": "待拨打", "in_my_lists": True}
+    if canonical in (
+        StudentStatus.contacted,
+        StudentStatus.not_reached,
+        StudentStatus.pending_visit,
+    ):
+        return {"queue": "handled", "queue_label": "待处理", "in_my_lists": True}
+    if canonical == StudentStatus.invalid:
+        return {"queue": "closed", "queue_label": "已移出（无效）", "in_my_lists": False}
+    if canonical == StudentStatus.enrolled:
+        return {"queue": "closed", "queue_label": "已报名", "in_my_lists": False}
+    return {"queue": "closed", "queue_label": "已结束", "in_my_lists": False}
+
+
+async def search_my_students(db: AsyncSession, agent_id: int, q: str | None) -> dict:
+    """Find any student assigned to this agent, whatever list or status they are in."""
+    keyword = (q or "").strip()
+    if not keyword:
+        return {"total": 0, "list": []}
+
+    where = (Student.assigned_to == agent_id, _agent_search_all_predicate(keyword))
+    total = (await db.execute(select(func.count(Student.id)).where(*where))).scalar_one() or 0
+    result = await db.execute(
+        select(Student)
+        .where(*where)
+        .order_by(Student.updated_at.desc(), Student.id.desc())
+        .limit(SEARCH_RESULT_LIMIT)
+    )
+    return {
+        "total": int(total),
+        "list": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "region": s.region,
+                "school_name": s.school_name,
+                "guardian_name": s.guardian_name,
+                "guardian_phone": mask_phone(s.guardian_phone),
+                "status": canonical_status_value(s.status),
+                "status_detail": status_detail_value(s.status, s.status_detail),
+                "intent_level": s.intent_level,
+                "stage": s.stage,
+                "updated_at": str(s.updated_at),
+                **locate_in_agent_lists(s.status),
+            }
+            for s in result.scalars().all()
+        ],
+    }

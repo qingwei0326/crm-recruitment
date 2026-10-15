@@ -181,7 +181,7 @@ describe('useAgentDial', () => {
       invalid_reason: '无意向',
     });
     expect(toast.success).toHaveBeenCalledWith(
-      '已标记【无意向】，这个学生已从你的列表移走。标错了请告诉管理员还原',
+      '已标记【无意向】，这个学生已从你的列表移走。标错了，搜索姓名或电话就能找回',
     );
     expect(actions.updateStudent).toHaveBeenCalledWith(42, {
       status: '无效',
@@ -426,5 +426,50 @@ describe('useAgentDial', () => {
       null,
       expect.anything(),
     );
+  });
+  it('offers an undo after the first mark and refreshes the queue when it is used', async () => {
+    const modal = {
+      studentId: 42,
+      studentName: '张三',
+      dialLogId: 9001,
+      dialStartedAt: Date.now() - 45000,
+    };
+    sessionStorage.setItem('pendingDial', JSON.stringify(modal));
+    api.put.mockImplementation((url) =>
+      Promise.resolve({
+        data: {
+          code: 0,
+          data: url === '/students/42'
+            ? { status: '已联系', status_detail: '', outcome_undoable: true }
+            : {},
+        },
+      }),
+    );
+    const toast = { error: vi.fn(), success: vi.fn() };
+    const onOutcomeUndone = vi.fn();
+    const { result } = renderHook(() =>
+      useAgentDial(baseArgs({
+        state: { dial: { modal } },
+        students: [{ id: 42, name: '张三', status: '未联系' }],
+        toast,
+        onOutcomeUndone,
+      })),
+    );
+
+    await act(async () => {
+      await result.current.handleDialModalStatus('已联系');
+    });
+
+    const [message, options] = toast.success.mock.calls.find(([, opts]) => opts?.action);
+    expect(message).toContain('已标记');
+    expect(options.action.label).toBe('撤销');
+
+    api.post.mockResolvedValueOnce({ data: { code: 0, data: { id: 42, status: '未联系' } } });
+    await act(async () => {
+      await options.action.onClick();
+    });
+
+    expect(api.post).toHaveBeenCalledWith('/students/42/undo-outcome');
+    expect(onOutcomeUndone).toHaveBeenCalledTimes(1);
   });
 });

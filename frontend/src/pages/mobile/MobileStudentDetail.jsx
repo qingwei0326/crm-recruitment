@@ -20,6 +20,7 @@ import { PersonalGroupMembershipEditor } from '../../components/PersonalGroups';
 import MobileDialResult from '../../components/MobileDialResult';
 import useDialFlow from '../../hooks/useDialFlow';
 import { useConfirm } from '../../components/ConfirmDialog';
+import { useToast } from '../../components/Toast';
 import { getApiErrorMessage } from '../../utils';
 import {
   normalizeDateTimeLocal,
@@ -27,6 +28,7 @@ import {
 } from '../../utils/dateTime';
 import { payloadForOperatorResult } from '../../operatorResultPolicy';
 import { outcomeSavedMessage } from '../../utils/outcomeFeedback';
+import { notifyOutcomeSaved } from '../../utils/outcomeUndo';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import { ContentSkeleton, ErrorState } from '../../components/AsyncState';
 import HomeVisitForm from '../../components/admissions/HomeVisitForm';
@@ -311,6 +313,7 @@ export default function MobileStudentDetail() {
   const { dial } = useDialFlow();
   const { user } = useAuth();
   const confirm = useConfirm();
+  const appToast = useToast();
   const { results: outcomeResults } = useLeadOutcomeCatalog();
 
   const [data, setData] = useState(null);
@@ -415,7 +418,7 @@ export default function MobileStudentDetail() {
       const r = await request();
       if (r.data.code === 0) {
         onSuccess?.(r.data.data);
-        showToast(successMessage);
+        if (successMessage) showToast(successMessage);
         return true;
       } else {
         showToast(r.data.msg || '更新失败');
@@ -492,10 +495,7 @@ export default function MobileStudentDetail() {
     }
     const saved = await runWorkflowUpdate(
       () => api.put(`/students/${student.id}`, payloadForOperatorResult(outcome)),
-      outcomeSavedMessage({
-        label: outcome.label,
-        displayStatus: displayStatusForOperatorResult(outcome),
-      }),
+      null,
       (updated) => {
         const nextStatus = updated?.status || displayStatusForOperatorResult(outcome);
         const nextDetail = updated?.status_detail ?? detailForOperatorResult(outcome);
@@ -503,6 +503,18 @@ export default function MobileStudentDetail() {
           status: nextStatus,
           status_detail: nextDetail,
           stage: updated?.stage || (nextStatus === '已报名' ? '已报名' : student.stage),
+        });
+        notifyOutcomeSaved(appToast, {
+          message: outcomeSavedMessage({
+            label: outcome.label,
+            displayStatus: displayStatusForOperatorResult(outcome),
+          }),
+          studentId: student.id,
+          undoable: updated?.outcome_undoable,
+          onUndone: () => {
+            patchStudent({ status: '未联系', status_detail: '' });
+            loadDetail();
+          },
         });
       },
     );
