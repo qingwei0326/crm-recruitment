@@ -186,6 +186,45 @@ describe('MobileStudentDetail follow-up workflow', () => {
     expect(within(moreActions).getByRole('button', { name: '编辑状态' })).toBeInTheDocument();
   });
 
+  async function openVisitSheet() {
+    renderPage();
+    await screen.findByText('完整时间线');
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    const moreActions = screen.getByRole('dialog', { name: '学生更多操作' });
+    fireEvent.click(within(moreActions).getByRole('button', { name: '登记到访' }));
+  }
+
+  it('registers a home visit with the full request form instead of a bare visit', async () => {
+    await openVisitSheet();
+
+    fireEvent.change(screen.getByLabelText('意向专业'), { target: { value: '无人机' } });
+    fireEvent.change(screen.getByLabelText('家访地址'), { target: { value: '长泰区陈巷镇' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交家访申请' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/admissions/home-visits',
+        expect.objectContaining({ student_id: 42, intent_program: '无人机', address: '长泰区陈巷镇' }),
+      );
+    });
+    expect(api.post).not.toHaveBeenCalledWith('/visits', expect.anything());
+  });
+
+  it('registers a campus visit with the campus appointment form', async () => {
+    await openVisitSheet();
+
+    fireEvent.click(screen.getByRole('button', { name: '来校参观' }));
+    fireEvent.change(screen.getByLabelText('预约到校时间'), { target: { value: '2026-07-16T10:00' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交到校预约' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/admissions/campus-visits',
+        expect.objectContaining({ student_id: 42, appointment_at: '2026-07-16T10:00:00' }),
+      );
+    });
+  });
+
   it('shows the required operator result buttons on the mobile detail page', async () => {
     renderPage();
 
