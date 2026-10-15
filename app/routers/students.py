@@ -37,6 +37,11 @@ from app.region_extractor import extract_region
 from app.schemas import Response, StudentCreate, StudentUpdate
 from app.services.assignment_service import AssignmentTarget, apply_assignment_changes
 from app.services.lead_outcome_service import apply_outcome_reason
+from app.services.outcome_undo_service import (
+    OutcomeUndoNotAllowed,
+    is_undoable_first_outcome,
+    undo_first_outcome,
+)
 from app.services.work_item_service import sync_student_work_items
 from app.stage_policy import normalize_stage, validate_stage_transition
 from app.status_policy import (
@@ -570,6 +575,26 @@ async def update_student(
         asyncio.create_task(
             notify_a_level_change_background(student.id, current_user.name, "manual")
         )
+    payload = _student_payload(student)
+    # Lets the client offer an "undo" right after the first mark on a lead.
+    payload["outcome_undoable"] = bool(
+        status_changed and is_undoable_first_outcome(old_status, student.status)
+    )
+    return Response.ok(payload)
+
+
+@router.post("/{student_id}/undo-outcome")
+async def undo_outcome(
+    student_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """撤销自己刚标的第一次结果，让学生回到「待拨打」。"""
+    student = await get_accessible_student(db, student_id, current_user)
+    try:
+        student = await undo_first_outcome(db, student, current_user)
+    except OutcomeUndoNotAllowed as exc:
+        return Response.error(code=1, msg=exc.message)
     return Response.ok(_student_payload(student))
 
 

@@ -201,9 +201,42 @@ describe('recordCallResult', () => {
 
     await waitFor(() => {
       expect(toastSpy.success).toHaveBeenCalledWith(
-        '已标记【空号】，这个学生已从你的列表移走。标错了请告诉管理员还原',
+        '已标记【空号】，这个学生已从你的列表移走。标错了，搜索姓名或电话就能找回',
       );
     });
+  });
+
+  it('offers an undo after the first mark and refreshes the list when it is used', async () => {
+    sessionStorage.setItem(
+      'pendingDial',
+      JSON.stringify({
+        studentId: 42,
+        studentName: '张三',
+        dialLogId: 9001,
+        dialStartedAt: Date.now() - 60000,
+      }),
+    );
+    api.put.mockResolvedValue({ data: { code: 0, data: { outcome_undoable: true } } });
+    const onUpdated = vi.fn();
+
+    renderDialResult({ onUpdated });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^号码无效/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认空号/停机' }));
+
+    await waitFor(() => {
+      expect(toastSpy.success).toHaveBeenCalledWith(
+        expect.stringContaining('已标记【空号】'),
+        expect.objectContaining({ action: expect.objectContaining({ label: '撤销' }) }),
+      );
+    });
+
+    api.post.mockResolvedValueOnce({ data: { code: 0, data: { id: 42, status: '未联系' } } });
+    const [, options] = toastSpy.success.mock.calls.find(([, opts]) => opts?.action);
+    await options.action.onClick();
+
+    expect(api.post).toHaveBeenCalledWith('/students/42/undo-outcome');
+    expect(onUpdated).toHaveBeenLastCalledWith(42, '未联系', '');
   });
 
   it('saves enrolled elsewhere with the catalog reason payload', async () => {

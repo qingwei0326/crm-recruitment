@@ -18,6 +18,7 @@ import { getOperatorOutcomeGroups } from '../domain/outcomeCatalog';
 import useLeadOutcomeCatalog from '../hooks/useLeadOutcomeCatalog';
 import { displayStatusForOperatorResult } from '../labels';
 import { outcomeSavedMessage } from '../utils/outcomeFeedback';
+import { notifyOutcomeSaved } from '../utils/outcomeUndo';
 import {
   dateTimeAfterDays,
   defaultFollowUpDate,
@@ -256,11 +257,18 @@ export default function MobileDialResult({ onUpdated }) {
         }
       }
 
-      await putField(payloadForOperatorResult(btn));
+      const updated = await putField(payloadForOperatorResult(btn));
       businessSavedRef.current = true;
-      toast?.success(
-        outcomeSavedMessage({ label: btn.label, displayStatus: displayStatusForOperatorResult(btn) }),
-      );
+      const studentId = pending.studentId;
+      notifyOutcomeSaved(toast, {
+        message: outcomeSavedMessage({
+          label: btn.label,
+          displayStatus: displayStatusForOperatorResult(btn),
+        }),
+        studentId,
+        undoable: updated?.outcome_undoable,
+        onUndone: () => onUpdated && onUpdated(studentId, '未联系', ''),
+      });
       onUpdated && onUpdated(
         pending.studentId,
         displayStatusForOperatorResult(btn),
