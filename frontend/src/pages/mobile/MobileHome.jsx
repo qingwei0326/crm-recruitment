@@ -29,7 +29,7 @@ import {
   PersonalGroupFilter,
   UNGROUPED_FILTER,
 } from '../../components/PersonalGroups';
-import YesterdayUncontactedPrompt from '../../components/YesterdayUncontactedPrompt';
+import YesterdayUncontactedBanner from '../../components/YesterdayUncontactedBanner';
 import { ContentSkeleton, EmptyState, ErrorState } from '../../components/AsyncState';
 
 function StatCard({ label, value, color = 'blue', onClick, hint }) {
@@ -1039,6 +1039,15 @@ export default function MobileHome() {
         </div>
       </header>
 
+      <YesterdayUncontactedBanner
+        user={user}
+        onHandleNow={() => {
+          setTab('tasks');
+          navigate('/mobile', { replace: true });
+          refetch();
+        }}
+      />
+
       <div className="px-4 py-4 space-y-4">
         {tab === 'tasks' && (
           <>
@@ -1210,14 +1219,6 @@ export default function MobileHome() {
 
       <TabBar active={tab} />
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <YesterdayUncontactedPrompt
-        user={user}
-        onHandleNow={() => {
-          setTab('tasks');
-          navigate('/mobile', { replace: true });
-          refetch();
-        }}
-      />
 
       {/* 打完电话返回后弹“选择处理结果”，更新联系状况并刷新待拨打列表 */}
       <MobileDialResult onUpdated={() => refetch()} />
