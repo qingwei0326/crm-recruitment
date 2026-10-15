@@ -32,6 +32,7 @@ import { useToast } from '../../components/Toast';
 import { formatDuration, getApiErrorMessage } from '../../utils';
 import { dashboardLeadUrls, leadFilterUrl } from './adminWorkflow';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from '../../adminPermissions';
+import TeamProgressPanel from './dashboard/TeamProgressPanel';
 import {
   DashboardCardPicker,
   hasDashboardCardData,
@@ -204,6 +205,7 @@ export default function AdminMobileDash() {
   const [opsHealth, setOpsHealth] = useState(null);
   const [scorePreview, setScorePreview] = useState({ items: [] });
   const [helpOpen, setHelpOpen] = useState(false);
+  const [progressKey, setProgressKey] = useState(0);
   const canViewScorePreview = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.scorePreview);
   const canViewAccountManage = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.accountManage);
   const canViewReportCenter = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.reportCenter);
@@ -547,7 +549,10 @@ export default function AdminMobileDash() {
           </button>
           <button
             type="button"
-            onClick={() => load({ silent: true })}
+            onClick={() => {
+              setProgressKey((value) => value + 1);
+              load({ silent: true });
+            }}
             disabled={refreshing}
             aria-label="刷新移动管理"
             className="rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
@@ -599,6 +604,8 @@ export default function AdminMobileDash() {
               </div>
             </div>
           </section>
+
+          <TeamProgressPanel refreshKey={progressKey} canViewLeadsManage={canViewLeadsManage} />
 
           <section className={`rounded-panel border px-4 py-4 ${hasCritical ? metricTone.amber : metricTone.green}`}>
             <div className="flex items-start justify-between gap-3">
