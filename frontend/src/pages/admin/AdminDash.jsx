@@ -29,6 +29,7 @@ import {
 import { buildDashboardActions, dashboardLeadUrls } from './adminWorkflow';
 import AdminMobileDash from './AdminMobileDash';
 import AdminCommandBoard from './dashboard/AdminCommandBoard';
+import TeamProgressPanel from './dashboard/TeamProgressPanel';
 
 const EMPTY_ACTION_DATA = {
   helpRequests: [],
@@ -231,6 +232,7 @@ function AdminDesktopDash({ isMobile }) {
         </PageHeader>
         <div className="w-full space-y-4 p-4 pb-16 lg:p-5 xl:space-y-5 xl:p-7 xl:pb-16">
           <section className="flex flex-col justify-between gap-2 rounded-panel border border-slate-200 bg-white px-4 py-3 shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark sm:flex-row sm:items-center lg:px-5"><div><div className="text-sm font-bold text-slate-900 dark:text-slate-100">招生指挥中心</div><p className="mt-0.5 text-2xs text-slate-500 dark:text-slate-400">{scope === 'today' ? '聚焦今日执行、运营闭环与高风险待办。' : '聚焦全库资产、联系覆盖与招生转化沉淀。'} 点击指标即可进入处理页面。</p></div><div className="flex items-center gap-2 text-2xs font-semibold text-blue-600 dark:text-blue-400"><span className="h-2 w-2 rounded-full bg-emerald-500" />{loading ? '正在同步数据…' : '数据已同步'}</div></section>
+          <TeamProgressPanel refreshKey={refreshKey} canViewLeadsManage={canViewLeadsManage} />
           {scope === 'all' && <GlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} summaryError={errors.summary} enrollmentError={errors.enrollment} />}
           <AdminCommandBoard actionItems={actionItems} dailyOps={dailyOps} quality={quality} scoreItems={actionData.scoreItems} stageStats={stageStats} funnelData={funnelData} stats={stats} trendData={trendData} loading={loading} errors={errors} onRetry={retryDashboard} retrying={loading} canViewLeadsManage={canViewLeadsManage} canViewWorkCenter={canViewWorkCenter} canViewReportCenter={canViewReportCenter} metricCards={metricCards} availableUnassigned={availableUnassigned} totalStudents={totalStudents} aLevelTotal={aLevelTotal} enrolledTotal={enrolledTotal} todayNewLeads={todayNewLeads} dailyOpsLoading={loading} dailyOpsError={errors.dailyOps} dailyOpsSavingKey={dailyOpsSavingKey} canReviewDailyOps={canReviewDailyOps} onMarkDailyOps={markDailyOpsItem} actionItemsError={Boolean(errors.helpRequests || errors.followUps || errors.visits || errors.scoreItems || errors.staleAItems || errors.quality || notifyFailsError)} cardPreferenceUserKey={user?.id || user?.username || 'admin'} cardPreferenceScope={scope} />
         </div>
