@@ -1,4 +1,6 @@
 import { Loader2, X } from 'lucide-react';
+import { useToast } from '../../../components/Toast';
+import { buildEnrollmentReport, copyText } from '../../../utils/reportText';
 import { inputCls } from '../leadsManageUtils';
 
 const FINANCE_FIELDS = [
@@ -13,11 +15,29 @@ const FINANCE_FIELDS = [
 export default function LeadsEnrollmentModal({
   student,
   form,
+  agentName = '',
   submitting,
   onClose,
   onFieldChange,
   onSubmit,
 }) {
+  const toast = useToast();
+
+  // Copy inside the click (browsers refuse to copy after a network wait), then register.
+  const registerAndCopy = () => {
+    const text = buildEnrollmentReport({
+      studentName: student.name,
+      program: form.enrolled_program,
+      agentName,
+      region: student.region,
+    });
+    void copyText(text).then((ok) => {
+      if (ok) toast?.success('喜报已复制，可以粘贴到群里');
+      else toast?.error('复制失败，请长按文字手动复制');
+    });
+    onSubmit();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
@@ -99,6 +119,14 @@ export default function LeadsEnrollmentModal({
               className={`${inputCls} mt-1`}
             />
           </label>
+          <button
+            type="button"
+            onClick={registerAndCopy}
+            disabled={submitting || !student.assigned_to}
+            className="min-h-10 w-full rounded-lg border border-green-600 px-3 text-sm font-medium text-green-700 disabled:opacity-50 dark:text-green-300"
+          >
+            登记并复制喜报
+          </button>
           <div className="flex gap-2 pt-2">
             <button
               type="button"

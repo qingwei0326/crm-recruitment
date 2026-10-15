@@ -1443,6 +1443,7 @@ export default function LeadsManage() {
         <LeadsEnrollmentModal
           student={enrollmentStudent}
           form={enrollmentForm}
+          agentName={agents.find((agent) => String(agent.id) === String(enrollmentStudent.assigned_to))?.name || ''}
           submitting={enrollmentSubmitting}
           onClose={closeEnrollmentConfirm}
           onFieldChange={(field, value) => setEnrollmentForm((prev) => ({ ...prev, [field]: value }))}
