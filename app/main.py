@@ -28,6 +28,7 @@ from app.routers import (
     admin_handover,
     admin_invalid,
     admin_misc,
+    admin_progress,
     admin_season_archive,
     admin_smart_assignment,
     admin_stale,
@@ -162,6 +163,7 @@ app.include_router(admin_config.router)
 app.include_router(admin_governance.router)
 app.include_router(admin_handover.router)
 app.include_router(admin_daily.router)
+app.include_router(admin_progress.router)
 app.include_router(admin_assignment.router)
 app.include_router(admin_assignment_review.router)
 app.include_router(admin_smart_assignment.router)

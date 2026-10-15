@@ -49,9 +49,10 @@ async def test_yesterday_review_counts_calls_upgrades_and_stale_work(
         db, agent_user, assignment_baseline, "昨日通话", StudentStatus.pending_visit,
         IntentLevel.A, today - timedelta(days=4),
     )
+    # Yesterday's midnight is both "assigned yesterday" and 24+ hours ago at any hour.
     stale = await _student(
         db, agent_user, assignment_baseline, "昨日未联系", StudentStatus.not_contacted,
-        IntentLevel.none, yesterday_noon,
+        IntentLevel.none, today - timedelta(days=1),
     )
     db.add_all([
         Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
