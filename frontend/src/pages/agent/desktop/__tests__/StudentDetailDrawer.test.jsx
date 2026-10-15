@@ -101,9 +101,10 @@ describe('StudentDetailDrawer admissions actions', () => {
     expect(screen.getByText('家访安排')).toBeInTheDocument();
     expect(screen.getByText('沟通情况')).toBeInTheDocument();
     expect(screen.getByText('学生姓名：林宇涛')).toBeInTheDocument();
-    expect(screen.getByText('家长电话：13800138000')).toBeInTheDocument();
-    expect(screen.getByText('意向专业：护理')).toBeInTheDocument();
-    expect(screen.getByText('中考分数：520')).toBeInTheDocument();
+    // These three are now editable, prefilled from the student record.
+    expect(screen.getByLabelText('家长电话')).toHaveValue('13800138000');
+    expect(screen.getByLabelText('意向专业')).toHaveValue('护理');
+    expect(screen.getByLabelText('中考分数')).toHaveValue('520');
 
     fireEvent.change(screen.getByLabelText('到校参观时间'), {
       target: { value: '周六上午' },

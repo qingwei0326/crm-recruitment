@@ -33,7 +33,7 @@ const baseArgs = (overrides = {}) => ({
   },
   current: null,
   students: [],
-  toast: { error: vi.fn() },
+  toast: { error: vi.fn(), success: vi.fn() },
   confirm: vi.fn().mockResolvedValue(true),
   prompt: vi.fn().mockResolvedValue(''),
   updateIntentById: vi.fn(),
@@ -154,6 +154,7 @@ describe('useAgentDial', () => {
     sessionStorage.setItem('pendingDial', JSON.stringify(modal));
     const actions = baseArgs().actions;
     const prompt = vi.fn();
+    const toast = { error: vi.fn(), success: vi.fn() };
     const onFlowComplete = vi.fn();
     const { result } = renderHook(() =>
       useAgentDial(baseArgs({
@@ -165,6 +166,7 @@ describe('useAgentDial', () => {
           { id: 44, name: '王五', status: '无效' },
         ],
         prompt,
+        toast,
         onFlowComplete,
       })),
     );
@@ -178,6 +180,9 @@ describe('useAgentDial', () => {
       status: '无效',
       invalid_reason: '无意向',
     });
+    expect(toast.success).toHaveBeenCalledWith(
+      '已标记【无意向】，这个学生已从你的列表移走。标错了请告诉管理员还原',
+    );
     expect(actions.updateStudent).toHaveBeenCalledWith(42, {
       status: '无效',
       status_detail: '无意向',
@@ -242,7 +247,7 @@ describe('useAgentDial', () => {
     api.post.mockRejectedValueOnce(new Error('network failed'));
     const actions = baseArgs().actions;
     const onFlowComplete = vi.fn();
-    const toast = { error: vi.fn() };
+    const toast = { error: vi.fn(), success: vi.fn() };
     const { result } = renderHook(() => useAgentDial(baseArgs({
       state: { dial: { modal } },
       actions,
@@ -278,7 +283,7 @@ describe('useAgentDial', () => {
     }));
     const actions = baseArgs().actions;
     const onFlowComplete = vi.fn();
-    const toast = { error: vi.fn() };
+    const toast = { error: vi.fn(), success: vi.fn() };
     const { result } = renderHook(() => useAgentDial(baseArgs({
       state: { dial: { modal } },
       actions,
@@ -308,7 +313,7 @@ describe('useAgentDial', () => {
     api.put.mockRejectedValueOnce(new Error('network failed'));
     const modal = { studentId: 42, studentName: '张三', dialStartedAt: Date.now() - 45000 };
     const actions = baseArgs().actions;
-    const toast = { error: vi.fn() };
+    const toast = { error: vi.fn(), success: vi.fn() };
     const { result } = renderHook(() =>
       useAgentDial(baseArgs({
         state: { dial: { modal } },
@@ -341,7 +346,7 @@ describe('useAgentDial', () => {
       return Promise.resolve({ data: { code: 0, data: {} } });
     });
     const actions = baseArgs().actions;
-    const toast = { error: vi.fn() };
+    const toast = { error: vi.fn(), success: vi.fn() };
     const { result } = renderHook(() =>
       useAgentDial(baseArgs({
         state: { dial: { modal } },

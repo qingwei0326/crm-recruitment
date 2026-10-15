@@ -1,7 +1,13 @@
 import { useState } from 'react';
+import {
+  buildVisitReport,
+  formatVisitTime,
+  initialReportValues,
+} from '../../utils/reportText';
+import ReportFields from './ReportFields';
+import useReportCopy from './useReportCopy';
 
 const fieldCls = 'w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100';
-const readonlyCls = 'rounded-lg border border-gray-200 bg-white/70 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200';
 
 function valueOrNull(value) {
   return value ? `${value}:00` : null;
@@ -25,12 +31,28 @@ export default function HomeVisitForm({ student, submitting = false, onSubmit, o
     is_wechat_added: false,
     is_confirmed_with_guardian: false,
     notes: '',
+    ...initialReportValues(student),
   });
+  const { agentName, copyReport } = useReportCopy();
 
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const submit = (event) => {
+  const reportText = () => buildVisitReport({
+    agentName,
+    studentName: student.name,
+    phone: form.phone,
+    program: form.program,
+    score: form.score,
+    campusTime: form.campus_visit_time,
+    situation: form.student_situation,
+    homeTime: formatVisitTime(form.requested_visit_time),
+    address: form.address,
+  });
+
+  const submit = (event, { copy = false } = {}) => {
     event.preventDefault();
+    // Copy first, inside the click: browsers refuse to copy after a network wait.
+    if (copy) copyReport(reportText());
     const campusInfo = [
       form.campus_visit_time ? `到校参观时间：${form.campus_visit_time}` : '',
       form.student_situation ? `情况：${form.student_situation}` : '',
@@ -38,8 +60,8 @@ export default function HomeVisitForm({ student, submitting = false, onSubmit, o
     ].filter(Boolean).join('\n');
     onSubmit?.({
       student_id: student.id,
-      intent_program: student.program || '',
-      exam_score: student.score ?? null,
+      intent_program: form.program.trim(),
+      exam_score: numberOrNull(form.score),
       usual_score: numberOrNull(form.usual_score),
       parent_intent: form.parent_intent,
       student_situation: form.student_situation,
@@ -54,15 +76,7 @@ export default function HomeVisitForm({ student, submitting = false, onSubmit, o
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <section className="rounded-lg border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/50 dark:bg-blue-900/20">
-        <div className="mb-2 text-xs font-semibold text-blue-900 dark:text-blue-100">上报信息</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <div className={readonlyCls}>学生姓名：{student.name || '-'}</div>
-          <div className={readonlyCls}>家长电话：{student.guardian_phone || student.guardian2_phone || '-'}</div>
-          <div className={readonlyCls}>意向专业：{student.program || '-'}</div>
-          <div className={readonlyCls}>中考分数：{student.score ?? '-'}</div>
-        </div>
-      </section>
+      <ReportFields studentName={student.name} values={form} onChange={update} />
       <div className="text-xs font-semibold text-gray-700 dark:text-gray-200">家访安排</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="space-y-1 text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -175,6 +189,14 @@ export default function HomeVisitForm({ student, submitting = false, onSubmit, o
           className="px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
         >
           取消
+        </button>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={(event) => submit(event, { copy: true })}
+          className="px-3 py-2 rounded-lg border border-blue-600 text-blue-700 dark:text-blue-300 text-sm disabled:opacity-60"
+        >
+          提交并复制报备
         </button>
         <button
           type="submit"
