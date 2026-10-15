@@ -21,7 +21,7 @@ from app.models import (
     User,
 )
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
-from app.utils import today_cst_as_utc, utcnow
+from app.utils import overdue_cutoff, today_cst_as_utc, utcnow
 
 DAILY_OPS_REVIEW_PREFIX = "daily-ops:"
 DAILY_OPS_REVIEW_STATUSES = {
@@ -277,7 +277,7 @@ async def _daily_ops_counts(db: AsyncSession) -> dict[str, int]:
                 Student.assigned_to.is_not(None),
                 Student.status == StudentStatus.not_contacted,
                 Student.assigned_at.is_not(None),
-                Student.assigned_at < today,
+                Student.assigned_at <= overdue_cutoff(now),
             )
         )
     ).scalar() or 0
@@ -372,7 +372,7 @@ async def _daily_ops_owner_breakdowns(db: AsyncSession) -> dict[str, list[dict]]
         Student.assigned_to.is_not(None),
         Student.status == StudentStatus.not_contacted,
         Student.assigned_at.is_not(None),
-        Student.assigned_at < today,
+        Student.assigned_at <= overdue_cutoff(now),
     ]
     overdue_follow_up_where = [
         FollowUp.is_completed.is_(False),
@@ -533,10 +533,10 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
         ),
         _daily_ops_item(
             key="yesterday_uncontacted",
-            title="昨日遗留未联系",
+            title="超 24 小时未联系",
             count=counts["yesterday_uncontacted"],
             severity="medium",
-            detail="昨天及更早分配但仍未联系的学生，避免继续过期。",
+            detail="分配满 24 小时仍未联系的学生，避免继续过期。",
             to="/admin/leads?status=%E6%9C%AA%E8%81%94%E7%B3%BB&active=1",
             reviews=reviews,
             owners=owner_breakdowns.get("yesterday_uncontacted"),

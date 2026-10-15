@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import pytest
 
+from app.admin_daily_ops import _daily_ops_counts
 from app.domain_models import PersonalGroup
 from app.models import (
     Call,
@@ -17,8 +18,10 @@ from app.models import (
     Student,
     StudentStage,
     StudentStatus,
+    User,
 )
-from app.utils import today_cst_as_utc
+from app.services.agent_task_service import SEARCH_RESULT_LIMIT
+from app.utils import today_cst_as_utc, utcnow
 
 
 async def _student(db, agent, assignment_baseline, name, status, intent, assigned_at):
@@ -166,3 +169,164 @@ async def test_today_rejects_unknown_intent_but_handled_returns_empty(client, ag
         "counts": {"已联系": 0, "未接": 0, "待回访": 0},
         "list": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_overdue_means_assigned_at_least_24_hours_ago_not_before_midnight(
+    client, db, agent_user, agent_headers, assignment_baseline
+):
+    now = utcnow()
+    recent = await _student(
+        db, agent_user, assignment_baseline, "23小时前", StudentStatus.not_contacted,
+        IntentLevel.none, now - timedelta(hours=23),
+    )
+    old = await _student(
+        db, agent_user, assignment_baseline, "25小时前", StudentStatus.not_contacted,
+        IntentLevel.none, now - timedelta(hours=25),
+    )
+    await db.commit()
+
+    today = (await client.get("/api/tasks/today", headers=agent_headers)).json()["data"]
+    flags = {item["name"]: item["is_overdue"] for item in today["list"]}
+    assert flags == {"23小时前": False, "25小时前": True}
+    assert today["overdue_count"] == 1
+
+    only_overdue = (
+        await client.get("/api/tasks/today?overdue=true", headers=agent_headers)
+    ).json()["data"]
+    assert [item["id"] for item in only_overdue["list"]] == [old.id]
+
+    stale = (await client.get("/api/tasks/yesterday", headers=agent_headers)).json()["data"]
+    assert [item["id"] for item in stale["stale_unconcat"]] == [old.id]
+    assert recent.id not in [item["id"] for item in stale["stale_unconcat"]]
+
+
+@pytest.mark.asyncio
+async def test_admin_daily_ops_counts_the_same_24_hour_rule(
+    db, agent_user, assignment_baseline
+):
+    now = utcnow()
+    await _student(
+        db, agent_user, assignment_baseline, "23小时前", StudentStatus.not_contacted,
+        IntentLevel.none, now - timedelta(hours=23),
+    )
+    await _student(
+        db, agent_user, assignment_baseline, "25小时前", StudentStatus.not_contacted,
+        IntentLevel.none, now - timedelta(hours=25),
+    )
+    await db.commit()
+
+    counts = await _daily_ops_counts(db)
+
+    assert counts["yesterday_uncontacted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_search_finds_students_in_every_status_the_agent_owns(
+    client, db, agent_user, agent_headers, assignment_baseline
+):
+    now = utcnow()
+    for name, status in [
+        ("陈待拨", StudentStatus.not_contacted),
+        ("陈待办", StudentStatus.pending_visit),
+        ("陈无效", StudentStatus.invalid),
+        ("陈报名", StudentStatus.enrolled),
+    ]:
+        await _student(
+            db, agent_user, assignment_baseline, name, status, IntentLevel.none, now
+        )
+    other_agent = User(
+        username="otheragent", hashed_password="x", role="agent", name="别人", is_active=True
+    )
+    db.add(other_agent)
+    await db.flush()
+    foreign = Student(
+        name="陈别人的", status=StudentStatus.not_contacted, guardian_phone="13900000000"
+    )
+    db.add(foreign)
+    await db.flush()
+    foreign.assigned_to = other_agent.id
+    await db.commit()
+
+    data = (
+        await client.get("/api/tasks/search", params={"q": "陈"}, headers=agent_headers)
+    ).json()["data"]
+
+    assert data["total"] == 4
+    by_name = {item["name"]: item for item in data["list"]}
+    assert set(by_name) == {"陈待拨", "陈待办", "陈无效", "陈报名"}
+    assert by_name["陈待拨"]["queue_label"] == "待拨打"
+    assert by_name["陈待办"]["queue_label"] == "待处理"
+    assert by_name["陈无效"]["queue_label"] == "已移出（无效）"
+    assert by_name["陈无效"]["in_my_lists"] is False
+    assert by_name["陈报名"]["queue_label"] == "已报名"
+
+
+@pytest.mark.asyncio
+async def test_search_matches_phone_and_guardian_name(
+    client, db, agent_user, agent_headers, assignment_baseline
+):
+    student = await _student(
+        db, agent_user, assignment_baseline, "李小明", StudentStatus.invalid,
+        IntentLevel.none, utcnow(),
+    )
+    student.guardian_name = "李建国"
+    student.guardian_phone = "13866668888"
+    await db.commit()
+
+    by_phone = (
+        await client.get("/api/tasks/search", params={"q": "13866668888"}, headers=agent_headers)
+    ).json()["data"]
+    by_guardian = (
+        await client.get("/api/tasks/search", params={"q": "建国"}, headers=agent_headers)
+    ).json()["data"]
+    by_tail = (
+        await client.get("/api/tasks/search", params={"q": "8888"}, headers=agent_headers)
+    ).json()["data"]
+
+    assert [item["id"] for item in by_phone["list"]] == [student.id]
+    assert [item["id"] for item in by_guardian["list"]] == [student.id]
+    assert [item["id"] for item in by_tail["list"]] == [student.id]
+
+
+@pytest.mark.asyncio
+async def test_search_with_a_blank_keyword_returns_nothing(
+    client, db, agent_user, agent_headers, assignment_baseline
+):
+    await _student(
+        db, agent_user, assignment_baseline, "李小明", StudentStatus.not_contacted,
+        IntentLevel.none, utcnow(),
+    )
+    await db.commit()
+
+    for q in ("", "   "):
+        data = (
+            await client.get("/api/tasks/search", params={"q": q}, headers=agent_headers)
+        ).json()["data"]
+        assert data == {"total": 0, "list": []}
+
+
+@pytest.mark.asyncio
+async def test_search_caps_the_result_list_but_reports_the_full_total(
+    client, db, agent_user, agent_headers, assignment_baseline
+):
+    for i in range(SEARCH_RESULT_LIMIT + 5):
+        await _student(
+            db, agent_user, assignment_baseline, f"王{i:02d}", StudentStatus.not_contacted,
+            IntentLevel.none, utcnow(),
+        )
+    await db.commit()
+
+    data = (
+        await client.get("/api/tasks/search", params={"q": "王"}, headers=agent_headers)
+    ).json()["data"]
+
+    assert data["total"] == SEARCH_RESULT_LIMIT + 5
+    assert len(data["list"]) == SEARCH_RESULT_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_search_requires_login(client):
+    resp = await client.get("/api/tasks/search", params={"q": "王"})
+
+    assert resp.status_code in (401, 403)

@@ -81,6 +81,16 @@ async def handled_students(
     return Response.ok(data)
 
 
+@router.get("/search")
+async def search_my_students(
+    q: str = Query("", max_length=64),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """在自己名下的全部学生里搜索（含无效、已报名），找回「标完就不见了」的学生。"""
+    return Response.ok(await agent_tasks.search_my_students(db, current_user.id, q))
+
+
 @router.get("/yesterday")
 async def yesterday_review(
     db: AsyncSession = Depends(get_db),
