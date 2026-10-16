@@ -134,21 +134,6 @@ class EnrollInfo(BaseModel):
     deposit: float | None = Field(default=None, ge=0)
 
 
-# ── Call ──────────────────────────────────────────────────
-
-
-class CallCreate(BaseModel):
-    student_id: int
-    duration_seconds: int = 0
-    recording_path: str = ""
-    transcript: str = Field(default="", max_length=10000)
-    ai_intent: str = ""
-    ai_reasons: str = ""
-    ai_summary: str = ""
-    ai_confidence: float = 0.0
-    analyzed_at: datetime | None = None
-
-
 # ── Note ──────────────────────────────────────────────────
 
 

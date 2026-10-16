@@ -25,7 +25,6 @@ const inputCls =
 
 const countLabels = [
   ['students', '学生'],
-  ['calls', '通话'],
   ['notes', '备注'],
   ['follow_ups', '回访'],
   ['home_visit_tasks', '家访任务'],

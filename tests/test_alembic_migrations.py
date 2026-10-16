@@ -299,7 +299,7 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20261016_01"
+        assert revision == "20261017_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
@@ -380,7 +380,7 @@ def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_p
         ).one()
         assert tuple(row) == ("13960118706", "contacted")
         assert conn.execute(text("select version_num from alembic_version")).scalar_one() == (
-            "20261016_01"
+            "20261017_01"
         )
     assert run_alembic(db_path, "check").returncode == 0
     engine.dispose()
@@ -551,7 +551,14 @@ def test_legacy_visits_fold_into_visit_tasks_and_back(tmp_path):
     assert {log.batch_id for log in logs} == {"alembic-20261016_01"}
 
     audit = subprocess.run(
-        [sys.executable, "scripts/audit_domain_consistency.py", "--database", str(db_path)],
+        [
+            sys.executable,
+            "scripts/audit_domain_consistency.py",
+            "--database",
+            str(db_path),
+            "--expect-revision",
+            "20261016_01",
+        ],
         cwd=PROJECT_ROOT,
         env={**os.environ, "SECRET_KEY": "migration-test-secret"},
         text=True,
@@ -563,8 +570,6 @@ def test_legacy_visits_fold_into_visit_tasks_and_back(tmp_path):
     assert report["source_work_item_projection_mismatches"] == 0, report
     assert report["duplicate_source_work_items"] == 0, report
     assert report["open_items_owned_by_inactive"] == 0, report
-    check = run_alembic(db_path, "check")
-    assert check.returncode == 0, check.stdout + check.stderr
 
     downgraded = run_alembic(db_path, "downgrade", "20261007_01")
 
@@ -576,4 +581,61 @@ def test_legacy_visits_fold_into_visit_tasks_and_back(tmp_path):
         assert conn.execute(
             text("select count(*) from operation_logs where action = '合并旧到访'")
         ).scalar_one() == 0
+    engine.dispose()
+
+
+def test_call_analysis_table_and_settings_are_dropped(tmp_path):
+    db_path = tmp_path / "call-analysis.db"
+    assert run_alembic(db_path, "upgrade", "20261016_01").returncode == 0
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "insert into users (id, username, hashed_password, role, name, is_active, "
+                "is_super_admin, failed_login_attempts, must_change_password, token_version, "
+                "service_regions, pushplus_token, page_permissions, operation_permissions, "
+                "last_login_device, last_login_ip, created_at) values (1, 'call_agent', 'x', "
+                "'agent', '坐席', 1, 0, 0, 0, 1, '', '', '', '', '', '', CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "insert into students (id, name, region, status, status_detail, intent_level, "
+                "stage, program, guardian_name, guardian_phone, guardian2_name, guardian2_phone, "
+                "school_name, school_address, need_help, created_at, updated_at) values (1, "
+                "'学生', '', 'contacted', '', 'none', 'initial_contact', '', '', '', '', '', "
+                "'', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "insert into calls (student_id, agent_id, transcript, ai_intent, created_at) "
+                "values (1, 1, '想了解学费', 'B', CURRENT_TIMESTAMP)"
+            )
+        )
+        for key in ("ai_provider", "mimo_api_key", "deepseek_api_key", "pushplus_token"):
+            conn.execute(
+                text(
+                    "insert into system_configs (key, value, updated_at) "
+                    "values (:key, 'v', CURRENT_TIMESTAMP)"
+                ),
+                {"key": key},
+            )
+
+    upgraded = run_alembic(db_path, "upgrade", "20261017_01")
+
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert "calls" not in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        keys = {row[0] for row in conn.execute(text("select key from system_configs"))}
+    assert keys == {"pushplus_token"}
+    check = run_alembic(db_path, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
+
+    downgraded = run_alembic(db_path, "downgrade", "20261016_01")
+
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert "calls" in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        assert conn.execute(text("select count(*) from calls")).scalar_one() == 0
     engine.dispose()

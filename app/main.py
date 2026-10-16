@@ -39,7 +39,6 @@ from app.routers import (
     admissions_home_visits,
     admissions_work_items,
     auth,
-    calls,
     follow_ups,
     lead_outcomes,
     notes,
@@ -145,7 +144,6 @@ app.include_router(students_import.router)
 app.include_router(students_phone.router)
 app.include_router(students_query.router)
 app.include_router(students.router)
-app.include_router(calls.router)
 app.include_router(notes.router)
 app.include_router(follow_ups.router)
 app.include_router(lead_outcomes.router)

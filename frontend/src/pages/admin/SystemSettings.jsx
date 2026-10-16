@@ -9,7 +9,6 @@ import {
   EyeOff,
   RefreshCw,
   Save,
-  Sparkles,
   ShieldCheck,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
@@ -100,23 +99,6 @@ export default function SystemSettings() {
   const [showToken, setShowToken] = useState(false);
   const [token, setToken] = useState('');
   const [tokenDirty, setTokenDirty] = useState(false);
-  const [showDsKey, setShowDsKey] = useState(false);
-  const [dsKey, setDsKey] = useState('');
-  const [dsKeyDirty, setDsKeyDirty] = useState(false);
-  const [aiMessage, setAiMessage] = useState(null);
-  const [savingAi, setSavingAi] = useState(false);
-  // AI 引擎可切换：deepseek（默认）/ mimo / custom
-  const [aiProvider, setAiProvider] = useState('deepseek');
-  const [showMimoKey, setShowMimoKey] = useState(false);
-  const [mimoKey, setMimoKey] = useState('');
-  const [mimoKeyDirty, setMimoKeyDirty] = useState(false);
-  const [mimoBase, setMimoBase] = useState('https://token-plan-sgp.xiaomimimo.com/v1');
-  const [mimoModel, setMimoModel] = useState('mimo-v2.5-pro');
-  const [showCustomKey, setShowCustomKey] = useState(false);
-  const [customKey, setCustomKey] = useState('');
-  const [customKeyDirty, setCustomKeyDirty] = useState(false);
-  const [customBase, setCustomBase] = useState('');
-  const [customModel, setCustomModel] = useState('');
   const [tokenMessage, setTokenMessage] = useState(null);
   const [savingToken, setSavingToken] = useState(false);
   const [scoreDailyCallTarget, setScoreDailyCallTarget] = useState('30');
@@ -215,17 +197,6 @@ export default function SystemSettings() {
       const cfg = res.data.data || {};
       setToken(cfg.pushplus_token || '');
       setTokenDirty(false);
-      setDsKey(cfg.deepseek_api_key || '');
-      setDsKeyDirty(false);
-      setAiProvider(cfg.ai_provider || 'deepseek');
-      setMimoKey(cfg.mimo_api_key || '');
-      setMimoKeyDirty(false);
-      setMimoBase(cfg.mimo_base || 'https://token-plan-sgp.xiaomimimo.com/v1');
-      setMimoModel(cfg.mimo_model || 'mimo-v2.5-pro');
-      setCustomKey(cfg.ai_custom_api_key || '');
-      setCustomKeyDirty(false);
-      setCustomBase(cfg.ai_custom_base || '');
-      setCustomModel(cfg.ai_custom_model || '');
       setScoreDailyCallTarget(cfg.score_daily_call_target || '30');
     } finally {
       setLoading(false);
@@ -274,41 +245,6 @@ export default function SystemSettings() {
     }
   };
 
-  const saveAi = async () => {
-    setAiMessage(null);
-    setSavingAi(true);
-    try {
-      const puts = [api.put('/admin/config', { key: 'ai_provider', value: aiProvider })];
-      // key 字段回显是掩码（****xxxx），只在用户改过时才回写，避免把掩码存进去
-      if (aiProvider === 'deepseek' && dsKeyDirty) {
-        puts.push(api.put('/admin/config', { key: 'deepseek_api_key', value: dsKey }));
-      }
-      if (aiProvider === 'mimo') {
-        if (mimoKeyDirty) {
-          puts.push(api.put('/admin/config', { key: 'mimo_api_key', value: mimoKey }));
-        }
-        puts.push(api.put('/admin/config', { key: 'mimo_base', value: mimoBase }));
-        puts.push(api.put('/admin/config', { key: 'mimo_model', value: mimoModel }));
-      }
-      if (aiProvider === 'custom') {
-        if (customKeyDirty) {
-          puts.push(api.put('/admin/config', { key: 'ai_custom_api_key', value: customKey }));
-        }
-        puts.push(api.put('/admin/config', { key: 'ai_custom_base', value: customBase }));
-        puts.push(api.put('/admin/config', { key: 'ai_custom_model', value: customModel }));
-      }
-      await Promise.all(puts);
-      setDsKeyDirty(false);
-      setMimoKeyDirty(false);
-      setCustomKeyDirty(false);
-      setAiMessage({ type: 'success', text: '已保存（下次通话分析生效，无需重启）' });
-    } catch (err) {
-      setAiMessage({ type: 'error', text: err.response?.data?.msg || '保存失败' });
-    } finally {
-      setSavingAi(false);
-    }
-  };
-
   const todayRecording = recordingCounts(dataQuality?.calls?.today);
   const monthRecording = recordingCounts(dataQuality?.calls?.month);
   const monthAverageDuration = Number(
@@ -337,7 +273,7 @@ export default function SystemSettings() {
             <a href="#system-health" aria-label="跳转到运行状态" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">运行</a>
             <a href="#data-quality" aria-label="跳转到数据质量" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">质量</a>
             <a href="#push-settings" aria-label="跳转到推送配置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">推送</a>
-            <a href="#ai-settings" aria-label="跳转到 AI 分析" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">AI</a>
+            <a href="#assistant-settings" aria-label="跳转到 AI 助手" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">AI</a>
             <a href="#score-settings" aria-label="跳转到评分设置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">评分</a>
             <a href="#backup-settings" aria-label="跳转到数据备份" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">备份</a>
           </nav>
@@ -629,167 +565,6 @@ export default function SystemSettings() {
                 </div>
               </SettingRow>
 
-            </div>
-          </div>
-
-          <div id="ai-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">
-              <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <h1 className="text-base font-semibold text-gray-800 dark:text-gray-100">AI 分析</h1>
-            </div>
-            <div className="p-4 lg:p-6 space-y-1">
-              <SettingRow label="分析引擎">
-                <div className="space-y-2">
-                  <select
-                    aria-label="AI 分析引擎"
-                    className={inputCls}
-                    value={aiProvider}
-                    onChange={(e) => setAiProvider(e.target.value)}
-                  >
-                    <option value="deepseek">DeepSeek</option>
-                    <option value="mimo">小米 MiMo</option>
-                    <option value="custom">自定义（OpenAI 兼容）</option>
-                  </select>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    选择通话分析使用的大模型。对应密钥留空时回退到关键词匹配模式。
-                  </div>
-                </div>
-              </SettingRow>
-
-              {aiProvider === 'deepseek' && (
-                <SettingRow label="DeepSeek API Key">
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <input
-                        aria-label="DeepSeek API Key"
-                        type={showDsKey ? 'text' : 'password'}
-                        className={inputCls}
-                        value={dsKey}
-                        onChange={(e) => { setDsKey(e.target.value); setDsKeyDirty(true); }}
-                        placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowDsKey((v) => !v)}
-                        className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                        aria-label={showDsKey ? '隐藏 DeepSeek API Key' : '显示 DeepSeek API Key'}
-                      >
-                        {showDsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    <a
-                      href="https://platform.deepseek.com/api_keys"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      获取 API Key →
-                    </a>
-                  </div>
-                </SettingRow>
-              )}
-
-              {aiProvider === 'mimo' && (
-                <>
-                  <SettingRow label="MiMo API Key">
-                    <div className="flex gap-2">
-                      <input
-                        aria-label="MiMo API Key"
-                        type={showMimoKey ? 'text' : 'password'}
-                        className={inputCls}
-                        value={mimoKey}
-                        onChange={(e) => { setMimoKey(e.target.value); setMimoKeyDirty(true); }}
-                        placeholder="tp-xxxxxxxxxxxxxxxx"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowMimoKey((v) => !v)}
-                        className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                        aria-label={showMimoKey ? '隐藏 MiMo API Key' : '显示 MiMo API Key'}
-                      >
-                        {showMimoKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </SettingRow>
-                  <SettingRow label="接口地址">
-                    <input
-                      aria-label="MiMo 接口地址"
-                      className={inputCls}
-                      value={mimoBase}
-                      onChange={(e) => setMimoBase(e.target.value)}
-                      placeholder="https://token-plan-sgp.xiaomimimo.com/v1"
-                    />
-                  </SettingRow>
-                  <SettingRow label="模型名">
-                    <input
-                      aria-label="MiMo 模型名"
-                      className={inputCls}
-                      value={mimoModel}
-                      onChange={(e) => setMimoModel(e.target.value)}
-                      placeholder="mimo-v2.5-pro"
-                    />
-                  </SettingRow>
-                </>
-              )}
-
-              {aiProvider === 'custom' && (
-                <>
-                  <SettingRow label="API Key">
-                    <div className="flex gap-2">
-                      <input
-                        aria-label="自定义 API Key"
-                        type={showCustomKey ? 'text' : 'password'}
-                        className={inputCls}
-                        value={customKey}
-                        onChange={(e) => { setCustomKey(e.target.value); setCustomKeyDirty(true); }}
-                        placeholder="API Key"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowCustomKey((v) => !v)}
-                        className="min-w-10 min-h-10 px-3 py-2 rounded-lg border dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                        aria-label={showCustomKey ? '隐藏自定义 API Key' : '显示自定义 API Key'}
-                      >
-                        {showCustomKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </SettingRow>
-                  <SettingRow label="接口地址">
-                    <input
-                      aria-label="自定义接口地址"
-                      className={inputCls}
-                      value={customBase}
-                      onChange={(e) => setCustomBase(e.target.value)}
-                      placeholder="https://api.example.com/v1"
-                    />
-                  </SettingRow>
-                  <SettingRow label="模型名">
-                    <input
-                      aria-label="自定义模型名"
-                      className={inputCls}
-                      value={customModel}
-                      onChange={(e) => setCustomModel(e.target.value)}
-                      placeholder="model-name"
-                    />
-                  </SettingRow>
-                </>
-              )}
-
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  改完无需重启，下次通话分析即生效。
-                </div>
-                <button
-                  type="button"
-                  onClick={saveAi}
-                  disabled={savingAi || loading}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-                >
-                  <Save className="w-4 h-4" />
-                  保存
-                </button>
-              </div>
-              <RowMessage state={aiMessage} />
             </div>
           </div>
 

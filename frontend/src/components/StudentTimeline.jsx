@@ -108,7 +108,6 @@ function renderItem(item) {
         icon={Phone}
         color="blue"
         title={`通话 · ${callRecordingSummary(d)}`}
-        content={firstValue(d.ai_summary, d.content, d.notes, d.ai_reasons)}
         agentName={d.agent_name}
         timestamp={firstValue(d.created_at, d.call_time)}
       />
