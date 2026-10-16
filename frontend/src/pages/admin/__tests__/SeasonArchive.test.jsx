@@ -28,7 +28,7 @@ const preview = {
   student_id_hash: '1234567890abcdef1234567890abcdef',
   counts: {
     students: 1,
-    calls: 2,
+    dial_logs: 2,
     notes: 3,
     follow_ups: 1,
   },
@@ -65,8 +65,9 @@ describe('SeasonArchive', () => {
 
     expect(await screen.findByText('当前招生季数据')).toBeInTheDocument();
     expect(screen.getByText(/crm_20260823_120000\.db/)).toBeInTheDocument();
-    expect(screen.getByText('通话')).toBeInTheDocument();
+    expect(screen.getByText('拨号记录')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.queryByText('通话')).not.toBeInTheDocument();
   });
 
   it('requires the generated confirmation phrase before cleanup', async () => {

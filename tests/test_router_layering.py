@@ -51,7 +51,6 @@ BASELINE = {
     "admissions_home_visits.py": 13,
     "admissions_work_items.py": 14,
     "auth.py": 18,
-    "calls.py": 13,
     "follow_ups.py": 21,
     "lead_outcomes.py": 2,
     "notes.py": 18,
@@ -66,7 +65,7 @@ BASELINE = {
     "students_enrollment.py": 11,
     "students_import.py": 11,
     "students_phone.py": 14,
-    "students_query.py": 39,
+    "students_query.py": 35,
 }
 
 

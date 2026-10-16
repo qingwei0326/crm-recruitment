@@ -12,7 +12,6 @@ from app.domain_models import (
     WorkItemKind,
 )
 from app.models import (
-    Call,
     CampusVisitTask,
     DialLog,
     FollowUp,
@@ -39,7 +38,6 @@ async def _seed_season_data(db, admin_user, agent_user):
     await db.flush()
     db.add_all(
         [
-            Call(student_id=student.id, agent_id=agent_user.id, duration_seconds=30),
             Note(student_id=student.id, agent_id=agent_user.id, content="已沟通"),
             FollowUp(
                 student_id=student.id,
@@ -123,7 +121,8 @@ async def test_season_archive_prepare_and_cleanup_keeps_summary_audit(
     preview = await client.get("/api/admin/season-archive/preview", headers=admin_headers)
     assert preview.status_code == 200
     assert preview.json()["data"]["student_count"] == 1
-    assert preview.json()["data"]["counts"]["calls"] == 1
+    assert preview.json()["data"]["counts"]["dial_logs"] == 1
+    assert "calls" not in preview.json()["data"]["counts"]
 
     prepared = await client.post("/api/admin/season-archive/prepare", headers=admin_headers)
     assert prepared.status_code == 200
@@ -160,7 +159,7 @@ async def test_season_archive_prepare_and_cleanup_keeps_summary_audit(
     assert cleaned.json()["data"]["deleted"] is True
     assert cleaned.json()["data"]["counts"]["students"] == 1
     assert (await db.execute(select(func.count(Student.id)))).scalar_one() == 0
-    assert (await db.execute(select(func.count(Call.id)))).scalar_one() == 0
+    assert (await db.execute(select(func.count(DialLog.id)))).scalar_one() == 0
     assert (await db.execute(select(func.count(Note.id)))).scalar_one() == 0
     assert (await db.execute(select(func.count(FollowUp.id)))).scalar_one() == 0
     assert (await db.execute(select(func.count(StudentAssignment.id)))).scalar_one() == 0

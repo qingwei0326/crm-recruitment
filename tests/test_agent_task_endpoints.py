@@ -11,7 +11,7 @@ import pytest
 from app.admin_daily_ops import _daily_ops_counts
 from app.domain_models import PersonalGroup
 from app.models import (
-    Call,
+    DialLog,
     FollowUp,
     IntentLevel,
     OperationLog,
@@ -55,8 +55,8 @@ async def test_yesterday_review_counts_calls_upgrades_and_stale_work(
         IntentLevel.none, today - timedelta(days=1),
     )
     db.add_all([
-        Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
-        Call(student_id=called.id, agent_id=agent_user.id, created_at=yesterday_noon),
+        DialLog(student_id=called.id, agent_id=agent_user.id, dialed_at=yesterday_noon),
+        DialLog(student_id=called.id, agent_id=agent_user.id, dialed_at=yesterday_noon),
         OperationLog(
             operator_id=agent_user.id, operator_name="坐席", target_student_id=called.id,
             case_no="", action="手动评级", old_status="B", new_status="A",

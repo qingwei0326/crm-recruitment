@@ -31,7 +31,6 @@ from app.domain_models import (
     WorkItem,
 )
 from app.models import (
-    Call,
     CampusVisitTask,
     DialLog,
     EnrollmentRecord,
@@ -51,7 +50,6 @@ SEASON_CONFIRM_TEXT = "清理本招生季"
 
 # 这些表的 student_id 是直接关联；OperationLog 使用 target_student_id。
 STUDENT_DATA_MODELS = (
-    Call,
     Note,
     FollowUp,
     LeadViewLog,
@@ -434,8 +432,7 @@ async def cleanup_current_season(
         HomeVisitTask,
         StudentAssignment,
         DialLog,
-        Call,
-        Note,
+            Note,
         FollowUp,
         LeadViewLog,
             PersonalGroupMembership,

@@ -2,13 +2,12 @@
 
 # 招生话务 CRM 系统
 
-### 中职校招生话务全流程管理平台 — 坐席分配、通话记录、AI 意向分析、回访跟进
+### 中职校招生话务全流程管理平台 — 坐席分配、拨号记录、回访跟进、家访到校
 
 ![Version](https://img.shields.io/badge/version-1.6.2-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Ubuntu-lightgrey)
 ![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20SQLAlchemy-green)
 ![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Vite%20%7C%20Tailwind-blueviolet)
-![AI](https://img.shields.io/badge/AI-DeepSeek%20API-orange)
 
 中文
 
@@ -50,12 +49,10 @@
 - **学校派案** — 按区县筛选学校，批量分配学生到指定话务员
 - **线索治理中心** — 集中处理学生管理与分配、无效线索回收和多学校分发，减少后台分散入口
 
-### 通话记录与 AI 意向分析
+### 拨号记录
 
-- **通话记录录入** — 话务员提交通话文本后由 AI 生成分析记录（非自动对接话务系统）
-- **AI 深度分析** — 接入 DeepSeek API，自动识别家长意向（A/B/C）
-- **关键词兜底** — 弱网 / API 不可用时自动匹配关键词规则，分析不中断
-- **通话回放** — 查看通话时长、时间、内容摘要
+- **拨号记录** — 每次获取电话即记一条拨号记录，用于 24 小时防撞号、今日完成数和学生时间线
+- **意向评级** — 话务员手动评 A/B/C，评级变化进入意向轨迹
 
 ### 回访与跟进
 
@@ -135,7 +132,6 @@ npm run dev   # 默认 http://localhost:3000，已在 vite.config.js 中代理 /
 | 环境变量 | 说明 | 默认值 |
 |---------|------|--------|
 | `CRM_PYTHON` | 指定 Python 路径 | 自动检测 `.venv-win` |
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥 | 可选（不设置则仅用关键词分析） |
 | `SECRET_KEY` | JWT/Cookie 签名密钥 | 必填，开发可放入 `.env` 或 `.secret_key` |
 
 ### 本地生产快照迁移验收
@@ -235,10 +231,9 @@ $destination = ".\backups\server-audit\working\crm_domain_{0}.db" -f (
 | 跟进阶段 | 新线索、意向跟进、已送资料、预约参观、已到访、已报名 | 描述招生转化进度 |
 | 意向等级 | A、B、C、无 | 描述优先级，A 级优先跟进 |
 
-### AI 分析、通知和安全操作
+### AI 助手、通知和安全操作
 
-- 管理员侧通话分析配置可使用 DeepSeek、小米 MiMo 或自定义兼容接口；未配置密钥时自动回退到本地关键词匹配。话务员端不提交录音、转录或 AI 分析数据。
-- 管理员 AI 结果仅用于辅助判断，最终状态、阶段和备注仍以人工跟进为准。
+- AI 通话分析已于 2026-10 移除（从未在生产使用），话务员端不提交录音、转录或 AI 分析数据。
 - 超级管理员可从右下角悬浮入口或 `/admin/assistant` 打开执行助手；桌面抽屉可调宽/最大化，手机端使用全屏面板。
 - 执行助手默认关闭，在系统设置中独立配置 OpenAI 格式的 Base URL、Model 和 API Key；密钥加密保存且接口只返回是否配置和末四位。
 - 模型只能调用服务端白名单工具，不能直接执行 SQL 或 Shell。查询自动执行，普通写入需确认，清洗和永久删除需二次确认并在执行前验证数据库备份。
@@ -264,7 +259,6 @@ $destination = ".\backups\server-audit\working\crm_domain_{0}.db" -f (
 | **图标** | Lucide React |
 | **图表** | Recharts |
 | **HTTP 客户端** | Axios |
-| **AI 分析** | DeepSeek API + 本地关键词兜底 |
 | **进程管理** | Docker、Cloudflare Tunnel / SakuraFrp |
 
 ---
@@ -285,7 +279,6 @@ D:\招生系统\
 │   │   ├── admin.py             # 管理员核心/兼容接口
 │   │   ├── admin_*.py           # 管理端配置、治理、每日运营、回收、分配、用户等子路由
 │   │   ├── auth.py              # 认证接口
-│   │   ├── calls.py             # 通话记录接口
 │   │   ├── follow_ups.py        # 回访跟进接口
 │   │   ├── students.py          # 学生线索核心接口
 │   │   ├── students_*.py        # 学生导入、查询、电话、分配、报名等子路由
@@ -294,12 +287,10 @@ D:\招生系统\
 │   │   ├── tasks.py             # 任务接口
 │   │   ├── notes.py             # 备注接口
 │   │   └── operation_logs.py    # 操作日志
-│   ├── ai_analyzer.py          # DeepSeek AI 意向分析
 │   ├── status_policy.py        # 学生状态归一策略
 │   ├── task_stats.py           # 任务统计统一口径
 │   ├── agent_score.py          # 话务员评分预览
 │   ├── follow_up_service.py    # 回访与学生状态同步
-│   ├── keywords.json           # 关键词兜底规则
 │   ├── utils.py                # 工具函数
 │   ├── pushplus.py             # 推送通知
 │   ├── scheduler.py            # 定时任务
@@ -329,13 +320,6 @@ D:\招生系统\
 <summary><strong>启动后页面空白怎么办？</strong></summary>
 
 先确认后端是否启动成功：访问 `http://localhost:8000/docs`，能看到 Swagger 文档说明后端正常。然后检查前端终端是否有报错，一般是端口占用或依赖未安装，运行 `cd frontend && npm install` 重装依赖。
-
-</details>
-
-<details>
-<summary><strong>AI 分析不生效？</strong></summary>
-
-AI 分析依赖 DeepSeek API。设置环境变量 `DEEPSEEK_API_KEY` 后重启系统。不设置也能用关键词兜底分析（`app/keywords.json`），只是精度低于 AI。
 
 </details>
 

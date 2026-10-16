@@ -167,44 +167,7 @@ class TestAuthEdgeCases:
 
 
 @pytest.mark.asyncio
-class TestCallEndpoints:
-    async def test_create_call(self, client, admin_headers, sample_student):
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": sample_student.id,
-                "duration_seconds": 120,
-                "transcript": "我想了解一下学校的学费和升学率",
-            },
-            headers=admin_headers,
-        )
-        assert resp.json()["code"] == 0
-
-    async def test_create_call_empty_transcript(self, client, admin_headers, sample_student):
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": sample_student.id,
-                "duration_seconds": 10,
-                "transcript": "",
-            },
-            headers=admin_headers,
-        )
-        assert resp.json()["code"] == 0
-
-    async def test_create_call_nonexistent_student(self, client, admin_headers):
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": 99999,
-                "duration_seconds": 30,
-                "transcript": "test",
-            },
-            headers=admin_headers,
-        )
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == "学生不存在"
-
+class TestDialDurationEndpoints:
     async def test_update_dial_duration_updates_latest_user_dial_log(
         self, client, db, admin_headers, admin_user, sample_student
     ):
@@ -320,56 +283,6 @@ class TestCallEndpoints:
         )
 
         assert resp.json()["code"] == 1
-
-    async def test_agent_analyze_unassigned_student_forbidden(
-        self, client, agent_headers, sample_student
-    ):
-        assert sample_student.assigned_to is None
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": sample_student.id,
-                "duration_seconds": 30,
-                "transcript": "想了解一下学费",
-            },
-            headers=agent_headers,
-        )
-        assert resp.status_code == 403
-
-    async def test_agent_analyze_assigned_to_other_forbidden(
-        self,
-        client,
-        agent_headers,
-        admin_user,
-        db,
-    ):
-        from app.models import IntentLevel, Student, StudentStage, StudentStatus
-
-        s = Student(
-            name="独占学员",
-            region="r",
-            assigned_to=admin_user.id,
-            stage=StudentStage.initial_contact,
-            status=StudentStatus.not_contacted,
-            intent_level=IntentLevel.none,
-        )
-        db.add(s)
-        await db.commit()
-        await db.refresh(s)
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": s.id,
-                "duration_seconds": 10,
-                "transcript": "test",
-            },
-            headers=agent_headers,
-        )
-        assert resp.status_code == 403
-
-    async def test_agent_list_calls_scoped(self, client, agent_headers, agent_user):
-        resp = await client.get(f"/api/calls?agent_id={agent_user.id + 999}", headers=agent_headers)
-        assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

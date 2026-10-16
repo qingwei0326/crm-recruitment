@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import ADMIN_PAGE_LEADS_MANAGE, get_current_user, require_page_permission
 from app.database import get_db
 from app.models import (
-    Call,
     CampusVisitTask,
+    DialLog,
     EnrollmentRecord,
     FollowUp,
     HomeVisitTask,
@@ -289,42 +289,6 @@ async def list_schools(
     return Response.ok(schools)
 
 
-@router.get("/{student_id}/intent-timeline")
-async def get_intent_timeline(
-    student_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    student = await get_accessible_student(db, student_id, current_user)
-
-    timeline = []
-    if is_admin(current_user):
-        result = await db.execute(
-            select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
-            .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
-            .order_by(Call.created_at.asc())
-        )
-        timeline = [
-            {
-                "call_id": call_id,
-                "intent": ai_intent,
-                "confidence": ai_confidence,
-                "agent_id": agent_id,
-                "at": str(created_at),
-            }
-            for call_id, ai_intent, ai_confidence, agent_id, created_at in result.all()
-        ]
-
-    return Response.ok(
-        {
-            "student_id": student.id,
-            "current_intent": str(student.intent_level),
-            "created_at": str(student.created_at),
-            "timeline": timeline,
-        }
-    )
-
-
 @router.get("/{student_id}/detail")
 async def get_student_detail(
     student_id: int,
@@ -345,33 +309,25 @@ async def get_student_detail(
         str(student.enrollment_substage) if student.enrollment_substage else None
     )
 
-    # 通话（最近 50）
+    # 拨号（最近 50）
     calls_r = await db.execute(
-        select(Call, User.name)
-        .outerjoin(User, Call.agent_id == User.id)
-        .where(Call.student_id == student.id)
-        .order_by(Call.created_at.desc())
+        select(DialLog, User.name)
+        .outerjoin(User, DialLog.agent_id == User.id)
+        .where(DialLog.student_id == student.id)
+        .order_by(DialLog.dialed_at.desc())
         .limit(50)
     )
-    calls = []
-    for c, agent_name in calls_r.all():
-        call_payload = {
-            "id": c.id,
-            "agent_id": c.agent_id,
+    calls = [
+        {
+            "id": dial.id,
+            "agent_id": dial.agent_id,
             "agent_name": agent_name or "",
-            "duration_seconds": c.duration_seconds,
-            "created_at": str(c.created_at),
+            "duration_seconds": dial.duration_seconds or 0,
+            "recording_state": dial.recording_state,
+            "created_at": str(dial.dialed_at),
         }
-        if is_admin(current_user):
-            call_payload.update(
-                {
-                    "ai_intent": c.ai_intent,
-                    "ai_confidence": c.ai_confidence,
-                    "ai_summary": c.ai_summary,
-                    "ai_reasons": c.ai_reasons,
-                }
-            )
-        calls.append(call_payload)
+        for dial, agent_name in calls_r.all()
+    ]
 
     # 备注（最近 50）
     notes_query = (
@@ -488,25 +444,7 @@ async def get_student_detail(
         reverse=True,
     )
 
-    # 意向轨迹：管理员保留 AI 分析，坐席只看手动评级。
-    ai_events = []
-    if is_admin(current_user):
-        intent_r = await db.execute(
-            select(Call.id, Call.ai_intent, Call.ai_confidence, Call.agent_id, Call.created_at)
-            .where(Call.student_id == student.id, Call.ai_intent != "", Call.ai_intent != "无")
-            .order_by(Call.created_at.asc())
-        )
-        ai_events = [
-            {
-                "source": "ai",
-                "intent_level": ai_intent,
-                "confidence": ai_conf,
-                "agent_id": aid,
-                "created_at": str(created_at),
-            }
-            for cid, ai_intent, ai_conf, aid, created_at in intent_r.all()
-        ]
-
+    # 意向轨迹：手动评级记录。
     manual_r = await db.execute(
         select(OperationLog)
         .where(
@@ -526,11 +464,7 @@ async def get_student_detail(
         for log in manual_r.scalars().all()
     ]
 
-    # 合并并按时间排序
-    intent_timeline = sorted(
-        ai_events + manual_events,
-        key=lambda x: x.get("created_at", ""),
-    )
+    intent_timeline = manual_events
 
     await db.commit()
 

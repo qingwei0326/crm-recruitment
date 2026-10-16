@@ -15,22 +15,6 @@ INVALID_REASON_LABELS = {
 }
 
 
-ALLOWED_CONFIG_KEYS = {
-    "pushplus_token",
-    "stale_days",
-    "deepseek_api_key",
-    "ai_provider",
-    "mimo_api_key",
-    "mimo_base",
-    "mimo_model",
-    "ai_custom_api_key",
-    "ai_custom_base",
-    "ai_custom_model",
-    "follow_up_window_minutes",
-    "score_daily_call_target",
-}
-
-
 def invalid_reason_predicate(reason: str):
     reason = (reason or "").strip()
     if not reason:

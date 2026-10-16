@@ -18,7 +18,7 @@ import sys
 import pytest
 from sqlalchemy import select
 
-from app.models import Student, StudentStatus, SystemConfig, User
+from app.models import Student, StudentStatus, User
 from app.routers.admin_invalid import MAX_DELETE_BY_SCHOOL_STUDENTS, _check_delete_batch_limit
 
 # ── 1-1 代理头默认值 ──────────────────────────────────────
@@ -60,80 +60,6 @@ def test_trust_proxy_env_override_still_wins(reload_config):
         TRUST_PROXY_HEADERS="0",
     )
     assert config.TRUST_PROXY_HEADERS is False
-
-
-# ── 1-2 AI Key 加密入库 ────────────────────────────────────
-
-
-@pytest.mark.asyncio
-class TestAiKeyEncryptionAtRest:
-    async def test_saved_key_is_not_stored_in_plaintext(self, client, db, admin_headers):
-        resp = await client.put(
-            "/api/admin/config",
-            json={"key": "mimo_api_key", "value": "tp-abcdefgh1234"},
-            headers=admin_headers,
-        )
-        assert resp.json()["code"] == 0
-
-        await db.commit()
-        row = (
-            await db.execute(select(SystemConfig).where(SystemConfig.key == "mimo_api_key"))
-        ).scalar_one_or_none()
-
-        assert row is not None
-        assert row.value != "tp-abcdefgh1234"
-        assert "tp-abcdefgh1234" not in row.value
-        assert row.value.startswith("v1:")
-
-    async def test_saved_key_round_trips_to_plaintext(self, client, db, admin_headers):
-        from app.admin_config import decrypt_secret_config_value
-        from app.routers.calls import _resolve_ai_engine
-
-        await client.put(
-            "/api/admin/config",
-            json={"key": "ai_provider", "value": "mimo"},
-            headers=admin_headers,
-        )
-        await client.put(
-            "/api/admin/config",
-            json={"key": "mimo_api_key", "value": "tp-abcdefgh1234"},
-            headers=admin_headers,
-        )
-        await db.commit()
-
-        row = (
-            await db.execute(select(SystemConfig).where(SystemConfig.key == "mimo_api_key"))
-        ).scalar_one_or_none()
-        assert decrypt_secret_config_value("mimo_api_key", row.value) == "tp-abcdefgh1234"
-
-        _base, _model, key = await _resolve_ai_engine(db)
-        assert key == "tp-abcdefgh1234"
-
-    async def test_legacy_plaintext_key_is_still_usable(self, client, db, admin_headers):
-        """历史明文值不能被解密失败打挂，必须按明文继续使用。"""
-        from app.routers.calls import _resolve_ai_engine
-
-        db.add(SystemConfig(key="ai_provider", value="mimo"))
-        db.add(SystemConfig(key="mimo_api_key", value="tp-legacy4321"))
-        await db.commit()
-
-        _base, _model, key = await _resolve_ai_engine(db)
-        assert key == "tp-legacy4321"
-
-        listed = await client.get("/api/admin/config", headers=admin_headers)
-        assert listed.json()["data"]["mimo_api_key"] == "****4321"
-
-    async def test_config_api_never_returns_full_key(self, client, admin_headers):
-        await client.put(
-            "/api/admin/config",
-            json={"key": "deepseek_api_key", "value": "sk-supersecret9999"},
-            headers=admin_headers,
-        )
-        listed = await client.get("/api/admin/config", headers=admin_headers)
-        payload = str(listed.json())
-
-        assert "sk-supersecret9999" not in payload
-        assert listed.json()["data"]["deepseek_api_key"] == "****9999"
 
 
 # ── 1-3 备份加密 ──────────────────────────────────────────
