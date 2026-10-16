@@ -9,13 +9,13 @@ from datetime import date, datetime
 from sqlalchemy import func, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Call, Note, Student, StudentStatus
+from app.models import DialLog, Note, Student, StudentStatus
 from app.task_stats import TERMINAL_STUDENT_STATUSES
 
 
 def build_last_activity_subquery():
     activity_events = union_all(
-        select(Call.student_id.label("student_id"), Call.created_at.label("created_at")),
+        select(DialLog.student_id.label("student_id"), DialLog.dialed_at.label("created_at")),
         select(Note.student_id.label("student_id"), Note.created_at.label("created_at")),
     ).subquery()
     return (
@@ -31,7 +31,7 @@ def build_last_activity_subquery():
 async def mark_expired_students(db: AsyncSession) -> int:
     """把已到期且最后活动早于今日的非终态学生标记为 expired，返回标记数量。
 
-    判定：expired_at < 今天 且 最后活动（通话/备注，退化到分配时间/创建时间）
+    判定：expired_at < 今天 且 最后活动（拨号/备注，退化到分配时间/创建时间）
     早于今天 00:00，且当前不在终态（已报名/无效及旧无效类状态）。
     调用方负责 commit。
     """

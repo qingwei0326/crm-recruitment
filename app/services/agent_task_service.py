@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain_errors import InvalidFilter, ResourceNotFound
 from app.domain_models import PersonalGroup, PersonalGroupMembership
-from app.models import Call, FollowUp, IntentLevel, OperationLog, Student, StudentStatus
+from app.models import DialLog, FollowUp, IntentLevel, OperationLog, Student, StudentStatus
 from app.status_policy import (
     canonical_status_value,
     canonical_student_status,
@@ -263,9 +263,9 @@ async def today_tasks(
     ).scalar_one() or 0
     today_completed_count = (
         await db.execute(
-            select(func.count(func.distinct(Call.student_id))).where(
-                Call.agent_id == agent_id,
-                Call.created_at >= today_start,
+            select(func.count(func.distinct(DialLog.student_id))).where(
+                DialLog.agent_id == agent_id,
+                DialLog.dialed_at >= today_start,
             )
         )
     ).scalar_one() or 0
@@ -547,8 +547,10 @@ async def yesterday_review(db: AsyncSession, agent_id: int) -> dict:
     yesterday = today - timedelta(days=1)
 
     calls_result = await db.execute(
-        select(func.count(Call.id)).where(
-            Call.agent_id == agent_id, Call.created_at >= yesterday, Call.created_at < today
+        select(func.count(DialLog.id)).where(
+            DialLog.agent_id == agent_id,
+            DialLog.dialed_at >= yesterday,
+            DialLog.dialed_at < today,
         )
     )
     yesterday_calls = calls_result.scalar() or 0
@@ -570,10 +572,10 @@ async def yesterday_review(db: AsyncSession, agent_id: int) -> dict:
 
     # 昨日范围内的转化率：昨日有过通话动作的学生数（去重） vs 昨日转 A 的学生数
     contacted_yday_r = await db.execute(
-        select(func.count(func.distinct(Call.student_id))).where(
-            Call.agent_id == agent_id,
-            Call.created_at >= yesterday,
-            Call.created_at < today,
+        select(func.count(func.distinct(DialLog.student_id))).where(
+            DialLog.agent_id == agent_id,
+            DialLog.dialed_at >= yesterday,
+            DialLog.dialed_at < today,
         )
     )
     yesterday_contacted = contacted_yday_r.scalar() or 0

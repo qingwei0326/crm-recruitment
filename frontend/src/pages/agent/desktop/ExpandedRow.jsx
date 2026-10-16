@@ -21,8 +21,8 @@ export default function ExpandedRow({
     calls: [],
     notes: [],
     followUps: [],
-    visits: [],
     intentTimeline: [],
+    admissionsTimeline: [],
   });
 
   useEffect(() => {
@@ -38,8 +38,8 @@ export default function ExpandedRow({
           calls: data.calls || [],
           notes: data.notes || [],
           followUps: data.follow_ups || [],
-          visits: data.visits || [],
           intentTimeline: data.intent_timeline || [],
+          admissionsTimeline: data.admissions_timeline || [],
         });
       })
       .catch((e) => {
@@ -165,8 +165,8 @@ export default function ExpandedRow({
             calls={detail.calls}
             notes={detail.notes}
             followUps={detail.followUps}
-            visits={detail.visits}
             intentTimeline={detail.intentTimeline}
+            admissionsTimeline={detail.admissionsTimeline}
             limit={5}
             emptyText="暂无跟进记录"
             className="space-y-3"
