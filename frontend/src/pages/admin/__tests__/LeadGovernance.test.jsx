@@ -267,7 +267,7 @@ describe('LeadGovernance', () => {
     expect(screen.queryByText('已复核风险无需展示')).not.toBeInTheDocument();
     expect(await screen.findByText('疑似重复线索')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /学生管理与分配/ })).toHaveAttribute('href', '/admin/leads');
-    expect(screen.getByRole('link', { name: /智能分配/ })).toHaveAttribute('href', '/admin/smart-assign');
+    expect(screen.queryByRole('link', { name: /智能分配/ })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /无效线索回收/ })).toHaveAttribute('href', '/admin/invalid-reclaim');
     expect(screen.getByRole('link', { name: /多学校分发/ })).toHaveAttribute('href', '/admin/distribute');
   });

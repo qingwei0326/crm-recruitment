@@ -1951,7 +1951,7 @@ class TestLeadGovernanceRisk:
 
 @pytest.mark.asyncio
 class TestDailyOps:
-    async def test_daily_ops_summarizes_and_records_review(
+    async def test_daily_ops_summarizes_open_items(
         self, client, db, admin_headers, admin_user, agent_user
     ):
         now = utcnow()
@@ -2025,7 +2025,7 @@ class TestDailyOps:
         items = {item["key"]: item for item in data["items"]}
 
         assert resp.status_code == 200
-        assert data["summary"]["pending_items"] >= 4
+        assert data["summary"]["total_items"] >= 4
         assert items["stale_a"]["count"] >= 1
         assert items["home_visit_due"]["count"] >= 1
         assert items["home_visit_due"]["owners"][0]["agent_name"] == agent_user.name
@@ -2034,100 +2034,27 @@ class TestDailyOps:
         assert items["campus_visit_due"]["count"] >= 1
         assert items["unsettled_enrollments"]["count"] >= 1
         assert items["help_requests"]["count"] >= 1
+        assert "is_closed" not in items["home_visit_due"]
 
-        review_resp = await client.post(
-            "/api/admin/daily-ops/reviews",
-            json={
-                "key": "home_visit_due",
-                "status": "已处理",
-                "count": items["home_visit_due"]["count"],
-            },
-            headers=admin_headers,
-        )
-        assert review_resp.status_code == 200
-        assert review_resp.json()["data"]["status"] == "已处理"
 
-        follow_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
-        follow_items = {item["key"]: item for item in follow_resp.json()["data"]["items"]}
-        assert follow_items["home_visit_due"]["status"] == "已处理"
-        assert follow_items["home_visit_due"]["is_closed"] is True
-        assert follow_items["home_visit_due"]["reviewed_count"] == items["home_visit_due"]["count"]
 
-        log = (
-            await db.execute(
-                select(OperationLog).where(
-                    OperationLog.action == "每日运营闭环",
-                    OperationLog.batch_id.like("daily-ops:%:home_visit_due"),
-                )
-            )
-        ).scalar_one()
-        assert log.operator_id == admin_user.id
-        assert log.new_status == "已处理"
-
-    async def test_daily_ops_reopens_closed_item_when_count_increases(
-        self, client, db, admin_headers
-    ):
-        first_student = Student(
-            name="首个求助待办",
-            status=StudentStatus.not_contacted,
-            need_help=True,
-        )
-        db.add(first_student)
-        await db.commit()
-
-        initial_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
-        initial_items = {
-            item["key"]: item for item in initial_resp.json()["data"]["items"]
-        }
-        reviewed_count = initial_items["help_requests"]["count"]
-        assert reviewed_count >= 1
-
-        review_resp = await client.post(
-            "/api/admin/daily-ops/reviews",
-            json={
-                "key": "help_requests",
-                "status": "已处理",
-                "count": reviewed_count,
-            },
-            headers=admin_headers,
-        )
-        assert review_resp.json()["code"] == 0
-
-        closed_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
-        closed_items = {
-            item["key"]: item for item in closed_resp.json()["data"]["items"]
-        }
-        assert closed_items["help_requests"]["is_closed"] is True
-
-        db.add(
-            Student(
-                name="新增求助待办",
-                status=StudentStatus.not_contacted,
-                need_help=True,
-            )
-        )
-        await db.commit()
-
-        reopened_resp = await client.get("/api/admin/daily-ops", headers=admin_headers)
-        reopened_data = reopened_resp.json()["data"]
-        reopened_items = {item["key"]: item for item in reopened_data["items"]}
-        reopened = reopened_items["help_requests"]
-
-        assert reopened["count"] == reviewed_count + 1
-        assert reopened["reviewed_count"] == reviewed_count
-        assert reopened["status"] == "待处理"
-        assert reopened["is_closed"] is False
-        assert reopened_data["summary"]["pending_items"] >= 1
-
-    async def test_daily_ops_rejects_invalid_review_status(self, client, admin_headers):
-        resp = await client.post(
-            "/api/admin/daily-ops/reviews",
-            json={"key": "stale_a", "status": "未知状态", "count": 1},
-            headers=admin_headers,
-        )
-        body = resp.json()
-        assert resp.status_code == 400
-        assert body["code"] == 1
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api/admin/daily-ops/reviews"),
+        ("get", "/api/admin/smart-assign/preview"),
+        ("post", "/api/admin/smart-assign/execute"),
+        ("post", "/api/students/auto-assign"),
+        ("post", "/api/students/region-assign"),
+        ("get", "/api/admin/stale-school-groups"),
+        ("post", "/api/admin/stale-reclaim-by-group"),
+    ],
+)
+async def test_removed_admin_endpoints_are_gone(client, admin_headers, method, path):
+    kwargs = {"json": {}} if method == "post" else {}
+    resp = await getattr(client, method)(path, headers=admin_headers, **kwargs)
+    assert resp.status_code in {404, 405}
 
 
 @pytest.mark.asyncio

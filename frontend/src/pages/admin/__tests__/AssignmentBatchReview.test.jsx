@@ -42,8 +42,8 @@ vi.mock('../../../components/Toast', () => ({
 
 const reviewPayload = {
   batch: {
-    batch_id: 'smart-assign-review-test',
-    action: '智能分配汇总',
+    batch_id: 'school-assign-review-test',
+    action: '学校分配汇总',
     operator_name: '测试管理员',
     assigned_at: '2026-07-07 07:00:00',
     assigned_count: 4,
@@ -105,7 +105,7 @@ function renderPage() {
   return render(
     <MemoryRouter
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      initialEntries={['/admin/assignment-batches/smart-assign-review-test/review']}
+      initialEntries={['/admin/assignment-batches/school-assign-review-test/review']}
     >
       <Routes>
         <Route
@@ -127,8 +127,8 @@ describe('AssignmentBatchReview', () => {
     renderPage();
 
     expect(await screen.findByText('分配批次复盘')).toBeInTheDocument();
-    expect(screen.getByText('smart-assign-review-test')).toBeInTheDocument();
-    expect(screen.getByText('智能分配汇总')).toBeInTheDocument();
+    expect(screen.getByText('school-assign-review-test')).toBeInTheDocument();
+    expect(screen.getByText('学校分配汇总')).toBeInTheDocument();
     expect(screen.getAllByText('已分配').length).toBeGreaterThan(0);
     expect(screen.getAllByText('已拨打').length).toBeGreaterThan(0);
     expect(screen.getAllByText('有效处理').length).toBeGreaterThan(0);
@@ -137,7 +137,7 @@ describe('AssignmentBatchReview', () => {
     expect(screen.getByText('未处理学生')).toBeInTheDocument();
     expect(screen.getByText('未拨打比例偏高')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith(
-      '/admin/assignment-batches/smart-assign-review-test/review',
+      '/admin/assignment-batches/school-assign-review-test/review',
       { params: { window_days: 7 } },
     );
   });
@@ -150,7 +150,7 @@ describe('AssignmentBatchReview', () => {
 
     await waitFor(() => {
       expect(api.get).toHaveBeenLastCalledWith(
-        '/admin/assignment-batches/smart-assign-review-test/review',
+        '/admin/assignment-batches/school-assign-review-test/review',
         { params: { window_days: 3 } },
       );
     });

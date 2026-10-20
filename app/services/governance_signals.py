@@ -61,11 +61,8 @@ def _risk_alert(
 
 BATCH_DISTRIBUTION_SUMMARY_ACTIONS = {
     "批量分配",
-    "自动分配汇总",
-    "区域分配汇总",
     "学校分配汇总",
     "多学校分发汇总",
-    "智能分配汇总",
 }
 
 
