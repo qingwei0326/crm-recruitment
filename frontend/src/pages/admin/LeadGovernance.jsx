@@ -31,7 +31,7 @@ const workflows = [
   {
     step: '1',
     title: '学生管理与分配',
-    description: '新增、筛选、批量选择线索，并进行手动分配、自动分配和学校分发。',
+    description: '新增、筛选、批量选择线索，并进行手动分配和学校分发。',
     outcome: '适合日常查找、少量手动调整和批量分配。',
     to: '/admin/leads',
     icon: ListFilter,
@@ -39,15 +39,6 @@ const workflows = [
   },
   {
     step: '2',
-    title: '智能分配',
-    description: '按未分配池和坐席负载生成公平分配建议，管理员确认后批量执行。',
-    outcome: '适合每天批量补齐坐席任务量，并保留批次回滚。',
-    to: '/admin/smart-assign',
-    icon: RefreshCcw,
-    tone: 'amber',
-  },
-  {
-    step: '3',
     title: '无效线索回收',
     description: '按学校汇总无效线索，批量回收后重新进入未分配池。',
     outcome: '适合先按原因/学校预览，再回收到未分配池或删除。',
@@ -56,7 +47,7 @@ const workflows = [
     tone: 'red',
   },
   {
-    step: '4',
+    step: '3',
     title: '多学校分发',
     description: '按学校批量选择未分配学员，自动均摊或指定分发给话务员。',
     outcome: '适合处理成批学校线索，减少逐条分配。',
@@ -68,7 +59,6 @@ const workflows = [
 
 const toneClasses = {
   blue: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-  amber: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   red: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   green: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
 };

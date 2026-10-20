@@ -38,7 +38,7 @@ async function mockApis(page) {
           total: 1,
           page: 1,
           page_size: 50,
-          actions: [{ action: '智能分配汇总', count: 1 }],
+          actions: [{ action: '学校分配汇总', count: 1 }],
           categories: [{ category: '分配', count: 1 }],
           list: [
             {
@@ -46,10 +46,10 @@ async function mockApis(page) {
               id: 1,
               operator_id: 1,
               operator_name: '复盘管理员',
-              action: '智能分配汇总',
+              action: '学校分配汇总',
               category: '分配',
-              content: '智能分配执行：实际 4 条',
-              batch_id: 'smart-assign-review-test',
+              content: '学校「漳州一中」分发，共 4 名',
+              batch_id: 'school-assign-review-test',
               can_rollback_assignment: true,
               student_id: null,
               student_name: '',
@@ -62,12 +62,12 @@ async function mockApis(page) {
       });
       return;
     }
-    if (path === '/admin/assignment-batches/smart-assign-review-test/review') {
+    if (path === '/admin/assignment-batches/school-assign-review-test/review') {
       await route.fulfill({
         json: ok({
           batch: {
-            batch_id: 'smart-assign-review-test',
-            action: '智能分配汇总',
+            batch_id: 'school-assign-review-test',
+            action: '学校分配汇总',
             operator_name: '复盘管理员',
             assigned_at: '2026-07-07 07:00:00',
             assigned_count: 4,
@@ -136,12 +136,12 @@ test('opens assignment batch review from audit logs and switches window', async 
   await mockApis(page);
 
   await page.goto('/admin/audit-logs');
-  await expect(page.getByText('智能分配执行：实际 4 条')).toBeVisible();
+  await expect(page.getByText('学校「漳州一中」分发，共 4 名')).toBeVisible();
   await page.getByRole('link', { name: '复盘' }).click();
 
-  await expect(page).toHaveURL(/\/admin\/assignment-batches\/smart-assign-review-test\/review/);
+  await expect(page).toHaveURL(/\/admin\/assignment-batches\/school-assign-review-test\/review/);
   await expect(page.getByText('分配批次复盘')).toBeVisible();
-  await expect(page.getByText('smart-assign-review-test')).toBeVisible();
+  await expect(page.getByText('school-assign-review-test')).toBeVisible();
   await expect(page.getByText('未拨打比例偏高')).toBeVisible();
   await expect(page.getByText('未处理学生')).toBeVisible();
 

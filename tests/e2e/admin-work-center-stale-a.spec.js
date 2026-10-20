@@ -89,8 +89,6 @@ async function mockAdminApis(page) {
           date_key: '2026-07-03',
           summary: {
             total_items: 1,
-            closed_items: 0,
-            high_pending_items: 1,
           },
           items: [
             {
@@ -99,8 +97,6 @@ async function mockAdminApis(page) {
               count: 1,
               severity: 'high',
               detail: 'A 级且 3 天以上无新活动，优先回访或主管介入。',
-              status: '待处理',
-              is_closed: false,
               to: '/admin/work-center?queue=stale-a',
               owners: [
                 {

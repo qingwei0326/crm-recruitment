@@ -74,9 +74,6 @@ function mockDashboardApis() {
     date: '2026-07-03',
     summary: {
       total_items: 0,
-      closed_items: 0,
-      pending_items: 0,
-      high_pending_items: 0,
       total_count: 0,
     },
     items: [],
@@ -275,14 +272,11 @@ describe('AdminDash responsive entry', () => {
     expect(screen.queryByText('求助待处理')).not.toBeInTheDocument();
   });
 
-  it('renders daily ops items and records closure actions', async () => {
+  it('renders daily ops items as a read-only list', async () => {
     mockDailyOpsData = {
       date: '2026-07-03',
       summary: {
         total_items: 1,
-        closed_items: 0,
-        pending_items: 1,
-        high_pending_items: 1,
         total_count: 3,
       },
       items: [
@@ -293,8 +287,6 @@ describe('AdminDash responsive entry', () => {
           severity: 'high',
           detail: '待确认、已安排或暂缓的家访。',
           to: '/admin/work-center?queue=home_visit',
-          status: '待处理',
-          is_closed: false,
           owners: [
             {
               agent_id: 7,
@@ -322,37 +314,25 @@ describe('AdminDash responsive entry', () => {
       'href',
       '/admin/work-center?queue=home_visit',
     );
-    fireEvent.click(screen.getByRole('button', { name: '确认处理' }));
-
-    await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/admin/daily-ops/reviews', {
-        key: 'home_visit_due',
-        status: '已处理',
-        count: 3,
-      });
-    });
+    expect(screen.getByText('1 类待处理')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认处理' })).not.toBeInTheDocument();
   });
 
-  it('removes completed daily ops cards from the rail', async () => {
+  it('hides daily ops items with nothing pending', async () => {
     mockDailyOpsData = {
       date: '2026-07-03',
       summary: {
-        total_items: 1,
-        closed_items: 1,
-        pending_items: 0,
-        high_pending_items: 0,
-        total_count: 3,
+        total_items: 0,
+        total_count: 0,
       },
       items: [
         {
           key: 'home_visit_due',
-          title: '已完成家访待办',
-          count: 3,
+          title: '已清空家访待办',
+          count: 0,
           severity: 'low',
-          detail: '本批事项已经复核。',
+          detail: '没有待处理的家访。',
           to: '/admin/work-center?queue=home_visit',
-          status: '已处理',
-          is_closed: true,
         },
       ],
     };
@@ -364,7 +344,7 @@ describe('AdminDash responsive entry', () => {
     );
 
     expect(await screen.findByText('今日运营闭环暂无待处理事项')).toBeInTheDocument();
-    expect(screen.queryByText('已完成家访待办')).not.toBeInTheDocument();
+    expect(screen.queryByText('已清空家访待办')).not.toBeInTheDocument();
   });
 
   it('shows retryable panel errors instead of zero and no-risk fallbacks', async () => {

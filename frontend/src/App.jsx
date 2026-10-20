@@ -22,7 +22,6 @@ const LeadsManage = lazyWithRetry(() => import('./pages/admin/LeadsManage'));
 const GlobalSearch = lazyWithRetry(() => import('./pages/admin/GlobalSearch'));
 const StudentDetail = lazyWithRetry(() => import('./pages/admin/StudentDetail'));
 const LeadGovernance = lazyWithRetry(() => import('./pages/admin/LeadGovernance'));
-const SmartAssignment = lazyWithRetry(() => import('./pages/admin/SmartAssignment'));
 const AssignmentBatchReview = lazyWithRetry(() => import('./pages/admin/AssignmentBatchReview'));
 const AgentWork = lazyWithRetry(() => import('./pages/agent/AgentWork'));
 const AgentManage = lazyWithRetry(() => import('./pages/admin/AgentManage'));
@@ -191,14 +190,6 @@ export default function App() {
           element={
             <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
               <RouteError><LeadGovernance /></RouteError>
-            </Protected>
-          }
-        />
-        <Route
-          path="/admin/smart-assign"
-          element={
-            <Protected role="admin" permission={ADMIN_PAGE_PERMISSIONS.leadGovernance}>
-              <RouteError><SmartAssignment /></RouteError>
             </Protected>
           }
         />

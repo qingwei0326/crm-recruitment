@@ -30,11 +30,8 @@ router = APIRouter(prefix="/api/admin", tags=["管理"])
 ASSIGNMENT_ROLLBACK_ACTIONS = {
     "修改归属",
     "手动分配",
-    "自动分配",
-    "区域分配",
     "学校分配",
     "多学校分发",
-    "智能分配",
 }
 
 
