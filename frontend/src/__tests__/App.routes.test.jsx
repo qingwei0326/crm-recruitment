@@ -61,10 +61,6 @@ vi.mock('../pages/admin/LeadGovernance', () => ({
   default: () => <div>lead governance page</div>,
 }));
 
-vi.mock('../pages/admin/SmartAssignment', () => ({
-  default: () => <div>smart assignment page</div>,
-}));
-
 vi.mock('../pages/admin/AssignmentBatchReview', () => ({
   default: () => <div>assignment batch review page</div>,
 }));
@@ -283,7 +279,6 @@ describe('admin compatibility routes', () => {
     ['/admin/search', 'global search page'],
     ['/admin/leads', 'leads manage page'],
     ['/admin/governance', 'lead governance page'],
-    ['/admin/smart-assign', 'smart assignment page'],
     ['/admin/assignment-batches/batch-1/review', 'assignment batch review page'],
     ['/admin/invalid-reclaim', 'invalid reclaim page'],
     ['/admin/distribute', 'distribute schools page'],
@@ -318,7 +313,6 @@ describe('admin compatibility routes', () => {
     ['/admin/search', ['leads_manage'], 'global search page'],
     ['/admin/leads', ['leads_manage'], 'leads manage page'],
     ['/admin/governance', ['lead_governance'], 'lead governance page'],
-    ['/admin/smart-assign', ['lead_governance'], 'smart assignment page'],
     ['/admin/assignment-batches/batch-1/review', ['audit_logs'], 'assignment batch review page'],
     ['/admin/invalid-reclaim', ['invalid_reclaim'], 'invalid reclaim page'],
     ['/admin/distribute', ['school_distribution'], 'distribute schools page'],

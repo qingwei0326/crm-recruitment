@@ -48,7 +48,6 @@ import {
   Moon,
   MapPin,
   AlertTriangle,
-  Wand2,
 } from 'lucide-react';
 import LeadsExpandPanel from './leads/LeadsExpandPanel';
 import LeadsImportModal from './leads/LeadsImportModal';
@@ -70,7 +69,6 @@ export default function LeadsManage() {
   const [searchParams] = useSearchParams();
   const searchParamString = searchParams.toString();
   const navigate = useNavigate();
-  const [autoAssigning, setAutoAssigning] = useState(false);
   const canCreateStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentCreate);
   const canEditStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentEdit);
   const canDeleteStudent = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.studentDelete);
@@ -473,42 +471,6 @@ export default function LeadsManage() {
     setAssignOverrideReason('');
     fetchStudents(page);
     refreshExpand();
-  };
-
-  const handleAutoAssign = async () => {
-    if (!canAssignStudents) return;
-    const ok = await confirm({
-      title: '自动均摊未分配线索',
-      message:
-        '把当前所有「未分配」的学生，按各话务员现有在跟数量从少到多自动均摊。\n' +
-        '只影响未分配且未报名/未无效的线索，不会动已分配或已报名数据。',
-      confirmText: '开始均摊',
-    });
-    if (!ok) return;
-    setAutoAssigning(true);
-    try {
-      const res = await api.post('/students/auto-assign');
-      if (res.data.code === 0) {
-        const d = res.data.data;
-        if (!d.total_assigned) {
-          toast?.info(d.message || '没有未分配的学生');
-        } else {
-          const detail = (d.distribution || [])
-            .map((x) => `${x.name} +${x.count}`)
-            .join('、');
-          const overflow = d.overflow_count ? `，${d.overflow_count} 名留在未分配池` : '';
-          toast?.success(`已自动分配 ${d.total_assigned} 名${overflow}：${detail}`);
-          fetchStudents(page);
-          refreshExpand();
-        }
-      } else {
-        toast?.error(res.data.msg || '自动分配失败');
-      }
-    } catch (e) {
-      toast?.error(getApiErrorMessage(e));
-    } finally {
-      setAutoAssigning(false);
-    }
   };
 
   const handleRegionAssign = async () => {
@@ -990,19 +952,6 @@ export default function LeadsManage() {
               >
                 <MapPin className="w-4 h-4" />
                 {!isMobile && '学校分发'}
-              </button>
-            )}
-            {canAssignStudents && (
-              <button
-                type="button"
-                onClick={handleAutoAssign}
-                disabled={autoAssigning}
-                className="flex min-h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                aria-label="自动均摊分配"
-                title="自动均摊分配"
-              >
-                {autoAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                {!isMobile && '自动均摊'}
               </button>
             )}
             {isMobile && (

@@ -88,7 +88,7 @@ async function installApiMocks(page, user = adminUser) {
     if (path === '/admin/daily-ops') {
       await route.fulfill({
         json: ok({
-          summary: { total_items: 1, closed_items: 0, high_pending_items: 1 },
+          summary: { total_items: 1 },
           items: [
             {
               key: 'stale_a',
@@ -96,8 +96,6 @@ async function installApiMocks(page, user = adminUser) {
               count: 1,
               severity: 'high',
               detail: 'A 级且 3 天以上无新活动，优先回访或主管介入。',
-              status: '待处理',
-              is_closed: false,
               to: '/admin/work-center?queue=stale-a',
               owners: [{ agent_id: agentUser.id, agent_name: agentUser.name, count: 1, max_age_days: 4 }],
             },

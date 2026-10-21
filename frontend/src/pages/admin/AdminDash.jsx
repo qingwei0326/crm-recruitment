@@ -19,12 +19,9 @@ import { useToast } from '../../components/Toast';
 import { useAuth } from '../../context/AuthContext';
 import useIsMobile from '../../hooks/useIsMobile';
 import api from '../../api';
-import { getApiErrorMessage } from '../../utils';
 import {
-  ADMIN_OPERATION_PERMISSIONS,
   ADMIN_PAGE_PERMISSIONS,
   canAccessAdminPage,
-  canPerformAdminOperation,
 } from '../../adminPermissions';
 import { buildDashboardActions, dashboardLeadUrls } from './adminWorkflow';
 import AdminMobileDash from './AdminMobileDash';
@@ -81,7 +78,6 @@ function AdminDesktopDash({ isMobile }) {
   const [funnelData, setFunnelData] = useState(null);
   const [quality, setQuality] = useState(null);
   const [dailyOps, setDailyOps] = useState(null);
-  const [dailyOpsSavingKey, setDailyOpsSavingKey] = useState('');
   const [notifyFails, setNotifyFails] = useState(0);
   const [notifyFailsError, setNotifyFailsError] = useState(false);
   const [actionData, setActionData] = useState(EMPTY_ACTION_DATA);
@@ -94,7 +90,6 @@ function AdminDesktopDash({ isMobile }) {
   const canViewAuditLogs = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.auditLogs);
   const canViewWorkCenter = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.workCenter);
   const canViewLeadsManage = canAccessAdminPage(user, ADMIN_PAGE_PERMISSIONS.leadsManage);
-  const canReviewDailyOps = canPerformAdminOperation(user, ADMIN_OPERATION_PERMISSIONS.governanceReview);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,14 +156,6 @@ function AdminDesktopDash({ isMobile }) {
   }, [canViewAuditLogs, refreshKey]);
 
   const retryDashboard = useCallback(() => { setLoading(true); setRefreshKey((value) => value + 1); }, []);
-  const refreshDailyOps = useCallback(async () => { const response = await api.get('/admin/daily-ops'); setDailyOps(response.data.data || null); }, []);
-  const markDailyOpsItem = useCallback(async (item, status) => {
-    if (!canReviewDailyOps || !item?.key) return;
-    const savingKey = `${item.key}:${status}`;
-    setDailyOpsSavingKey(savingKey);
-    try { await api.post('/admin/daily-ops/reviews', { key: item.key, status, count: item.count || 0 }); toastRef.current?.success?.('已记录运营闭环'); await refreshDailyOps(); } catch (error) { toastRef.current?.error?.(`记录运营闭环失败：${getApiErrorMessage(error)}`); } finally { setDailyOpsSavingKey(''); }
-  }, [canReviewDailyOps, refreshDailyOps]);
-
   const actionItems = useMemo(() => buildDashboardActions({
     helpCount: actionData.helpRequests.length,
     followUps: actionData.followUps,
@@ -227,7 +214,7 @@ function AdminDesktopDash({ isMobile }) {
           <section className="flex flex-col justify-between gap-2 rounded-panel border border-slate-200 bg-white px-4 py-3 shadow-panel dark:border-slate-700 dark:bg-slate-900 dark:shadow-panel-dark sm:flex-row sm:items-center lg:px-5"><div><div className="text-sm font-bold text-slate-900 dark:text-slate-100">招生指挥中心</div><p className="mt-0.5 text-2xs text-slate-500 dark:text-slate-400">{scope === 'today' ? '聚焦今日执行、运营闭环与高风险待办。' : '聚焦全库资产、联系覆盖与招生转化沉淀。'} 点击指标即可进入处理页面。</p></div><div className="flex items-center gap-2 text-2xs font-semibold text-blue-600 dark:text-blue-400"><span className="h-2 w-2 rounded-full bg-emerald-500" />{loading ? '正在同步数据…' : '数据已同步'}</div></section>
           <TeamProgressPanel refreshKey={refreshKey} canViewLeadsManage={canViewLeadsManage} />
           {scope === 'all' && <GlobalOverview summary={summary} enrolledTotal={enrolledTotal} loading={loading} summaryError={errors.summary} enrollmentError={errors.enrollment} />}
-          <AdminCommandBoard actionItems={actionItems} dailyOps={dailyOps} quality={quality} scoreItems={actionData.scoreItems} stageStats={stageStats} funnelData={funnelData} stats={stats} trendData={trendData} loading={loading} errors={errors} onRetry={retryDashboard} retrying={loading} canViewLeadsManage={canViewLeadsManage} canViewWorkCenter={canViewWorkCenter} canViewReportCenter={canViewReportCenter} metricCards={metricCards} availableUnassigned={availableUnassigned} totalStudents={totalStudents} aLevelTotal={aLevelTotal} enrolledTotal={enrolledTotal} todayNewLeads={todayNewLeads} dailyOpsLoading={loading} dailyOpsError={errors.dailyOps} dailyOpsSavingKey={dailyOpsSavingKey} canReviewDailyOps={canReviewDailyOps} onMarkDailyOps={markDailyOpsItem} actionItemsError={Boolean(errors.helpRequests || errors.followUps || errors.scoreItems || errors.staleAItems || errors.quality || notifyFailsError)} cardPreferenceUserKey={user?.id || user?.username || 'admin'} cardPreferenceScope={scope} />
+          <AdminCommandBoard actionItems={actionItems} dailyOps={dailyOps} quality={quality} scoreItems={actionData.scoreItems} stageStats={stageStats} funnelData={funnelData} stats={stats} trendData={trendData} loading={loading} errors={errors} onRetry={retryDashboard} retrying={loading} canViewLeadsManage={canViewLeadsManage} canViewWorkCenter={canViewWorkCenter} canViewReportCenter={canViewReportCenter} metricCards={metricCards} availableUnassigned={availableUnassigned} totalStudents={totalStudents} aLevelTotal={aLevelTotal} enrolledTotal={enrolledTotal} todayNewLeads={todayNewLeads} dailyOpsLoading={loading} dailyOpsError={errors.dailyOps} actionItemsError={Boolean(errors.helpRequests || errors.followUps || errors.scoreItems || errors.staleAItems || errors.quality || notifyFailsError)} cardPreferenceUserKey={user?.id || user?.username || 'admin'} cardPreferenceScope={scope} />
         </div>
       </main>
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} role={user?.is_super_admin ? 'super_admin' : 'admin'} />

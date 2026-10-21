@@ -135,7 +135,7 @@ async function installSmokeApi(page, initialUser = null) {
     if (path === '/admin/daily-ops') {
       await route.fulfill({
         json: ok({
-          summary: { total_items: 0, closed_items: 0, high_pending_items: 0 },
+          summary: { total_items: 0 },
           items: [],
         }),
       });

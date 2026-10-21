@@ -46,8 +46,8 @@ def _assignment_log(
         operator_name=admin_user.name,
         target_student_id=student.id,
         case_no=student.case_no,
-        action="智能分配",
-        content=f"智能分配给话务员 {agent_id}",
+        action="修改归属",
+        content=f"未分配 -> {agent_id}",
         old_status="unassigned",
         new_status=f"agent:{agent_id}",
         note_content=make_assignment_rollback_note(
@@ -63,7 +63,7 @@ def _assignment_log(
 
 async def _seed_review_batch(db, admin_user, agent_user):
     assigned_at = datetime(2026, 7, 7, 7, 0, 0)
-    batch_id = "smart-assign-review-test"
+    batch_id = "school-assign-review-test"
     second_agent = _agent("review_agent_b", "坐席B")
     db.add(second_agent)
     await db.flush()
@@ -97,8 +97,8 @@ async def _seed_review_batch(db, admin_user, agent_user):
         OperationLog(
             operator_id=admin_user.id,
             operator_name=admin_user.name,
-            action="智能分配汇总",
-            content="智能分配执行：实际 4 条",
+            action="学校分配汇总",
+            content="学校「漳州一中」分发，共 4 名",
             batch_id=batch_id,
             created_at=assigned_at + timedelta(minutes=1),
         )
@@ -156,7 +156,7 @@ async def test_build_assignment_batch_review_counts_funnel_agents_and_unhandled(
 
     assert review is not None
     assert review["batch"]["batch_id"] == batch_id
-    assert review["batch"]["action"] == "智能分配汇总"
+    assert review["batch"]["action"] == "学校分配汇总"
     assert review["batch"]["operator_name"] == admin_user.name
     assert review["batch"]["assigned_at"].startswith("2026-07-07 07:00:00")
     assert review["batch"]["assigned_count"] == 4
@@ -194,7 +194,7 @@ async def test_build_assignment_batch_review_respects_window_days(
     db, admin_user, agent_user
 ):
     assigned_at = datetime(2026, 7, 7, 7, 0, 0)
-    batch_id = "smart-assign-window-test"
+    batch_id = "school-assign-window-test"
     student = _student("第三天处理学生", assigned_to=agent_user.id)
     db.add(student)
     await db.flush()
@@ -232,7 +232,7 @@ async def test_assignment_batch_review_endpoint_requires_audit_logs_permission(
     client, normal_admin_headers
 ):
     resp = await client.get(
-        "/api/admin/assignment-batches/smart-assign-review-test/review",
+        "/api/admin/assignment-batches/school-assign-review-test/review",
         headers=normal_admin_headers,
     )
 
@@ -266,7 +266,7 @@ async def test_assignment_batch_review_endpoint_rejects_invalid_window(
     client, admin_headers
 ):
     resp = await client.get(
-        "/api/admin/assignment-batches/smart-assign-review-test/review",
+        "/api/admin/assignment-batches/school-assign-review-test/review",
         params={"window_days": 2},
         headers=admin_headers,
     )
