@@ -4,7 +4,7 @@ from io import BytesIO
 from itertools import chain
 from zipfile import BadZipFile
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
@@ -27,7 +27,7 @@ from app.student_import import (
     is_empty_import_row,
     parse_import_row,
 )
-from app.utils import make_operation_log, utcnow
+from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/students", tags=["学生"])
 logger = logging.getLogger(__name__)
@@ -36,7 +36,6 @@ logger = logging.getLogger(__name__)
 @router.post("/import")
 async def import_students_excel(
     file: UploadFile = File(...),
-    default_agent_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_page_permission(ADMIN_PAGE_LEADS_MANAGE)),
 ):
@@ -54,13 +53,6 @@ async def import_students_excel(
         if not contents:
             return Response.error(code=1, msg="上传文件为空")
 
-        if default_agent_id is not None:
-            agent_result = await db.execute(
-                select(User.id).where(User.id == default_agent_id, User.is_active)
-            )
-            if not agent_result.scalar_one_or_none():
-                return Response.error(code=1, msg="默认话务员不存在或已禁用")
-
         workbook = load_workbook(filename=BytesIO(contents), read_only=True, data_only=True)
         ws = workbook.active
         rows = ws.iter_rows(values_only=True)
@@ -77,7 +69,6 @@ async def import_students_excel(
 
         parsed_rows = []  # (row_idx, parsed_dict)
         skipped_rows = []
-        assigned_at = utcnow() if default_agent_id is not None else None
 
         for row_idx, row in enumerate(rows, start=data_start_row):
             if is_empty_import_row(row):
@@ -151,8 +142,6 @@ async def import_students_excel(
                 {
                     "name": parsed["name"],
                     "region": parsed["region"],
-                    "assigned_to": default_agent_id,
-                    "assigned_at": assigned_at,
                     "score": parsed["score"],
                     "guardian_name": parsed["guardian_name"],
                     "guardian_phone": phone,

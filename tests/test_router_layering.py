@@ -61,7 +61,7 @@ BASELINE = {
     "students.py": 16,
     "students_assignment.py": 11,
     "students_enrollment.py": 11,
-    "students_import.py": 11,
+    "students_import.py": 9,
     "students_phone.py": 14,
     "students_query.py": 35,
 }
