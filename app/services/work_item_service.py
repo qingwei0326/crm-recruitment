@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db_utils import rowcount_in_chunks, scalars_in_chunks
+from app.db_utils import rowcount_in_chunks, rows_in_chunks, scalars_in_chunks
 from app.domain_errors import DomainConflict
 from app.domain_models import (
     AgentEmployment,
@@ -18,6 +18,7 @@ from app.models import (
     CampusVisitStatus,
     CampusVisitTask,
     EnrollmentRecord,
+    FollowUp,
     HomeVisitResult,
     HomeVisitStatus,
     HomeVisitTask,
@@ -27,7 +28,7 @@ from app.models import (
     User,
 )
 from app.status_policy import canonical_student_status
-from app.utils import utcnow
+from app.utils import make_operation_log, utcnow
 
 _HOME_VISIT_OPEN_STATUSES = {
     HomeVisitStatus.pending,
@@ -65,6 +66,13 @@ _ACTIVE_WORK_STATUSES = {
     WorkItemStatus.blocked_suspension,
     WorkItemStatus.blocked_handover,
 }
+_TERMINAL_STUDENT_STATUSES = {StudentStatus.enrolled, StudentStatus.invalid}
+# The settlement item is left alone: it only starts once a student enrolls.
+_TERMINAL_CLOSED_KINDS = (
+    WorkItemKind.scheduled_follow_up,
+    WorkItemKind.home_visit,
+    WorkItemKind.campus_visit,
+)
 
 
 def home_visit_is_open(task: HomeVisitTask) -> bool:
@@ -376,13 +384,21 @@ async def sync_students_work_items(
     open_owner_ids: set[int] = set()
     for student_id, student in students_by_id.items():
         canonical_status = canonical_student_status(student.status)
-        terminal = canonical_status in {
-            StudentStatus.enrolled,
-            StudentStatus.invalid,
-        }
+        terminal = canonical_status in _TERMINAL_STUDENT_STATUSES
         terminal_by_student[student_id] = terminal
         if student.assigned_to is not None and not terminal:
             open_owner_ids.add(student.assigned_to)
+
+    await _close_terminal_students_tasks(
+        db,
+        [
+            students_by_id[student_id]
+            for student_id in student_ids
+            if terminal_by_student[student_id]
+        ],
+        actor,
+        now,
+    )
 
     work_status_by_owner = await _work_statuses_for_owners(
         db,
@@ -469,6 +485,106 @@ async def sync_students_work_items(
 
     await db.flush()
     return tuple(items)
+
+
+async def _close_terminal_students_tasks(
+    db: AsyncSession,
+    students: Sequence[Student],
+    actor: User,
+    now: datetime,
+) -> None:
+    """Nothing is left to follow up once a student is 无效 or 已报名.
+
+    Completes their open follow-ups, cancels home and campus visits that have not
+    happened yet, and cancels every follow-up or visit work item still active.
+    A visit that enrolled the student (result 已报名, or named by an enrollment
+    record) is left as it is.
+    """
+    if not students:
+        return
+    student_ids = sorted(student.id for student in students)
+    follow_ups = await scalars_in_chunks(
+        db,
+        lambda ids: select(FollowUp).where(
+            FollowUp.student_id.in_(ids),
+            FollowUp.is_completed.is_(False),
+        ),
+        student_ids,
+    )
+    home_visits = await scalars_in_chunks(
+        db,
+        lambda ids: select(HomeVisitTask).where(
+            HomeVisitTask.student_id.in_(ids),
+            HomeVisitTask.status.in_(_HOME_VISIT_OPEN_STATUSES),
+            or_(
+                HomeVisitTask.result.is_(None),
+                HomeVisitTask.result != HomeVisitResult.enrolled,
+            ),
+        ),
+        student_ids,
+    )
+    campus_visits = await scalars_in_chunks(
+        db,
+        lambda ids: select(CampusVisitTask).where(
+            CampusVisitTask.student_id.in_(ids),
+            CampusVisitTask.status.in_(_CAMPUS_VISIT_OPEN_STATUSES),
+            or_(
+                CampusVisitTask.result.is_(None),
+                CampusVisitTask.result != CampusVisitResult.enrolled,
+            ),
+        ),
+        student_ids,
+    )
+    enrollment_visits = await rows_in_chunks(
+        db,
+        lambda ids: select(
+            EnrollmentRecord.home_visit_task_id,
+            EnrollmentRecord.campus_visit_task_id,
+        ).where(EnrollmentRecord.student_id.in_(ids)),
+        student_ids,
+    )
+    enrolling_home_ids = {home_id for home_id, _ in enrollment_visits if home_id}
+    enrolling_campus_ids = {campus_id for _, campus_id in enrollment_visits if campus_id}
+    items = await scalars_in_chunks(
+        db,
+        lambda ids: select(WorkItem).where(
+            WorkItem.student_id.in_(ids),
+            WorkItem.kind.in_(_TERMINAL_CLOSED_KINDS),
+            WorkItem.status.in_(_ACTIVE_WORK_STATUSES),
+        ),
+        student_ids,
+    )
+
+    closed: dict[int, list[str]] = {}
+    for follow_up in follow_ups:
+        follow_up.is_completed = True
+        closed.setdefault(follow_up.student_id, []).append("回访")
+    for task in home_visits:
+        if task.id in enrolling_home_ids:
+            continue
+        task.status = HomeVisitStatus.cancelled
+        closed.setdefault(task.student_id, []).append("家访")
+    for task in campus_visits:
+        if task.id in enrolling_campus_ids:
+            continue
+        task.status = CampusVisitStatus.cancelled
+        closed.setdefault(task.student_id, []).append("到校")
+    for item in items:
+        _cancel_item(item, now)
+
+    students_by_id = {student.id: student for student in students}
+    for student_id, kinds in sorted(closed.items()):
+        student = students_by_id[student_id]
+        summary = "、".join(f"{kind} {kinds.count(kind)} 条" for kind in dict.fromkeys(kinds))
+        db.add(
+            make_operation_log(
+                actor,
+                student.id,
+                student.case_no or "",
+                "自动关闭待办",
+                content=f"学生{canonical_student_status(student.status).value}，关闭{summary}",
+            )
+        )
 
 
 async def sync_assignment_source_work_items(
