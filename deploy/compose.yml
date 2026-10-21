@@ -1,0 +1,20 @@
+# 生产编排。服务器上的副本在 /home/qingwei/crm/compose.yml，两边保持一致。
+# 镜像用 .deploy/current 指向的发布包构建，Dockerfile 也取自发布包，切换版本时一起切换。
+# 期望的 Alembic 版本由发布包里的 app/config.py 决定，这里和 .env 都不要再设
+# EXPECTED_ALEMBIC_REVISION。
+services:
+  crm:
+    build:
+      context: /home/qingwei/crm/.deploy/current
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - /home/qingwei/crm/.env
+    environment:
+      DATABASE_PATH: /data/crm.db
+      FRONTEND_DIR: /app/frontend/dist
+    volumes:
+      - /home/qingwei/crm/crm.db:/data/crm.db
+      - /home/qingwei/crm/backups:/app/backups
+    ports:
+      - "127.0.0.1:${CRM_HOST_PORT:-8000}:8000"

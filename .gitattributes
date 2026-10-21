@@ -13,6 +13,7 @@
 *.yaml text eol=lf
 *.ini text eol=lf
 *.sh text eol=lf
+Dockerfile text eol=lf
 
 # Windows scripts should stay CRLF
 *.bat text eol=crlf

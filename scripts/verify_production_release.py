@@ -13,6 +13,7 @@ VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 REVISION_RE = re.compile(r"^[A-Za-z0-9_]+$")
 METADATA_FILES = {"SHA256SUMS", "PACKAGE-SHA256SUMS", "release-manifest.json"}
 REQUIRED_PAYLOAD_FILES = {
+    "Dockerfile",
     "alembic.ini",
     "alembic/env.py",
     "alembic/script.py.mako",
@@ -148,6 +149,26 @@ def verify_frontend_asset_graph(root: Path) -> set[str]:
     return {path.as_posix() for path in visited}
 
 
+def verify_dockerfile_copy_sources(root: Path, payload_paths: set[str]) -> None:
+    """The server builds the image from the package, so every COPY source must ship in it."""
+    missing = []
+    for line in (root / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if not parts or parts[0].upper() != "COPY":
+            continue
+        if any(part.startswith("--from=") for part in parts[1:]):
+            continue
+        arguments = [part for part in parts[1:] if not part.startswith("--")]
+        for source in arguments[:-1]:
+            source = source.rstrip("/")
+            if source not in payload_paths and not any(
+                path.startswith(f"{source}/") for path in payload_paths
+            ):
+                missing.append(source)
+    if missing:
+        raise ValueError(f"Dockerfile copies paths missing from the release: {missing}")
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -220,6 +241,7 @@ def verify_production_release(root: Path) -> dict[str, object]:
     missing_required = sorted(REQUIRED_PAYLOAD_FILES - set(payload_checksums))
     if missing_required:
         raise ValueError(f"required runtime files are missing: {missing_required}")
+    verify_dockerfile_copy_sources(root, set(payload_checksums))
     frontend_assets = {
         path for path in payload_checksums if path.startswith("frontend/dist/assets/")
     }
