@@ -14,9 +14,24 @@ from app.domain_models import (
     EmploymentStatus,
     LeadOutcomeReason,
     StudentAssignment,
+    WorkItem,
+    WorkItemKind,
+    WorkItemStatus,
 )
 from app.migration_data.domain_backfill_20260711 import audit_domain_core
-from app.models import Student, StudentStatus, User, UserRole
+from app.models import (
+    CampusVisitResult,
+    CampusVisitStatus,
+    CampusVisitTask,
+    EnrollmentRecord,
+    FollowUp,
+    HomeVisitStatus,
+    HomeVisitTask,
+    Student,
+    StudentStatus,
+    User,
+    UserRole,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_TABLES = {
@@ -299,7 +314,7 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20261017_01"
+        assert revision == "20261020_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
@@ -380,7 +395,7 @@ def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_p
         ).one()
         assert tuple(row) == ("13960118706", "contacted")
         assert conn.execute(text("select version_num from alembic_version")).scalar_one() == (
-            "20261017_01"
+            "20261020_01"
         )
     assert run_alembic(db_path, "check").returncode == 0
     engine.dispose()
@@ -622,7 +637,7 @@ def test_call_analysis_table_and_settings_are_dropped(tmp_path):
                 {"key": key},
             )
 
-    upgraded = run_alembic(db_path, "upgrade", "20261017_01")
+    upgraded = run_alembic(db_path, "upgrade", "head")
 
     assert upgraded.returncode == 0, upgraded.stderr
     assert "calls" not in inspect(engine).get_table_names()
@@ -638,4 +653,157 @@ def test_call_analysis_table_and_settings_are_dropped(tmp_path):
     assert "calls" in inspect(engine).get_table_names()
     with engine.connect() as conn:
         assert conn.execute(text("select count(*) from calls")).scalar_one() == 0
+    engine.dispose()
+
+
+def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
+    db_path = tmp_path / "terminal-tasks.db"
+    assert run_alembic(db_path, "upgrade", "20261017_01").returncode == 0
+    engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    when = datetime(2026, 7, 20, 9, 0, 0)
+    with Session(engine) as session:
+        agent = User(
+            username="terminal_agent", hashed_password="x", role=UserRole.agent, name="坐席"
+        )
+        session.add(agent)
+        session.flush()
+        invalid = Student(name="已无效", status="child_not_want_study", assigned_to=agent.id)
+        enrolled = Student(name="已报名", status=StudentStatus.enrolled, assigned_to=agent.id)
+        active = Student(name="在跟进", status=StudentStatus.pending_visit, assigned_to=agent.id)
+        session.add_all([invalid, enrolled, active])
+        session.flush()
+
+        def snapshot(student):
+            return {
+                "student_name_snapshot": student.name,
+                "region_snapshot": "",
+                "school_name_snapshot": "",
+            }
+
+        open_follow_up = FollowUp(
+            student_id=invalid.id, agent_id=agent.id, follow_up_date=when, is_completed=False
+        )
+        kept_follow_up = FollowUp(
+            student_id=active.id, agent_id=agent.id, follow_up_date=when, is_completed=False
+        )
+        home = HomeVisitTask(
+            student_id=invalid.id,
+            creator_agent_id=agent.id,
+            status=HomeVisitStatus.pending,
+            **snapshot(invalid),
+        )
+        spare_campus = CampusVisitTask(
+            student_id=enrolled.id,
+            creator_user_id=agent.id,
+            status=CampusVisitStatus.scheduled,
+            appointment_at=when,
+            **snapshot(enrolled),
+        )
+        enrolling_campus = CampusVisitTask(
+            student_id=enrolled.id,
+            creator_user_id=agent.id,
+            status=CampusVisitStatus.scheduled,
+            appointment_at=when,
+            **snapshot(enrolled),
+        )
+        onsite_campus = CampusVisitTask(
+            student_id=enrolled.id,
+            creator_user_id=agent.id,
+            status=CampusVisitStatus.scheduled,
+            result=CampusVisitResult.enrolled,
+            appointment_at=when,
+            **snapshot(enrolled),
+        )
+        session.add_all(
+            [open_follow_up, kept_follow_up, home, spare_campus, enrolling_campus, onsite_campus]
+        )
+        session.flush()
+        session.add(
+            EnrollmentRecord(
+                student_id=enrolled.id,
+                attributed_agent_id=agent.id,
+                confirmed_by_admin_id=agent.id,
+                campus_visit_task_id=enrolling_campus.id,
+                **snapshot(enrolled),
+            )
+        )
+        items = {
+            name: WorkItem(
+                student_id=student.id,
+                kind=kind,
+                status=WorkItemStatus.open,
+                owner_agent_id=agent.id,
+                source_type=source_type,
+                source_id=source.id,
+            )
+            for name, student, kind, source_type, source in (
+                ("follow_up", invalid, WorkItemKind.scheduled_follow_up, "follow_up", open_follow_up),  # noqa: E501
+                ("kept", active, WorkItemKind.scheduled_follow_up, "follow_up", kept_follow_up),
+                ("home", invalid, WorkItemKind.home_visit, "home_visit", home),
+                ("campus", enrolled, WorkItemKind.campus_visit, "campus_visit", spare_campus),
+            )
+        }
+        session.add_all(items.values())
+        session.commit()
+        ids = {
+            "follow_up": open_follow_up.id,
+            "kept_follow_up": kept_follow_up.id,
+            "home": home.id,
+            "spare_campus": spare_campus.id,
+            "enrolling_campus": enrolling_campus.id,
+            "onsite_campus": onsite_campus.id,
+            **{f"item_{name}": item.id for name, item in items.items()},
+        }
+
+    def state():
+        with engine.connect() as conn:
+            def one(sql, row_id):
+                return conn.execute(text(sql), {"id": row_id}).scalar_one()
+
+            return {
+                **{
+                    name: one("select is_completed from follow_ups where id=:id", ids[name])
+                    for name in ("follow_up", "kept_follow_up")
+                },
+                "home": one("select status from home_visit_tasks where id=:id", ids["home"]),
+                **{
+                    name: one("select status from campus_visit_tasks where id=:id", ids[name])
+                    for name in ("spare_campus", "enrolling_campus", "onsite_campus")
+                },
+                **{
+                    name: one("select status from work_items where id=:id", ids[name])
+                    for name in ("item_follow_up", "item_kept", "item_home", "item_campus")
+                },
+                "logs": conn.execute(
+                    text(
+                        "select content from operation_logs where action='自动关闭待办' "
+                        "and batch_id='alembic-20261020_01' order by target_student_id"
+                    )
+                ).scalars().all(),
+            }
+
+    before = state()
+    upgraded = run_alembic(db_path, "upgrade", "head")
+
+    assert upgraded.returncode == 0, upgraded.stderr
+    assert state() == {
+        "follow_up": 1,
+        "kept_follow_up": 0,
+        "home": "cancelled",
+        "spare_campus": "cancelled",
+        "enrolling_campus": "scheduled",
+        "onsite_campus": "scheduled",
+        "item_follow_up": "cancelled",
+        "item_kept": "open",
+        "item_home": "cancelled",
+        "item_campus": "cancelled",
+        "logs": ["学生无效，关闭回访 1 条、家访 1 条", "学生已报名，关闭到校 1 条"],
+    }
+    check = run_alembic(db_path, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
+
+    downgraded = run_alembic(db_path, "downgrade", "20261017_01")
+
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert state() == before
     engine.dispose()
