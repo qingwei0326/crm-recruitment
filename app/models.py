@@ -248,7 +248,11 @@ class Student(Base):
 
 class Note(Base):
     __tablename__ = "notes"
-    __table_args__ = (Index("ix_notes_student_id", "student_id"),)
+    __table_args__ = (
+        Index("ix_notes_student_id", "student_id"),
+        Index("ix_notes_agent_id", "agent_id"),
+        Index("ix_notes_student_created", "student_id", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
@@ -267,6 +271,8 @@ class FollowUp(Base):
     __table_args__ = (
         Index("ix_follow_ups_student_id", "student_id"),
         Index("ix_follow_ups_agent_id", "agent_id"),
+        Index("ix_follow_ups_agent_date", "agent_id", "follow_up_date"),
+        Index("ix_follow_ups_completed_date", "is_completed", "follow_up_date"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -285,7 +291,10 @@ class FollowUp(Base):
 
 class LeadViewLog(Base):
     __tablename__ = "lead_view_logs"
-    __table_args__ = (Index("ix_lead_view_logs_student_id", "student_id"),)
+    __table_args__ = (
+        Index("ix_lead_view_logs_student_id", "student_id"),
+        Index("ix_lead_view_logs_viewer_id", "viewer_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
@@ -451,6 +460,8 @@ class OperationLog(Base):
         Index("ix_operation_logs_target_student_id", "target_student_id"),
         Index("ix_operation_logs_action", "action"),
         Index("ix_operation_logs_batch_id", "batch_id"),
+        Index("ix_operation_logs_created_at", "created_at"),
+        Index("ix_operation_logs_action_status", "action", "new_status", "target_student_id"),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -467,6 +478,22 @@ class OperationLog(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     operator = relationship("User", backref="operation_logs")
+
+
+class SchemaCleanupArchive(Base):
+    """Original retired fields/nulls retained by a versioned schema migration.
+
+    This archive is deliberately independent of student deletion and business logs.
+    It has no application write path; its payload must only be read for recovery.
+    """
+
+    __tablename__ = "schema_cleanup_archive"
+
+    revision = Column(String(32), primary_key=True)
+    table_name = Column(String(64), primary_key=True)
+    row_id = Column(Integer, primary_key=True)
+    payload = Column(Text, nullable=False)
+    archived_at = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
 
 class SystemConfig(Base):
