@@ -1,4 +1,3 @@
-import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import and_, func, or_, select
@@ -14,7 +13,6 @@ from app.models import (
     HomeVisitStatus,
     HomeVisitTask,
     IntentLevel,
-    OperationLog,
     SettlementStatus,
     Student,
     StudentStatus,
@@ -22,23 +20,6 @@ from app.models import (
 )
 from app.task_stats import ACTIVE_TASK_STATUSES, TERMINAL_STUDENT_STATUSES
 from app.utils import overdue_cutoff, today_cst_as_utc, utcnow
-
-DAILY_OPS_REVIEW_PREFIX = "daily-ops:"
-DAILY_OPS_REVIEW_STATUSES = {
-    "处理中",
-    "已处理",
-    "已忽略",
-    "暂缓",
-    "明日继续跟进",
-    "无需处理",
-}
-DAILY_OPS_CLOSED_STATUSES = {
-    "已处理",
-    "已忽略",
-    "暂缓",
-    "明日继续跟进",
-    "无需处理",
-}
 
 
 def _to_datetime(value):
@@ -53,46 +34,6 @@ def _today_cst_date_key() -> str:
     return (today_cst_as_utc() + timedelta(hours=8)).date().isoformat()
 
 
-def _daily_ops_batch_id(date_key: str, key: str) -> str:
-    safe_key = re.sub(r"[^a-zA-Z0-9_.:-]+", "-", (key or "").strip())[:40]
-    return f"{DAILY_OPS_REVIEW_PREFIX}{date_key}:{safe_key}"
-
-
-async def _latest_daily_ops_reviews(db: AsyncSession, date_key: str) -> dict[str, dict]:
-    prefix = f"{DAILY_OPS_REVIEW_PREFIX}{date_key}:"
-    rows = (
-        (
-            await db.execute(
-                select(OperationLog)
-                .where(
-                    OperationLog.action == "每日运营闭环",
-                    OperationLog.batch_id.like(f"{prefix}%"),
-                )
-                .order_by(OperationLog.created_at.desc(), OperationLog.id.desc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    reviews = {}
-    for log in rows:
-        key = (log.batch_id or "")[len(prefix) :].strip()
-        if not key or key in reviews:
-            continue
-        try:
-            reviewed_count = int(log.old_status or 0)
-        except (TypeError, ValueError):
-            reviewed_count = 0
-        reviews[key] = {
-            "status": log.new_status or "已处理",
-            "note": log.note_content or "",
-            "reviewed_count": reviewed_count,
-            "reviewed_by": log.operator_name or "",
-            "reviewed_at": log.created_at,
-        }
-    return reviews
-
-
 def _daily_ops_item(
     *,
     key: str,
@@ -101,15 +42,9 @@ def _daily_ops_item(
     severity: str,
     detail: str,
     to: str,
-    reviews: dict[str, dict],
     owners: list[dict] | None = None,
 ) -> dict:
-    review = reviews.get(key) or {}
     count = int(count or 0)
-    reviewed_count = max(int(review.get("reviewed_count") or 0), 0)
-    status = review.get("status") or ("已处理" if count == 0 else "待处理")
-    if review and status in DAILY_OPS_CLOSED_STATUSES and count > reviewed_count:
-        status = "待处理"
     return {
         "key": key,
         "title": title,
@@ -117,12 +52,6 @@ def _daily_ops_item(
         "severity": severity if count else "low",
         "detail": detail,
         "to": to,
-        "status": status,
-        "is_closed": count == 0 or status in DAILY_OPS_CLOSED_STATUSES,
-        "reviewed_count": reviewed_count,
-        "reviewed_by": review.get("reviewed_by") or "",
-        "reviewed_at": review["reviewed_at"].isoformat() if review.get("reviewed_at") else "",
-        "note": review.get("note") or "",
         "owners": owners or [],
     }
 
@@ -466,10 +395,9 @@ async def _daily_ops_owner_breakdowns(db: AsyncSession) -> dict[str, list[dict]]
     }
 
 
-async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
+async def _build_daily_ops_payload(db: AsyncSession) -> dict:
     counts = await _daily_ops_counts(db)
     owner_breakdowns = await _daily_ops_owner_breakdowns(db)
-    reviews = await _latest_daily_ops_reviews(db, date_key)
     items = [
         _daily_ops_item(
             key="stale_a",
@@ -478,7 +406,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="high",
             detail="A 级且 3 天以上无新活动，优先回访或主管介入。",
             to="/admin/work-center?queue=stale-a",
-            reviews=reviews,
             owners=owner_breakdowns.get("stale_a"),
         ),
         _daily_ops_item(
@@ -488,7 +415,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="high",
             detail="待确认、已安排或暂缓的家访，需要确认安排、结果或下一步。",
             to="/admin/work-center?queue=home_visit",
-            reviews=reviews,
             owners=owner_breakdowns.get("home_visit_due"),
         ),
         _daily_ops_item(
@@ -498,7 +424,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="high",
             detail="待预约或已到预约时间但未确认结果的到校任务。",
             to="/admin/work-center?queue=campus_visit",
-            reviews=reviews,
             owners=owner_breakdowns.get("campus_visit_due"),
         ),
         _daily_ops_item(
@@ -508,7 +433,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="high",
             detail="已报名但仍未结算、暂缓或争议，需要确认结算归属。",
             to="/admin/enrollment-settlement",
-            reviews=reviews,
             owners=owner_breakdowns.get("unsettled_enrollments"),
         ),
         _daily_ops_item(
@@ -518,7 +442,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="high",
             detail="话务员标记需要管理员协助的学生。",
             to="/admin/work-center?queue=help",
-            reviews=reviews,
             owners=owner_breakdowns.get("help_requests"),
         ),
         _daily_ops_item(
@@ -528,7 +451,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="medium",
             detail="已分配但没有拨号记录，需确认话务员是否开始处理。",
             to="/admin/leads?active=1",
-            reviews=reviews,
             owners=owner_breakdowns.get("assigned_no_call"),
         ),
         _daily_ops_item(
@@ -538,7 +460,6 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="medium",
             detail="分配满 24 小时仍未联系的学生，避免继续过期。",
             to="/admin/leads?status=%E6%9C%AA%E8%81%94%E7%B3%BB&active=1",
-            reviews=reviews,
             owners=owner_breakdowns.get("yesterday_uncontacted"),
         ),
         _daily_ops_item(
@@ -548,22 +469,15 @@ async def _build_daily_ops_payload(db: AsyncSession, date_key: str) -> dict:
             severity="medium",
             detail="回访时间已过但未完成，需要话务员补跟进。",
             to="/admin/work-center?queue=follow",
-            reviews=reviews,
             owners=owner_breakdowns.get("overdue_followups"),
         ),
     ]
     active_items = [item for item in items if item["count"] > 0]
-    closed_items = [item for item in active_items if item["is_closed"]]
-    pending_items = [item for item in active_items if not item["is_closed"]]
-    high_pending = [item for item in pending_items if item["severity"] == "high"]
     return {
-        "date": date_key,
+        "date": _today_cst_date_key(),
         "generated_at": utcnow().isoformat(),
         "summary": {
             "total_items": len(active_items),
-            "closed_items": len(closed_items),
-            "pending_items": len(pending_items),
-            "high_pending_items": len(high_pending),
             "total_count": sum(item["count"] for item in active_items),
             "max_age_days": max(
                 [

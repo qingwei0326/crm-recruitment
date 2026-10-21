@@ -15,20 +15,14 @@ REVIEW_WINDOW_DAYS = (1, 3, 7, 14)
 ASSIGNMENT_DETAIL_ACTIONS = {
     "修改归属",
     "手动分配",
-    "自动分配",
-    "区域分配",
     "学校分配",
     "多学校分发",
-    "智能分配",
 }
 
 ASSIGNMENT_SUMMARY_ACTIONS = {
     "批量分配",
-    "自动分配汇总",
-    "区域分配汇总",
     "学校分配汇总",
     "多学校分发汇总",
-    "智能分配汇总",
 }
 
 STATUS_CHANGE_ACTIONS = {"修改状态", "修改报名后状态"}

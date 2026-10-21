@@ -127,7 +127,7 @@ async def test_risk_alerts_window_follows_days_parameter(client, db, admin_user,
         OperationLog(operator_id=admin_user.id, operator_name="管理员", case_no="",
                      action="删除线索", content="删除 X", created_at=now - timedelta(hours=5)),
         OperationLog(operator_id=admin_user.id, operator_name="管理员", case_no="",
-                     action="自动分配汇总", content="自动分配",
+                     action="学校分配汇总", content="学校分发",
                      created_at=now - timedelta(days=20)),
     ])
     await db.commit()

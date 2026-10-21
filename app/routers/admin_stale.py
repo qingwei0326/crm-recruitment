@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -131,102 +129,6 @@ async def stale_students(
         )
 
     return Response.ok(data)
-
-
-@router.get("/stale-school-groups")
-async def stale_school_groups(
-    days: int = Query(3, ge=1, le=30),
-    group_by: str = Query("school_name"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
-):
-    """按学校或区域聚合超时未跟进的学员数量"""
-    last_activity = build_last_activity_subquery()
-    last_activity_at = func.coalesce(
-        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
-    ).label("last_activity_at")
-    cutoff = utcnow() - timedelta(days=days)
-
-    group_col = Student.school_name if group_by == "school_name" else Student.region
-
-    result = await db.execute(
-        select(group_col, func.count())
-        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
-        .where(
-            Student.assigned_to.isnot(None),
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-            last_activity_at < cutoff,
-        )
-        .group_by(group_col)
-        .order_by(func.count().desc())
-    )
-    groups = [{"name": name or "未知", "count": cnt} for name, cnt in result.all()]
-    total = sum(g["count"] for g in groups)
-    return Response.ok({"groups": groups, "total": total})
-
-
-class StaleReclaimByGroupReq(BaseModel):
-    group_name: str
-    group_by: Literal["school_name", "region"] = "school_name"
-    days: int = 3
-
-
-@router.post("/stale-reclaim-by-group")
-async def stale_reclaim_by_group(
-    body: StaleReclaimByGroupReq,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin),
-):
-    """按学校或区域一键回收超时学员 → assigned_to=null"""
-    last_activity = build_last_activity_subquery()
-    last_activity_at = func.coalesce(
-        last_activity.c.last_activity_at, Student.assigned_at, Student.created_at
-    ).label("last_activity_at")
-    cutoff = utcnow() - timedelta(days=body.days)
-
-    group_col = Student.school_name if body.group_by == "school_name" else Student.region
-
-    result = await db.execute(
-        select(Student)
-        .outerjoin(last_activity, last_activity.c.student_id == Student.id)
-        .where(
-            group_col == body.group_name,
-            Student.assigned_to.isnot(None),
-            Student.status.not_in(TERMINAL_STUDENT_STATUSES),
-            last_activity_at < cutoff,
-        )
-    )
-    students = result.scalars().all()
-    if not students:
-        return Response.error(code=1, msg="没有可回收的超时学员")
-
-    now = utcnow()
-    batch_id = make_batch_id("stale-recycle")
-    await apply_assignment_changes(
-        db,
-        [AssignmentTarget(student_id=student.id, agent_id=None) for student in students],
-        operator=current_user,
-        reason="stale_recycle",
-        batch_id=batch_id,
-        at=now,
-    )
-    reclaimed_count = len(students)
-    db.add(
-        make_operation_log(
-            current_user,
-            target_student_id=None,
-            case_no="",
-            action="超时线索回收汇总",
-            content=(
-                f"按{('学校' if body.group_by == 'school_name' else '区域')}"
-                f"回收「{body.group_name}」共 {reclaimed_count} 人至未分配池"
-            ),
-            batch_id=batch_id,
-        )
-    )
-
-    await db.commit()
-    return Response.ok({"reclaimed_count": reclaimed_count, "group_name": body.group_name})
 
 
 @router.post("/stale-reassign")
