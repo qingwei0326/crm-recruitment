@@ -31,7 +31,6 @@ from app.domain_models import (
     WorkItem,
 )
 from app.models import (
-    Call,
     CampusVisitTask,
     DialLog,
     EnrollmentRecord,
@@ -42,7 +41,6 @@ from app.models import (
     OperationLog,
     Student,
     User,
-    Visit,
 )
 from app.utils import make_batch_id, make_operation_log, utcnow
 
@@ -52,11 +50,9 @@ SEASON_CONFIRM_TEXT = "清理本招生季"
 
 # 这些表的 student_id 是直接关联；OperationLog 使用 target_student_id。
 STUDENT_DATA_MODELS = (
-    Call,
     Note,
     FollowUp,
     LeadViewLog,
-    Visit,
     HomeVisitTask,
     CampusVisitTask,
     EnrollmentRecord,
@@ -436,12 +432,10 @@ async def cleanup_current_season(
         HomeVisitTask,
         StudentAssignment,
         DialLog,
-        Call,
-        Note,
+            Note,
         FollowUp,
         LeadViewLog,
-        Visit,
-        PersonalGroupMembership,
+            PersonalGroupMembership,
     ):
         await db.execute(delete(model).where(_student_predicate(model)))
     await db.execute(

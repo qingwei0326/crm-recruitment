@@ -273,7 +273,6 @@ SakuraFrp token
 Cloudflare tunnel credentials JSON
 .env
 SECRET_KEY
-DEEPSEEK_API_KEY
 crm.db
 ```
 

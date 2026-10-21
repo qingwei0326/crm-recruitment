@@ -16,7 +16,6 @@ from app.domain_models import (
     WorkItem,
 )
 from app.models import (
-    Call,
     CampusVisitTask,
     DialLog,
     EnrollmentRecord,
@@ -25,7 +24,6 @@ from app.models import (
     LeadViewLog,
     Note,
     Student,
-    Visit,
 )
 from app.utils import make_operation_log
 
@@ -39,11 +37,9 @@ RELATED_MODELS = (
     HomeVisitTask,
     StudentAssignment,
     DialLog,
-    Call,
     Note,
     FollowUp,
     LeadViewLog,
-    Visit,
 )
 
 

@@ -1,73 +1,46 @@
 import pytest
 
-from app.models import Call, DialLog, Note
+from app.dial_recording import DIAL_RECORDING_COMPLETED
+from app.models import DialLog, Note
 from app.utils import utcnow
 
-AI_CALL_FIELDS = {
-    "transcript",
-    "ai_intent",
-    "ai_reasons",
-    "ai_summary",
-    "ai_confidence",
-    "analyzed_at",
-}
 
-
-async def _seed_analyzed_call(db, student, agent):
-    call = Call(
-        student_id=student.id,
-        agent_id=agent.id,
-        duration_seconds=120,
-        transcript="家长明确表示希望了解报名流程",
-        ai_intent="A",
-        ai_reasons="明确询问报名流程",
-        ai_summary="家长有明确报名意向",
-        ai_confidence=0.93,
-        analyzed_at=utcnow(),
+@pytest.mark.asyncio
+async def test_call_analysis_endpoints_are_gone(client, admin_headers, sample_student):
+    analyze = await client.post(
+        "/api/calls/analyze",
+        headers=admin_headers,
+        json={"student_id": sample_student.id, "transcript": "请介绍报名流程"},
     )
-    db.add(call)
+    listed = await client.get("/api/calls", headers=admin_headers)
+
+    assert analyze.status_code in {404, 405}
+    assert listed.status_code in {404, 405}
+
+
+@pytest.mark.asyncio
+async def test_student_detail_lists_dial_records_and_hides_ai_notes_from_agents(
+    client, db, agent_headers, agent_user, sample_student, assignment_baseline
+):
+    await assignment_baseline(sample_student, agent_user)
+    dial = DialLog(
+        student_id=sample_student.id,
+        agent_id=agent_user.id,
+        dialed_at=utcnow(),
+        duration_seconds=120,
+        recording_state=DIAL_RECORDING_COMPLETED,
+    )
+    db.add(dial)
     db.add(
         Note(
-            student_id=student.id,
-            agent_id=agent.id,
+            student_id=sample_student.id,
+            agent_id=agent_user.id,
             content="【AI 通话摘要】家长有明确报名意向",
             source="ai",
         )
     )
     await db.commit()
-    await db.refresh(call)
-    return call
-
-
-@pytest.mark.asyncio
-async def test_agent_analyze_is_forbidden_before_analyzer_runs(
-    client, agent_headers, sample_student, monkeypatch
-):
-    async def fail_if_called(*_args, **_kwargs):
-        raise AssertionError("agent request must not call analyze_transcript")
-
-    monkeypatch.setattr("app.routers.calls.analyze_transcript", fail_if_called)
-
-    response = await client.post(
-        "/api/calls/analyze",
-        headers=agent_headers,
-        json={
-            "student_id": sample_student.id,
-            "duration_seconds": 30,
-            "transcript": "请介绍报名流程",
-        },
-    )
-
-    assert response.status_code == 403
-    assert response.json()["detail"] == "话务员不可使用AI通话分析"
-
-
-@pytest.mark.asyncio
-async def test_agent_student_detail_hides_ai_call_data(
-    client, db, agent_headers, agent_user, sample_student, assignment_baseline
-):
-    await assignment_baseline(sample_student, agent_user)
-    call = await _seed_analyzed_call(db, sample_student, agent_user)
+    await db.refresh(dial)
 
     response = await client.get(
         f"/api/students/{sample_student.id}/detail",
@@ -77,29 +50,18 @@ async def test_agent_student_detail_hides_ai_call_data(
     assert response.status_code == 200
     body = response.json()
     assert body["code"] == 0
-    call_payload = body["data"]["calls"][0]
-    assert AI_CALL_FIELDS.isdisjoint(call_payload)
-    assert call_payload["id"] == call.id
-    assert call_payload["duration_seconds"] == 120
+    assert body["data"]["calls"] == [
+        {
+            "id": dial.id,
+            "agent_id": agent_user.id,
+            "agent_name": agent_user.name,
+            "duration_seconds": 120,
+            "recording_state": DIAL_RECORDING_COMPLETED,
+            "created_at": str(dial.dialed_at),
+        }
+    ]
     assert body["data"]["intent_timeline"] == []
     assert all(note["source"] != "ai" for note in body["data"]["notes"])
-
-
-@pytest.mark.asyncio
-async def test_agent_call_list_hides_ai_data(client, db, agent_headers, agent_user, sample_student):
-    call = await _seed_analyzed_call(db, sample_student, agent_user)
-
-    response = await client.get(
-        "/api/calls",
-        headers=agent_headers,
-        params={"student_id": sample_student.id},
-    )
-
-    assert response.status_code == 200
-    call_payload = response.json()["data"]["list"][0]
-    assert AI_CALL_FIELDS.isdisjoint(call_payload)
-    assert call_payload["id"] == call.id
-    assert call_payload["duration_seconds"] == 120
 
 
 @pytest.mark.asyncio
@@ -245,28 +207,6 @@ async def test_agent_can_update_and_delete_human_note(
     )
     assert delete_response.status_code == 200
     assert delete_response.json()["data"]["deleted"] == human_note.id
-
-
-@pytest.mark.asyncio
-async def test_admin_call_list_keeps_existing_analysis_fields(
-    client, db, admin_headers, admin_user, sample_student
-):
-    call = await _seed_analyzed_call(db, sample_student, admin_user)
-
-    response = await client.get(
-        "/api/calls",
-        headers=admin_headers,
-        params={"student_id": sample_student.id},
-    )
-
-    assert response.status_code == 200
-    call_payload = response.json()["data"]["list"][0]
-    assert call_payload["id"] == call.id
-    assert call_payload["ai_intent"] == "A"
-    assert call_payload["ai_reasons"] == "明确询问报名流程"
-    assert call_payload["ai_summary"] == "家长有明确报名意向"
-    assert call_payload["ai_confidence"] == 0.93
-    assert call_payload["analyzed_at"]
 
 
 @pytest.mark.asyncio

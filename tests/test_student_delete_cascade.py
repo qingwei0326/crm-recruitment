@@ -29,17 +29,16 @@ class TestCascadeDeleteCoversMissingTables:
         names = {m.__name__ for m in RELATED_MODELS}
         # 此前只删 6 张，遗漏上述 6 张；修复后必须全部覆盖。
         assert expected_missing <= names
-        # 12 张关联表总数（6 原有 + 6 遗漏）必须完整。
-        assert len(RELATED_MODELS) == 12
+        # 10 张关联表（4 原有 + 6 遗漏）。旧 visits 表已在 Alembic 20261016_01 并入家访/到校任务，
+        # 只给 AI 通话分析用的 calls 表已在 20261017_01 删除。
+        assert len(RELATED_MODELS) == 10
 
-    async def test_original_six_tables_still_covered(self):
+    async def test_original_tables_still_covered(self):
         original = {
-            "Call",
             "DialLog",
             "FollowUp",
             "LeadViewLog",
             "Note",
-            "Visit",
         }
         names = {m.__name__ for m in RELATED_MODELS}
         assert original <= names

@@ -16,11 +16,10 @@ from app.models import (
     StudentStatus,
     User,
     UserRole,
-    Visit,
-    VisitStatus,
 )
 from app.routers.stats import _stage_stats_key
 from app.schemas import Response
+from app.services.visit_stats_service import count_visited_students
 from app.status_policy import statuses_for_canonical
 from app.task_stats import ACTIVE_TASK_STATUSES
 from app.utils import today_cst_as_utc
@@ -356,13 +355,7 @@ async def dashboard_all(
                 select(func.count(Student.id)).where(Student.intent_level == IntentLevel.A)
             )
         ).scalar() or 0
-        visited = (
-            await db.execute(
-                select(func.count(func.distinct(Visit.student_id))).where(
-                    Visit.status == VisitStatus.completed
-                )
-            )
-        ).scalar() or 0
+        visited = await count_visited_students(db)
         enrolled = (
             await db.execute(
                 select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)
@@ -392,39 +385,17 @@ async def dashboard_all(
         )
         return result.scalar() or 0
 
-    async def _visits_summary(session: AsyncSession):
-        db = session
-        type_result = await db.execute(
-            select(Visit.visit_type, func.count(Visit.id)).group_by(Visit.visit_type)
-        )
-        by_type = {row[0]: row[1] for row in type_result.all()}
-
-        status_result = await db.execute(
-            select(Visit.status, func.count(Visit.id)).group_by(Visit.status)
-        )
-        by_status = {row[0]: row[1] for row in status_result.all()}
-
-        region_result = await db.execute(
-            select(Student.region, func.count(Visit.id))
-            .join(Visit, Visit.student_id == Student.id)
-            .group_by(Student.region)
-        )
-        by_region = {row[0] or "未知": row[1] for row in region_result.all()}
-
-        return {"by_type": by_type, "by_status": by_status, "by_region": by_region}
-
     async def _run_in_session(operation):
         async with async_session() as session:
             return await operation(session)
 
     # AsyncSession 不能被多个协程共享；每个只读聚合分支使用独立 session。
-    summary, sources, stages, funnel, notify_fails, visits = await asyncio.gather(
+    summary, sources, stages, funnel, notify_fails = await asyncio.gather(
         _run_in_session(_summary),
         _run_in_session(_sources),
         _run_in_session(_stages),
         _run_in_session(_funnel),
         _run_in_session(_notify_fails),
-        _run_in_session(_visits_summary),
     )
 
     return Response.ok(
@@ -434,6 +405,5 @@ async def dashboard_all(
             "stages": stages,
             "funnel": funnel,
             "notify_fails": notify_fails,
-            "visits": visits,
         }
     )

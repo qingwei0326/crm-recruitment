@@ -1,6 +1,6 @@
 """Tests for edge cases, error handling, and historical bug patterns."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -167,44 +167,7 @@ class TestAuthEdgeCases:
 
 
 @pytest.mark.asyncio
-class TestCallEndpoints:
-    async def test_create_call(self, client, admin_headers, sample_student):
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": sample_student.id,
-                "duration_seconds": 120,
-                "transcript": "我想了解一下学校的学费和升学率",
-            },
-            headers=admin_headers,
-        )
-        assert resp.json()["code"] == 0
-
-    async def test_create_call_empty_transcript(self, client, admin_headers, sample_student):
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": sample_student.id,
-                "duration_seconds": 10,
-                "transcript": "",
-            },
-            headers=admin_headers,
-        )
-        assert resp.json()["code"] == 0
-
-    async def test_create_call_nonexistent_student(self, client, admin_headers):
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": 99999,
-                "duration_seconds": 30,
-                "transcript": "test",
-            },
-            headers=admin_headers,
-        )
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == "学生不存在"
-
+class TestDialDurationEndpoints:
     async def test_update_dial_duration_updates_latest_user_dial_log(
         self, client, db, admin_headers, admin_user, sample_student
     ):
@@ -320,56 +283,6 @@ class TestCallEndpoints:
         )
 
         assert resp.json()["code"] == 1
-
-    async def test_agent_analyze_unassigned_student_forbidden(
-        self, client, agent_headers, sample_student
-    ):
-        assert sample_student.assigned_to is None
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": sample_student.id,
-                "duration_seconds": 30,
-                "transcript": "想了解一下学费",
-            },
-            headers=agent_headers,
-        )
-        assert resp.status_code == 403
-
-    async def test_agent_analyze_assigned_to_other_forbidden(
-        self,
-        client,
-        agent_headers,
-        admin_user,
-        db,
-    ):
-        from app.models import IntentLevel, Student, StudentStage, StudentStatus
-
-        s = Student(
-            name="独占学员",
-            region="r",
-            assigned_to=admin_user.id,
-            stage=StudentStage.initial_contact,
-            status=StudentStatus.not_contacted,
-            intent_level=IntentLevel.none,
-        )
-        db.add(s)
-        await db.commit()
-        await db.refresh(s)
-        resp = await client.post(
-            "/api/calls/analyze",
-            json={
-                "student_id": s.id,
-                "duration_seconds": 10,
-                "transcript": "test",
-            },
-            headers=agent_headers,
-        )
-        assert resp.status_code == 403
-
-    async def test_agent_list_calls_scoped(self, client, agent_headers, agent_user):
-        resp = await client.get(f"/api/calls?agent_id={agent_user.id + 999}", headers=agent_headers)
-        assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -543,55 +456,10 @@ class TestNoteEndpoints:
 
 
 @pytest.mark.asyncio
-class TestVisitEndpoints:
-    async def test_create_visit(self, client, admin_headers, sample_student):
-        resp = await client.post(
-            "/api/visits",
-            json={
-                "student_id": sample_student.id,
-                "visit_type": "来校参观",
-                "scheduled_date": "2026-06-01T10:00:00",
-                "notes": "预约参观",
-            },
-            headers=admin_headers,
-        )
-        assert resp.json()["code"] == 0
-
-    async def test_create_visit_invalid_type(self, client, admin_headers, sample_student):
-        resp = await client.post(
-            "/api/visits",
-            json={
-                "student_id": sample_student.id,
-                "visit_type": "无效类型",
-                "scheduled_date": "2026-06-01T10:00:00",
-            },
-            headers=admin_headers,
-        )
-        assert resp.status_code == 422
-
-    async def test_visits_summary(self, client, admin_headers, db, admin_user):
-        from app.models import Student, Visit, VisitStatus, VisitType
-
-        s = Student(name="vtest", region="r")
-        db.add(s)
-        await db.commit()
-        db.add(
-            Visit(
-                student_id=s.id,
-                agent_id=admin_user.id,
-                visit_type=VisitType.campus,
-                scheduled_date=datetime(2026, 6, 1),
-                status=VisitStatus.pending,
-            )
-        )
-        await db.commit()
-        resp = await client.get("/api/visits/summary", headers=admin_headers)
-        assert resp.json()["code"] == 0
-
-    async def test_update_visit_invalid_type_returns_422(
-        self, client, admin_headers, sample_student
-    ):
-        create_resp = await client.post(
+class TestLegacyVisitEndpoints:
+    async def test_legacy_visit_endpoints_are_gone(self, client, admin_headers, sample_student):
+        # Home and campus visits are recorded only through /api/admissions/*-visits now.
+        created = await client.post(
             "/api/visits",
             json={
                 "student_id": sample_student.id,
@@ -600,39 +468,10 @@ class TestVisitEndpoints:
             },
             headers=admin_headers,
         )
-        visit_id = create_resp.json()["data"]["id"]
+        listed = await client.get("/api/visits", headers=admin_headers)
 
-        resp = await client.put(
-            f"/api/visits/{visit_id}",
-            json={
-                "visit_type": "无效类型",
-            },
-            headers=admin_headers,
-        )
-        assert resp.status_code == 422
-
-    async def test_update_visit_invalid_status_returns_422(
-        self, client, admin_headers, sample_student
-    ):
-        create_resp = await client.post(
-            "/api/visits",
-            json={
-                "student_id": sample_student.id,
-                "visit_type": "来校参观",
-                "scheduled_date": "2026-06-01T10:00:00",
-            },
-            headers=admin_headers,
-        )
-        visit_id = create_resp.json()["data"]["id"]
-
-        resp = await client.put(
-            f"/api/visits/{visit_id}",
-            json={
-                "status": "未知状态",
-            },
-            headers=admin_headers,
-        )
-        assert resp.status_code == 422
+        assert created.status_code in {404, 405}
+        assert listed.status_code in {404, 405}
 
 
 @pytest.mark.asyncio

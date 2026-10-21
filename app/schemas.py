@@ -134,21 +134,6 @@ class EnrollInfo(BaseModel):
     deposit: float | None = Field(default=None, ge=0)
 
 
-# ── Call ──────────────────────────────────────────────────
-
-
-class CallCreate(BaseModel):
-    student_id: int
-    duration_seconds: int = 0
-    recording_path: str = ""
-    transcript: str = Field(default="", max_length=10000)
-    ai_intent: str = ""
-    ai_reasons: str = ""
-    ai_summary: str = ""
-    ai_confidence: float = 0.0
-    analyzed_at: datetime | None = None
-
-
 # ── Note ──────────────────────────────────────────────────
 
 
@@ -183,23 +168,6 @@ class StaleReassignReq(BaseModel):
     student_ids: list[int]
     mode: Literal["auto", "manual", "recycle"]
     agent_id: int | None = None
-
-
-# ── Visit ─────────────────────────────────────────────────
-
-
-class VisitCreate(BaseModel):
-    student_id: int
-    visit_type: Literal["来校参观", "家访"]
-    scheduled_date: datetime
-    notes: str = Field(default="")
-
-
-class VisitUpdate(BaseModel):
-    visit_type: Literal["来校参观", "家访"] | None = None
-    scheduled_date: datetime | None = None
-    status: Literal["待确认", "已确认", "已完成", "已取消"] | None = None
-    notes: str | None = None
 
 
 # ── Admissions workflow ───────────────────────────────────
