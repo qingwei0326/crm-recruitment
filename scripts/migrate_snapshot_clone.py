@@ -138,22 +138,31 @@ def _row_count_mismatches(
     """Every legacy row must survive the migration.
 
     Intended changes: Alembic 20261016_01 moves each legacy ``visits`` row into one of
-    the visit task tables and writes one operation log for it, and 20261017_01 drops the
-    AI call-analysis ``calls`` table and its provider settings in ``system_configs``.
+    the visit task tables and writes one operation log for it, 20261017_01 drops the
+    AI call-analysis ``calls`` table and its provider settings in ``system_configs``,
+    and 20261020_01 writes one operation log per 无效/已报名 student whose open tasks
+    it closes.
     """
     folded = source_counts.get("visits", 0)
     expected = {
         table_name: count
         for table_name, count in source_counts.items()
-        if table_name not in {"visits", "calls", "system_configs", *VISIT_TASK_TABLES}
+        if table_name
+        not in {"visits", "calls", "system_configs", "operation_logs", *VISIT_TASK_TABLES}
     }
-    if "operation_logs" in expected:
-        expected["operation_logs"] += folded
     mismatches: dict[str, dict[str, int | None]] = {
         table_name: {"source": count, "destination": destination_counts.get(table_name)}
         for table_name, count in expected.items()
         if destination_counts.get(table_name) != count
     }
+    if "operation_logs" in source_counts and (
+        destination_counts.get("operation_logs", 0)
+        < source_counts["operation_logs"] + folded
+    ):
+        mismatches["operation_logs"] = {
+            "source": source_counts["operation_logs"],
+            "destination": destination_counts.get("operation_logs"),
+        }
     source_tasks = folded + sum(source_counts.get(name, 0) for name in VISIT_TASK_TABLES)
     destination_tasks = sum(destination_counts.get(name, 0) for name in VISIT_TASK_TABLES)
     # system_configs may only lose the removed AI provider settings.
@@ -251,7 +260,7 @@ def migrate_snapshot_clone(source: Path, destination: Path) -> dict[str, Any]:
 
         if source_hash_before != source_hash_after:
             raise CloneMigrationError("source_changed_during_migration")
-        if destination_state["revision"] != "20261017_01":
+        if destination_state["revision"] != "20261020_01":
             raise CloneMigrationError("unexpected_destination_revision")
         if (
             destination_state["quick_check"] != "ok"
