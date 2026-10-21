@@ -20,13 +20,13 @@
 
 应用：
   目录:       /home/qingwei/crm
-  Compose:    /home/qingwei/crm/compose.yml
+  Compose:    /home/qingwei/crm/compose.yml（仓库 deploy/compose.yml 的副本）
   生产数据库: /home/qingwei/crm/crm.db（挂载进容器 /data/crm.db）
   代码:       /home/qingwei/crm/.deploy/current -> .deploy/releases/<版本>
               （/home/qingwei/crm/app 是指向 .deploy/current/app 的软链接）
 ```
 
-镜像以 `.deploy/current` 为构建上下文，`Dockerfile` 在 `/home/qingwei/crm/Dockerfile`。切换版本 = 改 `current` 指针后 `docker compose up -d --build`。
+镜像以 `.deploy/current` 为构建上下文，`Dockerfile` 也取自发布包（即仓库根目录的 `Dockerfile`），所以代码和镜像定义一起切换。切换版本 = 改 `current` 指针后 `docker compose up -d --build`。
 
 ## 常用入口
 
@@ -68,7 +68,7 @@ journalctl -u natfrp.service -n 100 --no-pager
 ## 文件位置
 
 ```text
-/home/qingwei/crm/compose.yml                 容器编排（不在 git 里）
+/home/qingwei/crm/compose.yml                 容器编排（仓库 deploy/compose.yml 的副本）
 /home/qingwei/crm/.env                        生产环境变量（SECRET_KEY 等）
 /home/qingwei/crm/crm.db                      生产 SQLite 数据库
 /home/qingwei/crm/backups/                    数据库备份（同时挂载进容器）
@@ -87,16 +87,35 @@ journalctl -u natfrp.service -n 100 --no-pager
 /home/qingwei/.cloudflared/*.json
 ```
 
-## compose.yml 里的关键变量
+## compose.yml 和 .env
 
-```yaml
-environment:
-  DATABASE_PATH: /data/crm.db
-  FRONTEND_DIR: /app/frontend/dist
-  EXPECTED_ALEMBIC_REVISION: "<目标迁移版本>"
+服务器上的 `compose.yml` 与仓库 `deploy/compose.yml` 保持一致：要改先改仓库，再拷到服务器。`.env` 只放 `SECRET_KEY`、`APP_ENV=production`、`CORS_ORIGINS` 这类和环境有关的值，值本身不要写进文档。
+
+应用启动时会先自动执行 `alembic upgrade head`，再断言数据库版本等于发布包代码里的期望版本（`app/config.py`）。期望版本跟着发布包走，发布时不用改任何配置。`compose.yml` 和 `.env` 里都**不要**再设 `EXPECTED_ALEMBIC_REVISION`：设了就会覆盖代码里的值，哪次发布忘了改，容器就会在迁移完成后反复重启。
+
+### 一次性切换（2026-10 之后的第一次发布做一次）
+
+在这之前，`Dockerfile` 放在 `~/crm/Dockerfile`，`compose.yml` 写死了 `EXPECTED_ALEMBIC_REVISION`，`.env` 里也有一行同名变量。第一次发布带 `Dockerfile` 的发布包时，在“校验并解压”“备份数据库”两步之后、“切换并重启”之前，多做下面三步。
+
+服务器上，先确认新包里有 `Dockerfile`，再备份 `compose.yml` 和 `.env`，并删掉 `.env` 里的期望版本：
+
+```bash
+cd ~/crm && ls .deploy/releases/<版本号>/Dockerfile && cp compose.yml compose.yml.before-<版本号> && cp -p .env .env.before-<版本号> && sed -i '/^EXPECTED_ALEMBIC_REVISION=/d' .env && grep -o '^[A-Za-z_][A-Za-z0-9_]*=' .env
 ```
 
-应用启动时会先自动执行 `alembic upgrade head`，再断言数据库版本等于 `EXPECTED_ALEMBIC_REVISION`。**每次发布都必须把它改成新包的目标版本**（见发布包里的 `release-manifest.json` 的 `expected_database_revision`），否则迁移完成后断言失败，容器会反复重启。
+最后一条只列出变量名，里面应该已经没有 `EXPECTED_ALEMBIC_REVISION=`。`DEEPSEEK_API_KEY` 自从删掉 AI 通话分析后就没用了，可以顺手删掉那一行。
+
+Windows 本地，把仓库里的 `compose.yml` 拷上去：
+
+```powershell
+cd D:\招生系统
+scp -P 30002 deploy/compose.yml qingwei@frp-end.com:/home/qingwei/crm/compose.yml
+```
+
+然后照常“切换并重启”。切换之后：
+
+- `~/crm/.dockerignore` 不在构建上下文里，构建时根本读不到，可以删。
+- `~/crm/Dockerfile` 先留着。回滚到不带 `Dockerfile` 的旧发布包时，要先把它拷进旧版本目录：`cp ~/crm/Dockerfile ~/crm/.deploy/releases/<旧版本目录>/`。
 
 ## 发布流程（手工，Docker 版）
 
@@ -141,12 +160,6 @@ cd ~/crm && python3 .deploy/releases/<版本号>/scripts/sqlite_online_backup.py
 
 输出里应有 `"integrity_check": "ok"`，文件大小应与线上库相近（约 100MB 以上）。备份没成功不要继续。
 
-### 服务器：更新 compose.yml 的期望版本
-
-```bash
-cd ~/crm && cp compose.yml compose.yml.before-<版本号> && sed -i 's/EXPECTED_ALEMBIC_REVISION: "<旧版本>"/EXPECTED_ALEMBIC_REVISION: "<目标版本>"/' compose.yml && grep EXPECTED compose.yml
-```
-
 ### 服务器：切换并重启（有几十秒中断，挑没人用的时间）
 
 ```bash
@@ -165,11 +178,13 @@ python3 -c "import sqlite3;print(sqlite3.connect('file:/home/qingwei/crm/crm.db?
 
 ### 回滚
 
-已经迁移过的数据库**不能**靠旧代码直接回退：旧代码的 `EXPECTED_ALEMBIC_REVISION` 与新库版本不符会启动失败，迁移本身也只能向前。回滚 = 恢复旧代码 + 旧 compose.yml + 发布前的数据库备份，**备份之后写入的数据会丢失**：
+已经迁移过的数据库**不能**直接配旧代码：旧代码不认识新的迁移版本，启动会失败，迁移本身也只能向前。回滚 = 恢复旧代码 + 发布前的数据库备份，**备份之后写入的数据会丢失**：
 
 ```bash
-cd ~/crm && ln -sfn /home/qingwei/crm/.deploy/releases/<旧版本目录> .deploy/current && cp compose.yml.before-<版本号> compose.yml && docker compose down && cp -a backups/crm-before-<版本号>.db crm.db && docker compose up -d --build
+cd ~/crm && ln -sfn /home/qingwei/crm/.deploy/releases/<旧版本目录> .deploy/current && docker compose down && cp -a backups/crm-before-<版本号>.db crm.db && docker compose up -d --build
 ```
+
+旧版本目录里没有 `Dockerfile`（2026-10 一次性切换之前的包）时，先 `cp ~/crm/Dockerfile` 进去。如果要退回到一次性切换之前，还要用 `compose.yml.before-<版本号>` 和 `.env.before-<版本号>` 恢复这两个文件。
 
 只有在确认新版本确实有问题、并接受丢失备份后数据时才回滚；能修就先看日志。
 
@@ -241,7 +256,7 @@ cd ~/crm && docker compose ps && docker compose logs --tail 100 crm
 常见原因：
 
 ```text
-EXPECTED_ALEMBIC_REVISION 与数据库版本不一致（最常见，发布后忘记改 compose.yml）
+compose.yml 或 .env 里还留着 EXPECTED_ALEMBIC_REVISION，且与数据库版本不一致
 .env 缺少 SECRET_KEY
 数据库文件权限异常
 迁移失败（日志里有 alembic 报错）
