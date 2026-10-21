@@ -4,7 +4,6 @@ import {
   ChevronLeft,
   Phone,
   Loader2,
-  Sparkles,
   AlertTriangle,
 } from 'lucide-react';
 import {
@@ -109,7 +108,6 @@ export default function StudentDetail() {
   const calls = data?.calls || [];
   const notes = data?.notes || [];
   const followUps = data?.follow_ups || [];
-  const visits = data?.visits || [];
   const intentTimeline = useMemo(() => data?.intent_timeline || [], [data?.intent_timeline]);
   const admissionsTimeline = data?.admissions_timeline || [];
 
@@ -279,7 +277,6 @@ export default function StudentDetail() {
               calls={calls}
               notes={notes}
               followUps={followUps}
-              visits={visits}
               intentTimeline={intentTimeline}
               admissionsTimeline={admissionsTimeline}
               emptyText="暂无记录"
@@ -367,30 +364,7 @@ export default function StudentDetail() {
                       </span>
                       <span>· {formatDateTime(c.created_at || c.call_time)}</span>
                       <span>· 时长 {formatDuration(c.duration_seconds ?? c.duration)}</span>
-                      {c.ai_confidence != null && (
-                        <span className="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-3xs font-semibold">
-                          <Sparkles className="w-3 h-3" />
-                          置信度 {Math.round(c.ai_confidence * 100)}%
-                        </span>
-                      )}
                     </div>
-                    {c.ai_summary && (
-                      <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
-                        <div className="text-xs text-gray-400 mb-1">AI 摘要</div>
-                        {c.ai_summary}
-                      </div>
-                    )}
-                    {c.ai_reasons && (
-                      <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
-                        <div className="text-xs text-gray-400 mb-1">判断依据</div>
-                        {c.ai_reasons}
-                      </div>
-                    )}
-                    {c.content && !c.ai_summary && (
-                      <div className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
-                        {c.content}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>

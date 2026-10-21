@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.domain_models import WorkItem, WorkItemKind, WorkItemStatus
-from app.models import Call, FollowUp, IntentLevel, Student, StudentStatus
+from app.models import DialLog, FollowUp, IntentLevel, Student, StudentStatus
 from app.task_stats import build_task_stats
 from app.utils import today_cst_as_utc, utcnow
 
@@ -49,20 +49,20 @@ class TestAdminAgentTaskStats:
         db.add_all([needs_help, completed_today])
         await db.flush()
         db.add_all([
-            Call(
+            DialLog(
                 student_id=completed_today.id,
                 agent_id=agent_user.id,
-                created_at=today_start + timedelta(hours=1),
+                dialed_at=today_start + timedelta(hours=1),
             ),
-            Call(
+            DialLog(
                 student_id=completed_today.id,
                 agent_id=agent_user.id,
-                created_at=today_start + timedelta(hours=2),
+                dialed_at=today_start + timedelta(hours=2),
             ),
-            Call(
+            DialLog(
                 student_id=needs_help.id,
                 agent_id=agent_user.id,
-                created_at=today_start - timedelta(hours=1),
+                dialed_at=today_start - timedelta(hours=1),
             ),
         ])
         await db.commit()

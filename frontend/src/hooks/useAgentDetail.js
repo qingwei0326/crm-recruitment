@@ -19,7 +19,6 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         notes: [],
         calls: [],
         followUps: [],
-        visits: [],
         intentTimeline: [],
         admissionsTimeline: [],
       });
@@ -32,7 +31,6 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         notes: [],
         calls: [],
         followUps: [],
-        visits: [],
         intentTimeline: [],
         admissionsTimeline: [],
       });
@@ -50,7 +48,6 @@ export default function useAgentDetail({ state, actions, students, toast }) {
         notes: data.notes || [],
         calls,
         followUps: data.follow_ups || [],
-        visits: data.visits || [],
         intentTimeline: data.intent_timeline || [],
         admissionsTimeline: data.admissions_timeline || [],
         noteIdx: 0,
@@ -107,29 +104,10 @@ export default function useAgentDetail({ state, actions, students, toast }) {
     }
   }, [actions, toast]);
 
-  // 添加到访
-  const addVisit = useCallback(async (current, visit) => {
-    if (!visit.date || !current) return;
-    try {
-      await api.post('/visits', {
-        student_id: current.id,
-        visit_type: visit.type,
-        scheduled_date: visit.date + ':00',
-        notes: visit.notes,
-      });
-      actions.setVisit({ date: '', notes: '' });
-      actions.setActionMsg('到访已记录');
-      setTimeout(() => actions.setActionMsg(''), 2000);
-    } catch (e) {
-      toast?.error('添加到访失败: ' + getApiErrorMessage(e));
-    }
-  }, [actions, toast]);
-
   return {
     loadDetail,
     updateDetailField,
     addNote,
     addFollowUp,
-    addVisit,
   };
 }

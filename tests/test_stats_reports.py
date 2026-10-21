@@ -55,7 +55,81 @@ async def test_dashboard_all_uses_safe_read_sessions(client, admin_headers):
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert set(data) == {"summary", "sources", "stages", "funnel", "notify_fails", "visits"}
+    assert set(data) == {"summary", "sources", "stages", "funnel", "notify_fails"}
+
+
+async def _seed_visit_tasks(db, agent_user):
+    students = [Student(name=f"到访口径{i}", assigned_to=agent_user.id) for i in range(5)]
+    db.add_all(students)
+    await db.flush()
+    home_done, both, campus_enrolled, home_pending, campus_no_show = students
+    db.add_all(
+        [
+            HomeVisitTask(
+                student_id=home_done.id,
+                creator_agent_id=agent_user.id,
+                status=HomeVisitStatus.completed,
+            ),
+            HomeVisitTask(
+                student_id=both.id,
+                creator_agent_id=agent_user.id,
+                status=HomeVisitStatus.completed,
+            ),
+            CampusVisitTask(
+                student_id=both.id,
+                creator_user_id=agent_user.id,
+                status=CampusVisitStatus.arrived,
+            ),
+            CampusVisitTask(
+                student_id=campus_enrolled.id,
+                creator_user_id=agent_user.id,
+                status=CampusVisitStatus.enrolled,
+            ),
+            HomeVisitTask(
+                student_id=home_pending.id,
+                creator_agent_id=agent_user.id,
+                status=HomeVisitStatus.pending,
+            ),
+            CampusVisitTask(
+                student_id=campus_no_show.id,
+                creator_user_id=agent_user.id,
+                status=CampusVisitStatus.no_show,
+            ),
+        ]
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_funnels_count_visited_students_from_visit_tasks(
+    client, admin_headers, db, agent_user
+):
+    await _seed_visit_tasks(db, agent_user)
+
+    dashboard = await client.get("/api/stats/dashboard-all", headers=admin_headers)
+    report = await client.get("/api/stats/funnel", headers=admin_headers)
+
+    dashboard_funnel = {row["name"]: row["value"] for row in dashboard.json()["data"]["funnel"]}
+    report_funnel = {row["name"]: row["value"] for row in report.json()["data"]["stages"]}
+    # Completed home visit, arrived on campus, enrolled on campus; the student with both
+    # counts once, the pending home visit and the campus no-show do not count.
+    assert dashboard_funnel["已到访"] == 3
+    assert report_funnel["已到访"] == 3
+
+
+@pytest.mark.asyncio
+async def test_agent_ranking_counts_visit_tasks_the_agent_requested(
+    client, admin_headers, db, agent_user
+):
+    await _seed_visit_tasks(db, agent_user)
+
+    resp = await client.get("/api/stats/agent-ranking", headers=admin_headers)
+
+    row = next(item for item in resp.json()["data"]["ranking"] if item["id"] == agent_user.id)
+    assert row["home_visits"] == 3
+    assert row["campus_visits"] == 3
+    assert row["total_visits"] == 6
+    assert row["visits_done"] == 4
 
 
 @pytest.mark.asyncio

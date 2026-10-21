@@ -1,26 +1,8 @@
-import logging
-
-from app.assistant_security import (
-    AssistantSecretError,
-    decrypt_assistant_secret,
-    encrypt_assistant_secret,
-)
-
-logger = logging.getLogger("admin_config")
-
 SCORE_DAILY_CALL_TARGET_MAX = 1000
 
 ALLOWED_CONFIG_KEYS = {
     "pushplus_token",
     "stale_days",
-    "deepseek_api_key",
-    "ai_provider",
-    "mimo_api_key",
-    "mimo_base",
-    "mimo_model",
-    "ai_custom_api_key",
-    "ai_custom_base",
-    "ai_custom_model",
     "follow_up_window_minutes",
     "score_daily_call_target",
     "assignment_capacity_lookback_days",
@@ -29,15 +11,6 @@ ALLOWED_CONFIG_KEYS = {
     "assignment_capacity_max",
     "assignment_capacity_insufficient_history",
 }
-
-AI_PROVIDERS = {"deepseek", "mimo", "custom"}
-AI_BASE_KEYS = {"mimo_base", "ai_custom_base"}
-AI_MODEL_KEYS = {"mimo_model", "ai_custom_model"}
-AI_GENERIC_KEY_KEYS = {"mimo_api_key", "ai_custom_api_key"}
-
-# 落库即加密的敏感配置项。执行助手密钥已走 Fernet，AI provider 的 key 必须同标准，
-# 否则 DB/备份泄露等于密钥泄露。
-SECRET_CONFIG_KEYS = {"deepseek_api_key", "mimo_api_key", "ai_custom_api_key"}
 
 ASSIGNMENT_CAPACITY_DEFAULTS = {
     "assignment_capacity_lookback_days": 7,
@@ -132,61 +105,10 @@ def validate_config_value(key: str, value: str) -> tuple[str | None, str | None]
         if len(value) > 64:
             return None, "pushplus_token too long"
         return value, None
-    if key == "deepseek_api_key":
-        if value and len(value) > 128:
-            return None, "deepseek_api_key too long"
-        # 接受空串（用于清除）；非空必须形如 sk-xxx 避免误填
-        if value and not value.startswith("sk-"):
-            return None, "deepseek_api_key 必须以 sk- 开头"
-        return value, None
-    if key == "ai_provider":
-        if value and value not in AI_PROVIDERS:
-            return None, "ai_provider 必须是 deepseek / mimo / custom 之一"
-        return (value or "deepseek"), None
-    if key in AI_BASE_KEYS:
-        if value and not (value.startswith("http://") or value.startswith("https://")):
-            return None, f"{key} 必须是 http(s):// 开头的接口地址"
-        if len(value) > 256:
-            return None, f"{key} too long"
-        return value, None
-    if key in AI_MODEL_KEYS:
-        if len(value) > 64:
-            return None, f"{key} too long"
-        return value, None
-    if key in AI_GENERIC_KEY_KEYS:
-        # MiMo / 自定义 的 key 不强制 sk- 前缀，只做长度上限
-        if len(value) > 256:
-            return None, f"{key} too long"
-        return value, None
     return value, None
 
 
-def encrypt_secret_config_value(key: str, value: str) -> str:
-    """写入前加密：SECRET_CONFIG_KEYS 存密文，其余按原文存。"""
-    if key in SECRET_CONFIG_KEYS and value:
-        return encrypt_assistant_secret(value)
-    return value
-
-
-def decrypt_secret_config_value(key: str, value: str) -> str:
-    """读取时解密：解密失败（历史明文值）按原文返回，保证老配置不突然失效。"""
-    if key not in SECRET_CONFIG_KEYS or not value:
-        return value
-    try:
-        return decrypt_assistant_secret(value)
-    except AssistantSecretError:
-        logger.warning("配置项 %s 不是密文格式，按历史明文值使用（下次保存时会自动加密）", key)
-        return value
-
-
 def mask_config_value(key: str, value: str) -> str:
-    if key in SECRET_CONFIG_KEYS:
-        # 密文末四位是乱码，必须先还原明文再取末四位，否则前端看到的是无意义后缀。
-        return _mask_secret(decrypt_secret_config_value(key, value))
     if key == "pushplus_token" and len(value) > 4:
         return "****" + value[-4:]
     return value
-
-
-def _mask_secret(value: str) -> str:
-    return "****" + value[-4:] if len(value) > 4 else value

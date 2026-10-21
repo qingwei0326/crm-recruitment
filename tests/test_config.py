@@ -138,12 +138,12 @@ async def test_config_requires_super_admin(client, normal_admin_headers):
 
 @pytest.mark.asyncio
 async def test_config_update_writes_masked_audit_log(client, admin_headers, db, admin_user):
-    db.add(SystemConfig(key="deepseek_api_key", value="sk-oldsecret1234"))
+    db.add(SystemConfig(key="pushplus_token", value="oldsecret1234"))
     await db.commit()
 
     r = await client.put(
         "/api/admin/config",
-        json={"key": "deepseek_api_key", "value": "sk-newsecret5678"},
+        json={"key": "pushplus_token", "value": "newsecret5678"},
         headers=admin_headers,
     )
 
@@ -154,9 +154,9 @@ async def test_config_update_writes_masked_audit_log(client, admin_headers, db, 
     ).scalar_one()
     assert log.operator_id == admin_user.id
     assert log.operator_name == admin_user.name
-    assert "deepseek_api_key" in log.content
-    assert "sk-oldsecret1234" not in log.content
-    assert "sk-newsecret5678" not in log.content
+    assert "pushplus_token" in log.content
+    assert "oldsecret1234" not in log.content
+    assert "newsecret5678" not in log.content
     assert "****1234" in log.content
     assert "****5678" in log.content
 
@@ -207,3 +207,16 @@ async def test_capacity_config_rejects_observed_days_above_lookback_without_writ
     assert response.json()["code"] == 1
     stored = await db.get(SystemConfig, "assignment_capacity_observed_days")
     assert stored.value == "5"
+
+
+@pytest.mark.asyncio
+async def test_removed_ai_analysis_settings_are_rejected(client, admin_headers):
+    for key, value in (
+        ("ai_provider", "mimo"),
+        ("deepseek_api_key", "sk-anything1234"),
+        ("mimo_api_key", "tp-anything1234"),
+    ):
+        r = await client.put(
+            "/api/admin/config", json={"key": key, "value": value}, headers=admin_headers
+        )
+        assert r.json()["msg"] == "Unsupported config key", key

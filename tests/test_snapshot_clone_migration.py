@@ -35,6 +35,25 @@ def create_unstamped_source(db_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(db_path) as connection:
         connection.execute("drop table alembic_version")
+        connection.execute(
+            "insert into users (id, username, hashed_password, role, name, is_active, "
+            "is_super_admin, failed_login_attempts, must_change_password, token_version, "
+            "service_regions, pushplus_token, page_permissions, operation_permissions, "
+            "last_login_device, last_login_ip, created_at) values (1, 'clone_agent', 'x', "
+            "'agent', '克隆坐席', 1, 0, 0, 0, 1, '', '', '', '', '', '', CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "insert into students (id, name, region, assigned_to, status, status_detail, "
+            "intent_level, stage, program, guardian_name, guardian_phone, guardian2_name, "
+            "guardian2_phone, school_name, school_address, need_help, created_at, updated_at) "
+            "values (1, '克隆学生', '', 1, 'contacted', '', 'none', 'initial_contact', '', '', "
+            "'', '', '', '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "insert into visits (student_id, agent_id, visit_type, scheduled_date, status, "
+            "notes, created_at, updated_at) values (1, 1, 'home', '2026-07-11 10:00:00', "
+            "'pending', '旧到访', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
 
 
 def destination_path(label: str) -> Path:
@@ -76,7 +95,7 @@ def test_snapshot_clone_migrates_and_never_changes_source(tmp_path):
         assert report["source_sha256_after"] == hashlib.sha256(original_bytes).hexdigest()
         assert report["destination_quick_check"] == "ok"
         assert report["destination_foreign_key_violations"] == 0
-        assert report["destination_revision"] == "20261007_01"
+        assert report["destination_revision"] == "20261017_01"
         assert report["legacy_row_count_mismatches"] == {}
         assert report["domain_audit"]["ok"] is True
         assert source.read_bytes() == original_bytes

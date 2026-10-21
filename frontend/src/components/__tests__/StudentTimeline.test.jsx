@@ -9,15 +9,17 @@ describe('buildStudentTimeline', () => {
       calls: [{ id: 2, created_at: '2026-06-12T08:00:00' }],
       notes: [{ id: 3, created_at: '2026-06-11T08:00:00' }],
       followUps: [{ id: 4, follow_up_date: '2026-06-13T08:00:00' }],
-      visits: [{ id: 5, scheduled_date: '2026-06-14T08:00:00' }],
       intentTimeline: [{ intent_level: 'A', created_at: '2026-06-15T08:00:00' }],
-      admissionsTimeline: [{ id: 6, type: 'home_visit', occurred_at: '2026-06-16T08:00:00' }],
+      admissionsTimeline: [
+        { id: 6, type: 'home_visit', occurred_at: '2026-06-16T08:00:00' },
+        { id: 5, type: 'campus_visit', occurred_at: '2026-06-14T08:00:00' },
+      ],
     });
 
     expect(items.map((item) => item.kind)).toEqual([
       'admission',
       'intent',
-      'visit',
+      'admission',
       'follow_up',
       'call',
       'note',

@@ -23,11 +23,10 @@ from app.models import (
     StudentStatus,
     User,
     UserRole,
-    Visit,
-    VisitStatus,
 )
 from app.routers.stats import _enum_value, _percent, _region_label
 from app.schemas import Response
+from app.services.visit_stats_service import count_visited_students
 from app.status_policy import statuses_for_canonical
 from app.utils import cst_date_start_as_utc, today_cst_date, utcnow
 
@@ -259,12 +258,7 @@ async def funnel_data(
     )
     a_level = a_level_r.scalar() or 0
 
-    visited_r = await db.execute(
-        select(func.count(func.distinct(Visit.student_id))).where(
-            Visit.status == VisitStatus.completed
-        )
-    )
-    visited = visited_r.scalar() or 0
+    visited = await count_visited_students(db)
 
     enrolled_r = await db.execute(
         select(func.count(Student.id)).where(Student.status == StudentStatus.enrolled)

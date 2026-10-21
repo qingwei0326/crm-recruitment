@@ -198,7 +198,6 @@ export default function AgentWork() {
     detailNotes: state.detail.notes,
     detailCalls: state.detail.calls,
     detailFollowUps: state.detail.followUps,
-    detailVisits: state.detail.visits,
     detailIntentTimeline: state.detail.intentTimeline,
     detailAdmissionsTimeline: state.detail.admissionsTimeline,
     detailNotesError: state.detail.notesError,

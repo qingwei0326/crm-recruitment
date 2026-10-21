@@ -44,7 +44,7 @@ npm run build
 
 ```bash
 cp .env.example .env
-# 编辑 .env 填入 SECRET_KEY 和 DEEPSEEK_API_KEY
+# 编辑 .env 填入 SECRET_KEY
 ```
 
 生成 SECRET_KEY:

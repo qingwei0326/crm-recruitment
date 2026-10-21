@@ -29,7 +29,6 @@ export function buildStudentTimeline({
   calls = [],
   notes = [],
   followUps = [],
-  visits = [],
   intentTimeline = [],
   admissionsTimeline = [],
 } = {}) {
@@ -64,14 +63,6 @@ export function buildStudentTimeline({
       kind: 'follow_up',
       ts: firstValue(followUp.created_at, followUp.follow_up_date),
       data: followUp,
-    });
-  });
-
-  visits.forEach((visit) => {
-    items.push({
-      kind: 'visit',
-      ts: firstValue(visit.created_at, visit.scheduled_date, visit.visit_date),
-      data: visit,
     });
   });
 
@@ -117,7 +108,6 @@ function renderItem(item) {
         icon={Phone}
         color="blue"
         title={`通话 · ${callRecordingSummary(d)}`}
-        content={firstValue(d.ai_summary, d.content, d.notes, d.ai_reasons)}
         agentName={d.agent_name}
         timestamp={firstValue(d.created_at, d.call_time)}
       />
@@ -146,22 +136,6 @@ function renderItem(item) {
         icon={Calendar}
         color="amber"
         title={`回访计划 · ${d.follow_up_date || ''}`}
-        content={firstValue(d.notes, d.note, d.content)}
-        agentName={d.agent_name}
-        timestamp={d.created_at}
-      />
-    );
-  }
-
-  if (item.kind === 'visit') {
-    return (
-      <TimelineItem
-        type="到访"
-        icon={MapPin}
-        color="teal"
-        title={`${d.visit_type || '到访'} · ${d.status || '待确认'} · ${
-          firstValue(d.scheduled_date, d.visit_date) || ''
-        }`}
         content={firstValue(d.notes, d.note, d.content)}
         agentName={d.agent_name}
         timestamp={d.created_at}
@@ -211,16 +185,14 @@ function renderItem(item) {
   return null;
 }
 
-function actionFor(item, renderNoteActions, renderFollowUpActions, renderVisitActions) {
+function actionFor(item, renderNoteActions, renderFollowUpActions) {
   if (item.kind === 'note') return renderNoteActions?.(item.data);
   if (item.kind === 'follow_up') return renderFollowUpActions?.(item.data);
-  if (item.kind === 'visit') return renderVisitActions?.(item.data);
   return null;
 }
 
 function testIdFor(item) {
   if (item.kind === 'follow_up') return `follow-up-${item.data.id}`;
-  if (item.kind === 'visit') return `visit-${item.data.id}`;
   if (item.kind === 'admission') return `admission-${item.data.type}-${item.data.id}`;
   if (item.kind === 'note') return `note-${item.data.id}`;
   return undefined;
@@ -231,7 +203,6 @@ export default memo(function StudentTimeline({
   calls = [],
   notes = [],
   followUps = [],
-  visits = [],
   intentTimeline = [],
   admissionsTimeline = [],
   limit,
@@ -239,7 +210,6 @@ export default memo(function StudentTimeline({
   className = 'space-y-4',
   renderNoteActions,
   renderFollowUpActions,
-  renderVisitActions,
 }) {
   const items = useMemo(() => {
     const timeline = buildStudentTimeline({
@@ -247,12 +217,11 @@ export default memo(function StudentTimeline({
       calls,
       notes,
       followUps,
-      visits,
       intentTimeline,
       admissionsTimeline,
     });
     return limit ? timeline.slice(0, limit) : timeline;
-  }, [student, calls, notes, followUps, visits, intentTimeline, admissionsTimeline, limit]);
+  }, [student, calls, notes, followUps, intentTimeline, admissionsTimeline, limit]);
 
   if (items.length === 0) {
     return <div className="py-10 text-center text-sm text-gray-400">{emptyText}</div>;
@@ -261,7 +230,7 @@ export default memo(function StudentTimeline({
   return (
     <div className={className}>
       {items.map((item, index) => {
-        const actions = actionFor(item, renderNoteActions, renderFollowUpActions, renderVisitActions);
+        const actions = actionFor(item, renderNoteActions, renderFollowUpActions);
         const key = `${item.kind}-${item.data?.id || item.ts || index}`;
         return (
           <div key={key} data-testid={testIdFor(item)} className="relative">
