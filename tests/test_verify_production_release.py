@@ -6,7 +6,10 @@ import pytest
 
 from scripts.verify_production_release import verify_production_release
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 PAYLOAD = {
+    # The real Dockerfile, so the valid-package test also checks its COPY sources.
+    "Dockerfile": (REPO_ROOT / "Dockerfile").read_bytes(),
     "alembic.ini": b"[alembic]",
     "alembic/env.py": b"env",
     "alembic/script.py.mako": b"template",
@@ -153,6 +156,18 @@ def test_verify_production_release_rejects_an_unlisted_file(tmp_path):
     (tmp_path / "app" / "injected.py").write_text("unexpected", encoding="utf-8")
 
     with pytest.raises(ValueError, match="unexpected=.*app/injected.py"):
+        verify_production_release(tmp_path)
+
+
+def test_verify_production_release_rejects_dockerfile_copying_a_missing_path(tmp_path):
+    prepare_release(tmp_path)
+    replace_payload(
+        tmp_path,
+        "Dockerfile",
+        PAYLOAD["Dockerfile"] + b"COPY tests /app/tests\n",
+    )
+
+    with pytest.raises(ValueError, match=r"Dockerfile copies paths missing.*'tests'"):
         verify_production_release(tmp_path)
 
 

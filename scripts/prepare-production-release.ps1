@@ -15,7 +15,7 @@ $ReleaseName = "production-$Version"
 $ReleaseDir = Join-Path $ReleaseRoot $ReleaseName
 $ZipPath = Join-Path $ReleaseRoot "$ReleaseName.zip"
 $ZipHashPath = "$ZipPath.sha256"
-$DatabaseUpgradeFromRevision = "20261007_01"
+$DatabaseUpgradeFromRevision = "20261020_01"
 $ExpectedDatabaseRevision = "20261020_01"
 
 function Copy-ReleaseTree {
@@ -138,6 +138,7 @@ Copy-ReleaseTree -Source (Join-Path $Root "app") -Destination (Join-Path $Releas
 Copy-ReleaseTree -Source (Join-Path $Root "alembic") -Destination (Join-Path $ReleaseDir "alembic")
 Copy-ReleaseTree -Source (Join-Path $Root "frontend\dist") -Destination (Join-Path $ReleaseDir "frontend\dist")
 foreach ($file in @(
+    "Dockerfile",
     "alembic.ini",
     "requirements.txt",
     "logging.json",
@@ -179,7 +180,7 @@ Push-Location $Root
 try {
     $gitCommit = (git rev-parse HEAD).Trim()
     $gitBranch = (git branch --show-current).Trim()
-    $runtimeStatus = @(git status --short -- app alembic alembic.ini frontend requirements.txt logging.json data/school_regions.json scripts/repair_work_item_owners.py scripts/sqlite_online_backup.py scripts/verify_production_release.py)
+    $runtimeStatus = @(git status --short -- Dockerfile app alembic alembic.ini frontend requirements.txt logging.json data/school_regions.json scripts/repair_work_item_owners.py scripts/sqlite_online_backup.py scripts/verify_production_release.py)
 } finally {
     Pop-Location
 }

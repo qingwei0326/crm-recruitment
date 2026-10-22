@@ -81,6 +81,7 @@ npx playwright test tests/e2e/handover-center.spec.js tests/e2e/handover-real-wo
 
 该命令会重新构建前端，并在 `releases/production-<version>/` 生成：
 
+- `Dockerfile`（服务器按它构建镜像，校验会确认它 `COPY` 的路径都在包里）
 - `app/`、`alembic/`、`alembic.ini` 与 `frontend/dist/`
 - `requirements.txt`、`logging.json` 和 `data/school_regions.json`
 - SQLite 在线备份工具
