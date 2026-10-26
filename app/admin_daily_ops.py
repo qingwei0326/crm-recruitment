@@ -9,6 +9,8 @@ from app.models import (
     CampusVisitTask,
     DialLog,
     EnrollmentRecord,
+    EnrollmentReport,
+    EnrollmentReportStatus,
     FollowUp,
     HomeVisitStatus,
     HomeVisitTask,
@@ -218,8 +220,16 @@ async def _daily_ops_counts(db: AsyncSession) -> dict[str, int]:
             )
         )
     ).scalar() or 0
+    pending_report_count = (
+        await db.execute(
+            select(func.count(EnrollmentReport.id)).where(
+                EnrollmentReport.status == EnrollmentReportStatus.pending
+            )
+        )
+    ).scalar() or 0
 
     return {
+        "pending_enrollment_reports": int(pending_report_count),
         "stale_a": int(stale_a_count),
         "home_visit_due": int(home_visit_due_count),
         "campus_visit_due": int(campus_visit_due_count),
@@ -392,6 +402,16 @@ async def _daily_ops_owner_breakdowns(db: AsyncSession) -> dict[str, list[dict]]
             joins=[(User, User.id == FollowUp.agent_id, True)],
             to="/admin/work-center?queue=follow",
         ),
+        "pending_enrollment_reports": await _owner_rows(
+            db,
+            owner_col=EnrollmentReport.reporter_id,
+            owner_name_col=User.name,
+            oldest_col=EnrollmentReport.created_at,
+            where_clauses=[EnrollmentReport.status == EnrollmentReportStatus.pending],
+            base_from=EnrollmentReport,
+            joins=[(User, User.id == EnrollmentReport.reporter_id, True)],
+            to="/admin/enrollment-settlement",
+        ),
     }
 
 
@@ -399,6 +419,15 @@ async def _build_daily_ops_payload(db: AsyncSession) -> dict:
     counts = await _daily_ops_counts(db)
     owner_breakdowns = await _daily_ops_owner_breakdowns(db)
     items = [
+        _daily_ops_item(
+            key="pending_enrollment_reports",
+            title="报名待确认",
+            count=counts["pending_enrollment_reports"],
+            severity="high",
+            detail="话务员上报的报名，确认后才生成报名记录和结算依据。",
+            to="/admin/enrollment-settlement",
+            owners=owner_breakdowns.get("pending_enrollment_reports"),
+        ),
         _daily_ops_item(
             key="stale_a",
             title="A 级超时未推进",
