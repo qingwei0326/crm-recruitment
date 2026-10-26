@@ -45,6 +45,7 @@ BASELINE = {
     "admin_stale.py": 14,
     "admissions.py": 13,
     "admissions_campus_visits.py": 10,
+    "admissions_enrollment_reports.py": 3,
     "admissions_enrollments.py": 15,
     "admissions_home_visits.py": 10,
     "admissions_visit_reports.py": 1,

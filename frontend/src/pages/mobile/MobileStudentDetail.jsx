@@ -31,6 +31,7 @@ import { outcomeSavedMessage } from '../../utils/outcomeFeedback';
 import { notifyOutcomeSaved } from '../../utils/outcomeUndo';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import { ContentSkeleton, ErrorState } from '../../components/AsyncState';
+import EnrollmentReportForm from '../../components/admissions/EnrollmentReportForm';
 import VisitReportForm from '../../components/admissions/VisitReportForm';
 import {
   detailForOperatorResult,
@@ -39,10 +40,10 @@ import {
   stageLabel,
 } from '../../labels';
 
-// Visit registration follows the work-group report: one form files the home visit,
-// the campus visit or both, and the agent can copy the report from the same screen.
-function VisitSheet({ open, onClose, student, submitting, onSubmit }) {
-  if (!open || !student) return null;
+// Bottom sheet for the work-group reports: the visit report files the home visit,
+// the campus visit or both; the 报名 report waits for an admin to confirm.
+function AdmissionSheet({ open, title, onClose, children }) {
+  if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
       <div
@@ -50,17 +51,12 @@ function VisitSheet({ open, onClose, student, submitting, onSubmit }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">登记到访</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
           <button onClick={onClose} className="text-gray-400 p-1" aria-label="关闭">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <VisitReportForm
-          student={student}
-          submitting={submitting}
-          onSubmit={onSubmit}
-          onCancel={onClose}
-        />
+        {children}
       </div>
     </div>
   );
@@ -288,6 +284,7 @@ export default function MobileStudentDetail() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [visitOpen, setVisitOpen] = useState(false);
+  const [enrollReportOpen, setEnrollReportOpen] = useState(false);
   const [visitSubmitting, setVisitSubmitting] = useState(false);
   const [editNote, setEditNote] = useState(null); // { id, content }
   const [editNoteSubmitting, setEditNoteSubmitting] = useState(false);
@@ -419,6 +416,7 @@ export default function MobileStudentDetail() {
       const r = await api.post(path, payload);
       if (r.data?.code === undefined || r.data.code === 0) {
         setVisitOpen(false);
+        setEnrollReportOpen(false);
         showToast(doneMessage);
         loadDetail();
       } else {
@@ -431,6 +429,8 @@ export default function MobileStudentDetail() {
     }
   };
 
+  const handleSubmitEnrollmentReport = (payload) =>
+    submitAdmission('/admissions/enrollment-reports', payload, '已上报，等管理员确认');
   const handleSubmitVisitReport = (payload) =>
     submitAdmission('/admissions/visit-reports', payload, '到访已登记');
 
@@ -823,6 +823,9 @@ export default function MobileStudentDetail() {
               <button type="button" onClick={() => { setMoreActionsOpen(false); setVisitOpen(true); }} className="min-h-[72px] rounded-panel bg-teal-50 px-2 text-sm font-medium text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
                 登记到访
               </button>
+              <button type="button" onClick={() => { setMoreActionsOpen(false); setEnrollReportOpen(true); }} className="min-h-[72px] rounded-panel bg-green-50 px-2 text-sm font-medium text-green-700 dark:bg-green-950/40 dark:text-green-300">
+                报名上报
+              </button>
               <button type="button" onClick={() => { setMoreActionsOpen(false); openWorkflowEditor(); }} className="min-h-[72px] rounded-panel bg-blue-50 px-2 text-sm font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
                 编辑状态
               </button>
@@ -850,13 +853,31 @@ export default function MobileStudentDetail() {
         submitting={editNoteSubmitting}
       />
 
-      <VisitSheet
-        open={visitOpen}
-        onClose={() => setVisitOpen(false)}
-        student={student}
-        submitting={visitSubmitting}
-        onSubmit={handleSubmitVisitReport}
-      />
+      <AdmissionSheet open={visitOpen && !!student} title="登记到访" onClose={() => setVisitOpen(false)}>
+        {student && (
+          <VisitReportForm
+            student={student}
+            submitting={visitSubmitting}
+            onSubmit={handleSubmitVisitReport}
+            onCancel={() => setVisitOpen(false)}
+          />
+        )}
+      </AdmissionSheet>
+
+      <AdmissionSheet
+        open={enrollReportOpen && !!student}
+        title="报名上报"
+        onClose={() => setEnrollReportOpen(false)}
+      >
+        {student && (
+          <EnrollmentReportForm
+            student={student}
+            submitting={visitSubmitting}
+            onSubmit={handleSubmitEnrollmentReport}
+            onCancel={() => setEnrollReportOpen(false)}
+          />
+        )}
+      </AdmissionSheet>
 
       <DateTimeSheet
         open={!!editFollowUp}

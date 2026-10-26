@@ -135,6 +135,12 @@ class CampusVisitResult(enum.StrEnum):
     considering = "继续考虑"
 
 
+class EnrollmentReportStatus(enum.StrEnum):
+    pending = "待确认"
+    confirmed = "已确认"
+    rejected = "已驳回"
+
+
 class EnrollmentSource(enum.StrEnum):
     phone_call = "电话外呼"
     home_visit = "家访后"
@@ -449,6 +455,38 @@ class EnrollmentRecord(Base):
     last_effective_agent = relationship("User", foreign_keys=[last_effective_agent_id])
     home_visit_task = relationship("HomeVisitTask")
     campus_visit_task = relationship("CampusVisitTask")
+
+
+class EnrollmentReport(Base):
+    """An agent's 已报名 report, waiting for an admin to confirm it as an EnrollmentRecord."""
+
+    __tablename__ = "enrollment_reports"
+    __table_args__ = (
+        Index("ix_enrollment_reports_student_id", "student_id"),
+        Index("ix_enrollment_reports_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False)
+    reporter_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(
+        SAEnum(EnrollmentReportStatus),
+        nullable=False,
+        default=EnrollmentReportStatus.pending,
+    )
+    enrolled_program = Column(String(128), default="", nullable=False)
+    region = Column(String(64), default="", nullable=False)
+    notes = Column(Text, default="", nullable=False)
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reject_reason = Column(Text, default="", nullable=False)
+    enrollment_record_id = Column(Integer, ForeignKey("enrollment_records.id"), nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+    student = relationship("Student")
+    reporter = relationship("User", foreign_keys=[reporter_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_id])
 
 
 class OperationLog(Base):

@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Phone, Menu, Sun, Moon, Plus, X, Loader2,
   AlertTriangle, StickyNote, ChevronLeft, ChevronRight,
-  Target, User, History, RefreshCw, CalendarClock, MapPin,
+  Target, User, History, RefreshCw, CalendarClock, MapPin, Award,
   CheckCircle2, Flame, Undo2,
 } from 'lucide-react';
 import api from '../../api';
@@ -17,6 +17,9 @@ import AgentSidebar from './desktop/AgentSidebar';
 import HandledView from './desktop/HandledView';
 import PhoneLink from '../../components/PhoneLink';
 import StudentTimeline from '../../components/StudentTimeline';
+import EnrollmentReportForm from '../../components/admissions/EnrollmentReportForm';
+import { useToast } from '../../components/Toast';
+import { getApiErrorMessage } from '../../utils';
 import VisitReportForm from '../../components/admissions/VisitReportForm';
 import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
 import { EmptyState, ErrorState } from '../../components/AsyncState';
@@ -58,6 +61,7 @@ export default function AgentWorkMobile({
   const quickStatuses = outcomeResults.map(quickStatusForOutcome);
   const [admissionForm, setAdmissionForm] = useState(null);
   const [admissionSubmitting, setAdmissionSubmitting] = useState(false);
+  const toast = useToast();
   const currentContacts = getContactOptions(current);
   const currentNextAction = current
     ? getStudentNextAction(current, currentContacts.length > 0)
@@ -76,14 +80,39 @@ export default function AgentWorkMobile({
     if (tab === 'following') fetchFollowing();
   };
 
+  const submitEnrollmentReport = async (payload) => {
+    setAdmissionSubmitting(true);
+    try {
+      const res = await api.post('/admissions/enrollment-reports', payload);
+      if (res?.data?.code !== 0) {
+        toast?.error(res?.data?.msg || '上报失败');
+        return;
+      }
+      toast?.success('已上报，等管理员确认');
+      setAdmissionForm(null);
+      if (detailStudent?.id) loadDetail(detailStudent.id);
+    } catch (error) {
+      toast?.error(getApiErrorMessage(error));
+    } finally {
+      setAdmissionSubmitting(false);
+    }
+  };
+
   const submitVisitReport = async (payload) => {
     setAdmissionSubmitting(true);
     try {
       const res = await api.post('/admissions/visit-reports', payload);
-      const stage = res?.data?.data?.stage;
+      if (res?.data?.code !== 0) {
+        toast?.error(res?.data?.msg || '登记失败');
+        return;
+      }
+      const stage = res.data.data?.stage;
+      toast?.success('到访已登记');
       setAdmissionForm(null);
       if (detailStudent?.id && stage) onAdmissionsStageSynced?.(detailStudent.id, stage);
       if (detailStudent?.id) loadDetail(detailStudent.id);
+    } catch (error) {
+      toast?.error(getApiErrorMessage(error));
     } finally {
       setAdmissionSubmitting(false);
     }
@@ -374,17 +403,30 @@ export default function AgentWorkMobile({
               <div className="space-y-3">
                 <div>
                   <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">招生推进</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">家访、到校填一张表，可以直接复制到群</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">到访和报名都能直接复制到群</div>
                 </div>
-                <button type="button" onClick={() => setAdmissionForm(admissionForm === 'visit' ? null : 'visit')} className="inline-flex w-full min-h-[40px] items-center justify-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white">
-                  <MapPin className="w-3.5 h-3.5" />登记到访
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'visit' ? null : 'visit')} className="inline-flex min-h-[40px] items-center justify-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white">
+                    <MapPin className="w-3.5 h-3.5" />登记到访
+                  </button>
+                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'enroll' ? null : 'enroll')} className="inline-flex min-h-[40px] items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white">
+                    <Award className="w-3.5 h-3.5" />报名上报
+                  </button>
+                </div>
               </div>
               {admissionForm === 'visit' && (
                 <VisitReportForm
                   student={detailStudent}
                   submitting={admissionSubmitting}
                   onSubmit={submitVisitReport}
+                  onCancel={() => setAdmissionForm(null)}
+                />
+              )}
+              {admissionForm === 'enroll' && (
+                <EnrollmentReportForm
+                  student={detailStudent}
+                  submitting={admissionSubmitting}
+                  onSubmit={submitEnrollmentReport}
                   onCancel={() => setAdmissionForm(null)}
                 />
               )}

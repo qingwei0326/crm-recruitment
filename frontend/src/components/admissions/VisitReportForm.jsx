@@ -4,7 +4,7 @@ import {
   formatVisitTime,
   initialReportValues,
 } from '../../utils/reportText';
-import { COMMON_PROGRAMS, toggleProgram } from './programs';
+import ProgramPicker from './ProgramPicker';
 import useReportCopy from './useReportCopy';
 
 const fieldCls = 'w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100';
@@ -126,8 +126,6 @@ export default function VisitReportForm({ student, submitting = false, onSubmit,
     });
   };
 
-  const selectedPrograms = form.program.split(/[、,，\s]+/).filter(Boolean);
-
   return (
     <form onSubmit={submit} className="space-y-3">
       <div className="text-xs text-gray-700 dark:text-gray-200">学生姓名：{student.name || '-'}</div>
@@ -142,38 +140,11 @@ export default function VisitReportForm({ student, submitting = false, onSubmit,
           placeholder="没有就留空"
         />
       </label>
-      <div className="space-y-1">
-        <label className={labelCls}>
-          <span>意向专业</span>
-          <input
-            aria-label="意向专业"
-            value={form.program}
-            onChange={(event) => update('program', event.target.value)}
-            className={fieldCls}
-            placeholder="点下面选，也可以直接写"
-          />
-        </label>
-        <div className="flex flex-wrap gap-1.5">
-          {COMMON_PROGRAMS.map((program) => {
-            const selected = selectedPrograms.includes(program);
-            return (
-              <button
-                key={program}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => update('program', toggleProgram(form.program, program))}
-                className={`min-h-[32px] rounded-full border px-2.5 text-xs ${
-                  selected
-                    ? 'border-teal-600 bg-teal-600 text-white'
-                    : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'
-                }`}
-              >
-                {program}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <ProgramPicker
+        label="意向专业"
+        value={form.program}
+        onChange={(value) => update('program', value)}
+      />
       <label className={labelCls}>
         <span>中考分数</span>
         <input
