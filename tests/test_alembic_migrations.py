@@ -410,7 +410,7 @@ def test_visit_note_columns_upgrade_and_downgrade(tmp_path):
     for table in ("home_visit_tasks", "campus_visit_tasks"):
         assert note_columns <= columns(table)
 
-    downgraded = run_alembic(db_path, "downgrade", "20261020_01")
+    downgraded = run_alembic(db_path, "downgrade", "20261021_01")
     assert downgraded.returncode == 0, downgraded.stderr
     for table in ("home_visit_tasks", "campus_visit_tasks"):
         assert not note_columns & columns(table)
@@ -669,22 +669,22 @@ def test_call_analysis_table_and_settings_are_dropped(tmp_path):
                 {"key": key},
             )
 
-    upgraded = run_alembic(db_path, "upgrade", "head")
+    upgraded = run_alembic(db_path, "upgrade", "20261017_01")
 
     assert upgraded.returncode == 0, upgraded.stderr
     assert "calls" not in inspect(engine).get_table_names()
     with engine.connect() as conn:
         keys = {row[0] for row in conn.execute(text("select key from system_configs"))}
     assert keys == {"pushplus_token"}
-    check = run_alembic(db_path, "check")
-    assert check.returncode == 0, check.stdout + check.stderr
-
     downgraded = run_alembic(db_path, "downgrade", "20261016_01")
 
     assert downgraded.returncode == 0, downgraded.stderr
     assert "calls" in inspect(engine).get_table_names()
     with engine.connect() as conn:
         assert conn.execute(text("select count(*) from calls")).scalar_one() == 0
+    assert run_alembic(db_path, "upgrade", "head").returncode == 0
+    check = run_alembic(db_path, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
 
 
@@ -824,7 +824,7 @@ def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
             }
 
     before = state()
-    upgraded = run_alembic(db_path, "upgrade", "head")
+    upgraded = run_alembic(db_path, "upgrade", "20261020_01")
 
     assert upgraded.returncode == 0, upgraded.stderr
     assert state() == {
@@ -840,11 +840,11 @@ def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
         "item_campus": "cancelled",
         "logs": ["学生无效，关闭回访 1 条、家访 1 条", "学生已报名，关闭到校 1 条"],
     }
-    check = run_alembic(db_path, "check")
-    assert check.returncode == 0, check.stdout + check.stderr
-
     downgraded = run_alembic(db_path, "downgrade", "20261017_01")
 
     assert downgraded.returncode == 0, downgraded.stderr
     assert state() == before
+    assert run_alembic(db_path, "upgrade", "head").returncode == 0
+    check = run_alembic(db_path, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
