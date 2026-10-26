@@ -34,6 +34,7 @@ from app.models import (
     CampusVisitTask,
     DialLog,
     EnrollmentRecord,
+    EnrollmentReport,
     FollowUp,
     HomeVisitTask,
     LeadViewLog,
@@ -55,6 +56,7 @@ STUDENT_DATA_MODELS = (
     LeadViewLog,
     HomeVisitTask,
     CampusVisitTask,
+    EnrollmentReport,
     EnrollmentRecord,
     DialLog,
     StudentAssignment,
@@ -427,6 +429,7 @@ async def cleanup_current_season(
     for model in (
         HandoverItem,
         WorkItem,
+        EnrollmentReport,
         EnrollmentRecord,
         CampusVisitTask,
         HomeVisitTask,

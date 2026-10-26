@@ -115,6 +115,8 @@ async function installAdmissionsMocks(page) {
     homeVisits: [],
     campusVisits: [],
     enrollments: [],
+    enrollmentReports: [],
+    nextEnrollmentReportId: 401,
     nextHomeVisitId: 101,
     nextCampusVisitId: 201,
     nextEnrollmentId: 301,
@@ -372,6 +374,59 @@ async function installAdmissionsMocks(page) {
       await route.fulfill({ json: ok(record) });
       return;
     }
+    if (path === '/admissions/enrollment-reports' && method === 'POST') {
+      const body = request.postDataJSON();
+      const student = findStudent(body.student_id);
+      const report = {
+        id: state.nextEnrollmentReportId++,
+        student_id: student.id,
+        student_name: student.name,
+        school_name: student.school_name,
+        region: body.region,
+        assigned_to: student.assigned_to,
+        reporter_name: mockAgentUser.name,
+        status: '待确认',
+        enrolled_program: body.enrolled_program,
+        notes: body.notes,
+        created_at: '2026-07-15T10:00:00',
+      };
+      state.enrollmentReports.push(report);
+      await route.fulfill({ json: ok(report) });
+      return;
+    }
+    if (path === '/admissions/enrollment-reports' && method === 'GET') {
+      await route.fulfill({
+        json: ok({ list: state.enrollmentReports.filter((row) => row.status === '待确认') }),
+      });
+      return;
+    }
+    if (path.startsWith('/admissions/enrollment-reports/') && path.endsWith('/confirm')) {
+      const id = Number(path.split('/')[3]);
+      const report = state.enrollmentReports.find((row) => row.id === id);
+      const body = request.postDataJSON();
+      const student = findStudent(report.student_id);
+      const record = {
+        id: state.nextEnrollmentId++,
+        student_id: student.id,
+        student_name: student.name,
+        region: student.region,
+        school_name: student.school_name,
+        source: '电话外呼',
+        enrolled_program: body.enrolled_program,
+        student_paid_amount: body.student_paid_amount ?? 0,
+        attributed_agent_id: mockAgentUser.id,
+        attributed_agent_name: mockAgentUser.name,
+        settlement_status: '未结算',
+        enrolled_at: '2026-07-15 00:00:00',
+      };
+      state.enrollments.push(record);
+      report.status = '已确认';
+      report.enrollment_record_id = record.id;
+      student.status = '已报名';
+      student.stage = '已报名';
+      await route.fulfill({ json: ok({ report, enrollment_id: record.id }) });
+      return;
+    }
     if (path === '/admissions/enrollments/summary') {
       await route.fulfill({
         json: ok([
@@ -431,6 +486,29 @@ async function openAgentDetailFromHandled(page, studentName) {
 
 if (!RUN_E2E) {
   test.describe('admissions visit enrollment workflow', () => {
+    test('an agent reports an enrollment and an admin confirms it', async ({ page }) => {
+      const state = await installAdmissionsMocks(page);
+
+      await login(page, mockAgentUser.username, 'agent123');
+      await openAgentDetailFromHandled(page, mockDirectCampusStudent.name);
+      await page.getByRole('button', { name: '报名上报' }).click();
+      await page.getByLabel('报读专业').fill('无人机');
+      await page.getByLabel('报名备注').fill('已交定金');
+      await page.getByRole('button', { name: '只上报' }).click();
+      await expect.poll(() => state.enrollmentReports.length).toBe(1);
+      expect(state.enrollmentReports[0].enrolled_program).toBe('无人机');
+
+      await resetBrowserAuth(page, state);
+      await login(page, ADMIN.username, ADMIN.password);
+      await page.goto('/admin/enrollment-settlement');
+      await expect(page.getByText('待确认报名 1 条')).toBeVisible({ timeout: 20_000 });
+      await page.getByRole('button', { name: `确认报名 ${mockDirectCampusStudent.name}` }).click();
+      await page.getByLabel('学生实付').fill('500');
+      await page.getByRole('button', { name: '确认登记报名' }).click();
+      await expect.poll(() => state.enrollmentReports[0].status).toBe('已确认');
+      expect(state.enrollments[0].student_paid_amount).toBe(500);
+    });
+
     test('agent and admin complete home visit, campus visit, enrollment, and settlement', async ({ page }) => {
       const state = await installAdmissionsMocks(page);
 

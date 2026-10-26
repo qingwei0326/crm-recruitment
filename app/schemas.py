@@ -242,6 +242,32 @@ class VisitReportCreate(BaseModel):
         return self
 
 
+class EnrollmentReportCreate(BaseModel):
+    student_id: int
+    enrolled_program: str = Field(default="", max_length=128)
+    region: str = Field(default="", max_length=64)
+    notes: str = ""
+
+
+class EnrollmentReportConfirm(BaseModel):
+    """The admin's half of an enrollment: what EnrollmentCreate needs beyond the report."""
+
+    enrolled_program: str = Field(default="", max_length=128)
+    enrolled_at: datetime | None = None
+    amount: float | None = Field(default=None, ge=0)
+    tuition_list_amount: float | None = Field(default=None, ge=0)
+    student_subsidy_amount: float | None = Field(default=None, ge=0)
+    student_paid_amount: float | None = Field(default=None, ge=0)
+    external_subsidy_amount: float | None = Field(default=None, ge=0)
+    commission_base_amount: float | None = Field(default=None, ge=0)
+    commission_subsidy_amount: float | None = Field(default=None, ge=0)
+    settlement_notes: str = ""
+
+
+class EnrollmentReportReject(BaseModel):
+    reason: str = Field(default="", max_length=256)
+
+
 class CampusVisitCreate(BaseModel):
     student_id: int
     home_visit_task_id: int | None = None
