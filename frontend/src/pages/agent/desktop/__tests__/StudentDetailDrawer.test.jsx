@@ -61,93 +61,59 @@ describe('StudentDetailDrawer admissions actions', () => {
     expect(screen.getByText('完整时间线')).toBeInTheDocument();
   });
 
-  it('submits a home visit request from the detail drawer', async () => {
+  it('files a home visit from the visit report in the detail drawer', async () => {
     const onStageSynced = vi.fn();
+    api.post.mockResolvedValue({ data: { code: 0, data: { stage: '待家访' } } });
     renderDrawer({ onStageSynced });
 
-    fireEvent.click(screen.getByRole('button', { name: '申请家访' }));
-    fireEvent.change(screen.getByLabelText('家访地址'), {
-      target: { value: '芗城区测试路 1 号' },
-    });
-    fireEvent.change(screen.getByLabelText('家访备注'), {
-      target: { value: '家长同意上门沟通' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '提交家访申请' }));
-
-    await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/admissions/home-visits', {
-        student_id: 42,
-        intent_program: '护理',
-        exam_score: 520,
-        usual_score: null,
-        parent_intent: '',
-        student_situation: '',
-        is_wechat_added: false,
-        is_confirmed_with_guardian: false,
-        requested_visit_time: null,
-        address: '芗城区测试路 1 号',
-        priority: '中',
-        notes: '家长同意上门沟通',
-      });
-    });
-    expect(onStageSynced).toHaveBeenCalledWith(42, '待家访');
-  });
-
-  it('includes campus visit timing and situation in the home visit report notes', async () => {
-    renderDrawer();
-
-    fireEvent.click(screen.getByRole('button', { name: '申请家访' }));
-    expect(screen.getByText('上报信息')).toBeInTheDocument();
-    expect(screen.getByText('家访安排')).toBeInTheDocument();
-    expect(screen.getByText('沟通情况')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '登记到访' }));
     expect(screen.getByText('学生姓名：林宇涛')).toBeInTheDocument();
-    // These three are now editable, prefilled from the student record.
+    // Prefilled from the student record and still editable.
     expect(screen.getByLabelText('家长电话')).toHaveValue('13800138000');
     expect(screen.getByLabelText('意向专业')).toHaveValue('护理');
     expect(screen.getByLabelText('中考分数')).toHaveValue('520');
 
-    fireEvent.change(screen.getByLabelText('到校参观时间'), {
-      target: { value: '周六上午' },
-    });
-    fireEvent.change(screen.getByLabelText('情况'), {
-      target: { value: '家长愿意先家访再到校' },
-    });
-    fireEvent.change(screen.getByLabelText('家访备注'), {
-      target: { value: '需要管理员尽快安排' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '提交家访申请' }));
+    fireEvent.change(screen.getByLabelText('家访时间'), { target: { value: '周六上午' } });
+    fireEvent.change(screen.getByLabelText('地址'), { target: { value: '芗城区测试路 1 号' } });
+    fireEvent.change(screen.getByLabelText('情况'), { target: { value: '家长同意上门沟通' } });
+    fireEvent.click(screen.getByRole('button', { name: '只提交' }));
 
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/admissions/home-visits', expect.objectContaining({
-        notes: '到校参观时间：周六上午\n情况：家长愿意先家访再到校\n需要管理员尽快安排',
+      expect(api.post).toHaveBeenCalledWith('/admissions/visit-reports', expect.objectContaining({
+        student_id: 42,
+        intent_program: '护理',
+        exam_score_text: '520',
+        home_visit_at: null,
+        home_visit_note: '周六上午',
+        campus_visit_at: null,
+        campus_visit_note: '',
+        address: '芗城区测试路 1 号',
+        situation: '家长同意上门沟通',
       }));
     });
+    expect(onStageSynced).toHaveBeenCalledWith(42, '待家访');
   });
 
-  it('submits a campus visit appointment from the detail drawer', async () => {
+  it('files a campus visit and follows the stage the server returns', async () => {
     const onStageSynced = vi.fn();
+    api.post.mockResolvedValue({ data: { code: 0, data: { stage: '到校参观已安排' } } });
     renderDrawer({ onStageSynced });
 
-    fireEvent.click(screen.getByRole('button', { name: '预约到校' }));
-    fireEvent.change(screen.getByLabelText('预约到校时间'), {
+    fireEvent.click(screen.getByRole('button', { name: '登记到访' }));
+    fireEvent.change(screen.getByLabelText('到校参观时间（具体时间）'), {
       target: { value: '2026-07-04T09:30' },
     });
-    fireEvent.change(screen.getByLabelText('来校人数'), {
-      target: { value: '3' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '提交到校预约' }));
+    fireEvent.click(screen.getByRole('button', { name: /更多/ }));
+    fireEvent.change(screen.getByLabelText('来校人数'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: '只提交' }));
 
     await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/admissions/campus-visits', {
+      expect(api.post).toHaveBeenCalledWith('/admissions/visit-reports', expect.objectContaining({
         student_id: 42,
-        source: '电话外呼',
-        intent_program: '护理',
-        appointment_at: '2026-07-04T09:30:00',
-        needs_pickup: false,
+        campus_visit_at: '2026-07-04T09:30:00',
+        home_visit_note: '',
         visitor_count: 3,
-        current_concerns: '',
-        notes: '',
-      });
+      }));
     });
     expect(onStageSynced).toHaveBeenCalledWith(42, '到校参观已安排');
   });

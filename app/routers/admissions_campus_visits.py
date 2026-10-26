@@ -5,7 +5,6 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import ADMIN_PAGE_CAMPUS_VISITS, get_current_user
 from app.database import get_db
-from app.domain_models import WorkItemKind
 from app.models import (
     CampusVisitResult,
     CampusVisitStatus,
@@ -20,8 +19,6 @@ from app.permissions import get_accessible_student, is_admin
 from app.routers.admissions import (
     ADMIN_CAMPUS_VISIT_RESULT_FIELDS,
     AGENT_CAMPUS_VISIT_EDIT_FIELDS,
-    CAMPUS_VISIT_OPEN_STATUSES,
-    _advance_student_stage,
     _campus_visit_payload,
     _create_enrollment_record,
     _get_campus_visit_or_404,
@@ -31,35 +28,16 @@ from app.routers.admissions import (
     _require_admin_module,
 )
 from app.schemas import CampusVisitCreate, CampusVisitUpdate, EnrollmentCreate, Response
-from app.services.work_item_service import (
-    campus_visit_is_open,
-    sync_source_work_item,
-    sync_student_work_items,
+from app.services.visit_report_service import (
+    CAMPUS_VISIT_OPEN_STATUSES,
+    add_campus_visit_task,
+    has_open_campus_visit,
+    sync_campus_visit_work_item,
 )
+from app.stage_policy import advance_student_stage
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
-
-
-async def _sync_campus_visit_work_item(
-    db: AsyncSession,
-    task: CampusVisitTask,
-    student: Student,
-    current_user: User,
-) -> None:
-    await db.flush()
-    await sync_source_work_item(
-        db,
-        WorkItemKind.campus_visit,
-        "campus_visit",
-        task.id,
-        student,
-        task.creator_user_id,
-        task.next_follow_up_at or task.appointment_at,
-        not campus_visit_is_open(task),
-        current_user,
-    )
-    await sync_student_work_items(db, student, current_user)
 
 
 @router.get("/campus-visits")
@@ -116,13 +94,7 @@ async def create_campus_visit(
     if is_admin(current_user):
         _require_admin_module(current_user, ADMIN_PAGE_CAMPUS_VISITS)
     student = await get_accessible_student(db, body.student_id, current_user)
-    open_result = await db.execute(
-        select(CampusVisitTask.id).where(
-            CampusVisitTask.student_id == student.id,
-            CampusVisitTask.status.in_(CAMPUS_VISIT_OPEN_STATUSES),
-        )
-    )
-    if open_result.scalar_one_or_none() is not None:
+    if await has_open_campus_visit(db, student.id):
         raise HTTPException(status_code=400, detail="该学生已有未完成的到校参观任务")
 
     home_visit = None
@@ -136,18 +108,14 @@ async def create_campus_visit(
         else current_user.id
     )
 
-    status = CampusVisitStatus.scheduled if body.appointment_at else CampusVisitStatus.pending
-    task = CampusVisitTask(
-        student_id=student.id,
+    task = await add_campus_visit_task(
+        db,
+        student,
+        current_user,
         creator_user_id=creator_user_id,
         reception_admin_id=body.reception_admin_id,
         home_visit_task_id=body.home_visit_task_id,
-        status=status,
         source=body.source,
-        student_name_snapshot=student.name,
-        guardian_phone_snapshot=student.guardian_phone or student.guardian2_phone or "",
-        region_snapshot=student.region,
-        school_name_snapshot=student.school_name,
         intent_program=body.intent_program or student.program or "",
         appointment_at=body.appointment_at,
         needs_pickup=body.needs_pickup,
@@ -155,23 +123,6 @@ async def create_campus_visit(
         current_concerns=body.current_concerns,
         notes=body.notes,
     )
-    next_stage = (
-        StudentStage.campus_visit_scheduled
-        if body.appointment_at
-        else StudentStage.campus_visit_pending
-    )
-    _advance_student_stage(student, next_stage)
-    db.add(task)
-    db.add(
-        make_operation_log(
-            current_user,
-            student.id,
-            student.case_no or "",
-            "预约到校",
-            content=f"到校参观预约：{student.name}；时间：{body.appointment_at or '待定'}",
-        )
-    )
-    await _sync_campus_visit_work_item(db, task, student, current_user)
     await db.commit()
     await db.refresh(task)
     return Response.ok(await _load_campus_visit_payload(db, task.id))
@@ -249,9 +200,9 @@ async def update_campus_visit(
                 allow_existing=True,
             )
         elif task.status == CampusVisitStatus.arrived:
-            _advance_student_stage(student, StudentStage.campus_visit_arrived)
+            advance_student_stage(student, StudentStage.campus_visit_arrived)
         elif task.status in {CampusVisitStatus.scheduled, CampusVisitStatus.rescheduled}:
-            _advance_student_stage(student, StudentStage.campus_visit_scheduled)
+            advance_student_stage(student, StudentStage.campus_visit_scheduled)
 
     if old_status != task.status or old_result != task.result:
         db.add(
@@ -267,6 +218,6 @@ async def update_campus_visit(
             )
         )
 
-    await _sync_campus_visit_work_item(db, task, student, current_user)
+    await sync_campus_visit_work_item(db, task, student, current_user)
     await db.commit()
     return Response.ok(await _load_campus_visit_payload(db, task.id))

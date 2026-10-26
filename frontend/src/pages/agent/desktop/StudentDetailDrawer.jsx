@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckSquare, History, Home, Loader2, MapPin, X } from 'lucide-react';
+import { AlertTriangle, CheckSquare, History, Loader2, MapPin, X } from 'lucide-react';
 import api from '../../../api';
-import HomeVisitForm from '../../../components/admissions/HomeVisitForm';
-import CampusVisitForm from '../../../components/admissions/CampusVisitForm';
+import VisitReportForm from '../../../components/admissions/VisitReportForm';
 import StudentInfoCard from '../../../components/StudentInfoCard';
 import StudentTimeline from '../../../components/StudentTimeline';
 import { PersonalGroupMembershipEditor } from '../../../components/PersonalGroups';
@@ -51,24 +50,13 @@ export default function StudentDetailDrawer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, open]);
 
-  const submitHomeVisit = async (payload) => {
+  const submitVisitReport = async (payload) => {
     setSubmitting(true);
     try {
-      await api.post('/admissions/home-visits', payload);
+      const res = await api.post('/admissions/visit-reports', payload);
+      const stage = res?.data?.data?.stage;
       setActiveForm(null);
-      onStageSynced?.(student.id, '待家访');
-      onRefreshDetail?.();
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitCampusVisit = async (payload) => {
-    setSubmitting(true);
-    try {
-      await api.post('/admissions/campus-visits', payload);
-      setActiveForm(null);
-      onStageSynced?.(student.id, '到校参观已安排');
+      if (stage) onStageSynced?.(student.id, stage);
       onRefreshDetail?.();
     } finally {
       setSubmitting(false);
@@ -154,41 +142,23 @@ export default function StudentDetailDrawer({
                   招生推进
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  提交家访申请或预约家长到校
+                  家访、到校填一张表，可以直接复制到群
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveForm(activeForm === 'home' ? null : 'home')}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white"
-                >
-                  <Home className="w-3.5 h-3.5" />
-                  申请家访
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveForm(activeForm === 'campus' ? null : 'campus')}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white"
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  预约到校
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setActiveForm(activeForm === 'visit' ? null : 'visit')}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                登记到访
+              </button>
             </div>
-            {activeForm === 'home' && (
-              <HomeVisitForm
+            {activeForm === 'visit' && (
+              <VisitReportForm
                 student={student}
                 submitting={submitting}
-                onSubmit={submitHomeVisit}
-                onCancel={() => setActiveForm(null)}
-              />
-            )}
-            {activeForm === 'campus' && (
-              <CampusVisitForm
-                student={student}
-                submitting={submitting}
-                onSubmit={submitCampusVisit}
+                onSubmit={submitVisitReport}
                 onCancel={() => setActiveForm(null)}
               />
             )}

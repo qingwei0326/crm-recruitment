@@ -308,6 +308,9 @@ export default function HomeVisitManage() {
                           </td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                             <div>{formatDateTime(item.scheduled_at || item.requested_visit_time)}</div>
+                            {item.visit_time_note && (
+                              <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">{item.visit_time_note}</div>
+                            )}
                             <div className="mt-1 max-w-52 truncate text-xs text-gray-500">{item.address || '-'}</div>
                             <div className="mt-1 text-xs text-gray-500">优先级 {item.priority || '中'}</div>
                           </td>

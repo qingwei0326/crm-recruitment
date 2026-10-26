@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy import MetaData, Table, create_engine, func, inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.domain_models import (
@@ -20,13 +20,8 @@ from app.domain_models import (
 )
 from app.migration_data.domain_backfill_20260711 import audit_domain_core
 from app.models import (
-    CampusVisitResult,
-    CampusVisitStatus,
-    CampusVisitTask,
     EnrollmentRecord,
     FollowUp,
-    HomeVisitStatus,
-    HomeVisitTask,
     Student,
     StudentStatus,
     User,
@@ -314,7 +309,7 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20261020_01"
+        assert revision == "20261026_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
@@ -395,10 +390,30 @@ def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_p
         ).one()
         assert tuple(row) == ("13960118706", "contacted")
         assert conn.execute(text("select version_num from alembic_version")).scalar_one() == (
-            "20261020_01"
+            "20261026_01"
         )
     assert run_alembic(db_path, "check").returncode == 0
     engine.dispose()
+
+
+def test_visit_note_columns_upgrade_and_downgrade(tmp_path):
+    db_path = tmp_path / "visit-notes.db"
+    note_columns = {"visit_time_note", "exam_score_text"}
+
+    def columns(table):
+        engine = create_engine(f"sqlite:///{db_path}")
+        names = {column["name"] for column in inspect(engine).get_columns(table)}
+        engine.dispose()
+        return names
+
+    assert run_alembic(db_path, "upgrade", "head").returncode == 0
+    for table in ("home_visit_tasks", "campus_visit_tasks"):
+        assert note_columns <= columns(table)
+
+    downgraded = run_alembic(db_path, "downgrade", "20261020_01")
+    assert downgraded.returncode == 0, downgraded.stderr
+    for table in ("home_visit_tasks", "campus_visit_tasks"):
+        assert not note_columns & columns(table)
 
 
 def test_fresh_head_schema_already_has_student_search_indexes(tmp_path):
@@ -680,50 +695,59 @@ def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
                 "school_name_snapshot": "",
             }
 
+        def add_visit(table_name, student, **values):
+            # Today's visit models have columns added after 20261017_01, so insert
+            # through the schema as it is at this revision; NOT NULL gaps get blanks.
+            table = Table(table_name, MetaData(), autoload_with=session.connection())
+            row = {
+                column.name: when if column.name.endswith("_at") else ""
+                for column in table.columns
+                if not (column.nullable or column.primary_key)
+            }
+            for flag in ("is_wechat_added", "is_confirmed_with_guardian", "needs_pickup",
+                         "onsite_enrolled"):
+                if flag in row:
+                    row[flag] = False
+            if "visitor_count" in row:
+                row["visitor_count"] = 1
+            row.update(student_id=student.id, **snapshot(student), **values)
+            return session.execute(table.insert().values(**row)).inserted_primary_key[0]
+
         open_follow_up = FollowUp(
             student_id=invalid.id, agent_id=agent.id, follow_up_date=when, is_completed=False
         )
         kept_follow_up = FollowUp(
             student_id=active.id, agent_id=agent.id, follow_up_date=when, is_completed=False
         )
-        home = HomeVisitTask(
-            student_id=invalid.id,
-            creator_agent_id=agent.id,
-            status=HomeVisitStatus.pending,
-            **snapshot(invalid),
-        )
-        spare_campus = CampusVisitTask(
-            student_id=enrolled.id,
-            creator_user_id=agent.id,
-            status=CampusVisitStatus.scheduled,
-            appointment_at=when,
-            **snapshot(enrolled),
-        )
-        enrolling_campus = CampusVisitTask(
-            student_id=enrolled.id,
-            creator_user_id=agent.id,
-            status=CampusVisitStatus.scheduled,
-            appointment_at=when,
-            **snapshot(enrolled),
-        )
-        onsite_campus = CampusVisitTask(
-            student_id=enrolled.id,
-            creator_user_id=agent.id,
-            status=CampusVisitStatus.scheduled,
-            result=CampusVisitResult.enrolled,
-            appointment_at=when,
-            **snapshot(enrolled),
-        )
-        session.add_all(
-            [open_follow_up, kept_follow_up, home, spare_campus, enrolling_campus, onsite_campus]
-        )
+        session.add_all([open_follow_up, kept_follow_up])
         session.flush()
+        home = add_visit(
+            "home_visit_tasks", invalid, creator_agent_id=agent.id, status="pending", priority="中"
+        )
+        spare_campus, enrolling_campus = (
+            add_visit(
+                "campus_visit_tasks",
+                enrolled,
+                creator_user_id=agent.id,
+                status="scheduled",
+                appointment_at=when,
+            )
+            for _ in range(2)
+        )
+        onsite_campus = add_visit(
+            "campus_visit_tasks",
+            enrolled,
+            creator_user_id=agent.id,
+            status="scheduled",
+            result="enrolled",
+            appointment_at=when,
+        )
         session.add(
             EnrollmentRecord(
                 student_id=enrolled.id,
                 attributed_agent_id=agent.id,
                 confirmed_by_admin_id=agent.id,
-                campus_visit_task_id=enrolling_campus.id,
+                campus_visit_task_id=enrolling_campus,
                 **snapshot(enrolled),
             )
         )
@@ -734,7 +758,7 @@ def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
                 status=WorkItemStatus.open,
                 owner_agent_id=agent.id,
                 source_type=source_type,
-                source_id=source.id,
+                source_id=source if isinstance(source, int) else source.id,
             )
             for name, student, kind, source_type, source in (
                 ("follow_up", invalid, WorkItemKind.scheduled_follow_up, "follow_up", open_follow_up),  # noqa: E501
@@ -748,10 +772,10 @@ def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
         ids = {
             "follow_up": open_follow_up.id,
             "kept_follow_up": kept_follow_up.id,
-            "home": home.id,
-            "spare_campus": spare_campus.id,
-            "enrolling_campus": enrolling_campus.id,
-            "onsite_campus": onsite_campus.id,
+            "home": home,
+            "spare_campus": spare_campus,
+            "enrolling_campus": enrolling_campus,
+            "onsite_campus": onsite_campus,
             **{f"item_{name}": item.id for name, item in items.items()},
         }
 
