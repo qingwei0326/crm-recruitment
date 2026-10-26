@@ -31,8 +31,7 @@ import { outcomeSavedMessage } from '../../utils/outcomeFeedback';
 import { notifyOutcomeSaved } from '../../utils/outcomeUndo';
 import useLeadOutcomeCatalog from '../../hooks/useLeadOutcomeCatalog';
 import { ContentSkeleton, ErrorState } from '../../components/AsyncState';
-import HomeVisitForm from '../../components/admissions/HomeVisitForm';
-import CampusVisitForm from '../../components/admissions/CampusVisitForm';
+import VisitReportForm from '../../components/admissions/VisitReportForm';
 import {
   detailForOperatorResult,
   displayStatusForOperatorResult,
@@ -40,14 +39,9 @@ import {
   stageLabel,
 } from '../../labels';
 
-// Visit registration now uses the full home/campus request forms (the same fields as
-// the work-group report) instead of a bare date + note, so the details are kept in
-// the system and the agent can copy the report from the same screen.
-function VisitSheet({ open, onClose, student, submitting, onSubmitHome, onSubmitCampus }) {
-  const [visitType, setVisitType] = useState('家访');
-  useEffect(() => {
-    if (open) setVisitType('家访');
-  }, [open]);
+// Visit registration follows the work-group report: one form files the home visit,
+// the campus visit or both, and the agent can copy the report from the same screen.
+function VisitSheet({ open, onClose, student, submitting, onSubmit }) {
   if (!open || !student) return null;
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
@@ -61,39 +55,12 @@ function VisitSheet({ open, onClose, student, submitting, onSubmitHome, onSubmit
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex gap-2">
-          {['家访', '来校参观'].map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setVisitType(t)}
-              className={`flex-1 min-h-[44px] rounded-lg text-sm font-medium border ${
-                visitType === t
-                  ? 'bg-teal-600 text-white border-teal-600'
-                  : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        {visitType === '家访' ? (
-          <HomeVisitForm
-            key="home"
-            student={student}
-            submitting={submitting}
-            onSubmit={onSubmitHome}
-            onCancel={onClose}
-          />
-        ) : (
-          <CampusVisitForm
-            key="campus"
-            student={student}
-            submitting={submitting}
-            onSubmit={onSubmitCampus}
-            onCancel={onClose}
-          />
-        )}
+        <VisitReportForm
+          student={student}
+          submitting={submitting}
+          onSubmit={onSubmit}
+          onCancel={onClose}
+        />
       </div>
     </div>
   );
@@ -464,10 +431,8 @@ export default function MobileStudentDetail() {
     }
   };
 
-  const handleSubmitHomeVisit = (payload) =>
-    submitAdmission('/admissions/home-visits', payload, '家访申请已提交');
-  const handleSubmitCampusVisit = (payload) =>
-    submitAdmission('/admissions/campus-visits', payload, '到校预约已提交');
+  const handleSubmitVisitReport = (payload) =>
+    submitAdmission('/admissions/visit-reports', payload, '到访已登记');
 
   const handleUpdateStudentStatus = async (outcome) => {
     if (!student) return false;
@@ -890,8 +855,7 @@ export default function MobileStudentDetail() {
         onClose={() => setVisitOpen(false)}
         student={student}
         submitting={visitSubmitting}
-        onSubmitHome={handleSubmitHomeVisit}
-        onSubmitCampus={handleSubmitCampusVisit}
+        onSubmit={handleSubmitVisitReport}
       />
 
       <DateTimeSheet

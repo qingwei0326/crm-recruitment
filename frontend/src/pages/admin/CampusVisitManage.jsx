@@ -265,6 +265,9 @@ export default function CampusVisitManage() {
                           </td>
                           <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
                             <div>{formatDateTime(item.appointment_at)}</div>
+                            {item.visit_time_note && (
+                              <div className="mt-1 text-xs text-amber-700 dark:text-amber-300">{item.visit_time_note}</div>
+                            )}
                             <div className="mt-1 text-xs text-gray-500">{item.source || '-'} · {item.visitor_count || 1} 人</div>
                             <div className="mt-1 text-xs text-gray-500">{item.needs_pickup ? '需要接送' : '无需接送'}</div>
                           </td>

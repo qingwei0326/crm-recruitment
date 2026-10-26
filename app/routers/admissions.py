@@ -42,7 +42,6 @@ from app.services.work_item_service import (
     sync_source_work_item,
     sync_student_work_items,
 )
-from app.stage_policy import STAGE_RANK, normalize_stage
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
@@ -69,11 +68,6 @@ ADMIN_HOME_VISIT_RESULT_FIELDS = {
     "next_action",
     "next_follow_up_at",
     "result_notes",
-}
-CAMPUS_VISIT_OPEN_STATUSES = {
-    CampusVisitStatus.pending,
-    CampusVisitStatus.scheduled,
-    CampusVisitStatus.rescheduled,
 }
 WORK_ITEM_QUEUES = {"all", "home_visit", "campus_visit", "follow_up", "settlement", "help"}
 WORK_ITEM_QUEUE_ALIASES = {"follow": "follow_up", "visit": "campus_visit"}
@@ -128,11 +122,6 @@ ADMIN_CAMPUS_VISIT_RESULT_FIELDS = {
     "next_follow_up_at",
     "result_notes",
 }
-def _advance_student_stage(student: Student, stage: StudentStage) -> None:
-    if STAGE_RANK[normalize_stage(stage)] > STAGE_RANK[normalize_stage(student.stage)]:
-        student.stage = stage
-
-
 def _require_admin_module(current_user: User, permission: str) -> None:
     if is_admin(current_user) and not user_has_page_permission(current_user, permission):
         raise HTTPException(status_code=403, detail="无权访问该管理模块")
@@ -178,6 +167,8 @@ def _home_visit_payload(task: HomeVisitTask, enrollment_id: int | None = None) -
         "requested_visit_time": str(task.requested_visit_time)
         if task.requested_visit_time
         else None,
+        "visit_time_note": task.visit_time_note,
+        "exam_score_text": task.exam_score_text,
         "scheduled_at": str(task.scheduled_at) if task.scheduled_at else None,
         "address": task.address,
         "postpone_reason": task.postpone_reason,
@@ -212,6 +203,8 @@ def _campus_visit_payload(task: CampusVisitTask, enrollment_id: int | None = Non
         "source": task.source,
         "intent_program": task.intent_program,
         "appointment_at": str(task.appointment_at) if task.appointment_at else None,
+        "visit_time_note": task.visit_time_note,
+        "exam_score_text": task.exam_score_text,
         "needs_pickup": task.needs_pickup,
         "visitor_count": task.visitor_count,
         "current_concerns": task.current_concerns,
