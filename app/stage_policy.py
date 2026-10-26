@@ -54,6 +54,12 @@ def stage_rank(value: StudentStage | str) -> int:
     return STAGE_RANK[normalize_stage(value)]
 
 
+def advance_student_stage(student: Student, stage: StudentStage) -> None:
+    """Move the student forward to ``stage``; never move them back."""
+    if STAGE_RANK[normalize_stage(stage)] > STAGE_RANK[normalize_stage(student.stage)]:
+        student.stage = stage
+
+
 async def _has_home_visit(
     db: AsyncSession,
     student_id: int,

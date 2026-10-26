@@ -7,7 +7,6 @@ from sqlalchemy.orm import joinedload
 
 from app.auth import ADMIN_PAGE_HOME_VISITS, get_current_user
 from app.database import get_db
-from app.domain_models import WorkItemKind
 from app.models import (
     EnrollmentRecord,
     EnrollmentSource,
@@ -24,7 +23,6 @@ from app.routers.admissions import (
     ADMIN_HOME_VISIT_RESULT_FIELDS,
     AGENT_HOME_VISIT_EDIT_FIELDS,
     HOME_VISIT_TERMINAL_STATUSES,
-    _advance_student_stage,
     _create_enrollment_record,
     _get_home_visit_or_404,
     _home_visit_payload,
@@ -33,35 +31,11 @@ from app.routers.admissions import (
     _require_admin_module,
 )
 from app.schemas import EnrollmentCreate, HomeVisitCreate, HomeVisitUpdate, Response
-from app.services.work_item_service import (
-    home_visit_is_open,
-    sync_source_work_item,
-    sync_student_work_items,
-)
+from app.services.visit_report_service import add_home_visit_task, sync_home_visit_work_item
+from app.stage_policy import advance_student_stage
 from app.utils import make_operation_log
 
 router = APIRouter(prefix="/api/admissions", tags=["招生推进"])
-
-
-async def _sync_home_visit_work_item(
-    db: AsyncSession,
-    task: HomeVisitTask,
-    student: Student,
-    current_user: User,
-) -> None:
-    await db.flush()
-    await sync_source_work_item(
-        db,
-        WorkItemKind.home_visit,
-        "home_visit",
-        task.id,
-        student,
-        task.creator_agent_id,
-        task.next_follow_up_at or task.scheduled_at or task.requested_visit_time,
-        not home_visit_is_open(task),
-        current_user,
-    )
-    await sync_student_work_items(db, student, current_user)
 
 
 @router.get("/home-visits")
@@ -118,15 +92,12 @@ async def create_home_visit(
     if is_admin(current_user) and student.assigned_to:
         creator_agent_id = student.assigned_to
 
-    task = HomeVisitTask(
-        student_id=student.id,
+    task = await add_home_visit_task(
+        db,
+        student,
+        current_user,
         creator_agent_id=creator_agent_id,
-        status=HomeVisitStatus.pending,
         priority=body.priority,
-        student_name_snapshot=student.name,
-        guardian_phone_snapshot=student.guardian_phone or student.guardian2_phone or "",
-        region_snapshot=student.region,
-        school_name_snapshot=student.school_name,
         intent_program=body.intent_program or student.program or "",
         exam_score=body.exam_score if body.exam_score is not None else student.score,
         usual_score=body.usual_score,
@@ -138,18 +109,6 @@ async def create_home_visit(
         address=body.address,
         notes=body.notes,
     )
-    _advance_student_stage(student, StudentStage.home_visit_pending)
-    db.add(task)
-    db.add(
-        make_operation_log(
-            current_user,
-            student.id,
-            student.case_no or "",
-            "申请家访",
-            content=f"家访申请：{student.name}；地址：{body.address or '未填写'}",
-        )
-    )
-    await _sync_home_visit_work_item(db, task, student, current_user)
     await db.commit()
     await db.refresh(task)
     asyncio.create_task(admissions_core.notify_home_visit_created_background(task.id))
@@ -227,11 +186,11 @@ async def update_home_visit(
                 allow_existing=True,
             )
         elif task.result == HomeVisitResult.campus_visit:
-            _advance_student_stage(student, StudentStage.campus_visit_pending)
+            advance_student_stage(student, StudentStage.campus_visit_pending)
         elif task.status == HomeVisitStatus.completed:
-            _advance_student_stage(student, StudentStage.home_visit_completed)
+            advance_student_stage(student, StudentStage.home_visit_completed)
         elif task.status in {HomeVisitStatus.confirmed, HomeVisitStatus.scheduled}:
-            _advance_student_stage(student, StudentStage.home_visit_scheduled)
+            advance_student_stage(student, StudentStage.home_visit_scheduled)
 
     if old_status != task.status or old_result != task.result:
         db.add(
@@ -247,6 +206,6 @@ async def update_home_visit(
             )
         )
 
-    await _sync_home_visit_work_item(db, task, student, current_user)
+    await sync_home_visit_work_item(db, task, student, current_user)
     await db.commit()
     return Response.ok(await _load_home_visit_payload(db, task.id))
