@@ -23,6 +23,7 @@ import {
   canPerformAdminOperation,
 } from '../../adminPermissions';
 import { ContentSkeleton, EmptyState } from '../../components/AsyncState';
+import PendingEnrollmentReports from './PendingEnrollmentReports';
 
 const SETTLEMENT_STATUSES = ['未结算', '已结算', '暂缓', '争议'];
 const FINANCE_FIELDS = [
@@ -185,6 +186,10 @@ function EnrollmentSettlementContent({ embedded = false }) {
   const canEditSettlement = canPerformAdminOperation(
     user,
     ADMIN_OPERATION_PERMISSIONS.enrollmentSettlement,
+  );
+  const canCreateEnrollment = canPerformAdminOperation(
+    user,
+    ADMIN_OPERATION_PERMISSIONS.enrollmentCreate,
   );
   const canEditAttribution = canPerformAdminOperation(
     user,
@@ -355,6 +360,7 @@ function EnrollmentSettlementContent({ embedded = false }) {
 
   return (
     <div className={embedded ? 'space-y-4' : 'p-4 lg:p-6 max-w-7xl mx-auto space-y-4'}>
+      {canCreateEnrollment && <PendingEnrollmentReports onConfirmed={load} />}
       <section className="rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="lg:mr-auto">

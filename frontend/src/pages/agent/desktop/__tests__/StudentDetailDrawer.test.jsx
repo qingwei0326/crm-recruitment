@@ -117,4 +117,36 @@ describe('StudentDetailDrawer admissions actions', () => {
     });
     expect(onStageSynced).toHaveBeenCalledWith(42, '到校参观已安排');
   });
+  it('reports an enrollment for the admin to confirm', async () => {
+    api.post.mockResolvedValue({ data: { code: 0, data: { id: 5, status: '待确认' } } });
+    const onRefreshDetail = vi.fn();
+    renderDrawer({ onRefreshDetail });
+
+    fireEvent.click(screen.getByRole('button', { name: '报名上报' }));
+    expect(screen.getByLabelText('报读专业')).toHaveValue('护理');
+    fireEvent.click(screen.getByRole('button', { name: '只上报' }));
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/admissions/enrollment-reports', {
+        student_id: 42,
+        enrolled_program: '护理',
+        region: '芗城区',
+        notes: '',
+      });
+    });
+    await waitFor(() => expect(onRefreshDetail).toHaveBeenCalled());
+  });
+
+  it('keeps the report form open when the server refuses it', async () => {
+    api.post.mockResolvedValue({ data: { code: 'version_conflict', msg: '已经上报过，等管理员确认' } });
+    const onRefreshDetail = vi.fn();
+    renderDrawer({ onRefreshDetail });
+
+    fireEvent.click(screen.getByRole('button', { name: '报名上报' }));
+    fireEvent.click(screen.getByRole('button', { name: '只上报' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect(screen.getByLabelText('报读专业')).toBeInTheDocument();
+    expect(onRefreshDetail).not.toHaveBeenCalled();
+  });
 });
