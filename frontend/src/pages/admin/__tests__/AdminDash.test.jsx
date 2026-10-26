@@ -10,9 +10,6 @@ const mockUser = vi.hoisted(() => ({
 }));
 const mockHelpModal = vi.hoisted(() => vi.fn(() => null));
 let mockDailyOpsData;
-let mockSourceStats;
-let mockStageStats;
-let mockFunnelData;
 
 vi.mock('../../../api', () => ({
   default: {
@@ -23,13 +20,6 @@ vi.mock('../../../api', () => ({
 
 vi.mock('../../../hooks/useIsMobile', () => ({
   default: mockIsMobile,
-}));
-
-vi.mock('../../../context/ThemeContext', () => ({
-  useTheme: () => ({
-    dark: false,
-    toggle: vi.fn(),
-  }),
 }));
 
 vi.mock('../../../context/AuthContext', () => ({
@@ -61,24 +51,25 @@ vi.mock('../../../components/HelpModal', () => ({
   default: mockHelpModal,
 }));
 
-vi.mock('../FunnelChart', () => ({
-  default: () => <div>funnel chart</div>,
-}));
-
 vi.mock('../AdminMobileDash', () => ({
   default: () => <div>mobile admin dashboard page</div>,
 }));
 
-function mockDashboardApis() {
-  mockDailyOpsData = {
-    date: '2026-07-03',
-    summary: {
-      total_items: 0,
-      total_count: 0,
-    },
-    items: [],
+function dailyItem(overrides) {
+  return {
+    key: 'home_visit_due',
+    title: '家访待处理',
+    count: 3,
+    severity: 'high',
+    detail: '待确认、已安排或暂缓的家访。',
+    to: '/admin/work-center?queue=home_visit',
+    owners: [],
+    ...overrides,
   };
-  api.post.mockResolvedValue({ data: { code: 0, data: {} } });
+}
+
+function mockDashboardApis() {
+  mockDailyOpsData = { date: '2026-07-03', summary: { total_items: 0, total_count: 0 }, items: [] };
   api.get.mockImplementation((url) => {
     if (url === '/admin/daily-ops') {
       return Promise.resolve({ data: { data: mockDailyOpsData } });
@@ -91,68 +82,32 @@ function mockDashboardApis() {
               available_unassigned: 7,
               today_a: 2,
               today_calls: 18,
-              enrolled_total: 0,
+              a_level: 40,
+              enrolled_total: 5,
+              total_students: 1200,
+              today_new_leads: 30,
             },
-            sources: mockSourceStats,
-            stages: mockStageStats,
-            funnel: mockFunnelData,
-            visits: null,
           },
         },
       });
-    }
-    if (url === '/stats/sources') {
-      return Promise.resolve({ data: { data: mockSourceStats } });
-    }
-    if (url === '/stats/dashboard-summary') {
-      return Promise.resolve({
-        data: {
-          data: {
-            available_unassigned: 7,
-            today_a: 2,
-            today_calls: 18,
-          },
-        },
-      });
-    }
-    if (url === '/stats/stages') {
-      return Promise.resolve({ data: { data: mockStageStats } });
-    }
-    if (url === '/students/enrolled?page_size=1') {
-      return Promise.resolve({ data: { data: null } });
-    }
-    if (url === '/stats/funnel') {
-      return Promise.resolve({ data: { data: mockFunnelData } });
-    }
-    if (url === '/students') {
-      return Promise.resolve({ data: { data: { total: 0, list: [] } } });
-    }
-    if (url === '/follow-ups') {
-      return Promise.resolve({ data: { data: { list: [] } } });
-    }
-    if (url === '/admin/agent-score-preview') {
-      return Promise.resolve({ data: { data: { items: [] } } });
-    }
-    if (url === '/admin/stale-a') {
-      return Promise.resolve({ data: { data: [] } });
-    }
-    if (url === '/admin/data-quality') {
-      return Promise.resolve({ data: { data: { calls: { today: { recorded_calls: 12, unrecorded_calls: 1 } } } } });
-    }
-    if (url === '/admin/operation-logs?action=通知失败&days=7') {
-      return Promise.resolve({ data: { data: { total: 0 } } });
     }
     return Promise.resolve({ data: { data: {} } });
   });
 }
 
-describe('AdminDash responsive entry', () => {
+function renderDesktop() {
+  mockIsMobile.mockReturnValue(false);
+  return render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
+      <AdminDash />
+    </MemoryRouter>,
+  );
+}
+
+describe('AdminDash', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUser.current = { id: 1, role: 'admin', name: '管理员', is_super_admin: true };
-    mockSourceStats = [];
-    mockStageStats = {};
-    mockFunnelData = null;
     mockDashboardApis();
   });
 
@@ -164,306 +119,134 @@ describe('AdminDash responsive entry', () => {
     expect(screen.getByText('mobile admin dashboard page')).toBeInTheDocument();
   });
 
-  it('routes the desktop call-volume metric through report center', async () => {
-    mockIsMobile.mockReturnValue(false);
+  it('shows three blocks: key numbers, today’s to-do list and team progress', async () => {
+    renderDesktop();
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByRole('link', { name: /今日呼出/ })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: '今日呼出 18' })).toHaveAttribute(
       'href',
       '/admin/report-center?tab=call-volume',
     );
+    expect(screen.getByRole('region', { name: '关键数字' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '今日待处理' })).toBeInTheDocument();
+    expect(screen.getByTestId('admin-team-progress')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'A 级意向 40' })).toBeInTheDocument();
+    expect(screen.getByText('今日新增 2')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '总线索 1,200' })).toHaveAttribute('href', '/admin/leads');
+    expect(screen.getByRole('link', { name: /完整报表/ })).toHaveAttribute('href', '/admin/report-center');
   });
 
-  it('routes desktop lead metrics to matching filtered lead lists', async () => {
-    mockIsMobile.mockReturnValue(false);
+  it('loads only the daily list and the summary, not the old panel feeds', async () => {
+    renderDesktop();
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
+    await screen.findByRole('link', { name: '今日呼出 18' });
+    const urls = api.get.mock.calls.map(([url]) => url);
+    expect(urls).toEqual(expect.arrayContaining(['/admin/daily-ops', '/stats/dashboard-all']));
+    for (const dropped of [
+      '/admin/stale-a',
+      '/follow-ups',
+      '/admin/agent-score-preview',
+      '/admin/data-quality',
+      '/stats/trend',
+      '/students',
+    ]) {
+      expect(urls).not.toContain(dropped);
+    }
+  });
 
-    expect(await screen.findByRole('link', { name: /可分配有效线索/ })).toHaveAttribute(
+  it('points 已报名 at the settlement page while reports wait for confirmation', async () => {
+    mockDailyOpsData.items = [
+      dailyItem({
+        key: 'pending_enrollment_reports',
+        title: '报名待确认',
+        count: 2,
+        to: '/admin/enrollment-settlement',
+      }),
+    ];
+
+    renderDesktop();
+
+    expect(await screen.findByText('另有 2 条待确认')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '已报名 5' })).toHaveAttribute(
       'href',
-      '/admin/leads?assignment=unassigned&active=1',
+      '/admin/enrollment-settlement',
     );
-    expect(screen.getByRole('link', { name: /今日新增 A/ })).toHaveAttribute(
-      'href',
-      '/admin/leads?intent=A&today_a=1',
-    );
+    expect(screen.getByText('报名待确认')).toBeInTheDocument();
   });
 
-  it('switches the desktop KPI scope without changing the data API contract', async () => {
-    mockIsMobile.mockReturnValue(false);
+  it('lists the waiting items with the agents behind them and hides empty ones', async () => {
+    mockDailyOpsData.items = [
+      dailyItem({
+        owners: [
+          { agent_id: 7, agent_name: '王坐席', count: 2, max_age_days: 3, to: '/admin/work-center?queue=home_visit' },
+        ],
+      }),
+      dailyItem({ key: 'help_requests', title: '已清空的求助', count: 0 }),
+    ];
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    await screen.findByRole('link', { name: /今日呼出/ });
-    fireEvent.click(screen.getByRole('button', { name: /全局总览/ }));
-
-    expect(screen.getByRole('link', { name: /总线索量/ })).toHaveAttribute('href', '/admin/leads');
-    expect(screen.getByText('全局数据总览')).toBeInTheDocument();
-    expect(api.get).toHaveBeenCalledWith('/stats/dashboard-all');
-    expect(api.get).not.toHaveBeenCalledWith('/stats/sources');
-    expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard-summary');
-    expect(api.get).not.toHaveBeenCalledWith('/visits/summary');
-    expect(api.get).not.toHaveBeenCalledWith('/visits', expect.anything());
-    expect(api.get).not.toHaveBeenCalledWith('/stats/stages');
-    expect(api.get).not.toHaveBeenCalledWith('/stats/funnel');
-    expect(api.get).not.toHaveBeenCalledWith('/stats/dashboard', expect.anything());
-  });
-
-  it('renders the command-board hierarchy on desktop', async () => {
-    mockIsMobile.mockReturnValue(false);
-
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('优先处理');
-    expect(screen.getByTestId('admin-dashboard-scroll')).toHaveClass('h-screen', 'overflow-y-auto');
-    expect(screen.getByText('运营闭环')).toBeInTheDocument();
-    expect(screen.getByText('坐席工作状态')).toBeInTheDocument();
-    expect(screen.getByText('分配池与容量')).toBeInTheDocument();
-    expect(screen.getByText('阶段分布')).toBeInTheDocument();
-    expect(screen.getByText('最近异常')).toBeInTheDocument();
-  });
-
-  it('keeps global overview out of the daily execution view', async () => {
-    mockIsMobile.mockReturnValue(false);
-
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('今日运营闭环');
-    expect(screen.queryByText('全局数据总览')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /全局总览/ }));
-    expect(screen.getByText('全局数据总览')).toBeInTheDocument();
-  });
-
-  it('keeps the desktop todo area focused on actual risk items', async () => {
-    mockIsMobile.mockReturnValue(false);
-
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByText('今日暂无待处理风险项')).toBeInTheDocument();
-    expect(screen.getByText('今日运营闭环')).toBeInTheDocument();
-    expect(screen.getByText('今日运营闭环暂无待处理事项')).toBeInTheDocument();
-    expect(screen.queryByText('今日到访')).not.toBeInTheDocument();
-    expect(screen.queryByText('求助待处理')).not.toBeInTheDocument();
-  });
-
-  it('renders daily ops items as a read-only list', async () => {
-    mockDailyOpsData = {
-      date: '2026-07-03',
-      summary: {
-        total_items: 1,
-        total_count: 3,
-      },
-      items: [
-        {
-          key: 'home_visit_due',
-          title: '家访待处理',
-          count: 3,
-          severity: 'high',
-          detail: '待确认、已安排或暂缓的家访。',
-          to: '/admin/work-center?queue=home_visit',
-          owners: [
-            {
-              agent_id: 7,
-              agent_name: '王坐席',
-              count: 2,
-              max_age_days: 3,
-              to: '/admin/work-center?queue=home_visit',
-            },
-          ],
-        },
-      ],
-    };
-    mockIsMobile.mockReturnValue(false);
-
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
+    renderDesktop();
 
     expect(await screen.findByText('家访待处理')).toBeInTheDocument();
     expect(screen.getByText('王坐席')).toBeInTheDocument();
     expect(screen.getByText('2项 · 3天')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^查看$/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /去处理/ })).toHaveAttribute(
       'href',
       '/admin/work-center?queue=home_visit',
     );
-    expect(screen.getByText('1 类待处理')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '确认处理' })).not.toBeInTheDocument();
+    expect(screen.queryByText('已清空的求助')).not.toBeInTheDocument();
+    expect(screen.getByText('1 类')).toBeInTheDocument();
   });
 
-  it('hides daily ops items with nothing pending', async () => {
-    mockDailyOpsData = {
-      date: '2026-07-03',
-      summary: {
-        total_items: 0,
-        total_count: 0,
-      },
-      items: [
-        {
-          key: 'home_visit_due',
-          title: '已清空家访待办',
-          count: 0,
-          severity: 'low',
-          detail: '没有待处理的家访。',
-          to: '/admin/work-center?queue=home_visit',
-        },
-      ],
-    };
+  it('says so when nothing is waiting', async () => {
+    renderDesktop();
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByText('今日运营闭环暂无待处理事项')).toBeInTheDocument();
-    expect(screen.queryByText('已清空家访待办')).not.toBeInTheDocument();
+    expect(await screen.findByText('今天没有待处理事项')).toBeInTheDocument();
   });
 
-  it('shows retryable panel errors instead of zero and no-risk fallbacks', async () => {
-    mockIsMobile.mockReturnValue(false);
-    const normalGet = api.get.getMockImplementation();
-    api.get.mockImplementation((url, config) => {
+  it('shows retryable errors instead of zeros when a feed fails', async () => {
+    api.get.mockImplementation((url) => {
       if (url === '/admin/daily-ops') return Promise.reject(new Error('daily ops down'));
       if (url === '/stats/dashboard-all') {
         return Promise.resolve({ data: { code: 1, msg: 'dashboard aggregation failed' } });
       }
-      if (url === '/admin/stale-a') return Promise.reject(new Error('stale queue down'));
-      return normalGet(url, config);
+      return Promise.resolve({ data: { data: {} } });
     });
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }} initialEntries={['/admin']}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
+    renderDesktop();
 
-    expect(await screen.findByText('运营闭环数据加载失败')).toBeInTheDocument();
-    expect(screen.getByText('阶段分布加载失败')).toBeInTheDocument();
-    expect(screen.getByText('待办风险数据加载失败')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重试今日新增 A' })).toBeInTheDocument();
-    expect(screen.queryByText('今日运营闭环暂无待处理事项')).not.toBeInTheDocument();
-    expect(screen.queryByText('今日暂无待处理风险项')).not.toBeInTheDocument();
+    expect(await screen.findByText('待处理事项加载失败')).toBeInTheDocument();
+    expect(screen.getAllByText('--').length).toBe(5);
+    expect(screen.queryByText('今天没有待处理事项')).not.toBeInTheDocument();
 
-    const coreCallsBeforeRetry = api.get.mock.calls.filter(([url]) => url === '/stats/dashboard-all').length;
-    fireEvent.click(screen.getByRole('button', { name: '重试阶段分布' }));
+    const callsBefore = api.get.mock.calls.filter(([url]) => url === '/admin/daily-ops').length;
+    fireEvent.click(screen.getByRole('button', { name: '重试待处理事项' }));
     await waitFor(() => {
-      const coreCalls = api.get.mock.calls.filter(([url]) => url === '/stats/dashboard-all').length;
-      expect(coreCalls).toBeGreaterThan(coreCallsBeforeRetry);
+      const calls = api.get.mock.calls.filter(([url]) => url === '/admin/daily-ops').length;
+      expect(calls).toBeGreaterThan(callsBefore);
     });
   });
 
   it('opens the super admin guide for super admins', async () => {
-    mockIsMobile.mockReturnValue(false);
+    renderDesktop();
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    await screen.findByRole('link', { name: /可分配有效线索/ });
+    await screen.findByRole('link', { name: '今日呼出 18' });
 
     expect(mockHelpModal.mock.calls.some(([props]) => props.role === 'super_admin')).toBe(true);
   });
 
-  it('opens the normal admin guide for normal admins', async () => {
+  it('opens the normal admin guide and drops links the admin cannot open', async () => {
     mockUser.current = {
       id: 2,
       role: 'admin',
       name: '普通管理员',
       is_super_admin: false,
-      page_permissions: ['leads_manage', 'report_center'],
+      page_permissions: ['leads_manage'],
     };
-    mockIsMobile.mockReturnValue(false);
 
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
+    renderDesktop();
 
-    await screen.findByRole('link', { name: /可分配有效线索/ });
-
+    await screen.findByRole('link', { name: '可分配线索 7' });
     expect(mockHelpModal.mock.calls.some(([props]) => props.role === 'admin')).toBe(true);
-  });
-
-  it('renders stage distribution, funnel, and conversion-ranked regions', async () => {
-    mockStageStats = {
-      '初次联系': 120,
-      '有意向': 35,
-      '已报名': 2,
-    };
-    mockFunnelData = {
-      stages: [
-        { name: '总线索', value: 52122 },
-        { name: 'A 级', value: 45 },
-      ],
-    };
-    mockSourceStats = [
-      { source: '龙文区', total: 200, a_count: 30, conversion_rate: 15 },
-      { source: '芗城区', total: 100, a_count: 60, conversion_rate: 60 },
-    ];
-    mockIsMobile.mockReturnValue(false);
-
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByText('各阶段线索实时沉淀与工作进展')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /120.*新线索/ })).toHaveAttribute(
-      'href',
-      '/admin/leads?stage=%E5%88%9D%E6%AC%A1%E8%81%94%E7%B3%BB',
-    );
-    expect(screen.getByText('funnel chart')).toBeInTheDocument();
-    expect(screen.getByText('芗城区')).toBeInTheDocument();
-    expect(screen.getByText('龙文区')).toBeInTheDocument();
-  });
-
-  it('does not load the unassigned student table inside the dashboard', async () => {
-    mockIsMobile.mockReturnValue(false);
-
-    render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AdminDash />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('各阶段线索实时沉淀与工作进展');
-    expect(api.get).not.toHaveBeenCalledWith(
-      '/students',
-      expect.objectContaining({
-        params: expect.objectContaining({ assignment: 'unassigned' }),
-      }),
-    );
+    expect(screen.queryByRole('link', { name: /今日呼出/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /完整报表/ })).not.toBeInTheDocument();
   });
 });
