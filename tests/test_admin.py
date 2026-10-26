@@ -15,6 +15,7 @@ from app.models import (
     CampusVisitTask,
     DialLog,
     EnrollmentRecord,
+    EnrollmentReport,
     FollowUp,
     HomeVisitStatus,
     HomeVisitTask,
@@ -2016,6 +2017,11 @@ class TestDailyOps:
                     school_name_snapshot=enrolled_student.school_name,
                     settlement_status=SettlementStatus.unsettled,
                 ),
+                EnrollmentReport(
+                    student_id=campus_student.id,
+                    reporter_id=agent_user.id,
+                    enrolled_program="无人机",
+                ),
             ]
         )
         await db.commit()
@@ -2034,6 +2040,9 @@ class TestDailyOps:
         assert items["campus_visit_due"]["count"] >= 1
         assert items["unsettled_enrollments"]["count"] >= 1
         assert items["help_requests"]["count"] >= 1
+        assert items["pending_enrollment_reports"]["count"] == 1
+        assert items["pending_enrollment_reports"]["to"] == "/admin/enrollment-settlement"
+        assert items["pending_enrollment_reports"]["owners"][0]["agent_name"] == agent_user.name
         assert "is_closed" not in items["home_visit_due"]
 
 

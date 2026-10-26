@@ -249,7 +249,7 @@ test.describe('current e2e smoke contracts', () => {
 
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('heading', { name: '招生指挥中心', level: 1 })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '今日运营闭环' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '今日待处理' })).toBeVisible();
   });
 
   test('agent login uses the current desktop workbench route', async ({ page }) => {

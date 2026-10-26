@@ -247,18 +247,16 @@ test.describe('admin work center stale A queue', () => {
     await page.goto('/admin');
 
     const staleACard = page
-      .locator('section')
-      .filter({ hasText: '今日运营闭环' })
-      .locator('div')
-      .filter({ hasText: 'A 级超时未推进' })
-      .first();
+      .getByRole('region', { name: '今日待处理' })
+      .getByRole('listitem')
+      .filter({ hasText: 'A 级超时未推进' });
 
     await expect(staleACard.getByText('A 级超时未推进')).toBeVisible();
     await expect(staleACard.getByText('吴坐席')).toBeVisible();
 
     await Promise.all([
       page.waitForURL('**/admin/work-center?queue=stale-a'),
-      staleACard.getByRole('link', { name: /查看/ }).click(),
+      staleACard.getByRole('link', { name: /去处理/ }).click(),
     ]);
 
     await expect(page.getByRole('heading', { name: '工作中心' })).toBeVisible();
