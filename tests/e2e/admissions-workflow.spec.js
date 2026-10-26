@@ -227,6 +227,69 @@ async function installAdmissionsMocks(page) {
       return;
     }
 
+    if (path === '/admissions/visit-reports' && method === 'POST') {
+      const body = request.postDataJSON();
+      const student = findStudent(body.student_id);
+      const base = {
+        student_id: student.id,
+        student_name: student.name,
+        region: student.region,
+        school_name: student.school_name,
+        intent_program: body.intent_program,
+        exam_score_text: body.exam_score_text,
+        notes: body.notes,
+      };
+      let homeVisit = null;
+      let campusVisit = null;
+      if (body.home_visit_at || body.home_visit_note) {
+        homeVisit = {
+          id: state.nextHomeVisitId++,
+          ...base,
+          priority: body.priority,
+          parent_intent: body.parent_intent,
+          student_situation: body.situation,
+          address: body.address,
+          requested_visit_time: body.home_visit_at,
+          visit_time_note: body.home_visit_note,
+          status: '待确认',
+          result: '',
+          result_notes: '',
+          creator_agent_id: mockAgentUser.id,
+          creator_agent_name: mockAgentUser.name,
+          assigned_admin_name: '',
+          created_at: '2026-07-03T09:00:00',
+        };
+        state.homeVisits.push(homeVisit);
+        student.stage = '待家访';
+      }
+      if (body.campus_visit_at || body.campus_visit_note) {
+        campusVisit = {
+          id: state.nextCampusVisitId++,
+          ...base,
+          source: '电话外呼',
+          appointment_at: body.campus_visit_at,
+          visit_time_note: body.campus_visit_note,
+          needs_pickup: body.needs_pickup,
+          visitor_count: body.visitor_count,
+          current_concerns: body.situation,
+          status: body.campus_visit_at ? '已预约' : '待预约',
+          result: '',
+          onsite_enrolled: false,
+          result_notes: '',
+          creator_user_id: mockAgentUser.id,
+          creator_user_name: mockAgentUser.name,
+          reception_admin_name: '',
+          created_at: '2026-07-03T10:00:00',
+        };
+        state.campusVisits.push(campusVisit);
+        student.stage = '到校参观已安排';
+      }
+      await route.fulfill({
+        json: ok({ home_visit: homeVisit, campus_visit: campusVisit, stage: student.stage }),
+      });
+      return;
+    }
+
     if (path === '/admissions/campus-visits' && method === 'GET') {
       await route.fulfill({ json: ok(pagePayload(state.campusVisits)) });
       return;
@@ -374,13 +437,15 @@ if (!RUN_E2E) {
       await login(page, mockAgentUser.username, 'agent123');
 
       await openAgentDetailFromHandled(page, mockHomeStudent.name);
-      await page.getByRole('button', { name: '申请家访' }).click();
-      await page.getByLabel('家访地址').fill('测试区一号');
+      await page.getByRole('button', { name: '登记到访' }).click();
+      await page.getByLabel('家访时间', { exact: true }).fill('周六上午');
+      await page.getByLabel('地址', { exact: true }).fill('测试区一号');
+      await page.getByLabel('情况').fill('中考前先按平时成绩评估');
+      await page.getByRole('button', { name: /更多/ }).click();
       await page.getByLabel('家访优先级').selectOption('高');
       await page.getByLabel('家长意向说明').fill('家长愿意安排家访');
-      await page.getByLabel('情况').fill('中考前先按平时成绩评估');
-      await page.getByLabel('家访备注').fill('E2E 家访申请');
-      await page.getByRole('button', { name: '提交家访申请' }).click();
+      await page.getByLabel('备注', { exact: true }).fill('E2E 家访申请');
+      await page.getByRole('button', { name: '只提交' }).click();
       await expect.poll(() => state.homeVisits.length).toBe(1);
 
       await resetBrowserAuth(page, state);
@@ -403,12 +468,13 @@ if (!RUN_E2E) {
       await login(page, mockAgentUser.username, 'agent123');
 
       await openAgentDetailFromHandled(page, mockDirectCampusStudent.name);
-      await page.getByRole('button', { name: '预约到校' }).click();
-      await page.getByLabel('预约到校时间').fill('2026-07-04T14:00');
+      await page.getByRole('button', { name: '登记到访' }).click();
+      await page.getByLabel('到校参观时间（具体时间）').fill('2026-07-04T14:00');
+      await page.getByLabel('情况').fill('担心成绩是否够');
+      await page.getByRole('button', { name: /更多/ }).click();
       await page.getByLabel('来校人数').fill('2');
-      await page.getByLabel('当前顾虑').fill('担心成绩是否够');
-      await page.getByLabel('到校备注').fill('E2E 直接到校预约');
-      await page.getByRole('button', { name: '提交到校预约' }).click();
+      await page.getByLabel('备注', { exact: true }).fill('E2E 直接到校预约');
+      await page.getByRole('button', { name: '只提交' }).click();
       await expect
         .poll(() => state.campusVisits.some((item) => item.student_id === mockDirectCampusStudent.id))
         .toBe(true);
@@ -538,13 +604,15 @@ if (RUN_E2E) {
       await changeAgentPasswordIfRequired(page, agent.password, `${agent.password}x`);
 
       await openAgentDetailFromHandled(page, homeStudent.name);
-      await page.getByRole('button', { name: '申请家访' }).click();
-      await page.getByLabel('家访地址').fill('测试区一号');
+      await page.getByRole('button', { name: '登记到访' }).click();
+      await page.getByLabel('家访时间', { exact: true }).fill('周六上午');
+      await page.getByLabel('地址', { exact: true }).fill('测试区一号');
+      await page.getByLabel('情况').fill('中考前先按平时成绩评估');
+      await page.getByRole('button', { name: /更多/ }).click();
       await page.getByLabel('家访优先级').selectOption('高');
       await page.getByLabel('家长意向说明').fill('家长愿意安排家访');
-      await page.getByLabel('情况').fill('中考前先按平时成绩评估');
-      await page.getByLabel('家访备注').fill('E2E 家访申请');
-      await page.getByRole('button', { name: '提交家访申请' }).click();
+      await page.getByLabel('备注', { exact: true }).fill('E2E 家访申请');
+      await page.getByRole('button', { name: '只提交' }).click();
       await expect.poll(async () => {
         const res = await request.get('/api/admissions/home-visits', {
           headers: authHeaders(adminToken),
@@ -594,12 +662,13 @@ if (RUN_E2E) {
       await login(page, agent.username, `${agent.password}x`);
 
       await openAgentDetailFromHandled(page, directCampusStudent.name);
-      await page.getByRole('button', { name: '预约到校' }).click();
-      await page.getByLabel('预约到校时间').fill('2026-07-04T14:00');
+      await page.getByRole('button', { name: '登记到访' }).click();
+      await page.getByLabel('到校参观时间（具体时间）').fill('2026-07-04T14:00');
+      await page.getByLabel('情况').fill('担心成绩是否够');
+      await page.getByRole('button', { name: /更多/ }).click();
       await page.getByLabel('来校人数').fill('2');
-      await page.getByLabel('当前顾虑').fill('担心成绩是否够');
-      await page.getByLabel('到校备注').fill('E2E 直接到校预约');
-      await page.getByRole('button', { name: '提交到校预约' }).click();
+      await page.getByLabel('备注', { exact: true }).fill('E2E 直接到校预约');
+      await page.getByRole('button', { name: '只提交' }).click();
       await expect.poll(async () => {
         const res = await request.get('/api/admissions/campus-visits', {
           headers: authHeaders(adminToken),

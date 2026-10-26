@@ -71,6 +71,7 @@ const homeVisitRows = [
     result: '',
     priority: '高',
     requested_visit_time: '2026-07-02 09:00:00',
+    visit_time_note: '晚上七点后',
     scheduled_at: '',
     address: '龙海区一号',
     notes: '家长已确认',
@@ -93,6 +94,7 @@ const campusVisitRows = [
     result: '',
     source: '家访后',
     appointment_at: '2026-07-03 10:00:00',
+    visit_time_note: '成绩出来后',
     needs_pickup: true,
     visitor_count: 2,
     current_concerns: '等中考成绩',
@@ -277,6 +279,7 @@ describe('Admissions workflow admin pages', () => {
     expect(await screen.findByText('张三')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '家访任务' })).toBeInTheDocument();
     expect(screen.getByText('王坐席')).toBeInTheDocument();
+    expect(screen.getByText('晚上七点后')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('家访状态 101'), { target: { value: '已完成' } });
     fireEvent.change(screen.getByLabelText('家访结果 101'), { target: { value: '安排到校参观' } });
@@ -347,6 +350,7 @@ describe('Admissions workflow admin pages', () => {
 
     expect(await screen.findByText('张三')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '到校参观' })).toBeInTheDocument();
+    expect(screen.getByText('成绩出来后')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('到校状态 201'), { target: { value: '已到校' } });
     fireEvent.change(screen.getByLabelText('到校结果 201'), { target: { value: '现场报名' } });

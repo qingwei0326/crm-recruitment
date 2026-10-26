@@ -195,35 +195,30 @@ describe('MobileStudentDetail follow-up workflow', () => {
     fireEvent.click(within(moreActions).getByRole('button', { name: '登记到访' }));
   }
 
-  it('registers a home visit with the full request form instead of a bare visit', async () => {
+  it('registers a home and a campus visit from one report', async () => {
     await openVisitSheet();
 
-    fireEvent.change(screen.getByLabelText('意向专业'), { target: { value: '无人机' } });
-    fireEvent.change(screen.getByLabelText('家访地址'), { target: { value: '长泰区陈巷镇' } });
-    fireEvent.click(screen.getByRole('button', { name: '提交家访申请' }));
+    fireEvent.click(screen.getByRole('button', { name: '无人机' }));
+    fireEvent.change(screen.getByLabelText('家访时间'), { target: { value: '晚上七点后' } });
+    fireEvent.change(screen.getByLabelText('到校参观时间（具体时间）'), {
+      target: { value: '2026-07-16T10:00' },
+    });
+    fireEvent.change(screen.getByLabelText('地址'), { target: { value: '长泰区陈巷镇' } });
+    fireEvent.click(screen.getByRole('button', { name: '只提交' }));
 
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith(
-        '/admissions/home-visits',
-        expect.objectContaining({ student_id: 42, intent_program: '无人机', address: '长泰区陈巷镇' }),
+        '/admissions/visit-reports',
+        expect.objectContaining({
+          student_id: 42,
+          intent_program: '无人机',
+          home_visit_note: '晚上七点后',
+          campus_visit_at: '2026-07-16T10:00:00',
+          address: '长泰区陈巷镇',
+        }),
       );
     });
     expect(api.post).not.toHaveBeenCalledWith('/visits', expect.anything());
-  });
-
-  it('registers a campus visit with the campus appointment form', async () => {
-    await openVisitSheet();
-
-    fireEvent.click(screen.getByRole('button', { name: '来校参观' }));
-    fireEvent.change(screen.getByLabelText('预约到校时间'), { target: { value: '2026-07-16T10:00' } });
-    fireEvent.click(screen.getByRole('button', { name: '提交到校预约' }));
-
-    await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith(
-        '/admissions/campus-visits',
-        expect.objectContaining({ student_id: 42, appointment_at: '2026-07-16T10:00:00' }),
-      );
-    });
   });
 
   it('shows the required operator result buttons on the mobile detail page', async () => {

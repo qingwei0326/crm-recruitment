@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Phone, Menu, Sun, Moon, Plus, X, Loader2,
   AlertTriangle, StickyNote, ChevronLeft, ChevronRight,
-  Target, User, History, RefreshCw, CalendarClock, Home, MapPin,
+  Target, User, History, RefreshCw, CalendarClock, MapPin,
   CheckCircle2, Flame, Undo2,
 } from 'lucide-react';
 import api from '../../api';
@@ -17,8 +17,7 @@ import AgentSidebar from './desktop/AgentSidebar';
 import HandledView from './desktop/HandledView';
 import PhoneLink from '../../components/PhoneLink';
 import StudentTimeline from '../../components/StudentTimeline';
-import HomeVisitForm from '../../components/admissions/HomeVisitForm';
-import CampusVisitForm from '../../components/admissions/CampusVisitForm';
+import VisitReportForm from '../../components/admissions/VisitReportForm';
 import { getStudentNextAction, NEXT_ACTION_TONE_CLASSES } from '../../utils/studentNextAction';
 import { EmptyState, ErrorState } from '../../components/AsyncState';
 
@@ -77,24 +76,13 @@ export default function AgentWorkMobile({
     if (tab === 'following') fetchFollowing();
   };
 
-  const submitHomeVisit = async (payload) => {
+  const submitVisitReport = async (payload) => {
     setAdmissionSubmitting(true);
     try {
-      await api.post('/admissions/home-visits', payload);
+      const res = await api.post('/admissions/visit-reports', payload);
+      const stage = res?.data?.data?.stage;
       setAdmissionForm(null);
-      if (detailStudent?.id) onAdmissionsStageSynced?.(detailStudent.id, '待家访');
-      if (detailStudent?.id) loadDetail(detailStudent.id);
-    } finally {
-      setAdmissionSubmitting(false);
-    }
-  };
-
-  const submitCampusVisit = async (payload) => {
-    setAdmissionSubmitting(true);
-    try {
-      await api.post('/admissions/campus-visits', payload);
-      setAdmissionForm(null);
-      if (detailStudent?.id) onAdmissionsStageSynced?.(detailStudent.id, '到校参观已安排');
+      if (detailStudent?.id && stage) onAdmissionsStageSynced?.(detailStudent.id, stage);
       if (detailStudent?.id) loadDetail(detailStudent.id);
     } finally {
       setAdmissionSubmitting(false);
@@ -386,30 +374,17 @@ export default function AgentWorkMobile({
               <div className="space-y-3">
                 <div>
                   <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">招生推进</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">家访申请 / 到校预约</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">家访、到校填一张表，可以直接复制到群</div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'home' ? null : 'home')} className="inline-flex min-h-[40px] items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white">
-                    <Home className="w-3.5 h-3.5" />申请家访
-                  </button>
-                  <button type="button" onClick={() => setAdmissionForm(admissionForm === 'campus' ? null : 'campus')} className="inline-flex min-h-[40px] items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white">
-                    <MapPin className="w-3.5 h-3.5" />预约到校
-                  </button>
-                </div>
+                <button type="button" onClick={() => setAdmissionForm(admissionForm === 'visit' ? null : 'visit')} className="inline-flex w-full min-h-[40px] items-center justify-center gap-1 rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white">
+                  <MapPin className="w-3.5 h-3.5" />登记到访
+                </button>
               </div>
-              {admissionForm === 'home' && (
-                <HomeVisitForm
+              {admissionForm === 'visit' && (
+                <VisitReportForm
                   student={detailStudent}
                   submitting={admissionSubmitting}
-                  onSubmit={submitHomeVisit}
-                  onCancel={() => setAdmissionForm(null)}
-                />
-              )}
-              {admissionForm === 'campus' && (
-                <CampusVisitForm
-                  student={detailStudent}
-                  submitting={admissionSubmitting}
-                  onSubmit={submitCampusVisit}
+                  onSubmit={submitVisitReport}
                   onCancel={() => setAdmissionForm(null)}
                 />
               )}

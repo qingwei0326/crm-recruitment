@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Literal
 
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models import IntentLevel, StudentStage, StudentStatus
 
@@ -204,6 +204,42 @@ class HomeVisitUpdate(BaseModel):
     next_follow_up_at: datetime | None = None
     notes: str | None = None
     result_notes: str | None = None
+
+
+class VisitReportCreate(BaseModel):
+    """One work-group style visit report; files a home visit, a campus visit or both."""
+
+    student_id: int
+    intent_program: str = Field(default="", max_length=128)
+    exam_score_text: str = Field(default="", max_length=32)
+    home_visit_at: datetime | None = None
+    home_visit_note: str = Field(default="", max_length=128)
+    campus_visit_at: datetime | None = None
+    campus_visit_note: str = Field(default="", max_length=128)
+    address: str = Field(default="", max_length=256)
+    situation: str = ""
+    priority: Literal["高", "中", "低"] = "中"
+    usual_score: float | None = None
+    parent_intent: str = ""
+    is_wechat_added: bool = False
+    is_confirmed_with_guardian: bool = False
+    needs_pickup: bool = False
+    visitor_count: int = Field(default=1, ge=1, le=20)
+    notes: str = ""
+
+    @property
+    def wants_home_visit(self) -> bool:
+        return self.home_visit_at is not None or bool(self.home_visit_note.strip())
+
+    @property
+    def wants_campus_visit(self) -> bool:
+        return self.campus_visit_at is not None or bool(self.campus_visit_note.strip())
+
+    @model_validator(mode="after")
+    def _needs_a_visit(self) -> "VisitReportCreate":
+        if not (self.wants_home_visit or self.wants_campus_visit):
+            raise ValueError("请填写家访时间或到校参观时间")
+        return self
 
 
 class CampusVisitCreate(BaseModel):

@@ -322,6 +322,10 @@ class HomeVisitTask(Base):
     is_wechat_added = Column(Boolean, default=False, nullable=False)
     is_confirmed_with_guardian = Column(Boolean, default=False, nullable=False)
     requested_visit_time = Column(DateTime, nullable=True)
+    # What the agent wrote when there was no exact time or plain number, e.g.
+    # "晚上有空，具体哪天明天确认" or "200-300分".
+    visit_time_note = Column(String(128), default="", nullable=False)
+    exam_score_text = Column(String(32), default="", nullable=False)
     scheduled_at = Column(DateTime, nullable=True)
     address = Column(String(256), default="", nullable=False)
     postpone_reason = Column(String(64), default="", nullable=False)
@@ -364,6 +368,8 @@ class CampusVisitTask(Base):
     school_name_snapshot = Column(String(128), default="", nullable=False)
     intent_program = Column(String(128), default="", nullable=False)
     appointment_at = Column(DateTime, nullable=True)
+    visit_time_note = Column(String(128), default="", nullable=False)
+    exam_score_text = Column(String(32), default="", nullable=False)
     needs_pickup = Column(Boolean, default=False, nullable=False)
     visitor_count = Column(Integer, default=1, nullable=False)
     current_concerns = Column(Text, default="", nullable=False)
