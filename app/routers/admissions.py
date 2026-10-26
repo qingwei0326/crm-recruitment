@@ -37,6 +37,7 @@ from app.services.enrollment_finance_service import (
     create_finance_values,
     finance_payload,
 )
+from app.services.enrollment_report_service import resolve_reports_with_record
 from app.services.work_item_service import (
     enrollment_settlement_is_open,
     sync_source_work_item,
@@ -639,4 +640,5 @@ async def _create_enrollment_record(
         )
     )
     await _sync_enrollment_work_item(db, record, student, current_user)
+    await resolve_reports_with_record(db, student, record, current_user)
     return record

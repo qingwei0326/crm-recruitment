@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckSquare, History, Loader2, MapPin, X } from 'lucide-react';
+import { AlertTriangle, Award, CheckSquare, History, Loader2, MapPin, X } from 'lucide-react';
 import api from '../../../api';
+import EnrollmentReportForm from '../../../components/admissions/EnrollmentReportForm';
+import { useToast } from '../../../components/Toast';
+import { getApiErrorMessage } from '../../../utils';
 import VisitReportForm from '../../../components/admissions/VisitReportForm';
 import StudentInfoCard from '../../../components/StudentInfoCard';
 import StudentTimeline from '../../../components/StudentTimeline';
@@ -40,6 +43,7 @@ export default function StudentDetailDrawer({
 }) {
   const [activeForm, setActiveForm] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!open) return undefined;
@@ -50,14 +54,39 @@ export default function StudentDetailDrawer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, open]);
 
+  const submitEnrollmentReport = async (payload) => {
+    setSubmitting(true);
+    try {
+      const res = await api.post('/admissions/enrollment-reports', payload);
+      if (res?.data?.code !== 0) {
+        toast?.error(res?.data?.msg || '上报失败');
+        return;
+      }
+      toast?.success('已上报，等管理员确认');
+      setActiveForm(null);
+      onRefreshDetail?.();
+    } catch (error) {
+      toast?.error(getApiErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const submitVisitReport = async (payload) => {
     setSubmitting(true);
     try {
       const res = await api.post('/admissions/visit-reports', payload);
-      const stage = res?.data?.data?.stage;
+      if (res?.data?.code !== 0) {
+        toast?.error(res?.data?.msg || '登记失败');
+        return;
+      }
+      const stage = res.data.data?.stage;
+      toast?.success('到访已登记');
       setActiveForm(null);
       if (stage) onStageSynced?.(student.id, stage);
       onRefreshDetail?.();
+    } catch (error) {
+      toast?.error(getApiErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -142,23 +171,41 @@ export default function StudentDetailDrawer({
                   招生推进
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                  家访、到校填一张表，可以直接复制到群
+                  到访和报名都能直接复制到群
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveForm(activeForm === 'visit' ? null : 'visit')}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white"
-              >
-                <MapPin className="w-3.5 h-3.5" />
-                登记到访
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveForm(activeForm === 'visit' ? null : 'visit')}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-xs font-medium text-white"
+                >
+                  <MapPin className="w-3.5 h-3.5" />
+                  登记到访
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveForm(activeForm === 'enroll' ? null : 'enroll')}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-medium text-white"
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  报名上报
+                </button>
+              </div>
             </div>
             {activeForm === 'visit' && (
               <VisitReportForm
                 student={student}
                 submitting={submitting}
                 onSubmit={submitVisitReport}
+                onCancel={() => setActiveForm(null)}
+              />
+            )}
+            {activeForm === 'enroll' && (
+              <EnrollmentReportForm
+                student={student}
+                submitting={submitting}
+                onSubmit={submitEnrollmentReport}
                 onCancel={() => setActiveForm(null)}
               />
             )}

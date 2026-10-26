@@ -309,7 +309,7 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20261026_01"
+        assert revision == "20261026_02"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
@@ -390,7 +390,7 @@ def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_p
         ).one()
         assert tuple(row) == ("13960118706", "contacted")
         assert conn.execute(text("select version_num from alembic_version")).scalar_one() == (
-            "20261026_01"
+            "20261026_02"
         )
     assert run_alembic(db_path, "check").returncode == 0
     engine.dispose()
@@ -414,6 +414,23 @@ def test_visit_note_columns_upgrade_and_downgrade(tmp_path):
     assert downgraded.returncode == 0, downgraded.stderr
     for table in ("home_visit_tasks", "campus_visit_tasks"):
         assert not note_columns & columns(table)
+
+
+def test_enrollment_reports_table_upgrade_and_downgrade(tmp_path):
+    db_path = tmp_path / "enrollment-reports.db"
+
+    def tables():
+        engine = create_engine(f"sqlite:///{db_path}")
+        names = set(inspect(engine).get_table_names())
+        engine.dispose()
+        return names
+
+    assert run_alembic(db_path, "upgrade", "head").returncode == 0
+    assert "enrollment_reports" in tables()
+
+    downgraded = run_alembic(db_path, "downgrade", "20261026_01")
+    assert downgraded.returncode == 0, downgraded.stderr
+    assert "enrollment_reports" not in tables()
 
 
 def test_fresh_head_schema_already_has_student_search_indexes(tmp_path):

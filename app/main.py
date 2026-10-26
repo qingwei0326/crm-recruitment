@@ -34,6 +34,7 @@ from app.routers import (
     admin_users,
     admissions,
     admissions_campus_visits,
+    admissions_enrollment_reports,
     admissions_enrollments,
     admissions_home_visits,
     admissions_visit_reports,
@@ -174,6 +175,7 @@ app.include_router(admissions_home_visits.router)
 app.include_router(admissions_campus_visits.router)
 app.include_router(admissions_visit_reports.router)
 app.include_router(admissions_enrollments.router)
+app.include_router(admissions_enrollment_reports.router)
 app.include_router(operation_logs.router)
 
 
