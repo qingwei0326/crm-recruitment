@@ -217,15 +217,15 @@ class VisitReportCreate(BaseModel):
     campus_visit_at: datetime | None = None
     campus_visit_note: str = Field(default="", max_length=128)
     address: str = Field(default="", max_length=256)
-    situation: str = ""
+    situation: str = Field(default="", max_length=1000)
     priority: Literal["高", "中", "低"] = "中"
     usual_score: float | None = None
-    parent_intent: str = ""
+    parent_intent: str = Field(default="", max_length=500)
     is_wechat_added: bool = False
     is_confirmed_with_guardian: bool = False
     needs_pickup: bool = False
     visitor_count: int = Field(default=1, ge=1, le=20)
-    notes: str = ""
+    notes: str = Field(default="", max_length=1000)
 
     @property
     def wants_home_visit(self) -> bool:
@@ -246,7 +246,7 @@ class EnrollmentReportCreate(BaseModel):
     student_id: int
     enrolled_program: str = Field(default="", max_length=128)
     region: str = Field(default="", max_length=64)
-    notes: str = ""
+    notes: str = Field(default="", max_length=1000)
 
 
 class EnrollmentReportConfirm(BaseModel):
@@ -261,7 +261,7 @@ class EnrollmentReportConfirm(BaseModel):
     external_subsidy_amount: float | None = Field(default=None, ge=0)
     commission_base_amount: float | None = Field(default=None, ge=0)
     commission_subsidy_amount: float | None = Field(default=None, ge=0)
-    settlement_notes: str = ""
+    settlement_notes: str = Field(default="", max_length=1000)
 
 
 class EnrollmentReportReject(BaseModel):
