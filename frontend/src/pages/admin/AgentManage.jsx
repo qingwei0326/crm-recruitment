@@ -600,7 +600,7 @@ export default function AgentManage() {
   const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className={adminPageMainClass}>
         <PageHeader
           title="账号管理"

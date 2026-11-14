@@ -397,7 +397,7 @@ export default function TrendReport({ embedded = false }) {
   if (embedded) return content;
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className={adminPageMainClass}>
         <PageHeader title="趋势报表" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
           {canExportReport && (

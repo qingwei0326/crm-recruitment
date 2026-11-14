@@ -343,7 +343,7 @@ export default function CallVolumeQuery({ embedded = false }) {
   if (embedded) return content;
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className={adminPageMainClass}>
         <PageHeader
           title="通电量查询"

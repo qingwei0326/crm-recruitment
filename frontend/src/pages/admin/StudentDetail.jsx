@@ -180,7 +180,6 @@ export default function StudentDetail() {
       isMobile={isMobile}
       sidebarOpen={sidebarOpen}
       onClose={() => setSidebarOpen(false)}
-      compactSidebar={!isMobile}
     >
       <main className={adminPageMainClass}>
         <PageHeader title={student.name} isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>

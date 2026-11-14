@@ -19,12 +19,12 @@ export default function PageHeader({
 }) {
   return (
     <header
-      className={`sticky top-0 z-10 flex items-end justify-between border-b px-4 pb-2 backdrop-blur ${light ? 'border-slate-200/90 bg-white/95' : 'border-slate-200/90 bg-white/95 dark:border-gray-700 dark:bg-gray-800/95'}`}
+      className={`sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b px-4 backdrop-blur lg:px-6 ${light ? 'border-slate-200 bg-white/95' : 'border-slate-200 bg-white/95 dark:border-slate-800 dark:bg-slate-900/95'}`}
       style={
         useSafeArea && isMobile
           ? {
-              paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-              minHeight: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+              paddingTop: 'env(safe-area-inset-top, 0px)',
+              minHeight: 'calc(env(safe-area-inset-top, 0px) + 56px)',
             }
           : { minHeight: '56px' }
       }
@@ -41,12 +41,7 @@ export default function PageHeader({
             <Menu className={`h-5 w-5 ${light ? 'text-slate-600' : 'text-slate-600 dark:text-gray-300'}`} />
           </button>
         )}
-        <div className="min-w-0">
-          <div className={`truncate text-3xs font-bold uppercase tracking-[0.14em] ${light ? 'text-indigo-600' : 'text-indigo-600 dark:text-indigo-300'}`}>
-            招生运营 / 管理后台
-          </div>
-          <h1 className={`truncate text-lg font-bold leading-5 ${light ? 'text-slate-900' : 'text-slate-900 dark:text-gray-100'}`}>{title}</h1>
-        </div>
+        <h1 className={`min-w-0 truncate text-lg font-bold ${light ? 'text-slate-900' : 'text-slate-900 dark:text-gray-100'}`}>{title}</h1>
       </div>
       {children && (
         <div
