@@ -12,7 +12,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
-from app.backup import backup_scheduler, do_backup_async
+from app.backup import backup_scheduler
 from app.config import CORS_ORIGINS
 from app.database import async_session, init_db
 from app.domain_errors import DomainError
@@ -78,8 +78,7 @@ NO_STORE_HEADERS = {
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # Startup backup + background scheduler
-    await do_backup_async()
+    # The scheduler takes its first backup right away, in the background.
     backup_task = asyncio.create_task(backup_scheduler())
     follow_up_task = asyncio.create_task(follow_up_reminder_scheduler())
     retry_task = asyncio.create_task(notification_retry_scheduler())
