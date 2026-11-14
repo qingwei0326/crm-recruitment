@@ -106,7 +106,6 @@ export default function AssignmentBatchReview() {
       isMobile={isMobile}
       sidebarOpen={sidebarOpen}
       onClose={() => setSidebarOpen(false)}
-      compactSidebar={!isMobile}
     >
       <main className={adminPageMainClass}>
         <PageHeader

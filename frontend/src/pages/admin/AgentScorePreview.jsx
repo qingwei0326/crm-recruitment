@@ -366,7 +366,7 @@ export default function AgentScorePreview() {
   }, [data.items, filter, sortBy]);
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className={adminPageMainClass}>
         <PageHeader
           title="评分预览"

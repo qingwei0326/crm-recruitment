@@ -300,7 +300,7 @@ export default function LeadGovernance() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={closeSidebar}>
       <main className={adminPageMainClass}>
         <PageHeader title="线索治理" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)} />
 
