@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
+from app.backup import backup_before_migration
 from app.config import (
     DATABASE_URL,
     DATABASE_URL_SYNC,
@@ -66,8 +67,29 @@ def _run_alembic_upgrade_head() -> None:
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "alembic.ini"
     )
     cfg = Config(config_path)
+    from_revision = _pending_upgrade_from(cfg)
+    if from_revision is not None and backup_before_migration(from_revision) is None:
+        raise RuntimeError(
+            f"数据库需要从 {from_revision} 升级，但升级前的备份失败，拒绝迁移；"
+            "请检查 backups 目录的权限和磁盘空间"
+        )
     # 复用当前进程的数据库环境变量（DATABASE_URL / DATABASE_PATH），env.py 据此解析同步迁移 URL。
     command.upgrade(cfg, "head")
+
+
+def _pending_upgrade_from(cfg) -> str | None:
+    """The database's revision if ``upgrade head`` will change it; None if new or current."""
+    from alembic.script import ScriptDirectory
+
+    with sync_engine.connect() as connection:
+        if "alembic_version" not in inspect(connection).get_table_names():
+            return None
+        current = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one_or_none()
+    if current is None or current == ScriptDirectory.from_config(cfg).get_current_head():
+        return None
+    return current
 
 
 def _assert_schema_revision(sync_connection, expected_revision: str) -> None:
