@@ -119,7 +119,7 @@ export default function AdminSidebar({ onClose, compact = false }) {
   );
 
   const navClass = (active) =>
-    `group flex min-h-10 rounded-lg border-l-2 font-medium transition ${compact ? 'flex-col justify-center gap-1 border-l-0 px-1 py-1.5 text-center text-3xs' : 'items-center gap-3 px-3 text-sm'} ${
+    `group flex min-h-10 rounded-lg border-l-2 font-medium transition ${compact ? 'flex-col items-center justify-center gap-1 border-l-0 px-1 py-1.5 text-center text-2xs' : 'items-center gap-3 px-3 text-sm'} ${
       active
         ? compact ? 'border-blue-100 bg-white/18 text-white shadow-sm' : 'border-indigo-400 bg-indigo-600 text-white shadow-sm'
         : compact ? 'border-transparent text-blue-100/75 hover:bg-white/10 hover:text-white' : 'border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-100'
@@ -163,14 +163,14 @@ export default function AdminSidebar({ onClose, compact = false }) {
           return (
             <Link key={item.to} to={item.to} onClick={onClose} className={navClass(active)}>
               <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-indigo-100' : compact ? 'text-blue-100/70 group-hover:text-white' : 'text-slate-500 group-hover:text-slate-200'}`} />
-              <span className="truncate">{item.label}</span>
+              <span className="max-w-full truncate">{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className={`space-y-3 border-t ${compact ? 'border-blue-500/50 bg-blue-900/25 p-2 dark:border-slate-700 dark:bg-slate-950/45' : 'border-slate-800/90 bg-slate-950/60 p-4'}`}>
-        <div className={`flex items-center ${compact ? 'justify-center' : 'gap-3'}`}>
+      <div className={`shrink-0 border-t ${compact ? 'flex items-center justify-center gap-1 border-blue-500/50 bg-blue-900/25 p-2 dark:border-slate-700 dark:bg-slate-950/45' : 'space-y-3 border-slate-800/90 bg-slate-950/60 p-4'}`}>
+        <div className={`flex items-center ${compact ? 'hidden' : 'gap-3'}`}>
           <div className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/20 text-xs font-bold text-indigo-200">
             {(user?.name || 'A').substring(0, 1)}
           </div>
@@ -182,7 +182,9 @@ export default function AdminSidebar({ onClose, compact = false }) {
         <button
           type="button"
           onClick={toggle}
-          className={`flex w-full items-center rounded-lg py-2 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 ${compact ? 'justify-center px-1' : 'gap-2 px-3'}`}
+          aria-label={dark ? '亮色模式' : '暗色模式'}
+          title={dark ? '亮色模式' : '暗色模式'}
+          className={`flex items-center rounded-lg py-2 text-xs font-medium transition ${compact ? 'min-h-10 flex-1 justify-center px-1 text-blue-100/80 hover:bg-white/10 hover:text-white' : 'w-full gap-2 px-3 text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}
         >
           {dark ? <Sun className="h-4 w-4 text-amber-300" /> : <Moon className="h-4 w-4" />}
           {!compact && (dark ? '亮色模式' : '暗色模式')}
@@ -190,7 +192,9 @@ export default function AdminSidebar({ onClose, compact = false }) {
         <button
           type="button"
           onClick={logout}
-          className={`flex w-full items-center rounded-lg py-2 text-xs font-medium text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-300 ${compact ? 'justify-center px-1' : 'gap-2 px-3'}`}
+          aria-label="退出登录"
+          title={`退出登录（${user?.name || ''}）`}
+          className={`flex items-center rounded-lg py-2 text-xs font-medium transition ${compact ? 'min-h-10 flex-1 justify-center px-1 text-blue-100/80 hover:bg-white/10 hover:text-white' : 'w-full gap-2 px-3 text-slate-400 hover:bg-rose-500/10 hover:text-rose-300'}`}
         >
           <LogOut className="h-4 w-4" />
           {!compact && '退出登录'}

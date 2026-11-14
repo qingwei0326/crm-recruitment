@@ -197,6 +197,7 @@ export default function LeadsManage() {
       if (filters.stage) params.stage = filters.stage;
       if (filters.intent) params.intent_level = filters.intent;
       if (filters.assignment === 'unassigned') params.assignment = 'unassigned';
+      if (filters.assignment === 'assigned') params.assignment = 'assigned';
       const assignedTo = getAssignedToFromOwnershipFilter(filters.assignment);
       if (assignedTo) params.assigned_to = assignedTo;
       if (filters.needHelp) params.need_help = '1';
@@ -372,8 +373,8 @@ export default function LeadsManage() {
 
   const activeFilterChips = [
     q.trim() && { key: 'q', label: `搜索：${q.trim()}` },
-    assignmentFilter === 'unassigned'
-      ? { key: 'assignment', label: '未分配' }
+    assignmentFilter === 'unassigned' || assignmentFilter === 'assigned'
+      ? { key: 'assignment', label: assignmentFilter === 'assigned' ? '已分配' : '未分配' }
       : selectedAssignmentAgentId && {
         key: 'assignment',
         label: `归属：${selectedAssignmentAgent?.name || `话务员 ${selectedAssignmentAgentId}`}`,
@@ -391,7 +392,7 @@ export default function LeadsManage() {
   const showGlobalStageStats =
     activeFilterChips.length === 0 && Object.keys(stageStats).length > 0;
   const unassignedLeadCount = stageStats['未分配'] || 0;
-  const assignedNewLeadCount = stageStats['初次联系'] || 0;
+  const assignedNewLeadCount = stageStats['已分配新线索'] ?? stageStats['初次联系'] ?? 0;
   const inProgressLeadCount = STAGE_STAT_KEYS.filter((s) => !['初次联系', '已报名'].includes(s))
     .reduce((sum, s) => sum + (stageStats[s] || 0), 0);
   const enrolledLeadCount = stageStats['已报名'] || 0;
@@ -974,8 +975,8 @@ export default function LeadsManage() {
           {/* Search */}
           <AdminSurface className="p-3 lg:p-4">
             <form onSubmit={handleSearch} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                <div className="relative w-full xl:w-[26rem] xl:max-w-[32rem]">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="relative w-full md:flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     value={q}
@@ -985,7 +986,20 @@ export default function LeadsManage() {
                     className={`pl-9 ${inputCls}`}
                   />
                 </div>
-                <div className="grid flex-1 grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+                <div className="flex shrink-0 gap-2">
+                  <button type="submit" className="min-h-10 min-w-20 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm">
+                    搜索
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="min-h-10 min-w-20 px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    重置
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
                   <select
                     aria-label="按分配状态筛选学生"
                     value={assignmentFilter}
@@ -994,6 +1008,7 @@ export default function LeadsManage() {
                   >
                     <option value="">全部归属</option>
                     <option value="unassigned">未分配</option>
+                    <option value="assigned">已分配</option>
                     {agents.map((agent) => (
                       <option key={agent.id} value={`agent:${agent.id}`}>
                         {agent.name}
@@ -1046,19 +1061,6 @@ export default function LeadsManage() {
                     <AlertTriangle className="w-4 h-4" />
                     需协助
                   </button>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <button type="submit" className="min-h-10 min-w-20 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm">
-                    搜索
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearAllFilters}
-                    className="min-h-10 min-w-20 px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    重置
-                  </button>
-                </div>
               </div>
               {activeFilterChips.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
@@ -1104,7 +1106,7 @@ export default function LeadsManage() {
                     value: assignedNewLeadCount,
                     hint: '已进入坐席名下，尚处新线索阶段',
                     className: 'border-blue-200 bg-blue-50 dark:border-blue-900/60 dark:bg-blue-950/30',
-                    onClick: () => navigate('/admin/leads?stage=初次联系'),
+                    onClick: () => navigate('/admin/leads?stage=初次联系&assignment=assigned'),
                   },
                   {
                     key: 'progress',
@@ -1138,7 +1140,7 @@ export default function LeadsManage() {
 
               <div className="bg-gray-50 dark:bg-gray-800 rounded-panel border border-gray-200 dark:border-gray-700 p-4">
                 <div className="text-xs text-gray-600 dark:text-gray-400 mb-3 font-medium">跟进阶段分布</div>
-                <div className="flex gap-1.5 h-16 items-end">
+                <div className="flex gap-1.5">
                   {STAGE_STAT_KEYS.map((s) => {
                     const cnt = stageStats[s] || 0;
                     const maxVal = Math.max(...STAGE_STAT_KEYS.map((key) => stageStats[key] || 0), 1);
@@ -1149,7 +1151,7 @@ export default function LeadsManage() {
                         role="button"
                         tabIndex={0}
                         aria-label={`${stageLabel(s)} ${cnt}人`}
-                        className="flex-1 text-center flex flex-col items-center justify-end h-full cursor-pointer hover:opacity-80 transition-opacity"
+                        className="min-w-0 flex-1 cursor-pointer text-center transition-opacity hover:opacity-80"
                         onClick={() => {
                           if (stage === s) {
                             setStage('');
@@ -1167,10 +1169,12 @@ export default function LeadsManage() {
                         }}
                       >
                         <div className="text-xs font-bold mb-1 text-gray-700 dark:text-gray-200">{cnt}</div>
-                        <div
-                          className={`w-full rounded-t transition-all ${stage === s ? 'bg-orange-500' : 'bg-blue-600'}`}
-                          style={{ height: `${pct}%` }}
-                        />
+                        <div className="flex h-10 items-end">
+                          <div
+                            className={`w-full rounded-t transition-all ${stage === s ? 'bg-orange-500' : 'bg-blue-600'}`}
+                            style={{ height: `${pct}%` }}
+                          />
+                        </div>
                         <div className={`text-xs mt-1 truncate ${stage === s ? 'text-orange-600 font-bold dark:text-orange-400' : 'text-gray-600 dark:text-gray-400'}`}>{stageLabel(s)}</div>
                       </div>
                     );
