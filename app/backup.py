@@ -4,9 +4,10 @@ import hashlib
 import logging
 import os
 import random
+import re
 import sqlite3
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -111,7 +112,23 @@ def _upload_remote(filepath: str) -> None:
 
 
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backups")
-MAX_BACKUPS = 7
+
+# Which automatic backups to keep: the newest few, then the newest one of each recent
+# day and week. A backup runs every 6 hours and at every start, so keeping a fixed
+# number of files (it used to be 7) covered less than two days.
+KEEP_RECENT = int(os.getenv("BACKUP_KEEP_RECENT", "4"))
+KEEP_DAILY = int(os.getenv("BACKUP_KEEP_DAILY", "14"))
+KEEP_WEEKLY = int(os.getenv("BACKUP_KEEP_WEEKLY", "8"))
+KEEP_PRE_MIGRATION = 5
+# The most files the policy can keep; the ops page shows it next to the count.
+MAX_BACKUPS = KEEP_RECENT + KEEP_DAILY + KEEP_WEEKLY + KEEP_PRE_MIGRATION
+# A container that fails to start restarts every few seconds. Reusing a recent
+# pre-migration backup keeps the first, clean copy instead of adding one per restart.
+PRE_MIGRATION_MIN_INTERVAL = timedelta(hours=6)
+
+_STAMP_FORMAT = "%Y%m%d_%H%M%S"
+_SCHEDULED_NAME = re.compile(r"^crm_(\d{8}_\d{6})$")
+_PRE_MIGRATION_NAME = re.compile(r"^crm_before_(.+)_(\d{8}_\d{6})$")
 
 
 def _get_backup_extension():
@@ -119,13 +136,27 @@ def _get_backup_extension():
     return ".dump" if DB_ENGINE == "postgresql" else ".db"
 
 
-def _backup_postgresql():
+def _backup_stem(filename: str) -> str | None:
+    """'crm_20261114_120000.db.enc' -> 'crm_20261114_120000'; None for other files."""
+    ext = _get_backup_extension()
+    for suffix in (f"{ext}.enc", ext):
+        if filename.endswith(suffix):
+            return filename[: -len(suffix)]
+    return None
+
+
+def _parse_stamp(value: str) -> datetime | None:
+    try:
+        return datetime.strptime(value, _STAMP_FORMAT)
+    except ValueError:
+        return None
+
+
+def _backup_postgresql(stem: str):
     """使用 pg_dump 备份 PostgreSQL 数据库。"""
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    ext = _get_backup_extension()
-    dest = os.path.join(BACKUP_DIR, f"crm_{ts}{ext}")
+    dest = os.path.join(BACKUP_DIR, stem + _get_backup_extension())
 
     # 从 DATABASE_URL 解析连接参数
     # 格式: postgresql+asyncpg://user:pass@host:5432/dbname
@@ -200,8 +231,21 @@ def _backup_postgresql():
     return dest
 
 
-def _backup_sqlite():
-    """Hot-copy DB via SQLite backup API. Keeps last MAX_BACKUPS files."""
+def _sqlite_backup_is_sound(path: str) -> bool:
+    try:
+        # immutable: read the copy as it is, without creating -wal/-shm files beside it.
+        uri = Path(path).resolve().as_uri() + "?mode=ro&immutable=1"
+        conn = sqlite3.connect(uri, uri=True)
+        try:
+            return conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+
+
+def _backup_sqlite(stem: str):
+    """Hot-copy DB via SQLite backup API, check the copy, then prune old backups."""
     if not DB_PATH or DB_PATH == ":memory:":
         logger.warning("Skipping backup: in-memory or empty database path")
         return None
@@ -211,9 +255,7 @@ def _backup_sqlite():
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    ext = _get_backup_extension()
-    dest = os.path.join(BACKUP_DIR, f"crm_{ts}{ext}")
+    dest = os.path.join(BACKUP_DIR, stem + _get_backup_extension())
 
     src_uri = Path(DB_PATH).resolve().as_uri() + "?mode=ro"
     try:
@@ -240,6 +282,14 @@ def _backup_sqlite():
 
     if not os.path.isfile(dest):
         return None
+    if not _sqlite_backup_is_sound(dest):
+        # A damaged copy must not count as a backup or push good ones out.
+        logger.error("Backup failed its integrity check and was removed: %s", dest)
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        return None
 
     logger.info(f"Backup created: {dest}")
 
@@ -263,18 +313,49 @@ def _backup_sqlite():
     return dest
 
 
+def backups_to_delete(filenames: list[str]) -> list[str]:
+    """The automatic backups the retention policy no longer needs.
+
+    Files it cannot date, such as manual copies and pre-release backups, are never
+    returned.
+    """
+    scheduled: list[tuple[datetime, str]] = []
+    pre_migration: list[tuple[datetime, str]] = []
+    for name in filenames:
+        stem = _backup_stem(name) or ""
+        if match := _SCHEDULED_NAME.match(stem):
+            stamp, group = _parse_stamp(match.group(1)), scheduled
+        elif match := _PRE_MIGRATION_NAME.match(stem):
+            stamp, group = _parse_stamp(match.group(2)), pre_migration
+        else:
+            continue
+        if stamp is not None:
+            group.append((stamp, name))
+    scheduled.sort(reverse=True)
+    pre_migration.sort(reverse=True)
+
+    keep = {name for _, name in scheduled[:KEEP_RECENT]}
+    keep |= {name for _, name in pre_migration[:KEEP_PRE_MIGRATION]}
+    for limit, period_of in (
+        (KEEP_DAILY, lambda stamp: stamp.date()),
+        (KEEP_WEEKLY, lambda stamp: tuple(stamp.isocalendar())[:2]),
+    ):
+        periods: set = set()
+        # Newest first, so the first backup seen in a period is its newest.
+        for stamp, name in scheduled:
+            period = period_of(stamp)
+            if period in periods:
+                continue
+            if len(periods) == limit:
+                break
+            periods.add(period)
+            keep.add(name)
+    return [name for _, name in scheduled + pre_migration if name not in keep]
+
+
 def _prune_old_backups():
-    """保留最近 MAX_BACKUPS 个备份文件，删除更早的。"""
-    ext = _get_backup_extension()
-    files = sorted(
-        [
-            f
-            for f in os.listdir(BACKUP_DIR)
-            if f.startswith("crm_") and (f.endswith(ext) or f.endswith(f"{ext}.enc"))
-        ],
-        reverse=True,
-    )
-    for old in files[MAX_BACKUPS:]:
+    """Delete the automatic backups the retention policy no longer needs."""
+    for old in backups_to_delete(os.listdir(BACKUP_DIR)):
         try:
             os.remove(os.path.join(BACKUP_DIR, old))
             logger.info(f"Removed old backup: {old}")
@@ -282,11 +363,30 @@ def _prune_old_backups():
             logger.warning(f"Could not remove old backup {old}: {e}")
 
 
-def do_backup():
-    """根据数据库引擎选择备份方式。"""
+def do_backup(stem: str | None = None):
+    """根据数据库引擎选择备份方式。``stem`` 是不带扩展名的文件名，默认按当前时间命名。"""
+    stem = stem or f"crm_{datetime.now().strftime(_STAMP_FORMAT)}"
     if DB_ENGINE == "postgresql":
-        return _backup_postgresql()
-    return _backup_sqlite()
+        return _backup_postgresql(stem)
+    return _backup_sqlite(stem)
+
+
+def backup_before_migration(from_revision: str) -> str | None:
+    """Back up before a schema upgrade from ``from_revision``; None if the backup failed.
+
+    A backup of the same revision made within PRE_MIGRATION_MIN_INTERVAL is reused.
+    """
+    revision = re.sub(r"[^A-Za-z0-9_]", "_", from_revision)
+    now = datetime.now()
+    if os.path.isdir(BACKUP_DIR):
+        for name in os.listdir(BACKUP_DIR):
+            match = _PRE_MIGRATION_NAME.match(_backup_stem(name) or "")
+            if not match or match.group(1) != revision:
+                continue
+            stamp = _parse_stamp(match.group(2))
+            if stamp is not None and now - stamp < PRE_MIGRATION_MIN_INTERVAL:
+                return os.path.join(BACKUP_DIR, name)
+    return do_backup(f"crm_before_{revision}_{now.strftime(_STAMP_FORMAT)}")
 
 
 async def do_backup_async():
