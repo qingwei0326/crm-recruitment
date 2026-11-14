@@ -310,3 +310,21 @@ ping -c 3 223.5.5.5
 systemctl is-active cloudflared-crm.service natfrp.service
 docker ps
 ```
+
+## 历史 SQLite schema 清理：20261021_01
+
+目标迁移 `20261021_01` 从 `20261020_01` 升级，修复历史启动脚本造成的类型、空值约束、索引和外键差异，不增加 Alembic 比较过滤规则：
+
+- 学生字段类型与模型统一，补 `case_no` 唯一约束和状态/学校索引。
+- 保留并在模型中声明有用的回访、备注、查看记录、操作日志索引；只移除被 `(assigned_to, status)` 覆盖的独立 `assigned_to` 索引。
+- 统一 `users.locked_until` 时间类型，补回 `operation_logs.operator_id -> users.id` 外键。
+- 退役的学生字段 `agent_id`、`priority`、`last_contact_at`、`next_follow_up`、`follow_up_count`、`attempt_count`、`is_expired`、`expired_reason` 原值先写入 `schema_cleanup_archive`，再从业务表移除。
+- 必填联系人/学校字段的 NULL 使用空字符串，`need_help` 的 NULL 使用 0；备注缺失的更新时间使用创建时间。被规范化的原 NULL 也归档，保留的非空联系人字段不重复归档。
+
+归档表以 `(revision, table_name, row_id)` 标识来源，`payload` 保存 JSON 原值，没有业务写入接口，也不混入操作日志。它不参与学生级联删除，保留作独立恢复资料。
+
+迁移在改表前拦截重复编号、孤立操作人、非法布尔值、超长字段、已有外键违规，以及需要人工审查的索引、CHECK、trigger、view；不自动删除冲突数据或截断字段。SQLite 使用显式 `BEGIN IMMEDIATE`，让归档、表重建和版本更新一起回滚。迁移必须离线执行，迁移连接关闭外键执行；应用连接继续启用外键执行。原有索引、外键、自增行为和序列高水位会保留。
+
+在生产在线备份副本上的验证：`alembic check` 无差异，原有 31 张表保留字段的逐行哈希与行数一致（56,932 名学生、12,920 条备注、163,944 条操作日志），56,932 条学生字段归档与源库原值逐条一致；`integrity_check=ok`、外键违规 0、域一致性审计通过。自动化测试覆盖异常数据拦截、旧双引号默认值、自增序列和重建途中故障回滚。
+
+这是前向清理，`alembic downgrade` 会拒绝。回退应在维护窗口内恢复经过完整性验证的迁移前数据库备份，并一起恢复旧代码、镜像及期望版本。归档原值不能代替完整 schema 备份；重新开放业务后，先保留并核对增量数据，不能直接覆盖数据库回退。SQLite 历史结构修复与副本验证只覆盖 SQLite；PostgreSQL 路径仅添加归档表和缺失索引。
