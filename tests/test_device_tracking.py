@@ -559,3 +559,39 @@ async def test_reclaim_non_invalid_students_fails(
     data = response.json()
     assert data["code"] == 1  # 应该失败
     assert "不是无效状态" in data["msg"]
+
+
+@pytest.mark.asyncio
+async def test_assigned_new_lead_count_matches_the_assigned_stage_filter(
+    client: AsyncClient, db, agent_user, admin_headers
+):
+    db.add_all(
+        [
+            Student(
+                name="公共池新线索",
+                status=StudentStatus.not_contacted,
+                stage=StudentStage.initial_contact,
+                guardian_phone="13800138201",
+            ),
+            Student(
+                name="已分配新线索",
+                assigned_to=agent_user.id,
+                status=StudentStatus.not_contacted,
+                stage=StudentStage.initial_contact,
+                guardian_phone="13800138202",
+            ),
+        ]
+    )
+    await db.commit()
+
+    stats = (await client.get("/api/stats/stages", headers=admin_headers)).json()["data"]
+    listed = (
+        await client.get(
+            "/api/students?stage=初次联系&assignment=assigned&page_size=100",
+            headers=admin_headers,
+        )
+    ).json()["data"]
+
+    assert stats["初次联系"] == 2
+    assert stats["已分配新线索"] == listed["total"] == 1
+    assert [item["name"] for item in listed["list"]] == ["已分配新线索"]

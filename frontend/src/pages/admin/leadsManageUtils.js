@@ -65,6 +65,7 @@ export function schoolPlaceholder(regions, loading, schools) {
 
 export function getOwnershipFilterFromParams(searchParams) {
   if (searchParams.get('assignment') === 'unassigned') return 'unassigned';
+  if (searchParams.get('assignment') === 'assigned') return 'assigned';
   const assignedTo = searchParams.get('assigned_to');
   return assignedTo ? `agent:${assignedTo}` : '';
 }

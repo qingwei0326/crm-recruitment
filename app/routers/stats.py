@@ -99,4 +99,15 @@ async def stage_stats(
         )
     ).scalar() or 0
     by_stage["未分配"] = unassigned
+    # The "new lead" stage also holds every lead still in the pool, so the page
+    # needs the assigned ones counted apart.
+    by_stage["已分配新线索"] = (
+        await db.execute(
+            select(func.count(Student.id)).where(
+                Student.assigned_to.is_not(None),
+                Student.stage == StudentStage.initial_contact,
+                Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)),
+            )
+        )
+    ).scalar() or 0
     return Response.ok(by_stage)
