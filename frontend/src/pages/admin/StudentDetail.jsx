@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
@@ -6,15 +6,6 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -34,6 +25,9 @@ import {
   adminPageMainClass,
 } from '../../components/admin/AdminPagePrimitives';
 import { formatDateTime, formatDuration, getApiErrorMessage } from '../../utils';
+import lazyWithRetry from '../../utils/lazyWithRetry';
+
+const IntentTrendChart = lazyWithRetry(() => import('./IntentTrendChart'));
 
 const ENROLLMENT_SUBSTAGES = ['定金待缴', '全款待缴', '已缴全款', '入学注册', '流失'];
 const TABS = [
@@ -44,7 +38,6 @@ const TABS = [
 ];
 
 const INTENT_TO_NUM = { A: 3, B: 2, C: 1, 无: 0 };
-const NUM_TO_INTENT = { 3: 'A', 2: 'B', 1: 'C', 0: '无' };
 
 function NextActionCard({ action }) {
   const urgent = action?.priority === 'high';
@@ -293,37 +286,9 @@ export default function StudentDetail() {
               <div className="py-12 text-center text-gray-400 text-sm">暂无意向轨迹</div>
             ) : (
               <>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={intentChartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={dark ? '#374151' : '#e5e7eb'} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }}
-                    />
-                    <YAxis
-                      domain={[0, 3]}
-                      ticks={[0, 1, 2, 3]}
-                      tickFormatter={(v) => NUM_TO_INTENT[v] || ''}
-                      tick={{ fontSize: 12, fill: dark ? '#9ca3af' : '#6b7280' }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: dark ? '#1f2937' : '#fff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        color: dark ? '#e5e7eb' : '#111827',
-                      }}
-                      formatter={(value) => [NUM_TO_INTENT[value] || '无', '意向等级']}
-                    />
-                    <Line
-                      type="stepAfter"
-                      dataKey="value"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="h-[260px]" aria-hidden="true" />}>
+                  <IntentTrendChart data={intentChartData} dark={dark} />
+                </Suspense>
 
                 <div className="space-y-2">
                   {intentChartData.map((it, idx) => (

@@ -6,13 +6,14 @@ import useSyncManager from './hooks/useSyncManager';
 import useErrorMonitor from './hooks/useErrorMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionStatus from './components/ConnectionStatus';
-import AssistantOverlay from './components/assistant/AssistantOverlay';
 import { AssistantProvider } from './context/AssistantContext';
 import { setGlobalToast } from './api';
 import lazyWithRetry from './utils/lazyWithRetry';
 import { useEffect } from 'react';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from './adminPermissions';
 
+// Only super admins get the assistant, so nobody else downloads it.
+const AssistantOverlay = lazyWithRetry(() => import('./components/assistant/AssistantOverlay'));
 const Login = lazyWithRetry(() => import('./pages/Login'));
 const ChangePassword = lazyWithRetry(() => import('./pages/ChangePassword'));
 const AdminDash = lazyWithRetry(() => import('./pages/admin/AdminDash'));
@@ -40,7 +41,7 @@ const MobileHome = lazyWithRetry(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazyWithRetry(() => import('./pages/mobile/MobileStudentDetail'));
 
 function LoadingScreen() {
-  return <div className="flex items-center justify-center h-screen text-gray-400">Loading...</div>;
+  return <div className="flex items-center justify-center h-screen text-gray-400">加载中…</div>;
 }
 
 // Per-route ErrorBoundary wrapper - 单页面崩溃不影响其他页面
@@ -107,8 +108,10 @@ export default function App() {
 
   if (loading) return <LoadingScreen />;
 
+  const assistantActive = Boolean(user?.role === 'admin' && user?.is_super_admin);
+
   return (
-    <AssistantProvider active={Boolean(user?.role === 'admin' && user?.is_super_admin)}>
+    <AssistantProvider active={assistantActive}>
     <ErrorBoundary>
     <ConnectionStatus isOnline={isOnline} />
     <Suspense fallback={<LoadingScreen />}>
@@ -372,7 +375,11 @@ export default function App() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
-    <AssistantOverlay />
+    {assistantActive && (
+      <Suspense fallback={null}>
+        <AssistantOverlay />
+      </Suspense>
+    )}
     </ErrorBoundary>
     </AssistantProvider>
   );
