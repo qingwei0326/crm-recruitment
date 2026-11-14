@@ -26,7 +26,7 @@
               （/home/qingwei/crm/app 是指向 .deploy/current/app 的软链接）
 ```
 
-镜像以 `.deploy/current` 为构建上下文，`Dockerfile` 也取自发布包（即仓库根目录的 `Dockerfile`），所以代码和镜像定义一起切换。切换版本 = 改 `current` 指针后 `docker compose up -d --build`。
+镜像以 `.deploy/current` 为构建上下文，`Dockerfile` 也取自发布包（即仓库根目录的 `Dockerfile`），所以代码和镜像定义一起切换。切换版本 = 改 `current` 指针后 `docker compose up -d --build`。服务器经常连不上 Docker Hub，连不上时构建会失败，所以每次切换前都给正在运行的镜像打一个 `rollback-<版本号>` 标签，回滚时用这个标签加 `--no-build`，不重新构建。
 
 ## 常用入口
 
@@ -150,6 +150,16 @@ scp -P 30002 releases/production-<版本号>.zip releases/production-<版本号>
 cd ~/crm/.deploy && sha256sum -c production-<版本号>.zip.sha256 && mkdir releases/<版本号> && python3 -c "import zipfile;zipfile.ZipFile('production-<版本号>.zip').extractall('releases/<版本号>')" && ls releases/<版本号>
 ```
 
+### 服务器：发布前核对（不影响线上）
+
+新包必须认识线上库的当前版本，否则容器启动时 `alembic upgrade head` 找不到这个版本，会反复重启（2026-10-26 的 502 就是这样来的）。先查线上当前版本，再确认新包里有同名的迁移文件：
+
+```bash
+cd ~/crm && REV=$(python3 -c "import sqlite3;print(sqlite3.connect('file:/home/qingwei/crm/crm.db?mode=ro',uri=True).execute('select version_num from alembic_version').fetchone()[0])") && echo "线上版本: $REV" && ls .deploy/releases/<版本号>/alembic/versions | grep "^$REV" && echo 可以继续
+```
+
+没有打印“可以继续”就**停下**：说明线上跑的代码没有合并进这次发布，要先把它合进 `main` 再重新打包。记下这里打印的线上版本，后面备份和回滚都要用。
+
 ### 服务器：备份数据库
 
 用包里的在线备份工具，不要直接 `cp` 正在使用的 SQLite 文件：
@@ -162,11 +172,15 @@ cd ~/crm && python3 .deploy/releases/<版本号>/scripts/sqlite_online_backup.py
 
 ### 服务器：切换并重启（有几十秒中断，挑没人用的时间）
 
+先给正在运行的镜像打回滚标签，再切换：
+
 ```bash
-cd ~/crm && ln -sfn /home/qingwei/crm/.deploy/releases/<版本号> .deploy/current && docker compose up -d --build && sleep 20 && docker compose ps && curl -s http://127.0.0.1:8000/api/health
+cd ~/crm && docker tag crm-crm:latest crm-crm:rollback-<版本号> && ln -sfn /home/qingwei/crm/.deploy/releases/<版本号> .deploy/current && docker compose up -d --build && sleep 20 && docker compose ps && curl -s http://127.0.0.1:8000/api/health
 ```
 
 期望：容器 `Up ... (healthy)`，健康检查 `{"code":0,"msg":"ok",...}`。构建时 `pip install` 可能需要几分钟。
+
+如果构建阶段报 `failed to resolve source metadata for docker.io/library/python:3.12-slim` 或 `failed to fetch anonymous token`，是服务器连不上 Docker Hub。这时旧容器还在运行，线上没受影响：把 `current` 指回旧版本目录，等网络恢复后重试。
 
 ### 服务器：发布后验证
 
@@ -178,19 +192,39 @@ python3 -c "import sqlite3;print(sqlite3.connect('file:/home/qingwei/crm/crm.db?
 
 ### 回滚
 
-已经迁移过的数据库**不能**直接配旧代码：旧代码不认识新的迁移版本，启动会失败，迁移本身也只能向前。回滚 = 恢复旧代码 + 发布前的数据库备份，**备份之后写入的数据会丢失**：
+先查线上库现在的版本，决定走哪一种：
 
 ```bash
-cd ~/crm && ln -sfn /home/qingwei/crm/.deploy/releases/<旧版本目录> .deploy/current && docker compose down && cp -a backups/crm-before-<版本号>.db crm.db && docker compose up -d --build
+python3 -c "import sqlite3;print(sqlite3.connect('file:/home/qingwei/crm/crm.db?mode=ro',uri=True).execute('select * from alembic_version').fetchall())"
 ```
 
-旧版本目录里没有 `Dockerfile`（2026-10 一次性切换之前的包）时，先 `cp ~/crm/Dockerfile` 进去。如果要退回到一次性切换之前，还要用 `compose.yml.before-<版本号>` 和 `.env.before-<版本号>` 恢复这两个文件。
+两种回滚都用切换前打的 `rollback-<版本号>` 镜像，不重新构建，所以不依赖 Docker Hub。`<旧版本目录>` 是发布前 `current` 指向的目录，必须是包含线上库版本的那个包。
 
-只有在确认新版本确实有问题、并接受丢失备份后数据时才回滚；能修就先看日志。
+**版本还是发布前的版本**（迁移没跑，比如新容器一启动就失败）：数据库没动，只换回旧代码，**不要**恢复备份：
+
+```bash
+cd ~/crm && ln -sfn /home/qingwei/crm/.deploy/releases/<旧版本目录> .deploy/current && docker tag crm-crm:rollback-<版本号> crm-crm:latest && docker compose up -d --no-build --force-recreate && sleep 20 && docker compose ps && curl -s http://127.0.0.1:8000/api/health
+```
+
+**版本已经是新版本**（迁移跑过了）：已经迁移过的数据库不能直接配旧代码，旧代码不认识新的迁移版本，启动会失败，迁移本身也只能向前。这时要同时恢复发布前的数据库备份，**备份之后写入的数据会丢失**：
+
+```bash
+cd ~/crm && ln -sfn /home/qingwei/crm/.deploy/releases/<旧版本目录> .deploy/current && docker tag crm-crm:rollback-<版本号> crm-crm:latest && docker compose down && cp -a backups/crm-before-<版本号>.db crm.db && docker compose up -d --no-build && sleep 20 && docker compose ps && curl -s http://127.0.0.1:8000/api/health
+```
+
+没有 `rollback-<版本号>` 标签时，用 `docker images -a` 按构建时间找旧镜像，确认里面有线上库版本的迁移文件后再打标签：
+
+```bash
+docker run --rm --entrypoint sh <镜像ID> -c "ls /app/alembic/versions | grep <线上当前版本>"
+```
+
+用 `--no-build` 回滚不需要 `Dockerfile`；只有不得不重新构建、而旧版本目录里又没有 `Dockerfile`（2026-10 一次性切换之前的包）时，才先 `cp ~/crm/Dockerfile` 进去。如果要退回到一次性切换之前，还要用 `compose.yml.before-<版本号>` 和 `.env.before-<版本号>` 恢复这两个文件。
+
+迁移已经跑过时，只有在确认新版本确实有问题、并接受丢失备份后数据时才回滚；能修就先看日志。
 
 ### 清理
 
-观察几天确认稳定后，再清理旧的发布目录、备份和 `compose.yml.before-*`。保留最近几份即可。`~/crm/.deploy/deploy.lock` 是空文件，不要删。
+观察几天确认稳定后，再清理旧的发布目录、备份、`compose.yml.before-*` 和旧的 `crm-crm:rollback-*` 镜像标签。保留最近几份即可。`~/crm/.deploy/deploy.lock` 是空文件，不要删。
 
 ## 备份
 
