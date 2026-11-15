@@ -582,5 +582,4 @@ class DialLog(Base):
     )
 
 
-from app import assistant_models as assistant_models  # noqa: E402,F401
 from app import domain_models as domain_models  # noqa: E402,F401

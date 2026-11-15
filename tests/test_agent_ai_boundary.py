@@ -210,12 +210,11 @@ async def test_agent_can_update_and_delete_human_note(
 
 
 @pytest.mark.asyncio
-async def test_admin_assistant_config_keeps_super_admin_boundary(
-    client, admin_headers, agent_headers
-):
-    admin_response = await client.get("/api/admin/assistant/config", headers=admin_headers)
-    agent_response = await client.get("/api/admin/assistant/config", headers=agent_headers)
+async def test_assistant_endpoints_are_gone(client, admin_headers):
+    config = await client.get("/api/admin/assistant/config", headers=admin_headers)
+    chat = await client.post(
+        "/api/admin/assistant/sessions", headers=admin_headers, json={}
+    )
 
-    assert admin_response.status_code == 200
-    assert admin_response.json()["code"] == 0
-    assert agent_response.status_code == 403
+    assert config.status_code == 404
+    assert chat.status_code in {404, 405}
