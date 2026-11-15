@@ -159,7 +159,7 @@ export default function CampusVisitManage() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
       <main className={adminPageMainClass}>
         <PageHeader
           title="到校参观"

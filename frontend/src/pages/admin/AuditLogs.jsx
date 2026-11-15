@@ -294,7 +294,7 @@ export default function AuditLogs() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
       <main className={adminPageMainClass}>
         <PageHeader
           title="操作记录"

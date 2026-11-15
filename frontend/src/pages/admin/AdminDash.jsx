@@ -120,7 +120,7 @@ function AdminDesktopDash({ isMobile }) {
   ];
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
       <main data-testid="admin-dashboard-scroll" className="flex h-screen min-w-0 flex-1 flex-col overflow-y-auto bg-surface-page scroll-thin dark:bg-gray-950">
         <PageHeader title="招生指挥中心" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)}>
           <button type="button" onClick={retryDashboard} disabled={loading} aria-label="刷新仪表盘" title="刷新仪表盘" className="rounded-lg text-slate-500 hover:bg-slate-100 hover:text-blue-600 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-blue-400"><RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} /></button>

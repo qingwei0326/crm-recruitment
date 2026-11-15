@@ -17,6 +17,7 @@ function dismissKey(user) {
 
 export default function YesterdayUncontactedBanner({ user, onHandleNow }) {
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [open, setOpen] = useState(false);
   const storageKey = useMemo(() => dismissKey(user), [user]);
 
@@ -32,6 +33,8 @@ export default function YesterdayUncontactedBanner({ user, onHandleNow }) {
         const stale = selectStaleLeads(res.data.data?.stale_unconcat);
         if (stale.length > 0) {
           setItems(stale);
+          // The list is capped by the API; the total is the real number of waiting leads.
+          setTotal(Math.max(stale.length, Number(res.data.data?.stale_unconcat_total) || 0));
           setOpen(true);
         }
       })
@@ -64,7 +67,7 @@ export default function YesterdayUncontactedBanner({ user, onHandleNow }) {
       <div className="flex min-w-0 basis-full items-start gap-2 sm:flex-1 sm:basis-0">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />
         <span className="min-w-0">
-          有 {items.length} 个线索分配超过 24 小时还没联系
+          有 {total} 个线索分配超过 24 小时还没联系
           {oldestDays >= 1 ? `（最久 ${oldestDays} 天）` : ''}
         </span>
       </div>

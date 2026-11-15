@@ -146,7 +146,6 @@ export default function SeasonArchive() {
       isMobile={isMobile}
       sidebarOpen={sidebarOpen}
       onClose={closeSidebar}
-      compactSidebar={!isMobile}
     >
       <main className={adminPageMainClass}>
         <PageHeader

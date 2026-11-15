@@ -56,7 +56,7 @@ BASELINE = {
     "notes.py": 18,
     "operation_logs.py": 22,
     "personal_groups.py": 48,
-    "stats.py": 6,
+    "stats.py": 4,
     "stats_agents.py": 14,
     "stats_dashboard.py": 62,
     "stats_enrollment.py": 70,

@@ -58,6 +58,16 @@ describe('YesterdayUncontactedBanner', () => {
     expect(api.get).toHaveBeenCalledWith('/tasks/yesterday');
   });
 
+  it('shows the real total when the list was capped by the API', async () => {
+    api.get.mockResolvedValue({
+      data: { code: 0, data: { ...stalePayload.data, stale_unconcat_total: 476 } },
+    });
+
+    render(<YesterdayUncontactedBanner user={agent} onHandleNow={vi.fn()} />);
+
+    expect(await screen.findByText(/有 476 个线索分配超过 24 小时还没联系/)).toBeInTheDocument();
+  });
+
   it('stays hidden when everything was assigned less than 24 hours ago', async () => {
     api.get.mockResolvedValue({
       data: { code: 0, data: { stale_unconcat: [stalePayload.data.stale_unconcat[2]] } },

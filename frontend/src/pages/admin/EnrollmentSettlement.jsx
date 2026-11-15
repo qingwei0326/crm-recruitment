@@ -657,7 +657,7 @@ export default function EnrollmentSettlement({ embedded = false }) {
   }
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
       <main className={adminPageMainClass}>
         <PageHeader
           title="报名结算"

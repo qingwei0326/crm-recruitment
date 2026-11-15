@@ -630,16 +630,18 @@ async def yesterday_review(db: AsyncSession, agent_id: int) -> dict:
 
     # 分配满 24 小时仍未联系的学员：没干完的活
     now = utcnow()
-    stale_r = await db.execute(
-        select(Student)
-        .where(
-            Student.assigned_to == agent_id,
-            Student.status == StudentStatus.not_contacted,
-            Student.assigned_at <= overdue_cutoff(now),
-        )
-        .order_by(Student.assigned_at.asc())
-        .limit(50)
+    stale_filter = (
+        Student.assigned_to == agent_id,
+        Student.status == StudentStatus.not_contacted,
+        Student.assigned_at <= overdue_cutoff(now),
     )
+    stale_r = await db.execute(
+        select(Student).where(*stale_filter).order_by(Student.assigned_at.asc()).limit(50)
+    )
+    # The list is capped at 50; the reminder needs the real number.
+    stale_total = (
+        await db.execute(select(func.count(Student.id)).where(*stale_filter))
+    ).scalar_one()
     stale_list = []
     for s in stale_r.scalars().all():
         days = (now - s.assigned_at).days if s.assigned_at else None
@@ -662,6 +664,7 @@ async def yesterday_review(db: AsyncSession, agent_id: int) -> dict:
         "list": assigned_list,
         "follow_up_list": follow_up_list,
         "stale_unconcat": stale_list,
+        "stale_unconcat_total": stale_total,
     }
 
 
