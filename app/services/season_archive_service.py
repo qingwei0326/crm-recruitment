@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin_ops_utils import backup_items
 from app.backup import BACKUP_DIR, BACKUP_ENCRYPTION_KEY, do_backup_async
-from app.config import DB_ENGINE
 from app.domain_models import (
     HandoverItem,
     PersonalGroupMembership,
@@ -316,25 +315,21 @@ def validate_backup(path: str | None) -> dict[str, Any]:
             if os.path.exists(decrypted_path):
                 os.remove(decrypted_path)
         return result
-    if DB_ENGINE == "sqlite" or path.endswith(".db"):
-        try:
-            with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True) as connection:
-                integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-                foreign_keys = connection.execute("PRAGMA foreign_key_check").fetchall()
-            result.update(
-                {
-                    "valid": integrity == "ok" and not foreign_keys,
-                    "integrity_check": integrity,
-                    "foreign_key_violations": len(foreign_keys),
-                }
-            )
-            if not result["valid"]:
-                result["reason"] = "SQLite 完整性或外键校验失败"
-        except (OSError, sqlite3.Error) as exc:
-            result["reason"] = f"备份无法读取：{exc}"
-        return result
-    result["valid"] = True
-    result["validation"] = "文件存在且非空"
+    try:
+        with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True) as connection:
+            integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+            foreign_keys = connection.execute("PRAGMA foreign_key_check").fetchall()
+        result.update(
+            {
+                "valid": integrity == "ok" and not foreign_keys,
+                "integrity_check": integrity,
+                "foreign_key_violations": len(foreign_keys),
+            }
+        )
+        if not result["valid"]:
+            result["reason"] = "SQLite 完整性或外键校验失败"
+    except (OSError, sqlite3.Error) as exc:
+        result["reason"] = f"备份无法读取：{exc}"
     return result
 
 

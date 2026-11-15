@@ -29,7 +29,6 @@ def backup_env(tmp_path, monkeypatch):
     source = tmp_path / "crm.db"
     create_database(source)
     backup_dir = tmp_path / "backups"
-    monkeypatch.setattr(backup, "DB_ENGINE", "sqlite")
     monkeypatch.setattr(backup, "DB_PATH", str(source))
     monkeypatch.setattr(backup, "BACKUP_DIR", str(backup_dir))
     monkeypatch.setattr(backup, "BACKUP_ENCRYPTION_KEY", "")

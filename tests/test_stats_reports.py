@@ -1,8 +1,6 @@
 from datetime import date, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.dialects import postgresql
 
 from app.models import (
     AttributionMethod,
@@ -254,13 +252,6 @@ async def test_trend_defaults_to_current_cst_month(client, admin_headers, monkey
     assert response.status_code == 200
     assert response.json()["data"]["start"] == "2026-07-01"
     assert response.json()["data"]["end"] == "2026-07-10"
-
-
-def test_trend_postgresql_date_expression_uses_cst_offset():
-    expression = stats_enrollment._dial_log_cst_date_expression("postgresql")
-    sql = str(select(expression).compile(dialect=postgresql.dialect()))
-
-    assert "INTERVAL '8 hours'" in sql
 
 
 @pytest.mark.asyncio

@@ -1,11 +1,10 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Date, case, cast, func, or_, select, text
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import ADMIN_PAGE_REPORT_CENTER, require_admin, require_page_permission
-from app.config import DB_ENGINE
 from app.database import get_db
 from app.models import (
     AttributionMethod,
@@ -34,9 +33,7 @@ router = APIRouter(prefix="/api/stats", tags=["统计"])
 TREND_MAX_DAYS = 366
 
 
-def _dial_log_cst_date_expression(engine_name: str = DB_ENGINE):
-    if engine_name == "postgresql":
-        return cast(DialLog.dialed_at + text("INTERVAL '8 hours'"), Date)
+def _dial_log_cst_date_expression():
     return func.date(DialLog.dialed_at, "+8 hours")
 
 

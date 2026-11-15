@@ -12,11 +12,14 @@ from collections.abc import Callable
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
 
-from app.config import DB_ENGINE
 from app.dial_recording import (
     DIAL_RECORDING_COMPLETED,
     DIAL_RECORDING_LEGACY_MISSING,
 )
+
+# Frozen history, kept only for the one migration that still runs it. The system is
+# SQLite-only; the PostgreSQL branches below are dead and go when the migrations are squashed.
+DB_ENGINE = "sqlite"
 
 
 def _migrate_user_token_version(sync_connection):

@@ -9,11 +9,10 @@ import sqlite3
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.config import DATABASE_URL, DB_ENGINE, DB_PATH
+from app.config import DB_PATH
 
 BACKUP_ENCRYPTION_KEY = os.getenv("BACKUP_ENCRYPTION_KEY", "")
 BACKUP_REMOTE_UPLOAD = os.getenv(
@@ -132,8 +131,8 @@ _PRE_MIGRATION_NAME = re.compile(r"^crm_before_(.+)_(\d{8}_\d{6})$")
 
 
 def _get_backup_extension():
-    """返回当前数据库引擎对应的备份文件扩展名。"""
-    return ".dump" if DB_ENGINE == "postgresql" else ".db"
+    """备份文件扩展名（系统只支持 SQLite）。"""
+    return ".db"
 
 
 def _backup_stem(filename: str) -> str | None:
@@ -150,85 +149,6 @@ def _parse_stamp(value: str) -> datetime | None:
         return datetime.strptime(value, _STAMP_FORMAT)
     except ValueError:
         return None
-
-
-def _backup_postgresql(stem: str):
-    """使用 pg_dump 备份 PostgreSQL 数据库。"""
-    os.makedirs(BACKUP_DIR, exist_ok=True)
-
-    dest = os.path.join(BACKUP_DIR, stem + _get_backup_extension())
-
-    # 从 DATABASE_URL 解析连接参数
-    # 格式: postgresql+asyncpg://user:pass@host:5432/dbname
-    url = DATABASE_URL
-    # 移除驱动后缀以解析
-    for suffix in ("+asyncpg", "+psycopg2", "+psycopg"):
-        url = url.replace(suffix, "")
-    parsed = urlparse(url)
-
-    host = parsed.hostname or "localhost"
-    port = str(parsed.port or 5432)
-    user = parsed.username or ""
-    dbname = parsed.path.lstrip("/") or ""
-    password = parsed.password or ""
-
-    env = os.environ.copy()
-    if password:
-        env["PGPASSWORD"] = password
-
-    try:
-        cmd = [
-            "pg_dump",
-            "-h",
-            host,
-            "-p",
-            port,
-            "-U",
-            user,
-            "-d",
-            dbname,
-            "-Fc",  # custom format，可 pg_restore
-            "-f",
-            dest,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
-        if result.returncode != 0:
-            logger.error(f"pg_dump failed (code {result.returncode}): {result.stderr}")
-            if os.path.isfile(dest):
-                os.remove(dest)
-            return
-    except FileNotFoundError:
-        logger.error("pg_dump not found. Install PostgreSQL client tools.")
-        return
-    except subprocess.TimeoutExpired:
-        logger.error("pg_dump timed out after 300s")
-        if os.path.isfile(dest):
-            os.remove(dest)
-        return
-
-    if not os.path.isfile(dest):
-        return
-
-    logger.info(f"Backup created: {dest}")
-
-    # Optional encryption
-    if BACKUP_ENCRYPTION_KEY:
-        enc_dest = dest + ".enc"
-        try:
-            _encrypt_file(dest, enc_dest, BACKUP_ENCRYPTION_KEY)
-            os.remove(dest)
-            dest = enc_dest
-            logger.info("Backup encrypted: %s", dest)
-        except Exception as e:
-            logger.error("Encryption failed: %s", e)
-    else:
-        _warn_plaintext_backup(dest)
-
-    # Optional remote upload
-    _upload_remote(dest)
-
-    _prune_old_backups()
-    return dest
 
 
 def _sqlite_backup_is_sound(path: str) -> bool:
@@ -364,10 +284,8 @@ def _prune_old_backups():
 
 
 def do_backup(stem: str | None = None):
-    """根据数据库引擎选择备份方式。``stem`` 是不带扩展名的文件名，默认按当前时间命名。"""
+    """备份 SQLite 数据库。``stem`` 是不带扩展名的文件名，默认按当前时间命名。"""
     stem = stem or f"crm_{datetime.now().strftime(_STAMP_FORMAT)}"
-    if DB_ENGINE == "postgresql":
-        return _backup_postgresql(stem)
     return _backup_sqlite(stem)
 
 
