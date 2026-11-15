@@ -6,14 +6,11 @@ import useSyncManager from './hooks/useSyncManager';
 import useErrorMonitor from './hooks/useErrorMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionStatus from './components/ConnectionStatus';
-import { AssistantProvider } from './context/AssistantContext';
 import { setGlobalToast } from './api';
 import lazyWithRetry from './utils/lazyWithRetry';
 import { useEffect } from 'react';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from './adminPermissions';
 
-// Only super admins get the assistant, so nobody else downloads it.
-const AssistantOverlay = lazyWithRetry(() => import('./components/assistant/AssistantOverlay'));
 const Login = lazyWithRetry(() => import('./pages/Login'));
 const ChangePassword = lazyWithRetry(() => import('./pages/ChangePassword'));
 const AdminDash = lazyWithRetry(() => import('./pages/admin/AdminDash'));
@@ -36,7 +33,6 @@ const AuditLogs = lazyWithRetry(() => import('./pages/admin/AuditLogs'));
 const HomeVisitManage = lazyWithRetry(() => import('./pages/admin/HomeVisitManage'));
 const CampusVisitManage = lazyWithRetry(() => import('./pages/admin/CampusVisitManage'));
 const EnrollmentSettlement = lazyWithRetry(() => import('./pages/admin/EnrollmentSettlement'));
-const AdminAssistant = lazyWithRetry(() => import('./pages/admin/AdminAssistant'));
 const MobileHome = lazyWithRetry(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazyWithRetry(() => import('./pages/mobile/MobileStudentDetail'));
 
@@ -108,10 +104,7 @@ export default function App() {
 
   if (loading) return <LoadingScreen />;
 
-  const assistantActive = Boolean(user?.role === 'admin' && user?.is_super_admin);
-
   return (
-    <AssistantProvider active={assistantActive}>
     <ErrorBoundary>
     <ConnectionStatus isOnline={isOnline} />
     <Suspense fallback={<LoadingScreen />}>
@@ -269,14 +262,6 @@ export default function App() {
           }
         />
         <Route
-          path="/admin/assistant"
-          element={
-            <Protected role="admin" superAdmin>
-              <RouteError><AdminAssistant /></RouteError>
-            </Protected>
-          }
-        />
-        <Route
           path="/admin/settings"
           element={
             <Protected role="admin" superAdmin>
@@ -375,12 +360,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
-    {assistantActive && (
-      <Suspense fallback={null}>
-        <AssistantOverlay />
-      </Suspense>
-    )}
     </ErrorBoundary>
-    </AssistantProvider>
   );
 }

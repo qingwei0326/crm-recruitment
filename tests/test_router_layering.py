@@ -36,7 +36,6 @@ SQL_BUILDERS = {"select", "update", "insert", "delete"}
 BASELINE = {
     "admin.py": 12,
     "admin_assignment.py": 20,
-    "admin_assistant.py": 5,
     "admin_config.py": 11,
     "admin_handover.py": 33,
     "admin_invalid.py": 6,

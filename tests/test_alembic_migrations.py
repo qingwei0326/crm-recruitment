@@ -301,15 +301,18 @@ def test_existing_domain_schema_upgrades_and_backfills_legacy_rows(tmp_path):
             text("select version_num from alembic_version")
         ).scalar_one()
         assert revision == "20260711_03"
-    assistant_upgrade = run_alembic(db_path, "upgrade", "head")
+    assistant_upgrade = run_alembic(db_path, "upgrade", "20260714_01")
     assert assistant_upgrade.returncode == 0, assistant_upgrade.stderr
+    assert ASSISTANT_TABLES <= set(inspect(engine).get_table_names())
+    head_upgrade = run_alembic(db_path, "upgrade", "head")
+    assert head_upgrade.returncode == 0, head_upgrade.stderr
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
-    assert ASSISTANT_TABLES <= tables
+    assert not ASSISTANT_TABLES & tables
     assert PERSONAL_GROUP_TABLES <= tables
     with Session(engine) as session:
         revision = session.execute(text("select version_num from alembic_version")).scalar_one()
-        assert revision == "20261026_02"
+        assert revision == "20261115_01"
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     engine.dispose()
@@ -390,7 +393,7 @@ def test_legacy_compat_revision_heals_stamped_database_missing_old_columns(tmp_p
         ).one()
         assert tuple(row) == ("13960118706", "contacted")
         assert conn.execute(text("select version_num from alembic_version")).scalar_one() == (
-            "20261026_02"
+            "20261115_01"
         )
     assert run_alembic(db_path, "check").returncode == 0
     engine.dispose()
@@ -847,4 +850,59 @@ def test_tasks_left_open_on_terminal_students_are_closed(tmp_path):
     assert run_alembic(db_path, "upgrade", "head").returncode == 0
     check = run_alembic(db_path, "check")
     assert check.returncode == 0, check.stdout + check.stderr
+    engine.dispose()
+
+
+def test_assistant_tables_drop_with_rows_and_come_back_empty(tmp_path):
+    db_path = tmp_path / "drop-assistant.db"
+    assert run_alembic(db_path, "upgrade", "20261026_02").returncode == 0
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        conn.exec_driver_sql(
+            "INSERT INTO users (username, hashed_password, role, name, is_active, "
+            "is_super_admin, failed_login_attempts, must_change_password, token_version, "
+            "service_regions, pushplus_token, page_permissions, operation_permissions, "
+            "last_login_device, last_login_ip, created_at) VALUES ('ai-owner', 'x', 'admin', "
+            "'助手用户', 1, 1, 0, 0, 1, '', '', '', '', '', '', CURRENT_TIMESTAMP)"
+        )
+        owner = conn.exec_driver_sql("SELECT id FROM users WHERE username='ai-owner'").scalar()
+        conn.exec_driver_sql(
+            "INSERT INTO assistant_configs (id, enabled, base_url, model, api_key_ciphertext, "
+            f"api_key_last4, updated_by, created_at, updated_at) VALUES (1, 1, 'https://x', "
+            f"'m', 'cipher', '1234', {owner}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO assistant_sessions (id, owner_id, title, status, created_at, "
+            f"updated_at) VALUES ('s1', {owner}, 't', 'active', CURRENT_TIMESTAMP, "
+            "CURRENT_TIMESTAMP)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO assistant_runs (id, session_id, operator_id, status, model, "
+            "provider_request_id, prompt_tokens, completion_tokens, error_message, created_at) "
+            f"VALUES ('r1', 's1', {owner}, 'done', 'm', '', 0, 0, '', CURRENT_TIMESTAMP)"
+        )
+        conn.exec_driver_sql(
+            "INSERT INTO assistant_messages (session_id, run_id, role, content, created_at) "
+            "VALUES ('s1', 'r1', 'user', 'hi', CURRENT_TIMESTAMP)"
+        )
+    engine.dispose()
+
+    upgraded = run_alembic(db_path, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stderr
+    engine = create_engine(f"sqlite:///{db_path}")
+    tables = set(inspect(engine).get_table_names())
+    assert not ASSISTANT_TABLES & tables
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql(
+            "SELECT COUNT(*) FROM users WHERE username='ai-owner'"
+        ).scalar() == 1
+    engine.dispose()
+
+    downgraded = run_alembic(db_path, "downgrade", "20261026_02")
+    assert downgraded.returncode == 0, downgraded.stderr
+    engine = create_engine(f"sqlite:///{db_path}")
+    assert ASSISTANT_TABLES <= set(inspect(engine).get_table_names())
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("SELECT COUNT(*) FROM assistant_configs").scalar() == 0
     engine.dispose()

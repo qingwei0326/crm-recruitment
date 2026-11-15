@@ -21,7 +21,6 @@ from app.routers import (
     admin,
     admin_assignment,
     admin_assignment_review,
-    admin_assistant,
     admin_config,
     admin_daily,
     admin_governance,
@@ -169,7 +168,6 @@ app.include_router(stats_enrollment.router)
 app.include_router(stats_dashboard.router)
 app.include_router(tasks.router)
 app.include_router(admin.router)
-app.include_router(admin_assistant.router)
 app.include_router(admin_config.router)
 app.include_router(admin_governance.router)
 app.include_router(admin_handover.router)
