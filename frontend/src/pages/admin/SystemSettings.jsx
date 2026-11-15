@@ -19,7 +19,6 @@ import PageHeader from '../../components/PageHeader';
 import { adminPageMainClass } from '../../components/admin/AdminPagePrimitives';
 import { formatDuration } from '../../utils';
 import { dashboardLeadUrls } from './adminWorkflow';
-import AssistantSettings from './settings/AssistantSettings';
 
 function SettingRow({ label, children }) {
   return (
@@ -273,7 +272,6 @@ export default function SystemSettings() {
             <a href="#system-health" aria-label="跳转到运行状态" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">运行</a>
             <a href="#data-quality" aria-label="跳转到数据质量" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">质量</a>
             <a href="#push-settings" aria-label="跳转到推送配置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">推送</a>
-            <a href="#assistant-settings" aria-label="跳转到 AI 助手" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">AI</a>
             <a href="#score-settings" aria-label="跳转到评分设置" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">评分</a>
             <a href="#backup-settings" aria-label="跳转到数据备份" className="whitespace-nowrap transition hover:text-blue-600 dark:hover:text-blue-400">备份</a>
           </nav>
@@ -567,8 +565,6 @@ export default function SystemSettings() {
 
             </div>
           </div>
-
-          <AssistantSettings />
 
           <div id="score-settings" className="scroll-mt-[110px] rounded-lg border bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="flex items-center gap-2 border-b px-4 py-3.5 dark:border-gray-700">

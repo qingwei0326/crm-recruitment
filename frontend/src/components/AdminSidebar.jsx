@@ -3,7 +3,6 @@ import {
   ArrowRightLeft,
   Archive,
   BarChart3,
-  Bot,
   CalendarClock,
   ChevronsLeft,
   ChevronsRight,
@@ -132,7 +131,6 @@ export const ADMIN_NAV_GROUPS = [
   {
     title: '系统',
     items: [
-      { to: '/admin/assistant', label: 'AI 助手', icon: Bot, superOnly: true },
       { to: '/admin/settings', label: '系统设置', icon: Settings, superOnly: true },
       { to: '/admin/season-archive', label: '招生季归档', icon: Archive, superOnly: true },
     ],
