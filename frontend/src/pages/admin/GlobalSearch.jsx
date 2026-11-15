@@ -196,7 +196,7 @@ export default function GlobalSearch() {
   };
 
   return (
-    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} compactSidebar={!isMobile}>
+    <AdminLayout isMobile={isMobile} sidebarOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}>
       <main className={adminPageMainClass}>
         <PageHeader title="全局搜索" isMobile={isMobile} onMenuClick={() => setSidebarOpen(true)} />
 

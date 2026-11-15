@@ -103,6 +103,8 @@ async def list_students(
         if not is_admin(current_user):
             raise HTTPException(status_code=403, detail="无权查看未分配学生")
         query = query.where(Student.assigned_to.is_(None))
+    elif assignment == "assigned" and assigned_to is None:
+        query = query.where(Student.assigned_to.is_not(None))
     elif assigned_to is not None:
         if not is_admin(current_user) and assigned_to != current_user.id:
             raise HTTPException(status_code=403, detail="无权查看其他坐席的学生")

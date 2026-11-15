@@ -81,22 +81,23 @@ async def stage_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    # One pass gives the per-stage totals, the unassigned pool, and the assigned
+    # leads still in the new-lead stage (that stage also holds the whole pool).
     result = await db.execute(
-        select(Student.stage, func.count(Student.id))
+        select(Student.stage, Student.assigned_to.is_(None), func.count(Student.id))
         .where(Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)))
-        .group_by(Student.stage)
+        .group_by(Student.stage, Student.assigned_to.is_(None))
     )
     by_stage = {}
-    for stage, count in result.all():
+    unassigned = 0
+    assigned_new = 0
+    for stage, is_unassigned, count in result.all():
         key = _stage_stats_key(stage)
         by_stage[key] = by_stage.get(key, 0) + count
-    unassigned = (
-        await db.execute(
-            select(func.count(Student.id)).where(
-                Student.assigned_to.is_(None),
-                Student.status.not_in(statuses_for_canonical(StudentStatus.invalid)),
-            )
-        )
-    ).scalar() or 0
+        if is_unassigned:
+            unassigned += count
+        elif stage == StudentStage.initial_contact:
+            assigned_new += count
     by_stage["未分配"] = unassigned
+    by_stage["已分配新线索"] = assigned_new
     return Response.ok(by_stage)

@@ -68,6 +68,20 @@ FRONTEND_DIR = os.getenv(
     "FRONTEND_DIR",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"),
 )
+class HashedAssetFiles(StaticFiles):
+    """Serve the built frontend's ``/assets`` with a long cache lifetime.
+
+    Vite puts a content hash in every file name there, so a file never changes under
+    the same URL and browsers can keep it without asking again.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code in (200, 304):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 NO_STORE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -208,7 +222,7 @@ def _resolve_spa_path(path: str) -> str | None:
 if os.path.isdir(FRONTEND_DIR):
     _assets = os.path.join(FRONTEND_DIR, "assets")
     if os.path.isdir(_assets):
-        app.mount("/assets", StaticFiles(directory=_assets), name="assets")
+        app.mount("/assets", HashedAssetFiles(directory=_assets), name="assets")
 
     @app.get("/{path:path}")
     async def spa_fallback(path: str):

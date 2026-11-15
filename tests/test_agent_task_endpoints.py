@@ -76,6 +76,7 @@ async def test_yesterday_review_counts_calls_upgrades_and_stale_work(
     assert [item["name"] for item in data["list"]] == ["昨日未联系"]
     assert [item["student_name"] for item in data["follow_up_list"]] == ["昨日通话"]
     assert [item["id"] for item in data["stale_unconcat"]] == [stale.id]
+    assert data["stale_unconcat_total"] == 1
 
 
 @pytest.mark.asyncio
