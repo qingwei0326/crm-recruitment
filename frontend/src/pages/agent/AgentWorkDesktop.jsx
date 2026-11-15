@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
-import { Phone, HelpCircle, Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Phone, HelpCircle, Plus, Search } from 'lucide-react';
+import AgentStudentSearch from '../../components/AgentStudentSearch';
 import AgentSidebar from './desktop/AgentSidebar';
 import FilterPanel from './desktop/FilterPanel';
 import StatsBar from './desktop/StatsBar';
@@ -37,6 +38,8 @@ export default function AgentWorkDesktop({
   setShowDetail, loadDetail,
   onAdmissionsStageSynced,
 }) {
+  const [searchAllOpen, setSearchAllOpen] = useState(false);
+
   const handleSort = (key) => {
     setSortConfig((prev) => ({
       key,
@@ -72,6 +75,15 @@ export default function AgentWorkDesktop({
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       {modals}
+      <AgentStudentSearch
+        open={searchAllOpen}
+        onClose={() => setSearchAllOpen(false)}
+        onPick={async (studentId) => {
+          setSearchAllOpen(false);
+          await loadDetail(studentId);
+          setShowDetail(true);
+        }}
+      />
       {/* Sidebar */}
       <aside className="flex w-64 shrink-0 flex-col bg-slate-950 text-white">
         <div className="flex items-center gap-3 border-b border-slate-800/90 px-5 py-5">
@@ -110,6 +122,14 @@ export default function AgentWorkDesktop({
             </p>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setSearchAllOpen(true)}
+              className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+              title="搜索我的全部学生（含已标无效、已报名）"
+              aria-label="搜索我的全部学生"
+            >
+              <Search className="w-4 h-4" />
+            </button>
             <button
               onClick={onHelpOpen}
               className="inline-flex min-w-9 min-h-9 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"

@@ -60,11 +60,11 @@ export default function AgentStudentSearch({ open, onClose, onPick }) {
   const list = result?.list || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-black/40 md:items-center md:justify-center" onClick={onClose}>
       <div
         role="dialog"
         aria-label="搜索我的学生"
-        className="flex max-h-[90vh] min-h-[60vh] w-full flex-col rounded-t-panel bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:bg-gray-900"
+        className="flex max-h-[90vh] min-h-[60vh] w-full flex-col rounded-t-panel md:max-w-xl md:rounded-panel bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:bg-gray-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
