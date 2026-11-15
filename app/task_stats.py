@@ -19,8 +19,8 @@ ACTIVE_TASK_STATUSES = statuses_for_canonical(
 )
 
 # Only unassigned students in these active workflow statuses belong to the
-# allocation pool. Keep this separate name so dashboards, distribution, and
-# assistant tools do not silently invent different eligibility rules.
+# allocation pool. Keep this separate name so dashboards and distribution do
+# not silently invent different eligibility rules.
 ASSIGNABLE_STUDENT_STATUSES = ACTIVE_TASK_STATUSES
 
 # 任务池内的细分口径。

@@ -308,7 +308,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:DOMAIN_AUDIT_DATABASE)) {
             "--database",
             $auditDatabase,
             "--expect-revision",
-            "20261026_02"
+            "20261115_01"
         ) -WorkingDirectory $Root
     }
 }
