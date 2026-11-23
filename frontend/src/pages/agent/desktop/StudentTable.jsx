@@ -210,13 +210,13 @@ function StudentRow({
           <StageProgress currentStage={student.stage} onStageClick={onUpdateStage} compact />
         </td>
         <td className={`border-y px-3 py-2.5 ${cellTone}`}>
-          <span className={`inline-flex whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold ${INTENT_BADGES[student.intent_level] || INTENT_BADGES['无']}`}>
+          <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${INTENT_BADGES[student.intent_level] || INTENT_BADGES['无']}`}>
             {student.intent_level === '无' ? '未评级' : `${student.intent_level}级`}
           </span>
         </td>
         <td className={`border-y px-3 py-2.5 ${cellTone}`}>
           <div className="flex items-center gap-1.5">
-            <span className={`inline-flex shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${STATUS_STYLE[student.status] || STATUS_STYLE['未联系']}`}>
+            <span className={`inline-flex shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLE[student.status] || STATUS_STYLE['未联系']}`}>
               {statusLabel(student.status)}
             </span>
           </div>

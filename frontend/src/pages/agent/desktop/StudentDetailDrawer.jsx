@@ -14,12 +14,12 @@ const INTENT_LEVELS = ['A', 'B', 'C', '无'];
 
 function intentButtonClass(active, level) {
   if (!active) {
-    return 'bg-white border dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700';
+    return 'bg-white border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800';
   }
   if (level === 'A') return 'bg-red-100 text-red-700 ring-2 ring-red-300 dark:bg-red-900/40 dark:text-red-300';
   if (level === 'B') return 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300';
-  if (level === 'C') return 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200';
-  return 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400';
+  if (level === 'C') return 'bg-blue-100 text-blue-700 ring-2 ring-blue-300 dark:bg-blue-900/40 dark:text-blue-300';
+  return 'bg-slate-100 text-slate-600 ring-2 ring-slate-200 dark:bg-slate-700 dark:text-slate-300';
 }
 
 export default function StudentDetailDrawer({

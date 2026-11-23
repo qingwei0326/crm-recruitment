@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { setGlobalToast } from '../api';
 
 const ToastContext = createContext(null);
 
@@ -78,10 +79,16 @@ export function ToastProvider({ children }) {
     };
   }, [addToast]);
 
+  useEffect(() => {
+    setGlobalToast((msg) => toast.error(msg));
+    return () => setGlobalToast(null);
+  }, [toast]);
+
   return (
     <ToastContext.Provider value={toast}>
       {children}
       <div
+        data-toast
         className="pointer-events-none fixed inset-x-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[100] flex flex-col gap-2 sm:left-auto sm:right-4 sm:top-4 sm:w-full sm:max-w-sm"
         aria-live="polite"
         aria-relevant="additions"

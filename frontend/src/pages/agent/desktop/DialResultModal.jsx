@@ -39,6 +39,17 @@ export default function DialResultModal({
     setSubmitting(false);
   }, [modalKey]);
 
+  useEffect(() => {
+    if (!dialModal) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !submittingRef.current) {
+        onClose?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [dialModal, onClose]);
+
   if (!dialModal) return null;
 
   const step = dialModal.showFollowUp ? 'followup' : dialModal.showIntent ? 'intent' : 'status';
@@ -155,8 +166,8 @@ export default function DialResultModal({
                       : level === 'B'
                         ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/40 dark:text-amber-300 hover:bg-amber-200'
                         : level === 'C'
-                          ? 'bg-gray-200 text-gray-700 ring-2 ring-gray-300 dark:bg-gray-600 dark:text-gray-200 hover:bg-gray-300'
-                          : 'bg-gray-100 text-gray-500 ring-2 ring-gray-200 dark:bg-gray-700 dark:text-gray-400 hover:bg-gray-200'
+                          ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300 dark:bg-blue-900/40 dark:text-blue-300 hover:bg-blue-200'
+                          : 'bg-slate-100 text-slate-600 ring-2 ring-slate-200 dark:bg-slate-700 dark:text-slate-300 hover:bg-slate-200'
                   }`}
                 >
                   {level === '无' ? '未评级' : `${level}级`}

@@ -25,8 +25,14 @@ export default function AgentStudentSearch({ open, onClose, onPick }) {
       setResult(null);
       setError('');
       setLoading(false);
+      return undefined;
     }
-  }, [open]);
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -60,11 +66,12 @@ export default function AgentStudentSearch({ open, onClose, onPick }) {
   const list = result?.list || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 backdrop-blur-[1px]" onClick={onClose}>
       <div
         role="dialog"
+        aria-modal="true"
         aria-label="搜索我的学生"
-        className="flex max-h-[90vh] min-h-[60vh] w-full flex-col rounded-t-panel bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:bg-gray-900"
+        className="flex max-h-[90vh] min-h-[60vh] w-full flex-col rounded-t-panel bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
