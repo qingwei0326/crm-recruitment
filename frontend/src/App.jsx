@@ -6,9 +6,7 @@ import useSyncManager from './hooks/useSyncManager';
 import useErrorMonitor from './hooks/useErrorMonitor';
 import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionStatus from './components/ConnectionStatus';
-import { setGlobalToast } from './api';
 import lazyWithRetry from './utils/lazyWithRetry';
-import { useEffect } from 'react';
 import { ADMIN_PAGE_PERMISSIONS, canAccessAdminPage } from './adminPermissions';
 
 const Login = lazyWithRetry(() => import('./pages/Login'));
@@ -37,7 +35,16 @@ const MobileHome = lazyWithRetry(() => import('./pages/mobile/MobileHome'));
 const MobileStudentDetail = lazyWithRetry(() => import('./pages/mobile/MobileStudentDetail'));
 
 function LoadingScreen() {
-  return <div className="flex items-center justify-center h-screen text-gray-400">加载中…</div>;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex h-screen flex-col items-center justify-center gap-3 bg-surface-page text-slate-500 dark:bg-slate-950 dark:text-slate-400"
+    >
+      <div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent dark:border-blue-400 dark:border-t-transparent" />
+      <span className="text-xs font-medium tracking-wide">加载中…</span>
+    </div>
+  );
 }
 
 // Per-route ErrorBoundary wrapper - 单页面崩溃不影响其他页面
@@ -90,17 +97,6 @@ export default function App() {
 
   // 启动全局错误监控
   useErrorMonitor();
-
-  // 设置全局 toast 用于 API 错误提示
-  useEffect(() => {
-    // 延迟获取 toast 函数，避免循环依赖
-    const toastEl = document.querySelector('[data-toast]');
-    if (toastEl) {
-      setGlobalToast((msg) => {
-        toastEl.dispatchEvent(new CustomEvent('toast-error', { detail: msg }));
-      });
-    }
-  }, []);
 
   if (loading) return <LoadingScreen />;
 

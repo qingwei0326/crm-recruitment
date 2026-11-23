@@ -13,6 +13,7 @@ import {
   Search,
   X,
   ListChecks,
+  Layers,
 } from 'lucide-react';
 import api from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -197,7 +198,7 @@ function SettingsSheet({ open, onClose }) {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     setMsg('');
     setLoadingToken(true);
     api
@@ -207,7 +208,12 @@ function SettingsSheet({ open, onClose }) {
       })
       .catch((e) => logger.error('加载推送设置失败:', e))
       .finally(() => setLoadingToken(false));
-  }, [open]);
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -230,13 +236,16 @@ function SettingsSheet({ open, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 backdrop-blur-[1px]" onClick={onClose}>
       <div
-        className="w-full bg-white dark:bg-gray-900 rounded-t-panel p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] space-y-4 max-h-[85vh] overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-settings-sheet-title"
+        className="max-h-[85vh] w-full space-y-4 overflow-y-auto rounded-t-panel bg-white p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">设置</h3>
+          <h3 id="mobile-settings-sheet-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">设置</h3>
           <button
             type="button"
             onClick={onClose}
@@ -1021,7 +1030,16 @@ export default function MobileHome() {
             {user?.name || user?.username}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <Link
+            to="/agent"
+            className="inline-flex h-9 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 active:scale-95 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+            aria-label="切换到单卡连拨模式"
+            title="单卡连拨模式"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>连拨</span>
+          </Link>
           <button
             type="button"
             onClick={() => setSearchAllOpen(true)}

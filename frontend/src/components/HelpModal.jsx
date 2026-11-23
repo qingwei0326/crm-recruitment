@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { X, ChevronDown, ChevronRight, BookOpen } from 'lucide-react';
 
 const HELP_SECTIONS = {
@@ -213,50 +213,68 @@ export default memo(function HelpModal({ isOpen, onClose, role = 'admin' }) {
 
   const toggle = (i) => setExpanded((p) => ({ ...p, [i]: !p[i] }));
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/40" onClick={onClose} />
+      <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-[1px]" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-panel shadow-xl border dark:border-gray-700 w-full max-w-lg max-h-[80vh] flex flex-col">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="help-modal-title"
+        className="relative flex max-h-[80vh] w-full max-w-lg flex-col rounded-panel border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-fadeIn"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b dark:border-gray-700 shrink-0">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-900/40">
+              <BookOpen className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             </div>
-            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
+            <h2 id="help-modal-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            aria-label="关闭使用说明"
+            className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto px-5 py-4 space-y-1 flex-1">
+        <div className="flex-1 space-y-1 overflow-y-auto px-5 py-4 scroll-thin">
           {sections.map((section, i) => (
-            <div key={i} className="border dark:border-gray-700 rounded-panel overflow-hidden">
+            <div key={i} className="overflow-hidden rounded-panel border border-slate-200 dark:border-slate-800">
               <button
+                type="button"
                 onClick={() => toggle(i)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                aria-expanded={Boolean(expanded[i])}
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
               >
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
                   {section.title}
                 </span>
                 {expanded[i] ? (
-                  <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                 )}
               </button>
               {expanded[i] && (
-                <div className="px-4 pb-4 text-sm text-gray-600 dark:text-gray-400 leading-relaxed whitespace-pre-line">
+                <div className="whitespace-pre-line px-4 pb-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                   {section.content}
                 </div>
               )}
@@ -265,8 +283,8 @@ export default memo(function HelpModal({ isOpen, onClose, role = 'admin' }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t dark:border-gray-700 text-center shrink-0">
-          <span className="text-xs text-gray-400">招生话务CRM v1.0</span>
+        <div className="shrink-0 border-t border-slate-200 px-5 py-3 text-center dark:border-slate-800">
+          <span className="text-xs text-slate-400">招生话务CRM v1.0</span>
         </div>
       </div>
     </div>

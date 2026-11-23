@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 
 const ConfirmContext = createContext(null);
 const PromptContext = createContext(null);
@@ -36,6 +36,15 @@ export function ConfirmProvider({ children }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (!state) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') close(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state, close]);
+
   const confirmBtnCls =
     state?.tone === 'danger'
       ? 'bg-red-600 hover:bg-red-700'
@@ -46,33 +55,36 @@ export function ConfirmProvider({ children }) {
       {children}
       {state && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[1px]"
           onClick={() => close(false)}
         >
           <div
-            className="w-full max-w-sm rounded-panel bg-white dark:bg-gray-800 shadow-xl p-5"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-dialog-title"
+            className="w-full max-w-sm rounded-panel border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-fadeIn"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            <h3 id="confirm-dialog-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
               {state.title}
             </h3>
             {state.message && (
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
                 {state.message}
               </p>
             )}
-            <div className="mt-5 flex gap-2 justify-end">
+            <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => close(false)}
-                className="px-4 min-h-[40px] rounded-lg text-sm font-medium border dark:border-gray-600 text-gray-700 dark:text-gray-200 active:scale-95"
+                className="min-h-[40px] rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 active:scale-95 dark:border-slate-700 dark:text-slate-200"
               >
                 {state.cancelText}
               </button>
               <button
                 type="button"
                 onClick={() => close(true)}
-                className={`px-4 min-h-[40px] rounded-lg text-sm font-medium text-white active:scale-95 ${confirmBtnCls}`}
+                className={`min-h-[40px] rounded-lg px-4 text-sm font-medium text-white active:scale-95 ${confirmBtnCls}`}
               >
                 {state.confirmText}
               </button>
@@ -125,24 +137,36 @@ export function PromptProvider({ children }) {
     close(value.trim());
   }, [close, value]);
 
+  useEffect(() => {
+    if (!state) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') close(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state, close]);
+
   return (
     <PromptContext.Provider value={prompt}>
       {children}
       {state && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[1px]"
           onClick={() => close(null)}
         >
           <form
-            className="w-full max-w-sm rounded-panel bg-white dark:bg-gray-800 shadow-xl p-5"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="prompt-dialog-title"
+            className="w-full max-w-sm rounded-panel border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-fadeIn"
             onClick={(e) => e.stopPropagation()}
             onSubmit={submit}
           >
-            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            <h3 id="prompt-dialog-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
               {state.title}
             </h3>
             {state.message && (
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">
                 {state.message}
               </p>
             )}
@@ -151,19 +175,19 @@ export function PromptProvider({ children }) {
               onChange={(e) => setValue(e.target.value)}
               placeholder={state.placeholder}
               autoFocus
-              className="mt-4 w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400"
+              className="mt-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-400"
             />
-            <div className="mt-5 flex gap-2 justify-end">
+            <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => close(null)}
-                className="px-4 min-h-[40px] rounded-lg text-sm font-medium border dark:border-gray-600 text-gray-700 dark:text-gray-200 active:scale-95"
+                className="min-h-[40px] rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 active:scale-95 dark:border-slate-700 dark:text-slate-200"
               >
                 {state.cancelText}
               </button>
               <button
                 type="submit"
-                className="px-4 min-h-[40px] rounded-lg text-sm font-medium text-white active:scale-95 bg-blue-600 hover:bg-blue-700"
+                className="min-h-[40px] rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 active:scale-95"
               >
                 {state.confirmText}
               </button>

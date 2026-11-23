@@ -1,7 +1,17 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import api from '../../../api';
 
 export default function SettingsModal({ show, onClose, tokenInput, setTokenInput, tokenSaving, setTokenSaving, tokenMsg, setTokenMsg }) {
+  useEffect(() => {
+    if (!show) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [show, onClose]);
+
   if (!show) return null;
 
   const saveToken = async () => {
@@ -29,15 +39,26 @@ export default function SettingsModal({ show, onClose, tokenInput, setTokenInput
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-panel max-w-md w-full p-5 shadow-xl">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">个人推送设置</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-[1px]" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        className="w-full max-w-md rounded-panel border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900 animate-fadeIn"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 id="settings-modal-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">个人推送设置</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭推送设置"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          >
+            <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           在 pushplus.plus 注册并获取个人 token。设置后，回访提醒会推送到你自己的微信，而不是管理员。
         </p>
         <input
@@ -45,23 +66,25 @@ export default function SettingsModal({ show, onClose, tokenInput, setTokenInput
           value={tokenInput}
           onChange={(e) => setTokenInput(e.target.value)}
           placeholder="留空则使用全局 token"
-          className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
           maxLength={64}
         />
         {tokenMsg && (
-          <div className="text-xs mt-2 text-blue-600 dark:text-blue-400">{tokenMsg}</div>
+          <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">{tokenMsg}</div>
         )}
-        <div className="flex gap-2 mt-4">
+        <div className="mt-4 flex gap-2">
           <button
+            type="button"
             onClick={onClose}
-            className="flex-1 px-3 py-2 rounded-lg border dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300"
+            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300"
           >
             取消
           </button>
           <button
+            type="button"
             onClick={saveToken}
             disabled={tokenSaving}
-            className="flex-1 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-50"
+            className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {tokenSaving ? '保存中…' : '保存'}
           </button>

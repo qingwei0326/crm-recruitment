@@ -9,9 +9,9 @@ export default {
         surface: { page: '#f5f7fb' },
       },
       fontSize: {
-        // Dense CRM metadata sizes; no line-height so they match the old text-[Npx] output.
-        '3xs': '10px',
-        '2xs': '11px',
+        // Dense CRM metadata sizes with accessible line-heights.
+        '3xs': ['10px', { lineHeight: '14px' }],
+        '2xs': ['11px', { lineHeight: '16px' }],
       },
       borderRadius: {
         // Canonical admin panel/surface radius (same as rounded-xl).

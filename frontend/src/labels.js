@@ -57,27 +57,22 @@ export const STAGES = [
 export const INTENT_BADGES = {
   A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  C: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-  '无': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+  C: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  '无': 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 };
 
-export const PROFILE_INTENT_BADGE_CLASSES = {
-  A: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  B: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  C: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  '无': 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-};
+export const PROFILE_INTENT_BADGE_CLASSES = INTENT_BADGES;
 
 export function intentBadgeClass(level) {
   const value = level || '无';
-  return PROFILE_INTENT_BADGE_CLASSES[value] || PROFILE_INTENT_BADGE_CLASSES['无'];
+  return INTENT_BADGES[value] || INTENT_BADGES['无'];
 }
 
 export const STATUS_BADGE_CLASSES = {
-  已报名: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  未联系: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+  已报名: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  未联系: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
   已联系: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  未接: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+  未接: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
   待回访: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
   无效: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
 };
@@ -86,24 +81,17 @@ export function statusBadgeClass(status) {
   return STATUS_BADGE_CLASSES[status] || 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300';
 }
 
-export const AGENT_STATUS_BADGE_CLASSES = {
-  未联系: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-  已联系: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  未接: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
-  待回访: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  已报名: 'bg-green-200 text-green-800 dark:bg-green-900/50 dark:text-green-200',
-  无效: 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300',
-};
+export const AGENT_STATUS_BADGE_CLASSES = STATUS_BADGE_CLASSES;
 
 export const ADMIN_RECYCLE_STATUS_BADGE_CLASSES = {
-  已报名: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300',
-  待回访: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300',
-  未联系: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
-  无效: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300',
+  已报名: STATUS_BADGE_CLASSES.已报名,
+  待回访: STATUS_BADGE_CLASSES.待回访,
+  未联系: STATUS_BADGE_CLASSES.未联系,
+  无效: STATUS_BADGE_CLASSES.无效,
 };
 
 export function adminRecycleStatusBadgeClass(status) {
-  return ADMIN_RECYCLE_STATUS_BADGE_CLASSES[status] || 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300';
+  return ADMIN_RECYCLE_STATUS_BADGE_CLASSES[status] || STATUS_BADGE_CLASSES.已联系;
 }
 
 export const STATUS_ACTION_BUTTON_CLASSES = {
